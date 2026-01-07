@@ -5,7 +5,6 @@
 ### Prerequisites
 1. A GitHub account
 2. A Vercel account (sign up at [vercel.com](https://vercel.com))
-3. A Gemini API key (for AI features - optional)
 
 ### Step 1: Push to GitHub
 
@@ -31,10 +30,8 @@ git push -u origin main
 2. Click "Add New Project"
 3. Import your GitHub repository
 4. Vercel will automatically detect it's a Vite project
-5. Configure environment variables (if using Gemini AI):
-   - Add `GEMINI_API_KEY` with your API key value
-6. Click "Deploy"
-7. Your app will be live in minutes!
+5. Click "Deploy"
+6. Your app will be live in minutes!
 
 #### Option B: Using Vercel CLI
 
@@ -58,18 +55,7 @@ vercel
 vercel --prod
 ```
 
-### Step 3: Environment Variables (Optional)
-
-If you want to use the AI image analysis feature:
-
-1. Go to your Vercel project settings
-2. Navigate to "Environment Variables"
-3. Add:
-   - **Name**: `GEMINI_API_KEY`
-   - **Value**: Your Gemini API key
-4. Redeploy the application
-
-### Step 4: Verify Deployment
+### Step 3: Verify Deployment
 
 1. Visit your Vercel deployment URL
 2. Test the following features:

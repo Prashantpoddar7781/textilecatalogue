@@ -1,8 +1,7 @@
 
 import React, { useState, useRef } from 'react';
-import { X, Upload, Sparkles, Loader2, IndianRupee } from 'lucide-react';
+import { X, Upload, IndianRupee } from 'lucide-react';
 import { TextileDesign } from '../types';
-import { analyzeTextileImage } from '../services/gemini';
 
 interface Props {
   onClose: () => void;
@@ -10,8 +9,6 @@ interface Props {
 }
 
 export const UploadForm: React.FC<Props> = ({ onClose, onSubmit }) => {
-  const [loading, setLoading] = useState(false);
-  const [analyzing, setAnalyzing] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -31,20 +28,6 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit }) => {
       };
       reader.readAsDataURL(file);
     }
-  };
-
-  const handleAIAnalyze = async () => {
-    if (!preview) return;
-    setAnalyzing(true);
-    const result = await analyzeTextileImage(preview);
-    if (result) {
-      setFormData(prev => ({
-        ...prev,
-        fabric: result.fabric,
-        description: result.description
-      }));
-    }
-    setAnalyzing(false);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -106,23 +89,6 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit }) => {
               onChange={handleImageChange} 
             />
           </div>
-
-          {/* AI Helper Button */}
-          {preview && (
-            <button
-              type="button"
-              onClick={handleAIAnalyze}
-              disabled={analyzing}
-              className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white py-3 rounded-xl font-bold shadow-lg hover:shadow-indigo-200 transition-all disabled:opacity-50"
-            >
-              {analyzing ? (
-                <Loader2 className="w-5 h-5 animate-spin" />
-              ) : (
-                <Sparkles className="w-5 h-5" />
-              )}
-              {analyzing ? 'Analyzing Design...' : 'Analyze with AI (Magic Tagging)'}
-            </button>
-          )}
 
           {/* Fields */}
           <div className="grid grid-cols-2 gap-4">

@@ -9,7 +9,6 @@
 
 ### Core Functionality
 - **Design Upload**: Upload textile designs with images, wholesale/retail prices, fabric type, and descriptions
-- **AI-Powered Analysis**: Automatically analyze images to suggest fabric type and descriptions (optional, requires Gemini API key)
 - **Smart Catalogue**: Browse your designs in a beautiful, organized grid layout
 - **Advanced Filtering**: 
   - Filter by fabric type
@@ -38,7 +37,6 @@
 
 ### Prerequisites
 - Node.js 18+ installed
-- (Optional) Gemini API key for AI features
 
 ### Installation
 
@@ -49,13 +47,7 @@
 npm install
 ```
 
-3. **Set up environment variables (optional):**
-Create a `.env.local` file in the root directory:
-```
-GEMINI_API_KEY=your_gemini_api_key_here
-```
-
-4. **Run the development server:**
+3. **Run the development server:**
 ```bash
 npm run dev
 ```
@@ -69,13 +61,12 @@ Navigate to `http://localhost:3000`
 
 1. Click the "Add Design" button (or the floating + button on mobile)
 2. Upload an image of your textile design
-3. (Optional) Click "Analyze with AI" to auto-fill fabric and description
-4. Fill in:
+3. Fill in:
    - Wholesale Price
    - Retail Price
    - Fabric Type
    - Description
-5. Click "Add to Catalogue"
+4. Click "Add to Catalogue"
 
 ### Filtering Designs
 
@@ -115,8 +106,7 @@ See [DEPLOYMENT.md](./DEPLOYMENT.md) for detailed deployment instructions.
 **Quick Deploy:**
 1. Push your code to GitHub
 2. Import the repository in Vercel
-3. Add environment variables (if using AI features)
-4. Deploy!
+3. Deploy!
 
 The app is configured for Vercel with:
 - Automatic builds
@@ -130,7 +120,6 @@ The app is configured for Vercel with:
 - **Vite** - Build tool and dev server
 - **Tailwind CSS** - Styling (via CDN)
 - **Lucide React** - Icons
-- **Google Gemini AI** - Image analysis (optional)
 
 ## 📂 Project Structure
 
@@ -140,8 +129,6 @@ textilehub---smart-category-manager/
 │   ├── DesignCard.tsx      # Individual design card component
 │   ├── ShareDialog.tsx     # WhatsApp sharing dialog
 │   └── UploadForm.tsx      # Design upload form
-├── services/
-│   └── gemini.ts           # AI image analysis service
 ├── App.tsx                 # Main application component
 ├── index.tsx               # React entry point
 ├── types.ts                # TypeScript type definitions
@@ -195,9 +182,9 @@ Output will be in the `dist/` directory, ready for deployment.
 ## 📝 Notes
 
 - The app uses browser localStorage, so data persists across sessions
-- AI features require a Gemini API key (optional)
 - WhatsApp sharing works best on mobile devices with native share support
 - All images are processed client-side for privacy
+- No external API keys or services required
 
 ## 🤝 Contributing
 
