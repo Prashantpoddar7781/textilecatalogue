@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { X, MessageCircle, CheckSquare, Square, Info, Loader2, Download, Eye, AlertCircle, Laptop, Smartphone, ExternalLink, Send } from 'lucide-react';
+import { X, MessageCircle, CheckSquare, Square, Loader2, Download, Eye, AlertCircle, Send } from 'lucide-react';
 import { TextileDesign, ShareOptions } from '../types';
 
 interface Props {
