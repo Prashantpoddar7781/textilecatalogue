@@ -66,14 +66,14 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, onClose }) => {
         if (!ctx) return reject('Canvas context not found');
 
         // Set dimensions - maintain aspect ratio but ensure minimum quality
-        const maxWidth = 1200;
+        const imageMaxWidth = 1200;
         const maxHeight = 1600;
         let width = img.naturalWidth || 800;
         let height = img.naturalHeight || 1000;
         
         // Scale down if too large to prevent memory issues on mobile
-        if (width > maxWidth || height > maxHeight) {
-          const scale = Math.min(maxWidth / width, maxHeight / height);
+        if (width > imageMaxWidth || height > maxHeight) {
+          const scale = Math.min(imageMaxWidth / width, maxHeight / height);
           width = width * scale;
           height = height * scale;
         }
