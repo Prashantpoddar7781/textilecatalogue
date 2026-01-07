@@ -123,7 +123,7 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, onClose }) => {
         ctx.textBaseline = 'top';
         ctx.textAlign = 'left';
         
-        const maxWidth = width - (padding * 2);
+        const textMaxWidth = width - (padding * 2);
         let yPos = height - bannerHeight + padding;
         
         lines.forEach((line) => {
@@ -135,7 +135,7 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, onClose }) => {
             const testLine = currentLine + (currentLine ? ' ' : '') + word;
             const metrics = ctx.measureText(testLine);
             
-            if (metrics.width > maxWidth && currentLine) {
+            if (metrics.width > textMaxWidth && currentLine) {
               // Draw current line and start new one
               ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
               ctx.shadowBlur = 4;
