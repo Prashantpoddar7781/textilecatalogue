@@ -13,16 +13,30 @@ const app = express();
 const prisma = new PrismaClient();
 const PORT = process.env.PORT || 3001;
 
-// Run migrations on startup (only in production)
-if (process.env.NODE_ENV === 'production') {
+// Run migrations on startup
+async function runMigrations() {
   try {
     console.log('Running database migrations...');
-    execSync('npx prisma migrate deploy', { stdio: 'inherit' });
-    console.log('Migrations completed successfully');
+    execSync('npx prisma migrate deploy', { stdio: 'inherit', cwd: process.cwd() });
+    console.log('✅ Migrations completed successfully');
   } catch (error) {
-    console.error('Migration failed:', error);
-    // Don't exit - let the server start anyway
+    console.error('❌ Migration failed:', error.message);
+    // Try to create initial migration if no migrations exist
+    try {
+      console.log('Attempting to create initial migration...');
+      execSync('npx prisma migrate dev --name init --create-only', { stdio: 'inherit', cwd: process.cwd() });
+      execSync('npx prisma migrate deploy', { stdio: 'inherit', cwd: process.cwd() });
+      console.log('✅ Initial migration created and applied');
+    } catch (migrationError) {
+      console.error('❌ Failed to create migration:', migrationError.message);
+      console.log('⚠️  Server will start but database may not be initialized');
+    }
   }
+}
+
+// Run migrations before starting server
+if (process.env.NODE_ENV === 'production' || process.env.RUN_MIGRATIONS === 'true') {
+  runMigrations();
 }
 
 // Middleware
