@@ -39,9 +39,11 @@ app.get('/health', (req, res) => {
 });
 
 // Routes
+console.log('Setting up routes...');
 app.use('/api/auth', authRoutes);
 app.use('/api/designs', designRoutes);
 app.use('/api/users', userRoutes);
+console.log('Routes configured: /api/auth, /api/designs, /api/users');
 
 // Error handling middleware
 app.use((err, req, res, next) => {
@@ -61,6 +63,8 @@ app.use((req, res) => {
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`🌐 Health check: http://localhost:${PORT}/health`);
+  console.log(`🔐 Auth routes: http://localhost:${PORT}/api/auth/*`);
 });
 
 // Graceful shutdown
