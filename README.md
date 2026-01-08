@@ -37,8 +37,10 @@
 
 ### Prerequisites
 - Node.js 18+ installed
+- PostgreSQL database (for backend)
+- Backend API running (see [RAILWAY_DEPLOYMENT.md](./RAILWAY_DEPLOYMENT.md))
 
-### Installation
+### Frontend Setup
 
 1. **Clone or download the repository**
 
@@ -47,13 +49,34 @@
 npm install
 ```
 
-3. **Run the development server:**
+3. **Set up environment variables:**
+Create a `.env` file:
+```
+VITE_API_URL=http://localhost:3001/api
+```
+
+4. **Run the development server:**
 ```bash
 npm run dev
 ```
 
 5. **Open your browser:**
 Navigate to `http://localhost:3000`
+
+### Backend Setup
+
+See [backend/README.md](./backend/README.md) for detailed backend setup instructions.
+
+**Quick Backend Start:**
+```bash
+cd backend
+npm install
+cp .env.example .env
+# Edit .env with your DATABASE_URL
+npm run db:generate
+npm run db:migrate
+npm run dev
+```
 
 ## 📱 Usage
 
@@ -99,19 +122,26 @@ Navigate to `http://localhost:3000`
 
 ## 🚢 Deployment
 
-### Deploy to Vercel (Recommended)
+### Full Stack Deployment
 
-See [DEPLOYMENT.md](./DEPLOYMENT.md) for detailed deployment instructions.
+**Backend (Railway):**
+- See [RAILWAY_DEPLOYMENT.md](./RAILWAY_DEPLOYMENT.md) for complete backend deployment guide
+- Deploy PostgreSQL database and API to Railway
 
-**Quick Deploy:**
-1. Push your code to GitHub
-2. Import the repository in Vercel
-3. Deploy!
+**Frontend (Vercel):**
+- See [DEPLOYMENT.md](./DEPLOYMENT.md) for frontend deployment
+- Set `VITE_API_URL` environment variable to your Railway backend URL
 
-The app is configured for Vercel with:
-- Automatic builds
-- Optimized caching
-- SPA routing support
+### Quick Deploy
+
+1. **Backend:**
+   - Deploy to Railway (see RAILWAY_DEPLOYMENT.md)
+   - Get your backend URL
+
+2. **Frontend:**
+   - Deploy to Vercel
+   - Add environment variable: `VITE_API_URL=https://your-backend.railway.app/api`
+   - Redeploy
 
 ## 🛠️ Tech Stack
 

@@ -1,20 +1,22 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
-import { Plus, Search, Filter, Share2, Package, CheckCircle, SlidersHorizontal } from 'lucide-react';
+import { Plus, Search, Share2, Package, CheckCircle, SlidersHorizontal, LogOut, User } from 'lucide-react';
 import { TextileDesign, CatalogueFilters } from './types';
 import { UploadForm } from './components/UploadForm';
 import { DesignCard } from './components/DesignCard';
 import { ShareDialog } from './components/ShareDialog';
-
-// CRITICAL: DO NOT CHANGE THIS KEY
-const STORAGE_KEY = 'textile_hub_persistent_designs_v1';
+import { LoginDialog } from './components/LoginDialog';
+import { designsApi, authApi } from './services/api';
 
 const App: React.FC = () => {
   const [designs, setDesigns] = useState<TextileDesign[]>([]);
   const [isReady, setIsReady] = useState(false);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [isShareOpen, setIsShareOpen] = useState(false);
+  const [isLoginOpen, setIsLoginOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [user, setUser] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const [fabrics, setFabrics] = useState<string[]>(['All']);
   const [filters, setFilters] = useState<CatalogueFilters>({
     search: '',
     fabric: 'All',
@@ -23,36 +25,74 @@ const App: React.FC = () => {
     sortBy: 'newest'
   });
 
-  // 1. Initial Load from LocalStorage
+  // Check authentication on mount
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          console.log(`Inventory Hub: Loaded ${parsed.length} items.`);
-          setDesigns(parsed);
-        }
-      }
-    } catch (e) {
-      console.error("Critical: Storage retrieval failed", e);
-    } finally {
-      // Mark as ready only AFTER loading attempt
+    const token = localStorage.getItem('auth_token');
+    if (token) {
+      authApi.getCurrentUser()
+        .then(({ user }) => {
+          setUser(user);
+          loadDesigns();
+        })
+        .catch(() => {
+          localStorage.removeItem('auth_token');
+          setIsLoginOpen(true);
+        })
+        .finally(() => setIsReady(true));
+    } else {
       setIsReady(true);
+      setIsLoginOpen(true);
     }
   }, []);
 
-  // 2. Continuous Sync to LocalStorage
-  useEffect(() => {
-    if (isReady) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(designs));
-    }
-  }, [designs, isReady]);
+  // Load designs from API
+  const loadDesigns = async () => {
+    if (!user) return;
+    
+    setLoading(true);
+    try {
+      const params: any = {
+        sortBy: filters.sortBy,
+        page: 1,
+        limit: 1000
+      };
 
-  const fabrics = useMemo(() => {
-    const unique = Array.from(new Set(designs.map(d => d.fabric)));
-    return ['All', ...unique];
-  }, [designs]);
+      if (filters.fabric !== 'All') params.fabric = filters.fabric;
+      if (filters.minPrice > 0) params.minPrice = filters.minPrice;
+      if (filters.maxPrice < 100000) params.maxPrice = filters.maxPrice;
+      if (filters.search) params.search = filters.search;
+
+      const { designs: fetchedDesigns } = await designsApi.getAll(params);
+      setDesigns(fetchedDesigns.map((d: any) => ({
+        id: d.id,
+        image: d.image,
+        wholesalePrice: d.wholesalePrice,
+        retailPrice: d.retailPrice,
+        fabric: d.fabric,
+        description: d.description || '',
+        createdAt: new Date(d.createdAt).getTime()
+      })));
+
+      // Load fabrics for filter
+      const { fabrics: fabricList } = await designsApi.getFabrics();
+      setFabrics(['All', ...fabricList]);
+    } catch (error: any) {
+      console.error('Failed to load designs:', error);
+      alert('Failed to load designs: ' + (error.message || 'Unknown error'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Reload designs when filters change
+  useEffect(() => {
+    if (user && isReady) {
+      const timeoutId = setTimeout(() => {
+        loadDesigns();
+      }, 300); // Debounce
+      return () => clearTimeout(timeoutId);
+    }
+  }, [filters, user]);
 
   const maxPrice = useMemo(() => {
     if (designs.length === 0) return 100000;
@@ -60,23 +100,15 @@ const App: React.FC = () => {
   }, [designs]);
 
   const filteredDesigns = useMemo(() => {
-    return designs
-      .filter(d => {
-        const matchesSearch = (d.description?.toLowerCase() || '').includes(filters.search.toLowerCase()) || 
-                             (d.fabric?.toLowerCase() || '').includes(filters.search.toLowerCase());
-        const matchesFabric = filters.fabric === 'All' || d.fabric === filters.fabric;
-        const matchesPrice = d.retailPrice >= filters.minPrice && d.retailPrice <= filters.maxPrice;
-        return matchesSearch && matchesFabric && matchesPrice;
-      })
-      .sort((a, b) => {
-        if (filters.sortBy === 'newest') return b.createdAt - a.createdAt;
-        if (filters.sortBy === 'price-low') return a.retailPrice - b.retailPrice;
-        if (filters.sortBy === 'price-high') return b.retailPrice - a.retailPrice;
-        return 0;
-      });
+    return designs.filter(d => {
+      const matchesSearch = (d.description?.toLowerCase() || '').includes(filters.search.toLowerCase()) || 
+                           (d.fabric?.toLowerCase() || '').includes(filters.search.toLowerCase());
+      const matchesFabric = filters.fabric === 'All' || d.fabric === filters.fabric;
+      const matchesPrice = d.retailPrice >= filters.minPrice && d.retailPrice <= filters.maxPrice;
+      return matchesSearch && matchesFabric && matchesPrice;
+    });
   }, [designs, filters]);
 
-  // Update max price filter when designs change
   useEffect(() => {
     if (designs.length > 0) {
       const newMax = Math.max(...designs.map(d => d.retailPrice), 100000);
@@ -86,19 +118,44 @@ const App: React.FC = () => {
     }
   }, [designs.length, filters.maxPrice]);
 
-  const handleAddDesign = (design: TextileDesign) => {
-    setDesigns(prev => [design, ...prev]);
-    setIsUploadOpen(false);
+  const handleAddDesign = async (design: TextileDesign) => {
+    try {
+      const created = await designsApi.create({
+        image: design.image,
+        wholesalePrice: design.wholesalePrice,
+        retailPrice: design.retailPrice,
+        fabric: design.fabric,
+        description: design.description
+      });
+      
+      setDesigns(prev => [{
+        id: created.id,
+        image: created.image,
+        wholesalePrice: created.wholesalePrice,
+        retailPrice: created.retailPrice,
+        fabric: created.fabric,
+        description: created.description || '',
+        createdAt: new Date(created.createdAt).getTime()
+      }, ...prev]);
+      setIsUploadOpen(false);
+    } catch (error: any) {
+      alert('Failed to create design: ' + (error.message || 'Unknown error'));
+    }
   };
 
-  const handleDeleteDesign = (id: string) => {
-    if (confirm('Permanently remove this design from your inventory?')) {
+  const handleDeleteDesign = async (id: string) => {
+    if (!confirm('Permanently remove this design from your inventory?')) return;
+    
+    try {
+      await designsApi.delete(id);
       setDesigns(prev => prev.filter(d => d.id !== id));
       setSelectedIds(prev => {
         const next = new Set(prev);
         next.delete(id);
         return next;
       });
+    } catch (error: any) {
+      alert('Failed to delete design: ' + (error.message || 'Unknown error'));
     }
   };
 
@@ -111,7 +168,37 @@ const App: React.FC = () => {
     });
   };
 
+  const handleLoginSuccess = (token: string, userData: any) => {
+    setUser(userData);
+    setIsLoginOpen(false);
+    loadDesigns();
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('auth_token');
+    setUser(null);
+    setDesigns([]);
+    setIsLoginOpen(true);
+  };
+
   const selectedDesigns = designs.filter(d => selectedIds.has(d.id));
+
+  if (!user) {
+    return (
+      <>
+        <div className="min-h-screen bg-[#FDFDFF] flex items-center justify-center">
+          <div className="text-center">
+            <div className="bg-indigo-600 p-4 rounded-2xl inline-block mb-4">
+              <Package className="text-white w-12 h-12" />
+            </div>
+            <h1 className="text-2xl font-black text-gray-900 mb-2">TextileHub</h1>
+            <p className="text-gray-500">Please login to continue</p>
+          </div>
+        </div>
+        {isLoginOpen && <LoginDialog onClose={() => {}} onSuccess={handleLoginSuccess} />}
+      </>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#FDFDFF] pb-36">
@@ -138,13 +225,26 @@ const App: React.FC = () => {
             />
           </div>
 
-          <button
-            onClick={() => setIsUploadOpen(true)}
-            className="hidden sm:flex items-center gap-2 bg-gray-900 hover:bg-black text-white px-5 py-2.5 rounded-2xl font-bold transition-all shadow-lg active:scale-95"
-          >
-            <Plus className="w-5 h-5" />
-            <span>Add Design</span>
-          </button>
+          <div className="flex items-center gap-2">
+            <div className="hidden sm:flex items-center gap-2 text-sm text-gray-600">
+              <User className="w-4 h-4" />
+              <span className="font-medium">{user.name || user.email}</span>
+            </div>
+            <button
+              onClick={() => setIsUploadOpen(true)}
+              className="hidden sm:flex items-center gap-2 bg-gray-900 hover:bg-black text-white px-5 py-2.5 rounded-2xl font-bold transition-all shadow-lg active:scale-95"
+            >
+              <Plus className="w-5 h-5" />
+              <span>Add Design</span>
+            </button>
+            <button
+              onClick={handleLogout}
+              className="p-2 hover:bg-gray-100 rounded-xl transition-colors"
+              title="Logout"
+            >
+              <LogOut className="w-5 h-5 text-gray-600" />
+            </button>
+          </div>
         </div>
       </header>
 
@@ -176,7 +276,6 @@ const App: React.FC = () => {
           </select>
         </div>
         
-        {/* Price Range Filter */}
         {designs.length > 0 && (
           <div className="mt-3 px-1">
             <div className="bg-white border-2 border-gray-100 rounded-2xl p-3 shadow-sm">
@@ -216,19 +315,30 @@ const App: React.FC = () => {
       </div>
 
       <main className="max-w-7xl mx-auto px-4 pb-8">
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4 md:gap-6">
-          {filteredDesigns.map(design => (
-            <DesignCard
-              key={design.id}
-              design={design}
-              isSelected={selectedIds.has(design.id)}
-              onSelect={() => toggleSelection(design.id)}
-              onDelete={() => handleDeleteDesign(design.id)}
-            />
-          ))}
-        </div>
+        {loading && (
+          <div className="flex items-center justify-center py-24">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto mb-4"></div>
+              <p className="text-gray-500">Loading designs...</p>
+            </div>
+          </div>
+        )}
 
-        {filteredDesigns.length === 0 && isReady && (
+        {!loading && (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4 md:gap-6">
+            {filteredDesigns.map(design => (
+              <DesignCard
+                key={design.id}
+                design={design}
+                isSelected={selectedIds.has(design.id)}
+                onSelect={() => toggleSelection(design.id)}
+                onDelete={() => handleDeleteDesign(design.id)}
+              />
+            ))}
+          </div>
+        )}
+
+        {!loading && filteredDesigns.length === 0 && isReady && (
           <div className="flex flex-col items-center justify-center py-24 text-center">
             <div className="bg-gray-100 p-8 rounded-[3rem] mb-6 shadow-inner">
               <Package className="w-12 h-12 text-gray-300" />
