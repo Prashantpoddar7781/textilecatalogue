@@ -41,7 +41,7 @@ model Design {
   user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   catalogueId   String?
   catalogue     Catalogue? @relation(fields: [catalogueId], references: [id], onDelete: SetNull)
-  name          String   // Design name
+  name          String?  // Design name (optional for backward compatibility)
   image         String   // Base64 or URL
   wholesalePrice Float
   retailPrice    Float

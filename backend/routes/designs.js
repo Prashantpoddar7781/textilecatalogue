@@ -146,7 +146,7 @@ router.get('/:id', optionalAuth, async (req, res, next) => {
 // Create design (requires auth)
 router.post('/', authenticateToken, [
   body('image').notEmpty(),
-  body('name').notEmpty().trim(),
+  body('name').optional().trim(),
   body('wholesalePrice').isFloat({ min: 0 }),
   body('retailPrice').isFloat({ min: 0 }),
   body('fabric').notEmpty().trim(),
@@ -175,7 +175,7 @@ router.post('/', authenticateToken, [
     const design = await prisma.design.create({
       data: {
         userId,
-        name: name.trim(),
+        name: name?.trim() || `Design ${new Date().toISOString()}`,
         catalogueId: catalogueId || null,
         image,
         wholesalePrice: parseFloat(wholesalePrice),

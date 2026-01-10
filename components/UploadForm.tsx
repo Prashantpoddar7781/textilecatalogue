@@ -75,7 +75,11 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit }) => {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!preview) return alert('Please upload an image');
-    if (!formData.name.trim()) return alert('Please enter a design name');
+    if (!formData.name.trim()) {
+      // Auto-generate name if not provided
+      const autoName = `Design ${new Date().toLocaleDateString()}`;
+      formData.name = autoName;
+    }
 
     const newDesign: TextileDesign = {
       id: Date.now().toString(),
