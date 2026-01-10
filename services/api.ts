@@ -100,11 +100,13 @@ export const designsApi = {
   },
 
   update: async (id: string, design: Partial<{
-    image: string;
-    wholesalePrice: number;
-    retailPrice: number;
-    fabric: string;
-    description: string;
+    name?: string;
+    image?: string;
+    wholesalePrice?: number;
+    retailPrice?: number;
+    fabric?: string;
+    description?: string;
+    catalogueId?: string;
   }>) => {
     return request<any>(`/designs/${id}`, {
       method: 'PUT',

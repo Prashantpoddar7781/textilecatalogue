@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Trash2, CheckCircle, IndianRupee } from 'lucide-react';
+import { Trash2, CheckCircle, IndianRupee, Edit } from 'lucide-react';
 import { TextileDesign } from '../types';
 
 interface Props {
@@ -8,9 +8,10 @@ interface Props {
   isSelected: boolean;
   onSelect: () => void;
   onDelete: () => void;
+  onEdit: () => void;
 }
 
-export const DesignCard: React.FC<Props> = ({ design, isSelected, onSelect, onDelete }) => {
+export const DesignCard: React.FC<Props> = ({ design, isSelected, onSelect, onDelete, onEdit }) => {
   return (
     <div 
       onClick={onSelect}
@@ -40,15 +41,26 @@ export const DesignCard: React.FC<Props> = ({ design, isSelected, onSelect, onDe
           </div>
         )}
 
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onDelete();
-          }}
-          className="absolute bottom-2 right-2 bg-white/90 text-red-500 p-2 rounded-xl shadow-md sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
-        >
-          <Trash2 className="w-4 h-4" />
-        </button>
+        <div className="absolute bottom-2 right-2 flex gap-2">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onEdit();
+            }}
+            className="bg-white/90 text-indigo-600 p-2 rounded-xl shadow-md sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
+          >
+            <Edit className="w-4 h-4" />
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete();
+            }}
+            className="bg-white/90 text-red-500 p-2 rounded-xl shadow-md sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
       <div className="p-3 bg-white">

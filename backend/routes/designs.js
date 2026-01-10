@@ -229,13 +229,25 @@ router.put('/:id', authenticateToken, [
       return res.status(403).json({ error: 'Access denied' });
     }
 
+    // Verify catalogue belongs to user if provided
+    if (req.body.catalogueId) {
+      const catalogue = await prisma.catalogue.findFirst({
+        where: { id: req.body.catalogueId, userId }
+      });
+      if (!catalogue) {
+        return res.status(400).json({ error: 'Invalid catalogue' });
+      }
+    }
+
     // Update
     const updateData = {};
+    if (req.body.name !== undefined) updateData.name = req.body.name?.trim() || null;
     if (req.body.wholesalePrice !== undefined) updateData.wholesalePrice = parseFloat(req.body.wholesalePrice);
     if (req.body.retailPrice !== undefined) updateData.retailPrice = parseFloat(req.body.retailPrice);
     if (req.body.fabric !== undefined) updateData.fabric = req.body.fabric;
     if (req.body.description !== undefined) updateData.description = req.body.description;
     if (req.body.image !== undefined) updateData.image = req.body.image;
+    if (req.body.catalogueId !== undefined) updateData.catalogueId = req.body.catalogueId || null;
 
     const design = await prisma.design.update({
       where: { id },
@@ -245,7 +257,14 @@ router.put('/:id', authenticateToken, [
           select: {
             id: true,
             name: true,
-            email: true
+            email: true,
+            firmName: true
+          }
+        },
+        catalogue: {
+          select: {
+            id: true,
+            name: true
           }
         }
       }

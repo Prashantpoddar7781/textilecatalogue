@@ -6,9 +6,10 @@ import { cataloguesApi, designsApi } from '../services/api';
 interface Props {
   onClose: () => void;
   onSubmit: (design: TextileDesign) => void;
+  initialData?: TextileDesign | null;
 }
 
-export const UploadForm: React.FC<Props> = ({ onClose, onSubmit }) => {
+export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) => {
   const [preview, setPreview] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -75,15 +76,11 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit }) => {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!preview) return alert('Please upload an image');
-    if (!formData.name.trim()) {
-      // Auto-generate name if not provided
-      const autoName = `Design ${new Date().toLocaleDateString()}`;
-      formData.name = autoName;
-    }
+    const designName = formData.name.trim() || `Design ${new Date().toLocaleDateString()}`;
 
     const newDesign: TextileDesign = {
-      id: Date.now().toString(),
-      name: formData.name.trim(),
+      id: initialData?.id || Date.now().toString(),
+      name: designName,
       catalogueId: formData.catalogueId || undefined,
       catalogueName: catalogues.find(c => c.id === formData.catalogueId)?.name,
       image: preview,
@@ -91,7 +88,7 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit }) => {
       retailPrice: Number(formData.retailPrice),
       fabric: formData.fabric || 'Unknown',
       description: formData.description || '',
-      createdAt: Date.now()
+      createdAt: initialData?.createdAt || Date.now()
     };
 
     onSubmit(newDesign);
@@ -101,7 +98,7 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit }) => {
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/60 backdrop-blur-sm safe-area-top safe-area-bottom">
       <div className="bg-white w-full max-w-2xl rounded-2xl sm:rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[95vh] sm:max-h-[90vh] touch-manipulation">
         <div className="px-6 py-4 border-b flex items-center justify-between">
-          <h2 className="text-xl font-bold text-gray-900">Upload New Design</h2>
+          <h2 className="text-xl font-bold text-gray-900">{initialData ? 'Edit Design' : 'Upload New Design'}</h2>
           <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
             <X className="w-6 h-6 text-gray-500" />
           </button>
@@ -302,7 +299,7 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit }) => {
             onClick={handleSubmit}
             className="w-full bg-gray-900 text-white py-4 rounded-xl font-bold shadow-xl hover:bg-black transition-all flex items-center justify-center gap-2"
           >
-            Add to Catalogue
+            {initialData ? 'Save Changes' : 'Add to Catalogue'}
           </button>
         </div>
       </div>

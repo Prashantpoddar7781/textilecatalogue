@@ -165,6 +165,52 @@ const App: React.FC = () => {
     }
   };
 
+  const [editingDesign, setEditingDesign] = useState<TextileDesign | null>(null);
+
+  const handleEditDesign = (design: TextileDesign) => {
+    setEditingDesign(design);
+    setIsUploadOpen(true);
+  };
+
+  const handleUpdateDesign = async (design: TextileDesign) => {
+    if (!editingDesign) return;
+    
+    try {
+      const updated = await designsApi.update(editingDesign.id, {
+        name: design.name,
+        image: design.image,
+        wholesalePrice: design.wholesalePrice,
+        retailPrice: design.retailPrice,
+        fabric: design.fabric,
+        description: design.description,
+        catalogueId: design.catalogueId
+      });
+      
+      setDesigns(prev => prev.map(d => 
+        d.id === editingDesign.id ? {
+          id: updated.id,
+          name: updated.name || 'Untitled Design',
+          catalogueId: updated.catalogueId,
+          catalogueName: updated.catalogue?.name,
+          image: updated.image,
+          wholesalePrice: updated.wholesalePrice,
+          retailPrice: updated.retailPrice,
+          fabric: updated.fabric,
+          description: updated.description || '',
+          firmName: updated.user?.firmName,
+          createdAt: new Date(updated.createdAt).getTime()
+        } : d
+      ));
+      setIsUploadOpen(false);
+      setEditingDesign(null);
+      // Reload catalogues in case new one was created
+      const { catalogues: cats } = await designsApi.getCatalogues();
+      setCatalogues(cats);
+    } catch (error: any) {
+      alert('Failed to update design: ' + (error.message || 'Unknown error'));
+    }
+  };
+
   const handleDeleteDesign = async (id: string) => {
     if (!confirm('Permanently remove this design from your inventory?')) return;
     
@@ -279,6 +325,17 @@ const App: React.FC = () => {
           
           <select
             className="bg-white border-2 border-gray-100 px-4 py-2.5 rounded-2xl text-xs font-bold outline-none appearance-none pr-10 relative bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2024%2024%22%20stroke%3D%22%236b7280%22%3E%3Cpath%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%222%22%20d%3D%22m19%209-7%207-7-7%22%2F%3E%3C%2Fsvg%3E')] bg-[length:1rem_1rem] bg-[right_0.75rem_center] bg-no-repeat shadow-sm touch-manipulation"
+            value={filters.catalogue}
+            onChange={e => setFilters(f => ({ ...f, catalogue: e.target.value }))}
+          >
+            <option value="All">All Catalogues</option>
+            {catalogues.map(cat => (
+              <option key={cat.id} value={cat.id}>{cat.name}</option>
+            ))}
+          </select>
+
+          <select
+            className="bg-white border-2 border-gray-100 px-4 py-2.5 rounded-2xl text-xs font-bold outline-none appearance-none pr-10 relative bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2024%2024%22%20stroke%3D%22%236b7280%22%3E%3Cpath%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%222%22%20d%3D%22m19%209-7%207-7-7%22%2F%3E%3C%2Fsvg%3E')] bg-[length:1rem_1rem] bg-[right_0.75rem_center] bg-no-repeat shadow-sm touch-manipulation"
             value={filters.fabric}
             onChange={e => setFilters(f => ({ ...f, fabric: e.target.value }))}
           >
@@ -355,6 +412,7 @@ const App: React.FC = () => {
                 isSelected={selectedIds.has(design.id)}
                 onSelect={() => toggleSelection(design.id)}
                 onDelete={() => handleDeleteDesign(design.id)}
+                onEdit={() => handleEditDesign(design)}
               />
             ))}
           </div>
@@ -404,7 +462,16 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {isUploadOpen && <UploadForm onClose={() => setIsUploadOpen(false)} onSubmit={handleAddDesign} />}
+      {isUploadOpen && (
+        <UploadForm 
+          onClose={() => {
+            setIsUploadOpen(false);
+            setEditingDesign(null);
+          }} 
+          onSubmit={editingDesign ? handleUpdateDesign : handleAddDesign}
+          initialData={editingDesign}
+        />
+      )}
       {isShareOpen && <ShareDialog selectedDesigns={selectedDesigns} userFirmName={user?.firmName} onClose={() => setIsShareOpen(false)} />}
     </div>
   );
