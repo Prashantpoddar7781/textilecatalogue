@@ -10,7 +10,7 @@ interface Props {
 }
 
 export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) => {
-  const [preview, setPreview] = useState<string | null>(null);
+  const [preview, setPreview] = useState<string | null>(initialData?.image || null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const [catalogues, setCatalogues] = useState<{ id: string; name: string }[]>([]);
@@ -83,7 +83,7 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
       name: designName,
       catalogueId: formData.catalogueId || undefined,
       catalogueName: catalogues.find(c => c.id === formData.catalogueId)?.name,
-      image: preview,
+      image: imageToUse,
       wholesalePrice: Number(formData.wholesalePrice),
       retailPrice: Number(formData.retailPrice),
       fabric: formData.fabric || 'Unknown',
