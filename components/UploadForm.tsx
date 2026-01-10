@@ -32,6 +32,32 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
     loadCatalogues();
   }, []);
 
+  // Update form data and preview when initialData changes (for edit mode)
+  useEffect(() => {
+    if (initialData) {
+      setFormData({
+        name: initialData.name || '',
+        catalogueId: initialData.catalogueId || '',
+        wholesalePrice: initialData.wholesalePrice.toString() || '',
+        retailPrice: initialData.retailPrice.toString() || '',
+        fabric: initialData.fabric || '',
+        description: initialData.description || ''
+      });
+      setPreview(initialData.image);
+    } else {
+      // Reset form when not editing
+      setFormData({
+        name: '',
+        catalogueId: '',
+        wholesalePrice: '',
+        retailPrice: '',
+        fabric: '',
+        description: ''
+      });
+      setPreview(null);
+    }
+  }, [initialData]);
+
   const loadCatalogues = async () => {
     try {
       setLoadingCatalogues(true);
@@ -75,7 +101,9 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!preview) return alert('Please upload an image');
+    // Allow editing without re-uploading image if initialData exists
+    const imageToUse = preview || initialData?.image;
+    if (!imageToUse) return alert('Please upload an image');
     const designName = formData.name.trim() || `Design ${new Date().toLocaleDateString()}`;
 
     const newDesign: TextileDesign = {
