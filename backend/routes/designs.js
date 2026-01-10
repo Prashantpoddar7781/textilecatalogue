@@ -31,6 +31,11 @@ router.get('/', optionalAuth, async (req, res, next) => {
       where.userId = userId;
     }
 
+    const catalogue = req.query.catalogue;
+    if (catalogue && catalogue !== 'All') {
+      where.catalogueId = catalogue;
+    }
+
     if (fabric && fabric !== 'All') {
       where.fabric = fabric;
     }
@@ -75,7 +80,14 @@ router.get('/', optionalAuth, async (req, res, next) => {
             select: {
               id: true,
               name: true,
-              email: true
+              email: true,
+              firmName: true
+            }
+          },
+          catalogue: {
+            select: {
+              id: true,
+              name: true
             }
           }
         }
@@ -134,10 +146,12 @@ router.get('/:id', optionalAuth, async (req, res, next) => {
 // Create design (requires auth)
 router.post('/', authenticateToken, [
   body('image').notEmpty(),
+  body('name').notEmpty().trim(),
   body('wholesalePrice').isFloat({ min: 0 }),
   body('retailPrice').isFloat({ min: 0 }),
   body('fabric').notEmpty().trim(),
-  body('description').optional().trim()
+  body('description').optional().trim(),
+  body('catalogueId').optional()
 ], async (req, res, next) => {
   try {
     const errors = validationResult(req);
@@ -145,12 +159,24 @@ router.post('/', authenticateToken, [
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { image, wholesalePrice, retailPrice, fabric, description } = req.body;
+    const { image, name, wholesalePrice, retailPrice, fabric, description, catalogueId } = req.body;
     const userId = req.user.userId;
+
+    // Verify catalogue belongs to user if provided
+    if (catalogueId) {
+      const catalogue = await prisma.catalogue.findFirst({
+        where: { id: catalogueId, userId }
+      });
+      if (!catalogue) {
+        return res.status(400).json({ error: 'Invalid catalogue' });
+      }
+    }
 
     const design = await prisma.design.create({
       data: {
         userId,
+        name: name.trim(),
+        catalogueId: catalogueId || null,
         image,
         wholesalePrice: parseFloat(wholesalePrice),
         retailPrice: parseFloat(retailPrice),
@@ -271,6 +297,25 @@ router.get('/meta/fabrics', async (req, res, next) => {
     });
 
     res.json({ fabrics: fabrics.map(f => f.fabric) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Get unique catalogues (for filter)
+router.get('/meta/catalogues', authenticateToken, async (req, res, next) => {
+  try {
+    const userId = req.user.userId;
+    const catalogues = await prisma.catalogue.findMany({
+      where: { userId },
+      select: {
+        id: true,
+        name: true
+      },
+      orderBy: { name: 'asc' }
+    });
+
+    res.json({ catalogues });
   } catch (error) {
     next(error);
   }

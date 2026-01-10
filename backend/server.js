@@ -6,6 +6,7 @@ import { execSync } from 'child_process';
 import authRoutes from './routes/auth.js';
 import designRoutes from './routes/designs.js';
 import userRoutes from './routes/users.js';
+import catalogueRoutes from './routes/catalogues.js';
 
 dotenv.config();
 
@@ -91,7 +92,8 @@ console.log('Setting up routes...');
 app.use('/api/auth', authRoutes);
 app.use('/api/designs', designRoutes);
 app.use('/api/users', userRoutes);
-console.log('Routes configured: /api/auth, /api/designs, /api/users');
+app.use('/api/catalogues', catalogueRoutes);
+console.log('Routes configured: /api/auth, /api/designs, /api/users, /api/catalogues');
 
 // Error handling middleware
 app.use((err, req, res, next) => {

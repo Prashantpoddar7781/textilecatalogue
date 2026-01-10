@@ -17,9 +17,11 @@ const App: React.FC = () => {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [fabrics, setFabrics] = useState<string[]>(['All']);
+  const [catalogues, setCatalogues] = useState<{ id: string; name: string }[]>([]);
   const [filters, setFilters] = useState<CatalogueFilters>({
     search: '',
     fabric: 'All',
+    catalogue: 'All',
     minPrice: 0,
     maxPrice: 100000,
     sortBy: 'newest'
@@ -58,6 +60,7 @@ const App: React.FC = () => {
       };
 
       if (filters.fabric !== 'All') params.fabric = filters.fabric;
+      if (filters.catalogue !== 'All') params.catalogue = filters.catalogue;
       if (filters.minPrice > 0) params.minPrice = filters.minPrice;
       if (filters.maxPrice < 100000) params.maxPrice = filters.maxPrice;
       if (filters.search) params.search = filters.search;
@@ -65,17 +68,25 @@ const App: React.FC = () => {
       const { designs: fetchedDesigns } = await designsApi.getAll(params);
       setDesigns(fetchedDesigns.map((d: any) => ({
         id: d.id,
+        name: d.name || 'Untitled Design',
+        catalogueId: d.catalogueId,
+        catalogueName: d.catalogue?.name,
         image: d.image,
         wholesalePrice: d.wholesalePrice,
         retailPrice: d.retailPrice,
         fabric: d.fabric,
         description: d.description || '',
+        firmName: d.user?.firmName,
         createdAt: new Date(d.createdAt).getTime()
       })));
 
-      // Load fabrics for filter
-      const { fabrics: fabricList } = await designsApi.getFabrics();
-      setFabrics(['All', ...fabricList]);
+      // Load fabrics and catalogues for filter
+      const [fabricsResult, cataloguesResult] = await Promise.all([
+        designsApi.getFabrics(),
+        designsApi.getCatalogues()
+      ]);
+      setFabrics(['All', ...fabricsResult.fabrics]);
+      setCatalogues(cataloguesResult.catalogues);
     } catch (error: any) {
       console.error('Failed to load designs:', error);
       alert('Failed to load designs: ' + (error.message || 'Unknown error'));
@@ -102,10 +113,12 @@ const App: React.FC = () => {
   const filteredDesigns = useMemo(() => {
     return designs.filter(d => {
       const matchesSearch = (d.description?.toLowerCase() || '').includes(filters.search.toLowerCase()) || 
-                           (d.fabric?.toLowerCase() || '').includes(filters.search.toLowerCase());
+                           (d.fabric?.toLowerCase() || '').includes(filters.search.toLowerCase()) ||
+                           (d.name?.toLowerCase() || '').includes(filters.search.toLowerCase());
       const matchesFabric = filters.fabric === 'All' || d.fabric === filters.fabric;
+      const matchesCatalogue = filters.catalogue === 'All' || d.catalogueId === filters.catalogue;
       const matchesPrice = d.retailPrice >= filters.minPrice && d.retailPrice <= filters.maxPrice;
-      return matchesSearch && matchesFabric && matchesPrice;
+      return matchesSearch && matchesFabric && matchesCatalogue && matchesPrice;
     });
   }, [designs, filters]);
 
@@ -121,23 +134,32 @@ const App: React.FC = () => {
   const handleAddDesign = async (design: TextileDesign) => {
     try {
       const created = await designsApi.create({
+        name: design.name,
         image: design.image,
         wholesalePrice: design.wholesalePrice,
         retailPrice: design.retailPrice,
         fabric: design.fabric,
-        description: design.description
+        description: design.description,
+        catalogueId: design.catalogueId
       });
       
       setDesigns(prev => [{
         id: created.id,
+        name: created.name || 'Untitled Design',
+        catalogueId: created.catalogueId,
+        catalogueName: created.catalogue?.name,
         image: created.image,
         wholesalePrice: created.wholesalePrice,
         retailPrice: created.retailPrice,
         fabric: created.fabric,
         description: created.description || '',
+        firmName: created.user?.firmName,
         createdAt: new Date(created.createdAt).getTime()
       }, ...prev]);
       setIsUploadOpen(false);
+      // Reload catalogues in case new one was created
+      const { catalogues: cats } = await designsApi.getCatalogues();
+      setCatalogues(cats);
     } catch (error: any) {
       alert('Failed to create design: ' + (error.message || 'Unknown error'));
     }
@@ -383,7 +405,7 @@ const App: React.FC = () => {
       )}
 
       {isUploadOpen && <UploadForm onClose={() => setIsUploadOpen(false)} onSubmit={handleAddDesign} />}
-      {isShareOpen && <ShareDialog selectedDesigns={selectedDesigns} onClose={() => setIsShareOpen(false)} />}
+      {isShareOpen && <ShareDialog selectedDesigns={selectedDesigns} userFirmName={user?.firmName} onClose={() => setIsShareOpen(false)} />}
     </div>
   );
 };

@@ -59,6 +59,14 @@ export const DesignCard: React.FC<Props> = ({ design, isSelected, onSelect, onDe
             <span>{design.retailPrice.toLocaleString()}</span>
           </div>
         </div>
+        <p className="text-xs font-bold text-gray-900 line-clamp-1 mt-1">
+          {design.name || 'Untitled Design'}
+        </p>
+        {design.catalogueName && (
+          <p className="text-[10px] text-indigo-600 font-medium mt-0.5">
+            {design.catalogueName}
+          </p>
+        )}
         <p className="text-xs text-gray-500 line-clamp-1 mt-1 font-medium italic">
           {design.description}
         </p>

@@ -14,7 +14,8 @@ export const LoginDialog: React.FC<Props> = ({ onClose, onSuccess }) => {
   const [formData, setFormData] = useState({
     email: '',
     password: '',
-    name: ''
+    name: '',
+    firmName: ''
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -28,7 +29,7 @@ export const LoginDialog: React.FC<Props> = ({ onClose, onSuccess }) => {
         localStorage.setItem('auth_token', token);
         onSuccess(token, user);
       } else {
-        const { token, user } = await authApi.register(formData.email, formData.password, formData.name);
+        const { token, user } = await authApi.register(formData.email, formData.password, formData.name, formData.firmName);
         localStorage.setItem('auth_token', token);
         onSuccess(token, user);
       }
@@ -60,19 +61,34 @@ export const LoginDialog: React.FC<Props> = ({ onClose, onSuccess }) => {
           )}
 
           {!isLogin && (
-            <div className="space-y-1">
-              <label className="text-sm font-semibold text-gray-700">Name</label>
-              <div className="relative">
-                <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                <input
-                  type="text"
-                  className="w-full pl-9 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
-                  placeholder="Your name"
-                  value={formData.name}
-                  onChange={e => setFormData({...formData, name: e.target.value})}
-                />
+            <>
+              <div className="space-y-1">
+                <label className="text-sm font-semibold text-gray-700">Name</label>
+                <div className="relative">
+                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input
+                    type="text"
+                    className="w-full pl-9 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                    placeholder="Your name"
+                    value={formData.name}
+                    onChange={e => setFormData({...formData, name: e.target.value})}
+                  />
+                </div>
               </div>
-            </div>
+              <div className="space-y-1">
+                <label className="text-sm font-semibold text-gray-700">Firm Name</label>
+                <div className="relative">
+                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input
+                    type="text"
+                    className="w-full pl-9 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                    placeholder="Your firm/business name"
+                    value={formData.firmName}
+                    onChange={e => setFormData({...formData, firmName: e.target.value})}
+                  />
+                </div>
+              </div>
+            </>
           )}
 
           <div className="space-y-1">

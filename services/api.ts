@@ -37,10 +37,10 @@ async function request<T>(
 
 // Auth API
 export const authApi = {
-  register: async (email: string, password: string, name?: string) => {
+  register: async (email: string, password: string, name?: string, firmName?: string) => {
     return request<{ user: any; token: string }>('/auth/register', {
       method: 'POST',
-      body: JSON.stringify({ email, password, name }),
+      body: JSON.stringify({ email, password, name, firmName }),
     });
   },
 
@@ -60,6 +60,7 @@ export const authApi = {
 export const designsApi = {
   getAll: async (params?: {
     fabric?: string;
+    catalogue?: string;
     minPrice?: number;
     maxPrice?: number;
     search?: string;
@@ -84,11 +85,13 @@ export const designsApi = {
   },
 
   create: async (design: {
+    name: string;
     image: string;
     wholesalePrice: number;
     retailPrice: number;
     fabric: string;
     description?: string;
+    catalogueId?: string;
   }) => {
     return request<any>('/designs', {
       method: 'POST',
@@ -117,6 +120,41 @@ export const designsApi = {
 
   getFabrics: async () => {
     return request<{ fabrics: string[] }>('/designs/meta/fabrics');
+  },
+
+  getCatalogues: async () => {
+    return request<{ catalogues: any[] }>('/designs/meta/catalogues');
+  },
+};
+
+// Catalogues API
+export const cataloguesApi = {
+  getAll: async () => {
+    return request<{ catalogues: any[] }>('/catalogues');
+  },
+
+  create: async (name: string) => {
+    return request<any>('/catalogues', {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    });
+  },
+
+  getById: async (id: string) => {
+    return request<any>(`/catalogues/${id}`);
+  },
+
+  update: async (id: string, name: string) => {
+    return request<any>(`/catalogues/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ name }),
+    });
+  },
+
+  delete: async (id: string) => {
+    return request<{ message: string }>(`/catalogues/${id}`, {
+      method: 'DELETE',
+    });
   },
 };
 

@@ -1,6 +1,9 @@
 
 export interface TextileDesign {
   id: string;
+  catalogueId?: string;
+  catalogueName?: string;
+  name: string; // Design name
   image: string; // Base64
   wholesalePrice: number;
   retailPrice: number;
@@ -9,9 +12,17 @@ export interface TextileDesign {
   createdAt: number;
 }
 
+export interface Catalogue {
+  id: string;
+  name: string;
+  userId: string;
+  createdAt: number;
+}
+
 export interface CatalogueFilters {
   search: string;
   fabric: string;
+  catalogue: string;
   minPrice: number;
   maxPrice: number;
   sortBy: 'newest' | 'price-low' | 'price-high';
@@ -22,4 +33,5 @@ export interface ShareOptions {
   includeRetail: boolean;
   includeFabric: boolean;
   includeDescription: boolean;
+  includeFirmName: boolean;
 }

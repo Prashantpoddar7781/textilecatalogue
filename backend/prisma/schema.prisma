@@ -14,16 +14,34 @@ model User {
   id        String   @id @default(cuid())
   email     String   @unique
   name      String?
+  firmName  String?
   password  String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   designs   Design[]
+  catalogues Catalogue[]
+}
+
+model Catalogue {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  designs   Design[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([name])
 }
 
 model Design {
   id            String   @id @default(cuid())
   userId        String
   user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  catalogueId   String?
+  catalogue     Catalogue? @relation(fields: [catalogueId], references: [id], onDelete: SetNull)
+  name          String   // Design name
   image         String   // Base64 or URL
   wholesalePrice Float
   retailPrice    Float
@@ -33,6 +51,7 @@ model Design {
   updatedAt      DateTime @updatedAt
 
   @@index([userId])
+  @@index([catalogueId])
   @@index([fabric])
   @@index([createdAt])
 }

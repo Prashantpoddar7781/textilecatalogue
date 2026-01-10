@@ -5,10 +5,11 @@ import { TextileDesign, ShareOptions } from '../types';
 
 interface Props {
   selectedDesigns: TextileDesign[];
+  userFirmName?: string;
   onClose: () => void;
 }
 
-export const ShareDialog: React.FC<Props> = ({ selectedDesigns, onClose }) => {
+export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, onClose }) => {
   const [processing, setProcessing] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isMobile] = useState(() => /iPhone|iPad|iPod|Android/i.test(navigator.userAgent));
@@ -17,7 +18,8 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, onClose }) => {
     includeWholesale: false,
     includeRetail: true,
     includeFabric: true,
-    includeDescription: false
+    includeDescription: false,
+    includeFirmName: false
   });
 
   const previewUrlRef = useRef<string | null>(null);
@@ -99,6 +101,12 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, onClose }) => {
 
         // 2. Prepare content lines
         const lines: string[] = [];
+        
+        // Firm name at the top if included
+        if (options.includeFirmName && userFirmName) {
+          lines.push(`Firm: ${userFirmName}`);
+        }
+        
         if (options.includeFabric && design.fabric) {
           lines.push(`Fabric: ${design.fabric}`);
         }

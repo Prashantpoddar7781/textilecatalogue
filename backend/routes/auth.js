@@ -19,7 +19,7 @@ router.post('/register', [
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { email, password, name } = req.body;
+    const { email, password, name, firmName } = req.body;
 
     // Check if user exists
     const existingUser = await prisma.user.findUnique({
@@ -38,12 +38,14 @@ router.post('/register', [
       data: {
         email,
         password: hashedPassword,
-        name: name || email.split('@')[0]
+        name: name || email.split('@')[0],
+        firmName: firmName || null
       },
       select: {
         id: true,
         email: true,
         name: true,
+        firmName: true,
         createdAt: true
       }
     });
@@ -103,7 +105,8 @@ router.post('/login', [
       user: {
         id: user.id,
         email: user.email,
-        name: user.name
+        name: user.name,
+        firmName: user.firmName
       },
       token
     });
@@ -129,6 +132,7 @@ router.get('/me', async (req, res, next) => {
         id: true,
         email: true,
         name: true,
+        firmName: true,
         createdAt: true
       }
     });
