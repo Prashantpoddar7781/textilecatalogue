@@ -36,9 +36,11 @@ async function runMigrations() {
   }
 }
 
-// Run migrations before starting server
+// Run migrations before starting server (async, don't block server start)
 if (process.env.NODE_ENV === 'production' || process.env.RUN_MIGRATIONS === 'true') {
-  runMigrations();
+  runMigrations().catch(err => {
+    console.error('Migration error (non-blocking):', err);
+  });
 }
 
 // Middleware
@@ -112,11 +114,12 @@ app.use((req, res) => {
 });
 
 // Start server
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
+const HOST = process.env.HOST || '0.0.0.0';
+app.listen(PORT, HOST, () => {
+  console.log(`🚀 Server running on ${HOST}:${PORT}`);
   console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`🌐 Health check: http://localhost:${PORT}/health`);
-  console.log(`🔐 Auth routes: http://localhost:${PORT}/api/auth/*`);
+  console.log(`🌐 Health check: http://${HOST}:${PORT}/health`);
+  console.log(`🔐 Auth routes: http://${HOST}:${PORT}/api/auth/*`);
 });
 
 // Graceful shutdown
