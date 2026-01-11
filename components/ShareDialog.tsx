@@ -491,19 +491,112 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
           )}
         </div>
 
-        <div className="p-8 bg-gray-50 border-t">
+        <div className="p-8 bg-gray-50 border-t space-y-4">
+          {/* Share Mode Selection */}
+          {!readyToLink && (
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                onClick={() => {
+                  setShareMode('whatsapp');
+                  setSelectedGroup(null);
+                }}
+                className={`p-4 rounded-2xl border-2 transition-all ${
+                  shareMode === 'whatsapp'
+                    ? 'border-indigo-600 bg-indigo-50 text-indigo-900'
+                    : 'border-gray-200 bg-white text-gray-600'
+                }`}
+              >
+                <MessageCircle className="w-6 h-6 mx-auto mb-2" />
+                <span className="text-xs font-bold uppercase">WhatsApp</span>
+              </button>
+              <button
+                onClick={() => {
+                  setShareMode('group');
+                  loadGroups();
+                }}
+                className={`p-4 rounded-2xl border-2 transition-all ${
+                  shareMode === 'group'
+                    ? 'border-indigo-600 bg-indigo-50 text-indigo-900'
+                    : 'border-gray-200 bg-white text-gray-600'
+                }`}
+              >
+                <Users className="w-6 h-6 mx-auto mb-2" />
+                <span className="text-xs font-bold uppercase">Group</span>
+              </button>
+            </div>
+          )}
+
+          {/* Group Selection */}
+          {shareMode === 'group' && !readyToLink && (
+            <div className="space-y-3">
+              <label className="block text-sm font-semibold text-gray-700">Select Group</label>
+              {groups.length === 0 ? (
+                <div className="p-4 bg-gray-50 rounded-xl text-center">
+                  <p className="text-sm text-gray-500 mb-3">No groups found</p>
+                  <button
+                    onClick={() => setShowGroupDialog(true)}
+                    className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-medium"
+                  >
+                    Create Group
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-40 overflow-y-auto">
+                  {groups.map(group => (
+                    <button
+                      key={group.id}
+                      onClick={() => setSelectedGroup(group)}
+                      className={`w-full p-3 rounded-xl border-2 text-left transition-all ${
+                        selectedGroup?.id === group.id
+                          ? 'border-indigo-600 bg-indigo-50'
+                          : 'border-gray-200 bg-white hover:border-indigo-200'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h4 className="font-bold text-sm text-gray-900">{group.name}</h4>
+                          <p className="text-xs text-gray-500 mt-0.5">
+                            {group.members.length} {group.members.length === 1 ? 'member' : 'members'}
+                          </p>
+                        </div>
+                        {selectedGroup?.id === group.id && (
+                          <CheckSquare className="w-5 h-5 text-indigo-600" />
+                        )}
+                      </div>
+                    </button>
+                  ))}
+                  <button
+                    onClick={() => setShowGroupDialog(true)}
+                    className="w-full p-3 border-2 border-dashed border-gray-300 rounded-xl text-gray-600 hover:border-indigo-400 hover:text-indigo-600 transition-all text-sm font-medium"
+                  >
+                    + Create New Group
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Action Buttons */}
           {!readyToLink ? (
             <button
-              disabled={processing}
-              onClick={handlePrepareShare}
+              disabled={processing || (shareMode === 'group' && !selectedGroup)}
+              onClick={shareMode === 'group' ? shareToGroup : handlePrepareShare}
               className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-5 rounded-[1.8rem] font-black shadow-2xl shadow-indigo-200 flex items-center justify-center gap-3 active:scale-[0.97] transition-all disabled:opacity-50 text-lg"
             >
               {processing ? (
                 <Loader2 className="w-6 h-6 animate-spin" />
+              ) : shareMode === 'group' ? (
+                <Users className="w-6 h-6" />
               ) : (
                 <Download className="w-6 h-6" />
               )}
-              <span>{processing ? 'Processing...' : 'Prepare Images'}</span>
+              <span>
+                {processing 
+                  ? 'Processing...' 
+                  : shareMode === 'group' 
+                    ? `Share to ${selectedGroup?.name || 'Group'}` 
+                    : 'Prepare Images'}
+              </span>
             </button>
           ) : (
             <button
@@ -525,6 +618,16 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
           </div>
         </div>
       </div>
+
+      {showGroupDialog && (
+        <GroupDialog
+          onClose={() => {
+            setShowGroupDialog(false);
+            loadGroups();
+          }}
+          mode="manage"
+        />
+      )}
     </div>
   );
 };
