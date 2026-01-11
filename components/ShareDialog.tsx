@@ -349,51 +349,85 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
     try {
       // Generate all images first
       const blobs: Blob[] = [];
+      const files: File[] = [];
+      
       for (let i = 0; i < selectedDesigns.length; i++) {
         const blob = await generateBrandedImage(selectedDesigns[i]);
         blobs.push(blob);
-      }
-
-      // Download images
-      for (let i = 0; i < blobs.length; i++) {
-        downloadOne(blobs[i], `TextileHub_Design_${i + 1}.jpg`);
-        if (blobs.length > 1) await new Promise(r => setTimeout(r, 300));
+        files.push(new File([blob], `TextileHub_Design_${i + 1}.jpg`, { type: 'image/jpeg' }));
       }
 
       // Create message
       const itemText = selectedDesigns.length === 1 ? 'design' : 'designs';
       const caption = `📦 TextileHub Catalogue\n\n${selectedDesigns.length} ${itemText} attached. Check the images for details! 🎨`;
 
-      // Share to each member individually
-      for (let i = 0; i < selectedGroup.members.length; i++) {
-        const member = selectedGroup.members[i];
-        // Format phone number (remove any non-digits, ensure it starts with country code)
-        const phoneNumber = member.phoneNumber.replace(/\D/g, '');
-        
-        if (phoneNumber) {
-          const waUrl = `https://wa.me/${phoneNumber}?text=${encodeURIComponent(caption)}`;
+      // Check if we can use native share API (mobile)
+      const canShareFiles = isMobile && navigator.share && navigator.canShare && navigator.canShare({ files });
+
+      if (canShareFiles) {
+        // Mobile: Use native share API for each member
+        for (let i = 0; i < selectedGroup.members.length; i++) {
+          const member = selectedGroup.members[i];
+          const phoneNumber = member.phoneNumber.replace(/\D/g, '');
           
-          // Open WhatsApp for each member with a delay
-          if (i === 0) {
-            // First one opens immediately
-            window.open(waUrl, '_blank');
-          } else {
-            // Subsequent ones open after a delay to avoid popup blocking
+          if (phoneNumber && i === 0) {
+            // First member: share immediately
+            try {
+              await navigator.share({
+                files: files,
+                title: 'TextileHub Design Catalogue',
+                text: caption
+              });
+            } catch (shareError: any) {
+              if (shareError.name !== 'AbortError') {
+                console.log('Share cancelled or failed, continuing...');
+              }
+            }
+          } else if (phoneNumber) {
+            // Subsequent members: open WhatsApp with delay
             setTimeout(() => {
+              const waUrl = `https://wa.me/${phoneNumber}?text=${encodeURIComponent(caption)}`;
               window.open(waUrl, '_blank');
-            }, i * 1000); // 1 second delay between each
+            }, i * 2000); // 2 second delay between each
           }
         }
+      } else {
+        // Desktop: Download images first, then open WhatsApp for each member
+        // Download all images
+        for (let i = 0; i < blobs.length; i++) {
+          downloadOne(blobs[i], `TextileHub_Design_${i + 1}.jpg`);
+          if (blobs.length > 1) await new Promise(r => setTimeout(r, 300));
+        }
+
+        // Wait a bit for downloads to complete
+        await new Promise(r => setTimeout(r, 1000));
+
+        // Open WhatsApp for each member individually
+        for (let i = 0; i < selectedGroup.members.length; i++) {
+          const member = selectedGroup.members[i];
+          const phoneNumber = member.phoneNumber.replace(/\D/g, '');
+          
+          if (phoneNumber) {
+            const waUrl = `https://wa.me/${phoneNumber}?text=${encodeURIComponent(caption)}`;
+            
+            // Open each WhatsApp chat with increasing delay
+            setTimeout(() => {
+              window.open(waUrl, '_blank');
+            }, i * 2000); // 2 second delay between each to avoid popup blocking
+          }
+        }
+
+        // Show instruction alert
+        alert(`Images downloaded! Opening WhatsApp for ${selectedGroup.members.length} members.\n\nPlease attach the downloaded images to each chat manually.`);
       }
 
       // Close dialog after a delay
       setTimeout(() => {
         onClose();
-      }, 1000);
+      }, selectedGroup.members.length * 2000 + 1000);
     } catch (error) {
       console.error('Failed to share to group:', error);
       alert('Failed to share to group. Please try again.');
-    } finally {
       setProcessing(false);
     }
   };
