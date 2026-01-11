@@ -369,15 +369,15 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
 
       // Check if native share API is available
       if (navigator.share && navigator.canShare && navigator.canShare({ files })) {
-        // Use native share API - this will open share sheet where user can select WhatsApp
-        // and then select the contact from their contacts
+        // Use native share API - this allows sharing files directly to WhatsApp
+        // User can select WhatsApp and then choose contacts
         try {
           await navigator.share({
             files: files,
             title: 'TextileHub Design Catalogue',
             text: caption
           });
-          // User shared successfully
+          // User shared successfully via native share
           onClose();
           setProcessing(false);
           return;
@@ -387,59 +387,81 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
             setProcessing(false);
             return;
           }
-          // If share fails, fall through to WhatsApp URL method
+          console.log('Native share failed, trying alternative method:', shareError);
         }
       }
 
-      // Fallback: Open WhatsApp for each member individually
-      // Format: whatsapp://send?phone=PHONE&text=TEXT (for mobile app)
-      // Or: https://wa.me/PHONE?text=TEXT (for web)
+      // Alternative: Save images to gallery first, then use WhatsApp share
+      // This approach saves images and then opens WhatsApp share for each contact
       
-      for (let i = 0; i < selectedGroup.members.length; i++) {
-        const member = selectedGroup.members[i];
-        // Format phone number (remove any non-digits)
-        const phoneNumber = member.phoneNumber.replace(/\D/g, '');
-        
-        if (phoneNumber) {
-          // Try WhatsApp app URL first (mobile), fallback to web
-          const whatsappAppUrl = `whatsapp://send?phone=${phoneNumber}&text=${encodeURIComponent(caption)}`;
-          const whatsappWebUrl = `https://wa.me/${phoneNumber}?text=${encodeURIComponent(caption)}`;
-          
-          setTimeout(() => {
-            // Try to open WhatsApp app, if it fails, open web version
-            const link = document.createElement('a');
-            link.href = whatsappAppUrl;
-            link.target = '_blank';
-            document.body.appendChild(link);
-            
-            try {
-              link.click();
-            } catch (e) {
-              // If app URL fails, try web URL
-              window.location.href = whatsappWebUrl;
-            }
-            
-            document.body.removeChild(link);
-            
-            // Also try direct window.location for better mobile support
-            if (i === 0) {
-              // First one - try app URL
-              setTimeout(() => {
-                window.location.href = whatsappAppUrl;
-              }, 100);
-            }
-          }, i * 2000); // 2 second delay between each
-        }
+      // Save all images to gallery/download folder first
+      for (let i = 0; i < blobs.length; i++) {
+        downloadOne(blobs[i], `TextileHub_Design_${i + 1}.jpg`);
+        if (blobs.length > 1) await new Promise(r => setTimeout(r, 500));
       }
+
+      // Wait for images to be saved
+      await new Promise(r => setTimeout(r, 1500));
+
+      // Now try to share to each member using WhatsApp share intent
+      // Note: We can't automatically send, but we can make it easier
+      // by opening WhatsApp with the contact pre-selected
+      
+      let sharedCount = 0;
+      const totalMembers = selectedGroup.members.length;
+
+      // Function to share to one member
+      const shareToMember = async (member: any, index: number) => {
+        const phoneNumber = member.phoneNumber.replace(/\D/g, '');
+        if (!phoneNumber) return;
+
+        // Try WhatsApp share intent (Android) or URL (iOS)
+        const whatsappUrl = `https://wa.me/${phoneNumber}?text=${encodeURIComponent(caption)}`;
+        
+        // For Android, try intent URL
+        const androidIntent = `intent://send?phone=${phoneNumber}&text=${encodeURIComponent(caption)}#Intent;scheme=whatsapp;action=android.intent.action.SEND;end`;
+        
+        try {
+          // Try Android intent first
+          if (/Android/i.test(navigator.userAgent)) {
+            window.location.href = androidIntent;
+          } else {
+            // iOS or fallback
+            window.location.href = whatsappUrl;
+          }
+          
+          sharedCount++;
+          
+          // If this is the last member, close dialog
+          if (sharedCount >= totalMembers) {
+            setTimeout(() => {
+              onClose();
+              setProcessing(false);
+            }, 1000);
+          }
+        } catch (e) {
+          console.error('Failed to open WhatsApp for member:', member.name, e);
+        }
+      };
 
       // Show instruction
-      alert(`📱 Opening WhatsApp for ${selectedGroup.members.length} members...\n\n💡 In each chat, tap the attachment button (📎) and select the images from your gallery to send.`);
+      alert(`📱 Sharing to ${totalMembers} members...\n\n✅ Images saved to gallery.\n\n💡 WhatsApp will open for each contact. Tap the attachment button (📎) in each chat and select the saved images to send.`);
       
-      // Close dialog after a delay
+      // Share to each member with delay
+      for (let i = 0; i < selectedGroup.members.length; i++) {
+        setTimeout(() => {
+          shareToMember(selectedGroup.members[i], i);
+        }, i * 3000); // 3 second delay to allow user to send in each chat
+      }
+
+      // Set a maximum timeout to close dialog
       setTimeout(() => {
-        onClose();
-        setProcessing(false);
-      }, selectedGroup.members.length * 2000 + 2000);
+        if (processing) {
+          onClose();
+          setProcessing(false);
+        }
+      }, selectedGroup.members.length * 3000 + 5000);
+      
     } catch (error) {
       console.error('Failed to share to group:', error);
       alert('Failed to share to group. Please try again.');
