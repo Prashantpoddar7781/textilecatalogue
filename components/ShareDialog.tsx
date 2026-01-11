@@ -422,13 +422,15 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
         }
 
         // Show instruction alert
-        alert(`Images downloaded! Opening WhatsApp for ${selectedGroup.members.length} members.\n\nPlease attach the downloaded images to each chat manually.`);
+        alert(`✅ Images downloaded!\n\n📱 Opening WhatsApp for ${selectedGroup.members.length} members...\n\n💡 Please attach the downloaded images to each chat manually.`);
       }
 
-      // Close dialog after a delay
+      // Close dialog after all chats are opened
+      const totalDelay = selectedGroup.members.length * 2000 + 2000;
       setTimeout(() => {
         onClose();
-      }, selectedGroup.members.length * 2000 + 1000);
+        setProcessing(false);
+      }, totalDelay);
     } catch (error) {
       console.error('Failed to share to group:', error);
       alert('Failed to share to group. Please try again.');
