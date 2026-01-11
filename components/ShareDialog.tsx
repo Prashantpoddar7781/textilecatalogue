@@ -339,6 +339,65 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
     }, 500);
   };
 
+  const shareToGroup = async () => {
+    if (!selectedGroup || selectedGroup.members.length === 0) {
+      alert('Please select a group with members');
+      return;
+    }
+
+    setProcessing(true);
+    try {
+      // Generate all images first
+      const blobs: Blob[] = [];
+      for (let i = 0; i < selectedDesigns.length; i++) {
+        const blob = await generateBrandedImage(selectedDesigns[i]);
+        blobs.push(blob);
+      }
+
+      // Download images
+      for (let i = 0; i < blobs.length; i++) {
+        downloadOne(blobs[i], `TextileHub_Design_${i + 1}.jpg`);
+        if (blobs.length > 1) await new Promise(r => setTimeout(r, 300));
+      }
+
+      // Create message
+      const itemText = selectedDesigns.length === 1 ? 'design' : 'designs';
+      const caption = `📦 TextileHub Catalogue\n\n${selectedDesigns.length} ${itemText} attached. Check the images for details! 🎨`;
+
+      // Share to each member individually
+      for (let i = 0; i < selectedGroup.members.length; i++) {
+        const member = selectedGroup.members[i];
+        // Format phone number (remove any non-digits, ensure it starts with country code)
+        const phoneNumber = member.phoneNumber.replace(/\D/g, '');
+        
+        if (phoneNumber) {
+          const waUrl = `https://wa.me/${phoneNumber}?text=${encodeURIComponent(caption)}`;
+          
+          // Open WhatsApp for each member with a delay
+          if (i === 0) {
+            // First one opens immediately
+            window.open(waUrl, '_blank');
+          } else {
+            // Subsequent ones open after a delay to avoid popup blocking
+            setTimeout(() => {
+              window.open(waUrl, '_blank');
+            }, i * 1000); // 1 second delay between each
+          }
+        }
+      }
+
+      // Close dialog after a delay
+      setTimeout(() => {
+        onClose();
+      }, 1000);
+    } catch (error) {
+      console.error('Failed to share to group:', error);
+      alert('Failed to share to group. Please try again.');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/95 backdrop-blur-md p-0 sm:p-4 safe-area-top safe-area-bottom">
       <div className="bg-white w-full max-w-lg rounded-t-[2.5rem] sm:rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col animate-in slide-in-from-bottom duration-300 max-h-[95vh] touch-manipulation">
