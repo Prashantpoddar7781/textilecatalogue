@@ -365,30 +365,34 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
       const canShareFiles = isMobile && navigator.share && navigator.canShare && navigator.canShare({ files });
 
       if (canShareFiles) {
-        // Mobile: Use native share API for each member
-        for (let i = 0; i < selectedGroup.members.length; i++) {
-          const member = selectedGroup.members[i];
-          const phoneNumber = member.phoneNumber.replace(/\D/g, '');
-          
-          if (phoneNumber && i === 0) {
-            // First member: share immediately
-            try {
-              await navigator.share({
-                files: files,
-                title: 'TextileHub Design Catalogue',
-                text: caption
-              });
-            } catch (shareError: any) {
-              if (shareError.name !== 'AbortError') {
-                console.log('Share cancelled or failed, continuing...');
+        // Mobile: Open WhatsApp for each member, images available via native share
+        // First, trigger native share to make images available in share sheet
+        try {
+          await navigator.share({
+            files: files,
+            title: 'TextileHub Design Catalogue',
+            text: caption
+          });
+          // If user shares successfully, close dialog
+          onClose();
+          setProcessing(false);
+          return;
+        } catch (shareError: any) {
+          // User cancelled or wants to share to specific contacts
+          if (shareError.name === 'AbortError') {
+            // User cancelled - open WhatsApp for each member instead
+            for (let i = 0; i < selectedGroup.members.length; i++) {
+              const member = selectedGroup.members[i];
+              const phoneNumber = member.phoneNumber.replace(/\D/g, '');
+              
+              if (phoneNumber) {
+                const waUrl = `https://wa.me/${phoneNumber}?text=${encodeURIComponent(caption)}`;
+                setTimeout(() => {
+                  window.open(waUrl, '_blank');
+                }, i * 1500);
               }
             }
-          } else if (phoneNumber) {
-            // Subsequent members: open WhatsApp with delay
-            setTimeout(() => {
-              const waUrl = `https://wa.me/${phoneNumber}?text=${encodeURIComponent(caption)}`;
-              window.open(waUrl, '_blank');
-            }, i * 2000); // 2 second delay between each
+            alert(`Opening WhatsApp for ${selectedGroup.members.length} members.\n\nUse the share button in each chat to attach images from your gallery.`);
           }
         }
       } else {
