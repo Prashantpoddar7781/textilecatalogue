@@ -35,3 +35,18 @@ export interface ShareOptions {
   includeDescription: boolean;
   includeFirmName: boolean;
 }
+
+export interface GroupMember {
+  id: string;
+  name: string;
+  phoneNumber: string;
+}
+
+export interface Group {
+  id: string;
+  name: string;
+  userId: string;
+  members: GroupMember[];
+  createdAt: number;
+  updatedAt: number;
+}

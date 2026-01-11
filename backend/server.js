@@ -7,6 +7,8 @@ import authRoutes from './routes/auth.js';
 import designRoutes from './routes/designs.js';
 import userRoutes from './routes/users.js';
 import catalogueRoutes from './routes/catalogues.js';
+import groupRoutes from './routes/groups.js';
+import groupRoutes from './routes/groups.js';
 
 dotenv.config();
 
@@ -93,7 +95,8 @@ app.use('/api/auth', authRoutes);
 app.use('/api/designs', designRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/catalogues', catalogueRoutes);
-console.log('Routes configured: /api/auth, /api/designs, /api/users, /api/catalogues');
+app.use('/api/groups', groupRoutes);
+console.log('Routes configured: /api/auth, /api/designs, /api/users, /api/catalogues, /api/groups');
 
 // Error handling middleware
 app.use((err, req, res, next) => {

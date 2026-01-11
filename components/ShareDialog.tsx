@@ -1,7 +1,9 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { X, MessageCircle, CheckSquare, Square, Loader2, Download, Eye, AlertCircle, Send } from 'lucide-react';
-import { TextileDesign, ShareOptions } from '../types';
+import { X, MessageCircle, CheckSquare, Square, Loader2, Download, Eye, AlertCircle, Send, Users } from 'lucide-react';
+import { TextileDesign, ShareOptions, Group } from '../types';
+import { groupsApi } from '../services/api';
+import { GroupDialog } from './GroupDialog';
 
 interface Props {
   selectedDesigns: TextileDesign[];
@@ -14,6 +16,10 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isMobile] = useState(() => /iPhone|iPad|iPod|Android/i.test(navigator.userAgent));
   const [readyToLink, setReadyToLink] = useState(false);
+  const [shareMode, setShareMode] = useState<'whatsapp' | 'group'>('whatsapp');
+  const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
+  const [showGroupDialog, setShowGroupDialog] = useState(false);
+  const [groups, setGroups] = useState<Group[]>([]);
   const [options, setOptions] = useState<ShareOptions>({
     includeWholesale: false,
     includeRetail: true,
@@ -23,6 +29,25 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
   });
 
   const previewUrlRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (shareMode === 'group') {
+      loadGroups();
+    }
+  }, [shareMode]);
+
+  const loadGroups = async () => {
+    try {
+      const groupsData = await groupsApi.getAll();
+      setGroups(groupsData.map(g => ({
+        ...g,
+        createdAt: new Date(g.createdAt).getTime(),
+        updatedAt: new Date(g.updatedAt).getTime()
+      })));
+    } catch (error) {
+      console.error('Failed to load groups:', error);
+    }
+  };
 
   useEffect(() => {
     let isMounted = true;

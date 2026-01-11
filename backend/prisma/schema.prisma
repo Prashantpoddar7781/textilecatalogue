@@ -20,6 +20,7 @@ model User {
   updatedAt DateTime @updatedAt
   designs   Design[]
   catalogues Catalogue[]
+  groups    Group[]
 }
 
 model Catalogue {
@@ -54,5 +55,29 @@ model Design {
   @@index([catalogueId])
   @@index([fabric])
   @@index([createdAt])
+}
+
+model Group {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  members   GroupMember[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+}
+
+model GroupMember {
+  id        String   @id @default(cuid())
+  groupId   String
+  group     Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  name      String
+  phoneNumber String
+  createdAt DateTime @default(now())
+
+  @@index([groupId])
+  @@unique([groupId, phoneNumber])
 }
 

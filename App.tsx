@@ -5,6 +5,7 @@ import { UploadForm } from './components/UploadForm';
 import { DesignCard } from './components/DesignCard';
 import { ShareDialog } from './components/ShareDialog';
 import { LoginDialog } from './components/LoginDialog';
+import { GroupDialog } from './components/GroupDialog';
 import { designsApi, authApi } from './services/api';
 
 const App: React.FC = () => {
@@ -13,6 +14,7 @@ const App: React.FC = () => {
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [isShareOpen, setIsShareOpen] = useState(false);
   const [isLoginOpen, setIsLoginOpen] = useState(false);
+  const [isGroupDialogOpen, setIsGroupDialogOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(false);
@@ -298,13 +300,22 @@ const App: React.FC = () => {
               <User className="w-4 h-4" />
               <span className="font-medium">{user.name || user.email}</span>
             </div>
-            <button
-              onClick={() => setIsUploadOpen(true)}
-              className="hidden sm:flex items-center gap-2 bg-gray-900 hover:bg-black text-white px-5 py-2.5 rounded-2xl font-bold transition-all shadow-lg active:scale-95"
-            >
-              <Plus className="w-5 h-5" />
-              <span>Add Design</span>
-            </button>
+            <div className="hidden sm:flex items-center gap-2">
+              <button
+                onClick={() => setIsGroupDialogOpen(true)}
+                className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-2xl font-bold transition-all shadow-lg active:scale-95"
+              >
+                <Package className="w-4 h-4" />
+                <span>Groups</span>
+              </button>
+              <button
+                onClick={() => setIsUploadOpen(true)}
+                className="flex items-center gap-2 bg-gray-900 hover:bg-black text-white px-5 py-2.5 rounded-2xl font-bold transition-all shadow-lg active:scale-95"
+              >
+                <Plus className="w-5 h-5" />
+                <span>Add Design</span>
+              </button>
+            </div>
             <button
               onClick={handleLogout}
               className="p-2 hover:bg-gray-100 rounded-xl transition-colors"
@@ -473,6 +484,7 @@ const App: React.FC = () => {
         />
       )}
       {isShareOpen && <ShareDialog selectedDesigns={selectedDesigns} userFirmName={user?.firmName} onClose={() => setIsShareOpen(false)} />}
+      {isGroupDialogOpen && <GroupDialog onClose={() => setIsGroupDialogOpen(false)} mode="manage" />}
     </div>
   );
 };

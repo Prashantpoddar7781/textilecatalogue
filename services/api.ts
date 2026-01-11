@@ -1,3 +1,5 @@
+import { Group, GroupMember } from '../types';
+
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
 
 class ApiError extends Error {
@@ -155,6 +157,50 @@ export const cataloguesApi = {
 
   delete: async (id: string) => {
     return request<{ message: string }>(`/catalogues/${id}`, {
+      method: 'DELETE',
+    });
+  },
+};
+
+// Groups API
+export const groupsApi = {
+  getAll: async () => {
+    return request<Group[]>('/groups');
+  },
+
+  getById: async (id: string) => {
+    return request<Group>(`/groups/${id}`);
+  },
+
+  create: async (group: { name: string; members: { name: string; phoneNumber: string }[] }) => {
+    return request<Group>('/groups', {
+      method: 'POST',
+      body: JSON.stringify(group),
+    });
+  },
+
+  update: async (id: string, group: { name?: string; members?: { name: string; phoneNumber: string }[] }) => {
+    return request<Group>(`/groups/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(group),
+    });
+  },
+
+  delete: async (id: string) => {
+    return request<{ message: string }>(`/groups/${id}`, {
+      method: 'DELETE',
+    });
+  },
+
+  addMember: async (groupId: string, member: { name: string; phoneNumber: string }) => {
+    return request<GroupMember>(`/groups/${groupId}/members`, {
+      method: 'POST',
+      body: JSON.stringify(member),
+    });
+  },
+
+  removeMember: async (groupId: string, memberId: string) => {
+    return request<{ message: string }>(`/groups/${groupId}/members/${memberId}`, {
       method: 'DELETE',
     });
   },
