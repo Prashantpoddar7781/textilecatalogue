@@ -8,7 +8,6 @@ import designRoutes from './routes/designs.js';
 import userRoutes from './routes/users.js';
 import catalogueRoutes from './routes/catalogues.js';
 import groupRoutes from './routes/groups.js';
-import groupRoutes from './routes/groups.js';
 
 dotenv.config();
 
