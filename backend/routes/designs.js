@@ -185,7 +185,7 @@ router.post('/', authenticateToken, [
     let retailPrice = rtPrice ? parseFloat(rtPrice) : basePriceNum;
     
     // If additionalPrices provided, calculate them
-    const processedAdditionalPrices = additionalPrices ? additionalPrices.map((ap: any) => {
+    const processedAdditionalPrices = additionalPrices ? additionalPrices.map((ap) => {
       let calculatedPrice = basePriceNum;
       if (ap.type === 'percentage') {
         calculatedPrice = basePriceNum * (1 + ap.value / 100);
@@ -300,7 +300,7 @@ router.put('/:id', authenticateToken, [
     
     if (req.body.additionalPrices !== undefined) {
       const basePriceNum = updateData.basePrice || existing.basePrice || existing.retailPrice || 0;
-      const processedAdditionalPrices = req.body.additionalPrices.map((ap: any) => {
+      const processedAdditionalPrices = req.body.additionalPrices.map((ap) => {
         let calculatedPrice = basePriceNum;
         if (ap.type === 'percentage') {
           calculatedPrice = basePriceNum * (1 + ap.value / 100);
