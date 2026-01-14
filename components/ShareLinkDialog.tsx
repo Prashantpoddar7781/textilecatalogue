@@ -35,7 +35,11 @@ export const ShareLinkDialog: React.FC<Props> = ({ design, designs, onClose }) =
       const { shareLinks: links } = await shareLinksApi.getAll();
       // Filter links for selected designs
       const designIds = designList.map(d => d.id);
-      const designLinks = links.filter(link => designIds.includes(link.designId));
+      const designLinks = links.filter(link => {
+        if (link.designId && designIds.includes(link.designId)) return true;
+        if (link.designs && link.designs.some(d => designIds.includes(d.design.id))) return true;
+        return false;
+      });
       setShareLinks(designLinks);
     } catch (error) {
       console.error('Failed to load share links:', error);
@@ -51,30 +55,34 @@ export const ShareLinkDialog: React.FC<Props> = ({ design, designs, onClose }) =
     try {
       setCreating(true);
       const expiresAt = calculateExpirationDate();
-      
-      // Create links for all selected designs
-      const createdLinks: ShareLink[] = [];
-      for (const designItem of designList) {
-        try {
-          const shareLink = await shareLinksApi.create({
-            designId: designItem.id,
-            expiresAt: expiresAt || undefined,
-            selectedPriceType: selectedPriceType === 'base' ? undefined : selectedPriceType
-          });
-          createdLinks.push(shareLink);
-        } catch (error: any) {
-          console.error(`Failed to create link for design ${designItem.id}:`, error);
-        }
-      }
 
-      if (createdLinks.length > 0) {
-        setShareLinks(prev => [...createdLinks, ...prev]);
+      // Create a single link for all selected designs
+      const shareLink = await shareLinksApi.create({
+        designIds: designList.map(d => d.id),
+        expiresAt: expiresAt || undefined,
+        selectedPriceType: selectedPriceType === 'base' ? undefined : selectedPriceType
+      });
+
+      if (shareLink) {
+        setShareLinks(prev => [shareLink, ...prev]);
         setExpiresIn('7');
         setExpiresInUnit('days');
         setSelectedPriceType('base');
-        alert(`Successfully created ${createdLinks.length} share link${createdLinks.length > 1 ? 's' : ''}!`);
+
+        // Auto-copy and open WhatsApp with the link
+        const shareUrl = getShareUrl(shareLink.token);
+        try {
+          await navigator.clipboard.writeText(shareUrl);
+        } catch (e) {
+          console.warn('Clipboard write failed:', e);
+        }
+        const waUrl = `https://wa.me/?text=${encodeURIComponent(shareUrl)}`;
+        const newWindow = window.open(waUrl, '_blank');
+        if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
+          window.location.href = waUrl;
+        }
       } else {
-        alert('Failed to create share links. Please try again.');
+        alert('Failed to create share link. Please try again.');
       }
     } catch (error: any) {
       console.error('Failed to create share link:', error);

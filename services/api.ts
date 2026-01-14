@@ -209,7 +209,8 @@ export const contactsApi = {
 // Share Links API
 export const shareLinksApi = {
   create: async (data: {
-    designId: string;
+    designId?: string;
+    designIds?: string[];
     expiresAt?: string;
     selectedPriceType?: string;
   }) => {

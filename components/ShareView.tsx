@@ -50,8 +50,8 @@ export const ShareView: React.FC<{ token: string }> = ({ token }) => {
     );
   }
 
-  const design = shareLink.design as TextileDesign;
-  if (!design) {
+  const designs = shareLink.designs?.map(d => d.design) || (shareLink.design ? [shareLink.design as TextileDesign] : []);
+  if (designs.length === 0) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
@@ -61,84 +61,89 @@ export const ShareView: React.FC<{ token: string }> = ({ token }) => {
     );
   }
 
-  // Get the price to display
-  let displayPrice = design.basePrice || design.retailPrice || 0;
-  let priceLabel = 'Price';
-  
-  if (shareLink.selectedPriceType && shareLink.selectedPriceType !== 'base') {
-    const selectedPrice = design.additionalPrices?.find(ap => ap.name === shareLink.selectedPriceType);
-    if (selectedPrice && selectedPrice.calculatedPrice) {
-      displayPrice = selectedPrice.calculatedPrice;
-      priceLabel = selectedPrice.name;
+  const getDisplayPrice = (design: TextileDesign) => {
+    let displayPrice = design.basePrice || design.retailPrice || 0;
+    let priceLabel = 'Price';
+
+    if (shareLink.selectedPriceType && shareLink.selectedPriceType !== 'base') {
+      const selectedPrice = design.additionalPrices?.find(ap => ap.name === shareLink.selectedPriceType);
+      if (selectedPrice && selectedPrice.calculatedPrice) {
+        displayPrice = selectedPrice.calculatedPrice;
+        priceLabel = selectedPrice.name;
+      }
     }
-  }
+
+    return { displayPrice, priceLabel };
+  };
 
   return (
     <div className="min-h-screen bg-gray-50 py-8 px-4">
       <div className="max-w-4xl mx-auto">
         <div className="bg-white rounded-2xl shadow-xl overflow-hidden">
-          {/* Image Section */}
-          <div className="aspect-[3/4] bg-gray-100 overflow-hidden">
-            <img 
-              src={design.image} 
-              alt={design.name || 'Design'} 
-              className="w-full h-full object-cover"
-            />
+          {/* Header */}
+          <div className="p-6 sm:p-8 border-b border-gray-100">
+            <h1 className="text-2xl font-bold text-gray-900 mb-2">
+              {designs.length === 1 ? (designs[0].name || 'Untitled Design') : `${designs.length} Designs`}
+            </h1>
+            <p className="text-sm text-gray-500">Shared via TextileHub</p>
           </div>
 
-          {/* Details Section */}
-          <div className="p-6 sm:p-8 space-y-6">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900 mb-2">
-                {design.name || 'Untitled Design'}
-              </h1>
-              {design.catalogueName && (
-                <p className="text-indigo-600 font-semibold text-sm uppercase tracking-wide">
-                  {design.catalogueName}
-                </p>
-              )}
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-              {/* Price */}
-              <div className="bg-indigo-50 p-4 rounded-xl">
-                <p className="text-sm font-semibold text-indigo-600 uppercase tracking-wide mb-2">
-                  {priceLabel}
-                </p>
-                <div className="flex items-center text-3xl font-black text-gray-900">
-                  <IndianRupee className="w-6 h-6" />
-                  <span>{displayPrice.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+          {/* Designs Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 p-6 sm:p-8">
+            {designs.map((design) => {
+              const { displayPrice, priceLabel } = getDisplayPrice(design);
+              return (
+                <div key={design.id} className="bg-gray-50 rounded-xl overflow-hidden">
+                  <div className="aspect-[3/4] bg-gray-100 overflow-hidden">
+                    <img 
+                      src={design.image} 
+                      alt={design.name || 'Design'} 
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                  <div className="p-4 space-y-3">
+                    <div>
+                      <h3 className="text-lg font-bold text-gray-900">
+                        {design.name || 'Untitled Design'}
+                      </h3>
+                      {design.catalogueName && (
+                        <p className="text-indigo-600 font-semibold text-xs uppercase tracking-wide">
+                          {design.catalogueName}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                          {priceLabel}
+                        </p>
+                        <div className="flex items-center text-xl font-black text-gray-900">
+                          <IndianRupee className="w-4 h-4" />
+                          <span>{displayPrice.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Fabric</p>
+                        <p className="text-sm font-bold text-gray-900">{design.fabric}</p>
+                      </div>
+                    </div>
+                    {design.description && (
+                      <p className="text-xs text-gray-600 line-clamp-2">{design.description}</p>
+                    )}
+                  </div>
                 </div>
-              </div>
-
-              {/* Fabric */}
-              <div className="bg-gray-50 p-4 rounded-xl">
-                <p className="text-sm font-semibold text-gray-600 uppercase tracking-wide mb-2">
-                  Fabric
-                </p>
-                <p className="text-xl font-bold text-gray-900">{design.fabric}</p>
-              </div>
-            </div>
-
-            {/* Description */}
-            {design.description && (
-              <div>
-                <p className="text-sm font-semibold text-gray-600 uppercase tracking-wide mb-2">
-                  Description
-                </p>
-                <p className="text-gray-700 leading-relaxed">{design.description}</p>
-              </div>
-            )}
-
-            {/* Firm Name */}
-            {shareLink.design?.user?.firmName && (
-              <div className="pt-4 border-t border-gray-200">
-                <p className="text-sm text-gray-500">
-                  From: <span className="font-semibold text-gray-700">{shareLink.design.user.firmName}</span>
-                </p>
-              </div>
-            )}
+              );
+            })}
           </div>
+
+          {/* Firm Name */}
+          {designs[0]?.user?.firmName && (
+            <div className="p-6 sm:p-8 border-t border-gray-100">
+              <p className="text-sm text-gray-500">
+                From: <span className="font-semibold text-gray-700">{designs[0].user.firmName}</span>
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Footer */}

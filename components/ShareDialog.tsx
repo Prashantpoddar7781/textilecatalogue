@@ -1,8 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { X, MessageCircle, CheckSquare, Square, Loader2, Download, Eye, AlertCircle, Send, Users, Link2 } from 'lucide-react';
-import { TextileDesign, ShareOptions, Contact } from '../types';
-import { contactsApi } from '../services/api';
+import { X, MessageCircle, CheckSquare, Square, Loader2, Download, Eye, AlertCircle, Send, Link2 } from 'lucide-react';
+import { TextileDesign, ShareOptions } from '../types';
 
 interface Props {
   selectedDesigns: TextileDesign[];
@@ -16,11 +15,7 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isMobile] = useState(() => /iPhone|iPad|iPod|Android/i.test(navigator.userAgent));
   const [readyToLink, setReadyToLink] = useState(false);
-  const [shareMode, setShareMode] = useState<'whatsapp' | 'broadcast' | 'link'>('whatsapp');
-  const [selectedContacts, setSelectedContacts] = useState<Contact[]>([]);
-  const [contacts, setContacts] = useState<Contact[]>([]);
-  const [undeliveredContacts, setUndeliveredContacts] = useState<Contact[]>([]);
-  const [showUndelivered, setShowUndelivered] = useState(false);
+  const [shareMode, setShareMode] = useState<'whatsapp' | 'link'>('whatsapp');
   const [options, setOptions] = useState<ShareOptions>({
     includeWholesale: false,
     includeRetail: true,

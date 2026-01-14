@@ -59,7 +59,7 @@ export interface Contact {
 export interface ShareLink {
   id: string;
   userId: string;
-  designId: string;
+  designId?: string;
   token: string;
   expiresAt?: string;
   isActive: boolean;
@@ -67,4 +67,5 @@ export interface ShareLink {
   createdAt: string;
   updatedAt: string;
   design?: TextileDesign;
+  designs?: Array<{ design: TextileDesign }>;
 }

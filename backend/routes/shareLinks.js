@@ -14,7 +14,8 @@ function generateToken() {
 
 // Create shareable link (requires auth)
 router.post('/', authenticateToken, [
-  body('designId').notEmpty(),
+  body('designId').optional().notEmpty(),
+  body('designIds').optional().isArray({ min: 1 }),
   body('expiresAt').optional().isISO8601(),
   body('selectedPriceType').optional().trim()
 ], async (req, res, next) => {
@@ -24,36 +25,57 @@ router.post('/', authenticateToken, [
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { designId, expiresAt, selectedPriceType } = req.body;
+    const { designId, designIds, expiresAt, selectedPriceType } = req.body;
     const userId = req.user.userId;
 
-    // Verify design belongs to user
-    const design = await prisma.design.findFirst({
-      where: { id: designId, userId }
+    const idsToShare = designIds && designIds.length > 0 ? designIds : (designId ? [designId] : []);
+    if (idsToShare.length === 0) {
+      return res.status(400).json({ error: 'designId or designIds is required' });
+    }
+
+    // Verify all designs belong to user
+    const designs = await prisma.design.findMany({
+      where: { id: { in: idsToShare }, userId }
     });
 
-    if (!design) {
-      return res.status(404).json({ error: 'Design not found' });
+    if (designs.length !== idsToShare.length) {
+      return res.status(404).json({ error: 'One or more designs not found' });
     }
 
     // Create share link
     const shareLink = await prisma.shareLink.create({
       data: {
         userId,
-        designId,
+        designId: idsToShare.length === 1 ? idsToShare[0] : null,
         token: generateToken(),
         expiresAt: expiresAt ? new Date(expiresAt) : null,
         isActive: true,
-        selectedPriceType: selectedPriceType || null
+        selectedPriceType: selectedPriceType || null,
+        designs: {
+          createMany: {
+            data: idsToShare.map(id => ({ designId: id }))
+          }
+        }
       },
       include: {
-        design: {
+        design: true,
+        designs: {
           include: {
-            user: {
-              select: {
-                id: true,
-                name: true,
-                firmName: true
+            design: {
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    name: true,
+                    firmName: true
+                  }
+                },
+                catalogue: {
+                  select: {
+                    id: true,
+                    name: true
+                  }
+                }
               }
             }
           }
@@ -80,6 +102,18 @@ router.get('/', authenticateToken, async (req, res, next) => {
             name: true,
             image: true,
             fabric: true
+          }
+        },
+        designs: {
+          include: {
+            design: {
+              select: {
+                id: true,
+                name: true,
+                image: true,
+                fabric: true
+              }
+            }
           }
         }
       },
@@ -112,6 +146,27 @@ router.get('/:token', optionalAuth, async (req, res, next) => {
               select: {
                 id: true,
                 name: true
+              }
+            }
+          }
+        },
+        designs: {
+          include: {
+            design: {
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    name: true,
+                    firmName: true
+                  }
+                },
+                catalogue: {
+                  select: {
+                    id: true,
+                    name: true
+                  }
+                }
               }
             }
           }
