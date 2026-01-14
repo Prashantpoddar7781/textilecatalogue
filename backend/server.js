@@ -12,9 +12,24 @@ import shareLinkRoutes from './routes/shareLinks.js';
 
 dotenv.config();
 
+// Handle uncaught errors
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error);
+  // Don't exit - let the server try to continue
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  // Don't exit - let the server try to continue
+});
+
 const app = express();
 const prisma = new PrismaClient();
 const PORT = process.env.PORT || 3001;
+
+console.log('Starting server...');
+console.log('PORT:', PORT);
+console.log('NODE_ENV:', process.env.NODE_ENV);
 
 // Run migrations on startup
 async function runMigrations() {
@@ -35,14 +50,20 @@ async function runMigrations() {
 }
 
 // Run migrations before starting server (async, don't block server start)
+// Note: Migrations run in background and won't block server startup
 if (process.env.NODE_ENV === 'production' || process.env.RUN_MIGRATIONS === 'true') {
-  runMigrations().catch(err => {
-    console.error('Migration error (non-blocking):', err);
-    // Server will still start even if migrations fail
+  // Run migrations asynchronously without blocking
+  setImmediate(() => {
+    runMigrations().catch(err => {
+      console.error('Migration error (non-blocking):', err);
+      // Server will still start even if migrations fail
+    });
   });
 }
 
-// Middleware
+// Middleware setup
+console.log('Setting up middleware...');
+
 // CORS configuration - handle trailing slashes and multiple origins
 const allowedOrigins = [
   process.env.FRONTEND_URL,
@@ -84,20 +105,33 @@ app.use(cors({
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// Health check
+console.log('Middleware configured');
+
+// Health check - must be before routes to ensure it's always available
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  try {
+    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  } catch (error) {
+    res.status(500).json({ status: 'error', error: error.message });
+  }
 });
+
+console.log('Health check endpoint configured');
 
 // Routes
 console.log('Setting up routes...');
-app.use('/api/auth', authRoutes);
-app.use('/api/designs', designRoutes);
-app.use('/api/users', userRoutes);
-app.use('/api/catalogues', catalogueRoutes);
-app.use('/api/contacts', contactRoutes);
-app.use('/api/share-links', shareLinkRoutes);
-console.log('Routes configured: /api/auth, /api/designs, /api/users, /api/catalogues, /api/contacts, /api/share-links');
+try {
+  app.use('/api/auth', authRoutes);
+  app.use('/api/designs', designRoutes);
+  app.use('/api/users', userRoutes);
+  app.use('/api/catalogues', catalogueRoutes);
+  app.use('/api/contacts', contactRoutes);
+  app.use('/api/share-links', shareLinkRoutes);
+  console.log('Routes configured: /api/auth, /api/designs, /api/users, /api/catalogues, /api/contacts, /api/share-links');
+} catch (error) {
+  console.error('Error setting up routes:', error);
+  // Server will still start, but routes may not work
+}
 
 // Error handling middleware
 app.use((err, req, res, next) => {
@@ -113,14 +147,27 @@ app.use((req, res) => {
   res.status(404).json({ error: 'Route not found' });
 });
 
-// Start server
+// Start server with error handling
 const HOST = process.env.HOST || '0.0.0.0';
-app.listen(PORT, HOST, () => {
-  console.log(`🚀 Server running on ${HOST}:${PORT}`);
-  console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`🌐 Health check: http://${HOST}:${PORT}/health`);
-  console.log(`🔐 Auth routes: http://${HOST}:${PORT}/api/auth/*`);
-});
+
+try {
+  const server = app.listen(PORT, HOST, () => {
+    console.log(`🚀 Server running on ${HOST}:${PORT}`);
+    console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`🌐 Health check: http://${HOST}:${PORT}/health`);
+    console.log(`🔐 Auth routes: http://${HOST}:${PORT}/api/auth/*`);
+  });
+
+  server.on('error', (error) => {
+    console.error('Server error:', error);
+    if (error.code === 'EADDRINUSE') {
+      console.error(`Port ${PORT} is already in use`);
+    }
+  });
+} catch (error) {
+  console.error('Failed to start server:', error);
+  process.exit(1);
+}
 
 // Graceful shutdown
 process.on('SIGTERM', async () => {
