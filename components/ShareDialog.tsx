@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { X, MessageCircle, CheckSquare, Square, Loader2, Download, Eye, AlertCircle, Send, Users } from 'lucide-react';
+import { X, MessageCircle, CheckSquare, Square, Loader2, Download, Eye, AlertCircle, Send, Users, Link2 } from 'lucide-react';
 import { TextileDesign, ShareOptions, Contact } from '../types';
 import { contactsApi } from '../services/api';
 
@@ -8,14 +8,15 @@ interface Props {
   selectedDesigns: TextileDesign[];
   userFirmName?: string;
   onClose: () => void;
+  onShareLink?: (designs: TextileDesign[]) => void;
 }
 
-export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, onClose }) => {
+export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, onClose, onShareLink }) => {
   const [processing, setProcessing] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isMobile] = useState(() => /iPhone|iPad|iPod|Android/i.test(navigator.userAgent));
   const [readyToLink, setReadyToLink] = useState(false);
-  const [shareMode, setShareMode] = useState<'whatsapp' | 'broadcast'>('whatsapp');
+  const [shareMode, setShareMode] = useState<'whatsapp' | 'broadcast' | 'link'>('whatsapp');
   const [selectedContacts, setSelectedContacts] = useState<Contact[]>([]);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [undeliveredContacts, setUndeliveredContacts] = useState<Contact[]>([]);
@@ -263,11 +264,20 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
       const files: File[] = [];
       const blobs: Blob[] = [];
       
-      // Generate all images
+      // Generate all images with progress feedback
       for (let i = 0; i < selectedDesigns.length; i++) {
-        const blob = await generateBrandedImage(selectedDesigns[i]);
-        blobs.push(blob);
-        files.push(new File([blob], `TextileHub_Design_${i + 1}.jpg`, { type: 'image/jpeg' }));
+        try {
+          const blob = await generateBrandedImage(selectedDesigns[i]);
+          blobs.push(blob);
+          files.push(new File([blob], `TextileHub_Design_${i + 1}.jpg`, { type: 'image/jpeg' }));
+        } catch (error) {
+          console.error(`Failed to generate image for design ${i + 1}:`, error);
+          // Continue with other images
+        }
+      }
+
+      if (blobs.length === 0) {
+        throw new Error('Failed to generate any images');
       }
 
       const itemText = selectedDesigns.length === 1 ? 'design' : 'designs';
@@ -284,12 +294,13 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
               text: caption,
             });
             onClose();
+            setProcessing(false);
             return;
           } else {
             // Fallback: share without files (some browsers don't support file sharing)
             // User can attach manually
             const textWithInfo = `${caption}\n\n${selectedDesigns.map((d, i) => 
-              `${i + 1}. ${d.fabric} - ₹${d.retailPrice.toLocaleString()}`
+              `${i + 1}. ${d.fabric} - ₹${(d.basePrice || d.retailPrice || 0).toLocaleString()}`
             ).join('\n')}`;
             
             if (navigator.canShare({ text: textWithInfo })) {
@@ -303,6 +314,7 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
                 if (blobs.length > 1) await new Promise(r => setTimeout(r, 300));
               }
               onClose();
+              setProcessing(false);
               return;
             }
           }
@@ -323,11 +335,11 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
 
       // Set ready state to show WhatsApp button
       setReadyToLink(true);
+      setProcessing(false);
 
     } catch (error) {
       console.error('Share process failed:', error);
       alert('Could not prepare images. Please ensure your images are valid.');
-    } finally {
       setProcessing(false);
     }
   };
@@ -526,7 +538,7 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
             </div>
           </div>
 
-          {!readyToLink ? (
+          {!readyToLink && shareMode !== 'link' ? (
             <div className="space-y-4">
               {/* Price Type Selection */}
               <div className="space-y-2">
@@ -604,6 +616,17 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
                 ))}
               </div>
             </div>
+          ) : shareMode === 'link' ? (
+            <div className="bg-indigo-50 p-6 rounded-[2rem] border border-indigo-100 space-y-4">
+              <div className="flex items-center gap-3 text-indigo-700">
+                <Link2 className="w-6 h-6" />
+                <p className="text-sm font-black uppercase tracking-tight">Share via Link</p>
+              </div>
+              <p className="text-xs text-indigo-800 font-medium leading-relaxed">
+                Click the button below to create shareable links for {selectedDesigns.length} {selectedDesigns.length === 1 ? 'design' : 'designs'}. 
+                You can set expiration time and choose which price to display.
+              </p>
+            </div>
           ) : (
             <div className="bg-green-50 p-6 rounded-[2rem] border border-green-100 space-y-4 animate-in fade-in zoom-in duration-300">
               <div className="flex items-center gap-3 text-green-700">
@@ -634,34 +657,48 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
         <div className="p-8 bg-gray-50 border-t space-y-4">
           {/* Share Mode Selection */}
           {!readyToLink && (
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-3 gap-2">
               <button
                 onClick={() => {
                   setShareMode('whatsapp');
                   setSelectedGroup(null);
                 }}
-                className={`p-4 rounded-2xl border-2 transition-all ${
+                className={`p-3 rounded-xl border-2 transition-all ${
                   shareMode === 'whatsapp'
                     ? 'border-indigo-600 bg-indigo-50 text-indigo-900'
                     : 'border-gray-200 bg-white text-gray-600'
                 }`}
               >
-                <MessageCircle className="w-6 h-6 mx-auto mb-2" />
-                <span className="text-xs font-bold uppercase">WhatsApp</span>
+                <MessageCircle className="w-5 h-5 mx-auto mb-1" />
+                <span className="text-[10px] font-bold uppercase">WhatsApp</span>
               </button>
               <button
                 onClick={() => {
                   setShareMode('group');
                   loadGroups();
                 }}
-                className={`p-4 rounded-2xl border-2 transition-all ${
+                className={`p-3 rounded-xl border-2 transition-all ${
                   shareMode === 'group'
                     ? 'border-indigo-600 bg-indigo-50 text-indigo-900'
                     : 'border-gray-200 bg-white text-gray-600'
                 }`}
               >
-                <Users className="w-6 h-6 mx-auto mb-2" />
-                <span className="text-xs font-bold uppercase">Group</span>
+                <Users className="w-5 h-5 mx-auto mb-1" />
+                <span className="text-[10px] font-bold uppercase">Group</span>
+              </button>
+              <button
+                onClick={() => {
+                  setShareMode('link');
+                  setSelectedGroup(null);
+                }}
+                className={`p-3 rounded-xl border-2 transition-all ${
+                  shareMode === 'link'
+                    ? 'border-indigo-600 bg-indigo-50 text-indigo-900'
+                    : 'border-gray-200 bg-white text-gray-600'
+                }`}
+              >
+                <Link2 className="w-5 h-5 mx-auto mb-1" />
+                <span className="text-[10px] font-bold uppercase">Link</span>
               </button>
             </div>
           )}
@@ -720,11 +757,24 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
           {!readyToLink ? (
             <button
               disabled={processing || (shareMode === 'group' && !selectedGroup)}
-              onClick={shareMode === 'group' ? shareToGroup : handlePrepareShare}
+              onClick={() => {
+                if (shareMode === 'link') {
+                  if (onShareLink) {
+                    onShareLink(selectedDesigns);
+                    onClose();
+                  }
+                } else if (shareMode === 'group') {
+                  shareToGroup();
+                } else {
+                  handlePrepareShare();
+                }
+              }}
               className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-5 rounded-[1.8rem] font-black shadow-2xl shadow-indigo-200 flex items-center justify-center gap-3 active:scale-[0.97] transition-all disabled:opacity-50 text-lg"
             >
               {processing ? (
                 <Loader2 className="w-6 h-6 animate-spin" />
+              ) : shareMode === 'link' ? (
+                <Link2 className="w-6 h-6" />
               ) : shareMode === 'group' ? (
                 <Users className="w-6 h-6" />
               ) : (
@@ -733,9 +783,11 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
               <span>
                 {processing 
                   ? 'Processing...' 
-                  : shareMode === 'group' 
-                    ? `Share to ${selectedGroup?.name || 'Group'}` 
-                    : 'Prepare Images'}
+                  : shareMode === 'link'
+                    ? `Create Share Link${selectedDesigns.length > 1 ? 's' : ''}`
+                    : shareMode === 'group' 
+                      ? `Share to ${selectedGroup?.name || 'Group'}` 
+                      : 'Prepare Images'}
               </span>
             </button>
           ) : (

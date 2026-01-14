@@ -513,10 +513,24 @@ const App: React.FC = () => {
           initialData={editingDesign}
         />
       )}
-      {isShareOpen && <ShareDialog selectedDesigns={selectedDesigns} userFirmName={user?.firmName} onClose={() => setIsShareOpen(false)} />}
-      {isShareLinkOpen && selectedDesignForLink && (
+      {isShareOpen && (
+        <ShareDialog 
+          selectedDesigns={selectedDesigns} 
+          userFirmName={user?.firmName} 
+          onClose={() => setIsShareOpen(false)}
+          onShareLink={(designs) => {
+            // Open ShareLinkDialog with all selected designs
+            if (designs.length > 0) {
+              setSelectedDesignForLink(designs[0]); // Keep for backward compatibility
+              setIsShareLinkOpen(true);
+            }
+          }}
+        />
+      )}
+      {isShareLinkOpen && selectedDesigns.length > 0 && (
         <ShareLinkDialog 
-          design={selectedDesignForLink} 
+          designs={selectedDesigns}
+          design={selectedDesignForLink || undefined} // For backward compatibility
           onClose={() => {
             setIsShareLinkOpen(false);
             setSelectedDesignForLink(null);

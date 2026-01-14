@@ -4,11 +4,12 @@ import { TextileDesign, ShareLink } from '../types';
 import { shareLinksApi } from '../services/api';
 
 interface Props {
-  design: TextileDesign;
+  design?: TextileDesign;
+  designs?: TextileDesign[];
   onClose: () => void;
 }
 
-export const ShareLinkDialog: React.FC<Props> = ({ design, onClose }) => {
+export const ShareLinkDialog: React.FC<Props> = ({ design, designs, onClose }) => {
   const [shareLinks, setShareLinks] = useState<ShareLink[]>([]);
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -17,16 +18,24 @@ export const ShareLinkDialog: React.FC<Props> = ({ design, onClose }) => {
   const [selectedPriceType, setSelectedPriceType] = useState<string>('base');
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
 
+  // Support both single design and multiple designs
+  const designList = designs || (design ? [design] : []);
+  const primaryDesign = design || designs?.[0];
+
   useEffect(() => {
-    loadShareLinks();
-  }, [design.id]);
+    if (primaryDesign) {
+      loadShareLinks();
+    }
+  }, [primaryDesign?.id]);
 
   const loadShareLinks = async () => {
+    if (!primaryDesign) return;
     try {
       setLoading(true);
       const { shareLinks: links } = await shareLinksApi.getAll();
-      // Filter links for this design
-      const designLinks = links.filter(link => link.designId === design.id);
+      // Filter links for selected designs
+      const designIds = designList.map(d => d.id);
+      const designLinks = links.filter(link => designIds.includes(link.designId));
       setShareLinks(designLinks);
     } catch (error) {
       console.error('Failed to load share links:', error);
@@ -37,20 +46,36 @@ export const ShareLinkDialog: React.FC<Props> = ({ design, onClose }) => {
   };
 
   const handleCreateLink = async () => {
+    if (designList.length === 0) return;
+    
     try {
       setCreating(true);
       const expiresAt = calculateExpirationDate();
       
-      const shareLink = await shareLinksApi.create({
-        designId: design.id,
-        expiresAt: expiresAt || undefined,
-        selectedPriceType: selectedPriceType === 'base' ? undefined : selectedPriceType
-      });
+      // Create links for all selected designs
+      const createdLinks: ShareLink[] = [];
+      for (const designItem of designList) {
+        try {
+          const shareLink = await shareLinksApi.create({
+            designId: designItem.id,
+            expiresAt: expiresAt || undefined,
+            selectedPriceType: selectedPriceType === 'base' ? undefined : selectedPriceType
+          });
+          createdLinks.push(shareLink);
+        } catch (error: any) {
+          console.error(`Failed to create link for design ${designItem.id}:`, error);
+        }
+      }
 
-      setShareLinks(prev => [shareLink, ...prev]);
-      setExpiresIn('7');
-      setExpiresInUnit('days');
-      setSelectedPriceType('base');
+      if (createdLinks.length > 0) {
+        setShareLinks(prev => [...createdLinks, ...prev]);
+        setExpiresIn('7');
+        setExpiresInUnit('days');
+        setSelectedPriceType('base');
+        alert(`Successfully created ${createdLinks.length} share link${createdLinks.length > 1 ? 's' : ''}!`);
+      } else {
+        alert('Failed to create share links. Please try again.');
+      }
     } catch (error: any) {
       console.error('Failed to create share link:', error);
       alert('Failed to create share link: ' + (error.message || 'Unknown error'));
@@ -121,8 +146,8 @@ export const ShareLinkDialog: React.FC<Props> = ({ design, onClose }) => {
 
   const getPriceOptions = () => {
     const options = [{ value: 'base', label: 'Base Price' }];
-    if (design.additionalPrices) {
-      design.additionalPrices.forEach(ap => {
+    if (primaryDesign?.additionalPrices) {
+      primaryDesign.additionalPrices.forEach(ap => {
         options.push({ value: ap.name, label: ap.name });
       });
     }
@@ -139,7 +164,11 @@ export const ShareLinkDialog: React.FC<Props> = ({ design, onClose }) => {
             </div>
             <div>
               <h2 className="text-xl font-bold text-gray-900">Shareable Links</h2>
-              <p className="text-sm text-gray-500">{design.name || 'Design'}</p>
+              <p className="text-sm text-gray-500">
+                {designList.length === 1 
+                  ? (primaryDesign?.name || 'Design')
+                  : `${designList.length} Designs Selected`}
+              </p>
             </div>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
@@ -192,18 +221,18 @@ export const ShareLinkDialog: React.FC<Props> = ({ design, onClose }) => {
 
               <button
                 onClick={handleCreateLink}
-                disabled={creating}
+                disabled={creating || designList.length === 0}
                 className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-xl font-semibold transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
               >
                 {creating ? (
                   <>
                     <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    Creating...
+                    Creating {designList.length > 1 ? `${designList.length} Links` : 'Link'}...
                   </>
                 ) : (
                   <>
                     <Link2 className="w-4 h-4" />
-                    Create Share Link
+                    Create Share Link{designList.length > 1 ? `s (${designList.length})` : ''}
                   </>
                 )}
               </button>
