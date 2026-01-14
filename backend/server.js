@@ -20,20 +20,17 @@ const PORT = process.env.PORT || 3001;
 async function runMigrations() {
   try {
     console.log('Running database migrations...');
-    execSync('npx prisma migrate deploy', { stdio: 'inherit', cwd: process.cwd() });
+    execSync('npx prisma migrate deploy', { 
+      stdio: 'inherit', 
+      cwd: process.cwd(),
+      env: { ...process.env }
+    });
     console.log('✅ Migrations completed successfully');
   } catch (error) {
     console.error('❌ Migration failed:', error.message);
-    // Try to create initial migration if no migrations exist
-    try {
-      console.log('Attempting to create initial migration...');
-      execSync('npx prisma migrate dev --name init --create-only', { stdio: 'inherit', cwd: process.cwd() });
-      execSync('npx prisma migrate deploy', { stdio: 'inherit', cwd: process.cwd() });
-      console.log('✅ Initial migration created and applied');
-    } catch (migrationError) {
-      console.error('❌ Failed to create migration:', migrationError.message);
-      console.log('⚠️  Server will start but database may not be initialized');
-    }
+    console.error('Migration error details:', error);
+    // Don't block server start - migrations can be run manually if needed
+    console.log('⚠️  Server will start but migration failed. Check logs above.');
   }
 }
 
@@ -41,6 +38,7 @@ async function runMigrations() {
 if (process.env.NODE_ENV === 'production' || process.env.RUN_MIGRATIONS === 'true') {
   runMigrations().catch(err => {
     console.error('Migration error (non-blocking):', err);
+    // Server will still start even if migrations fail
   });
 }
 
