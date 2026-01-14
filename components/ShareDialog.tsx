@@ -33,25 +33,6 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
   const previewUrlRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (shareMode === 'group') {
-      loadGroups();
-    }
-  }, [shareMode]);
-
-  const loadGroups = async () => {
-    try {
-      const groupsData = await groupsApi.getAll();
-      setGroups(groupsData.map(g => ({
-        ...g,
-        createdAt: new Date(g.createdAt).getTime(),
-        updatedAt: new Date(g.updatedAt).getTime()
-      })));
-    } catch (error) {
-      console.error('Failed to load groups:', error);
-    }
-  };
-
-  useEffect(() => {
     let isMounted = true;
 
     const updatePreview = async () => {
@@ -365,138 +346,7 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
     }, 500);
   };
 
-  const shareToGroup = async () => {
-    if (!selectedGroup || selectedGroup.members.length === 0) {
-      alert('Please select a group with members');
-      return;
-    }
-
-    // Mobile-only feature
-    if (!isMobile) {
-      alert('Group sharing is only available on mobile devices. Please use this feature on your phone.');
-      return;
-    }
-
-    setProcessing(true);
-    try {
-      // Generate all images first
-      const blobs: Blob[] = [];
-      const files: File[] = [];
-      
-      for (let i = 0; i < selectedDesigns.length; i++) {
-        const blob = await generateBrandedImage(selectedDesigns[i]);
-        blobs.push(blob);
-        files.push(new File([blob], `TextileHub_Design_${i + 1}.jpg`, { type: 'image/jpeg' }));
-      }
-
-      // Create message with sender identification
-      const itemText = selectedDesigns.length === 1 ? 'design' : 'designs';
-      const senderInfo = userFirmName 
-        ? `From: ${userFirmName}` 
-        : (user?.name ? `From: ${user.name}` : '');
-      const caption = `📦 TextileHub Catalogue${senderInfo ? `\n${senderInfo}` : ''}\n\n${selectedDesigns.length} ${itemText} attached. Check the images for details! 🎨`;
-
-      // Check if native share API is available
-      if (navigator.share && navigator.canShare && navigator.canShare({ files })) {
-        // Use native share API - this allows sharing files directly to WhatsApp
-        // User can select WhatsApp and then choose contacts
-        try {
-          await navigator.share({
-            files: files,
-            title: 'TextileHub Design Catalogue',
-            text: caption
-          });
-          // User shared successfully via native share
-          onClose();
-          setProcessing(false);
-          return;
-        } catch (shareError: any) {
-          if (shareError.name === 'AbortError') {
-            // User cancelled
-            setProcessing(false);
-            return;
-          }
-          console.log('Native share failed, trying alternative method:', shareError);
-        }
-      }
-
-      // Alternative: Save images to gallery first, then use WhatsApp share
-      // This approach saves images and then opens WhatsApp share for each contact
-      
-      // Save all images to gallery/download folder first
-      for (let i = 0; i < blobs.length; i++) {
-        downloadOne(blobs[i], `TextileHub_Design_${i + 1}.jpg`);
-        if (blobs.length > 1) await new Promise(r => setTimeout(r, 500));
-      }
-
-      // Wait for images to be saved
-      await new Promise(r => setTimeout(r, 1500));
-
-      // Now try to share to each member using WhatsApp share intent
-      // Note: We can't automatically send, but we can make it easier
-      // by opening WhatsApp with the contact pre-selected
-      
-      let sharedCount = 0;
-      const totalMembers = selectedGroup.members.length;
-
-      // Function to share to one member
-      const shareToMember = async (member: any, index: number) => {
-        const phoneNumber = member.phoneNumber.replace(/\D/g, '');
-        if (!phoneNumber) return;
-
-        // Try WhatsApp share intent (Android) or URL (iOS)
-        const whatsappUrl = `https://wa.me/${phoneNumber}?text=${encodeURIComponent(caption)}`;
-        
-        // For Android, try intent URL
-        const androidIntent = `intent://send?phone=${phoneNumber}&text=${encodeURIComponent(caption)}#Intent;scheme=whatsapp;action=android.intent.action.SEND;end`;
-        
-        try {
-          // Try Android intent first
-          if (/Android/i.test(navigator.userAgent)) {
-            window.location.href = androidIntent;
-          } else {
-            // iOS or fallback
-            window.location.href = whatsappUrl;
-          }
-          
-          sharedCount++;
-          
-          // If this is the last member, close dialog
-          if (sharedCount >= totalMembers) {
-            setTimeout(() => {
-              onClose();
-              setProcessing(false);
-            }, 1000);
-          }
-        } catch (e) {
-          console.error('Failed to open WhatsApp for member:', member.name, e);
-        }
-      };
-
-      // Show instruction
-      alert(`📱 Sharing to ${totalMembers} members...\n\n✅ Images saved to gallery.\n\n💡 WhatsApp will open for each contact. Tap the attachment button (📎) in each chat and select the saved images to send.`);
-      
-      // Share to each member with delay
-      for (let i = 0; i < selectedGroup.members.length; i++) {
-        setTimeout(() => {
-          shareToMember(selectedGroup.members[i], i);
-        }, i * 3000); // 3 second delay to allow user to send in each chat
-      }
-
-      // Set a maximum timeout to close dialog
-      setTimeout(() => {
-        if (processing) {
-          onClose();
-          setProcessing(false);
-        }
-      }, selectedGroup.members.length * 3000 + 5000);
-      
-    } catch (error) {
-      console.error('Failed to share to group:', error);
-      alert('Failed to share to group. Please try again.');
-      setProcessing(false);
-    }
-  };
+  // Group sharing functionality removed - groups feature not available
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/95 backdrop-blur-md p-0 sm:p-4 safe-area-top safe-area-bottom">
@@ -659,11 +509,10 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
         <div className="p-8 bg-gray-50 border-t space-y-4">
           {/* Share Mode Selection */}
           {!readyToLink && (
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 gap-2">
               <button
                 onClick={() => {
                   setShareMode('whatsapp');
-                  setSelectedGroup(null);
                 }}
                 className={`p-3 rounded-xl border-2 transition-all ${
                   shareMode === 'whatsapp'
@@ -676,22 +525,7 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
               </button>
               <button
                 onClick={() => {
-                  setShareMode('group');
-                  loadGroups();
-                }}
-                className={`p-3 rounded-xl border-2 transition-all ${
-                  shareMode === 'group'
-                    ? 'border-indigo-600 bg-indigo-50 text-indigo-900'
-                    : 'border-gray-200 bg-white text-gray-600'
-                }`}
-              >
-                <Users className="w-5 h-5 mx-auto mb-1" />
-                <span className="text-[10px] font-bold uppercase">Group</span>
-              </button>
-              <button
-                onClick={() => {
                   setShareMode('link');
-                  setSelectedGroup(null);
                 }}
                 className={`p-3 rounded-xl border-2 transition-all ${
                   shareMode === 'link'
@@ -705,70 +539,24 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
             </div>
           )}
 
-          {/* Group Selection */}
-          {shareMode === 'group' && !readyToLink && (
-            <div className="space-y-3">
-              <label className="block text-sm font-semibold text-gray-700">Select Group</label>
-              {groups.length === 0 ? (
-                <div className="p-4 bg-gray-50 rounded-xl text-center">
-                  <p className="text-sm text-gray-500 mb-3">No groups found</p>
-                  <button
-                    onClick={() => setShowGroupDialog(true)}
-                    className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-medium"
-                  >
-                    Create Group
-                  </button>
-                </div>
-              ) : (
-                <div className="space-y-2 max-h-40 overflow-y-auto">
-                  {groups.map(group => (
-                    <button
-                      key={group.id}
-                      onClick={() => setSelectedGroup(group)}
-                      className={`w-full p-3 rounded-xl border-2 text-left transition-all ${
-                        selectedGroup?.id === group.id
-                          ? 'border-indigo-600 bg-indigo-50'
-                          : 'border-gray-200 bg-white hover:border-indigo-200'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <h4 className="font-bold text-sm text-gray-900">{group.name}</h4>
-                          <p className="text-xs text-gray-500 mt-0.5">
-                            {group.members.length} {group.members.length === 1 ? 'member' : 'members'}
-                          </p>
-                        </div>
-                        {selectedGroup?.id === group.id && (
-                          <CheckSquare className="w-5 h-5 text-indigo-600" />
-                        )}
-                      </div>
-                    </button>
-                  ))}
-                  <button
-                    onClick={() => setShowGroupDialog(true)}
-                    className="w-full p-3 border-2 border-dashed border-gray-300 rounded-xl text-gray-600 hover:border-indigo-400 hover:text-indigo-600 transition-all text-sm font-medium"
-                  >
-                    + Create New Group
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-
           {/* Action Buttons */}
           {!readyToLink ? (
             <button
-              disabled={processing || (shareMode === 'group' && !selectedGroup)}
+              disabled={processing}
               onClick={() => {
-                if (shareMode === 'link') {
-                  if (onShareLink) {
-                    onShareLink(selectedDesigns);
-                    onClose();
+                try {
+                  if (shareMode === 'link') {
+                    if (onShareLink) {
+                      onShareLink(selectedDesigns);
+                      onClose();
+                    }
+                  } else {
+                    handlePrepareShare();
                   }
-                } else if (shareMode === 'group') {
-                  shareToGroup();
-                } else {
-                  handlePrepareShare();
+                } catch (error) {
+                  console.error('Error in share action:', error);
+                  alert('An error occurred. Please try again.');
+                  setProcessing(false);
                 }
               }}
               className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-5 rounded-[1.8rem] font-black shadow-2xl shadow-indigo-200 flex items-center justify-center gap-3 active:scale-[0.97] transition-all disabled:opacity-50 text-lg"
@@ -777,8 +565,6 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
                 <Loader2 className="w-6 h-6 animate-spin" />
               ) : shareMode === 'link' ? (
                 <Link2 className="w-6 h-6" />
-              ) : shareMode === 'group' ? (
-                <Users className="w-6 h-6" />
               ) : (
                 <Download className="w-6 h-6" />
               )}
@@ -787,9 +573,7 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
                   ? 'Processing...' 
                   : shareMode === 'link'
                     ? `Create Share Link${selectedDesigns.length > 1 ? 's' : ''}`
-                    : shareMode === 'group' 
-                      ? `Share to ${selectedGroup?.name || 'Group'}` 
-                      : 'Prepare Images'}
+                    : 'Prepare Images'}
               </span>
             </button>
           ) : (
@@ -813,15 +597,6 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
         </div>
       </div>
 
-      {showGroupDialog && (
-        <GroupDialog
-          onClose={() => {
-            setShowGroupDialog(false);
-            loadGroups();
-          }}
-          mode="manage"
-        />
-      )}
     </div>
   );
 };
