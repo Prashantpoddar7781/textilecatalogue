@@ -522,7 +522,8 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
         </div>
 
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
-          {/* Live Preview Area */}
+          {/* Live Preview Area - Only show for WhatsApp/Group sharing */}
+          {shareMode !== 'link' && (
           <div className="relative aspect-[4/3] bg-gray-900 rounded-[2rem] overflow-hidden shadow-2xl ring-4 ring-white">
             {previewUrl ? (
               <img src={previewUrl} className="w-full h-full object-contain" alt="Preview" key={previewUrl} />
@@ -537,6 +538,7 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
               IMAGE LABEL PREVIEW
             </div>
           </div>
+          )}
 
           {!readyToLink && shareMode !== 'link' ? (
             <div className="space-y-4">
