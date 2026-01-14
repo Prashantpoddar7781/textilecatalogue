@@ -147,8 +147,10 @@ router.get('/:id', optionalAuth, async (req, res, next) => {
 router.post('/', authenticateToken, [
   body('image').notEmpty(),
   body('name').optional().trim(),
-  body('wholesalePrice').isFloat({ min: 0 }),
-  body('retailPrice').isFloat({ min: 0 }),
+  body('basePrice').optional().isFloat({ min: 0 }),
+  body('wholesalePrice').optional().isFloat({ min: 0 }),
+  body('retailPrice').optional().isFloat({ min: 0 }),
+  body('additionalPrices').optional().isArray(),
   body('fabric').notEmpty().trim(),
   body('description').optional().trim(),
   body('catalogueId').optional()
@@ -159,8 +161,13 @@ router.post('/', authenticateToken, [
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { image, name, wholesalePrice, retailPrice, fabric, description, catalogueId } = req.body;
+    const { image, name, basePrice, wholesalePrice: wsPrice, retailPrice: rtPrice, additionalPrices, fabric, description, catalogueId } = req.body;
     const userId = req.user.userId;
+
+    // Validate that at least one price is provided
+    if (!basePrice && !rtPrice && !wsPrice) {
+      return res.status(400).json({ error: 'Either basePrice or retailPrice must be provided' });
+    }
 
     // Verify catalogue belongs to user if provided
     if (catalogueId) {
@@ -172,14 +179,37 @@ router.post('/', authenticateToken, [
       }
     }
 
+    // Handle backward compatibility: if basePrice not provided, use retailPrice
+    let basePriceNum = basePrice ? parseFloat(basePrice) : (rtPrice ? parseFloat(rtPrice) : 0);
+    let wholesalePrice = wsPrice ? parseFloat(wsPrice) : basePriceNum;
+    let retailPrice = rtPrice ? parseFloat(rtPrice) : basePriceNum;
+    
+    // If additionalPrices provided, calculate them
+    const processedAdditionalPrices = additionalPrices ? additionalPrices.map((ap: any) => {
+      let calculatedPrice = basePriceNum;
+      if (ap.type === 'percentage') {
+        calculatedPrice = basePriceNum * (1 + ap.value / 100);
+      } else if (ap.type === 'fixed') {
+        calculatedPrice = basePriceNum + ap.value;
+      }
+      return {
+        name: ap.name,
+        type: ap.type,
+        value: ap.value,
+        calculatedPrice: calculatedPrice
+      };
+    }) : null;
+
     const design = await prisma.design.create({
       data: {
         userId,
         name: name?.trim() || `Design ${new Date().toISOString()}`,
         catalogueId: catalogueId || null,
         image,
-        wholesalePrice: parseFloat(wholesalePrice),
-        retailPrice: parseFloat(retailPrice),
+        basePrice: basePriceNum,
+        additionalPrices: processedAdditionalPrices,
+        wholesalePrice, // For backward compatibility
+        retailPrice, // For backward compatibility
         fabric,
         description: description || null
       },
@@ -202,8 +232,8 @@ router.post('/', authenticateToken, [
 
 // Update design (requires auth, owner only)
 router.put('/:id', authenticateToken, [
-  body('wholesalePrice').optional().isFloat({ min: 0 }),
-  body('retailPrice').optional().isFloat({ min: 0 }),
+  body('basePrice').optional().isFloat({ min: 0 }),
+  body('additionalPrices').optional().isArray(),
   body('fabric').optional().notEmpty().trim(),
   body('description').optional().trim()
 ], async (req, res, next) => {
@@ -242,12 +272,50 @@ router.put('/:id', authenticateToken, [
     // Update
     const updateData = {};
     if (req.body.name !== undefined) updateData.name = req.body.name?.trim() || null;
-    if (req.body.wholesalePrice !== undefined) updateData.wholesalePrice = parseFloat(req.body.wholesalePrice);
-    if (req.body.retailPrice !== undefined) updateData.retailPrice = parseFloat(req.body.retailPrice);
     if (req.body.fabric !== undefined) updateData.fabric = req.body.fabric;
     if (req.body.description !== undefined) updateData.description = req.body.description;
     if (req.body.image !== undefined) updateData.image = req.body.image;
     if (req.body.catalogueId !== undefined) updateData.catalogueId = req.body.catalogueId || null;
+    
+    // Handle pricing updates with backward compatibility
+    if (req.body.basePrice !== undefined) {
+      const basePriceNum = parseFloat(req.body.basePrice);
+      updateData.basePrice = basePriceNum;
+      if (!req.body.wholesalePrice) updateData.wholesalePrice = basePriceNum;
+      if (!req.body.retailPrice) updateData.retailPrice = basePriceNum;
+    } else if (req.body.retailPrice !== undefined) {
+      // Backward compatibility: if only retailPrice provided, use it as basePrice
+      const retailPriceNum = parseFloat(req.body.retailPrice);
+      updateData.basePrice = retailPriceNum;
+      updateData.retailPrice = retailPriceNum;
+      if (!req.body.wholesalePrice) updateData.wholesalePrice = retailPriceNum;
+    }
+    
+    if (req.body.wholesalePrice !== undefined) {
+      updateData.wholesalePrice = parseFloat(req.body.wholesalePrice);
+    }
+    if (req.body.retailPrice !== undefined) {
+      updateData.retailPrice = parseFloat(req.body.retailPrice);
+    }
+    
+    if (req.body.additionalPrices !== undefined) {
+      const basePriceNum = updateData.basePrice || existing.basePrice || existing.retailPrice || 0;
+      const processedAdditionalPrices = req.body.additionalPrices.map((ap: any) => {
+        let calculatedPrice = basePriceNum;
+        if (ap.type === 'percentage') {
+          calculatedPrice = basePriceNum * (1 + ap.value / 100);
+        } else if (ap.type === 'fixed') {
+          calculatedPrice = basePriceNum + ap.value;
+        }
+        return {
+          name: ap.name,
+          type: ap.type,
+          value: ap.value,
+          calculatedPrice: calculatedPrice
+        };
+      });
+      updateData.additionalPrices = processedAdditionalPrices;
+    }
 
     const design = await prisma.design.update({
       where: { id },

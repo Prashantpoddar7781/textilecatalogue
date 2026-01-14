@@ -20,7 +20,8 @@ model User {
   updatedAt DateTime @updatedAt
   designs   Design[]
   catalogues Catalogue[]
-  groups    Group[]
+  contacts  Contact[]
+  shareLinks ShareLink[]
 }
 
 model Catalogue {
@@ -44,10 +45,13 @@ model Design {
   catalogue     Catalogue? @relation(fields: [catalogueId], references: [id], onDelete: SetNull)
   name          String?  // Design name (optional for backward compatibility)
   image         String   // Base64 or URL
-  wholesalePrice Float
-  retailPrice    Float
+  basePrice     Float?   // Base price (replaces wholesalePrice/retailPrice) - nullable for migration
+  additionalPrices Json?  // Additional price types: [{name: "WSP", type: "percentage|fixed", value: 5}]
+  wholesalePrice Float   @default(0) // Kept for backward compatibility
+  retailPrice    Float   @default(0) // Kept for backward compatibility
   fabric         String
   description    String?
+  shareLinks     ShareLink[]
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -57,27 +61,38 @@ model Design {
   @@index([createdAt])
 }
 
-model Group {
-  id        String   @id @default(cuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  name      String
-  members   GroupMember[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+model Contact {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String
+  phoneNumber String
+  isSaved     Boolean  @default(false) // Whether this contact has saved user's number
+  lastShared  DateTime?
+  deliveryStatus String? // 'delivered', 'undelivered', 'unknown'
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   @@index([userId])
+  @@unique([userId, phoneNumber])
 }
 
-model GroupMember {
-  id        String   @id @default(cuid())
-  groupId   String
-  group     Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  name      String
-  phoneNumber String
-  createdAt DateTime @default(now())
+model ShareLink {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  designId    String
+  design      Design   @relation(fields: [designId], references: [id], onDelete: Cascade)
+  token       String   @unique // Unique token for the shareable link
+  expiresAt   DateTime? // Optional expiration date
+  isActive    Boolean  @default(true) // Can be disabled by user
+  selectedPriceType String? // Which price type to show (base, or name of additional price)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  @@index([groupId])
-  @@unique([groupId, phoneNumber])
+  @@index([userId])
+  @@index([designId])
+  @@index([token])
+  @@index([isActive])
 }
 

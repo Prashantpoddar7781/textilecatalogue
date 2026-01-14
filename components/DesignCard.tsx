@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Trash2, CheckCircle, IndianRupee, Edit } from 'lucide-react';
+import { Trash2, CheckCircle, IndianRupee, Edit, Link2 } from 'lucide-react';
 import { TextileDesign } from '../types';
 
 interface Props {
@@ -9,9 +9,10 @@ interface Props {
   onSelect: () => void;
   onDelete: () => void;
   onEdit: () => void;
+  onShareLink?: () => void;
 }
 
-export const DesignCard: React.FC<Props> = ({ design, isSelected, onSelect, onDelete, onEdit }) => {
+export const DesignCard: React.FC<Props> = ({ design, isSelected, onSelect, onDelete, onEdit, onShareLink }) => {
   return (
     <div 
       onClick={onSelect}
@@ -42,6 +43,18 @@ export const DesignCard: React.FC<Props> = ({ design, isSelected, onSelect, onDe
         )}
 
         <div className="absolute bottom-2 right-2 flex gap-2">
+          {onShareLink && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onShareLink();
+              }}
+              className="bg-white/90 text-green-600 p-2 rounded-xl shadow-md sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
+              title="Create share link"
+            >
+              <Link2 className="w-4 h-4" />
+            </button>
+          )}
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -65,10 +78,10 @@ export const DesignCard: React.FC<Props> = ({ design, isSelected, onSelect, onDe
 
       <div className="p-3 bg-white">
         <div className="flex flex-col">
-          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Retail</span>
+          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Price</span>
           <div className="flex items-center text-lg font-black text-gray-900 leading-tight">
             <IndianRupee className="w-3.5 h-3.5" />
-            <span>{design.retailPrice.toLocaleString()}</span>
+            <span>{(design.basePrice || design.retailPrice || 0).toLocaleString()}</span>
           </div>
         </div>
         <p className="text-xs font-bold text-gray-900 line-clamp-1 mt-1">

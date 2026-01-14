@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { X, Upload, IndianRupee, Camera, Plus } from 'lucide-react';
-import { TextileDesign } from '../types';
+import { X, Upload, IndianRupee, Camera, Plus, Trash2 } from 'lucide-react';
+import { TextileDesign, AdditionalPrice } from '../types';
 import { cataloguesApi, designsApi } from '../services/api';
 
 interface Props {
@@ -21,11 +21,11 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
   const [formData, setFormData] = useState({
     name: '',
     catalogueId: '',
-    wholesalePrice: '',
-    retailPrice: '',
+    basePrice: '',
     fabric: '',
     description: ''
   });
+  const [additionalPrices, setAdditionalPrices] = useState<AdditionalPrice[]>([]);
 
   // Load catalogues on mount
   useEffect(() => {
@@ -38,22 +38,22 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
       setFormData({
         name: initialData.name || '',
         catalogueId: initialData.catalogueId || '',
-        wholesalePrice: initialData.wholesalePrice.toString() || '',
-        retailPrice: initialData.retailPrice.toString() || '',
+        basePrice: (initialData.basePrice || initialData.retailPrice || 0).toString(),
         fabric: initialData.fabric || '',
         description: initialData.description || ''
       });
+      setAdditionalPrices(initialData.additionalPrices || []);
       setPreview(initialData.image);
     } else {
       // Reset form when not editing
       setFormData({
         name: '',
         catalogueId: '',
-        wholesalePrice: '',
-        retailPrice: '',
+        basePrice: '',
         fabric: '',
         description: ''
       });
+      setAdditionalPrices([]);
       setPreview(null);
     }
   }, [initialData]);
@@ -99,12 +99,43 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
     cameraInputRef.current?.click();
   };
 
+  const calculatePrice = (basePrice: number, price: AdditionalPrice): number => {
+    if (price.type === 'percentage') {
+      return basePrice * (1 + price.value / 100);
+    } else {
+      return basePrice + price.value;
+    }
+  };
+
+  const handleAddPrice = () => {
+    setAdditionalPrices([...additionalPrices, { name: '', type: 'percentage', value: 0 }]);
+  };
+
+  const handleRemovePrice = (index: number) => {
+    setAdditionalPrices(additionalPrices.filter((_, i) => i !== index));
+  };
+
+  const handlePriceChange = (index: number, field: keyof AdditionalPrice, value: string | number) => {
+    const updated = [...additionalPrices];
+    updated[index] = { ...updated[index], [field]: value };
+    setAdditionalPrices(updated);
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     // Allow editing without re-uploading image if initialData exists
     const imageToUse = preview || initialData?.image;
     if (!imageToUse) return alert('Please upload an image');
     const designName = formData.name.trim() || `Design ${new Date().toLocaleDateString()}`;
+    const basePriceNum = Number(formData.basePrice) || 0;
+
+    // Calculate prices for additional price types
+    const processedAdditionalPrices = additionalPrices
+      .filter(ap => ap.name.trim() && ap.value > 0)
+      .map(ap => ({
+        ...ap,
+        calculatedPrice: calculatePrice(basePriceNum, ap)
+      }));
 
     const newDesign: TextileDesign = {
       id: initialData?.id || Date.now().toString(),
@@ -112,8 +143,10 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
       catalogueId: formData.catalogueId || undefined,
       catalogueName: catalogues.find(c => c.id === formData.catalogueId)?.name,
       image: imageToUse,
-      wholesalePrice: Number(formData.wholesalePrice),
-      retailPrice: Number(formData.retailPrice),
+      basePrice: basePriceNum,
+      additionalPrices: processedAdditionalPrices.length > 0 ? processedAdditionalPrices : undefined,
+      wholesalePrice: basePriceNum, // For backward compatibility
+      retailPrice: basePriceNum, // For backward compatibility
       fabric: formData.fabric || 'Unknown',
       description: formData.description || '',
       createdAt: initialData?.createdAt || Date.now()
@@ -267,36 +300,120 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
             )}
           </div>
 
-          {/* Fields */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1">
-              <label className="text-sm font-semibold text-gray-700">Wholesale Price</label>
-              <div className="relative">
-                <IndianRupee className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                <input
-                  required
-                  type="number"
-                  className="w-full pl-9 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
-                  placeholder="0.00"
-                  value={formData.wholesalePrice}
-                  onChange={e => setFormData({...formData, wholesalePrice: e.target.value})}
-                />
-              </div>
+          {/* Base Price */}
+          <div className="space-y-1">
+            <label className="text-sm font-semibold text-gray-700">Base Price *</label>
+            <div className="relative">
+              <IndianRupee className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input
+                required
+                type="number"
+                step="0.01"
+                className="w-full pl-9 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                placeholder="0.00"
+                value={formData.basePrice}
+                onChange={e => setFormData({...formData, basePrice: e.target.value})}
+              />
             </div>
-            <div className="space-y-1">
-              <label className="text-sm font-semibold text-gray-700">Retail Price</label>
-              <div className="relative">
-                <IndianRupee className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                <input
-                  required
-                  type="number"
-                  className="w-full pl-9 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
-                  placeholder="0.00"
-                  value={formData.retailPrice}
-                  onChange={e => setFormData({...formData, retailPrice: e.target.value})}
-                />
-              </div>
+          </div>
+
+          {/* Additional Prices */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-semibold text-gray-700">Additional Price Types</label>
+              <button
+                type="button"
+                onClick={handleAddPrice}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 rounded-lg text-sm font-medium transition-colors"
+              >
+                <Plus className="w-4 h-4" />
+                Add Price
+              </button>
             </div>
+            
+            {additionalPrices.map((price, index) => {
+              const basePriceNum = Number(formData.basePrice) || 0;
+              const calculatedPrice = calculatePrice(basePriceNum, price);
+              
+              return (
+                <div key={index} className="p-4 bg-gray-50 rounded-xl border border-gray-200 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-gray-600">Price Type {index + 1}</span>
+                    <button
+                      type="button"
+                      onClick={() => handleRemovePrice(index)}
+                      className="p-1 hover:bg-red-100 text-red-600 rounded transition-colors"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs font-medium text-gray-600 mb-1 block">Name</label>
+                      <input
+                        type="text"
+                        className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm"
+                        placeholder="e.g. WSP, MRP"
+                        value={price.name}
+                        onChange={e => handlePriceChange(index, 'name', e.target.value)}
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="text-xs font-medium text-gray-600 mb-1 block">Type</label>
+                      <select
+                        className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm"
+                        value={price.type}
+                        onChange={e => handlePriceChange(index, 'type', e.target.value as 'percentage' | 'fixed')}
+                      >
+                        <option value="percentage">Percentage (%)</option>
+                        <option value="fixed">Fixed Amount (₹)</option>
+                      </select>
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <label className="text-xs font-medium text-gray-600 mb-1 block">
+                      {price.type === 'percentage' ? 'Percentage' : 'Amount'}
+                    </label>
+                    <div className="relative">
+                      {price.type === 'fixed' && (
+                        <IndianRupee className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                      )}
+                      <input
+                        type="number"
+                        step="0.01"
+                        className={`w-full ${price.type === 'fixed' ? 'pl-9' : 'pl-3'} pr-3 py-2 bg-white border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm`}
+                        placeholder={price.type === 'percentage' ? "5" : "0.00"}
+                        value={price.value || ''}
+                        onChange={e => handlePriceChange(index, 'value', Number(e.target.value))}
+                      />
+                      {price.type === 'percentage' && (
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">%</span>
+                      )}
+                    </div>
+                  </div>
+                  
+                  {formData.basePrice && price.name && price.value > 0 && (
+                    <div className="pt-2 border-t border-gray-200">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-gray-600">Calculated Price:</span>
+                        <span className="font-bold text-indigo-600">
+                          ₹{calculatedPrice.toFixed(2)}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            
+            {additionalPrices.length === 0 && (
+              <p className="text-xs text-gray-400 text-center py-2">
+                No additional prices added. Click "Add Price" to create custom price types.
+              </p>
+            )}
           </div>
 
           <div className="space-y-1">

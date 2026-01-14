@@ -1,9 +1,8 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { X, MessageCircle, CheckSquare, Square, Loader2, Download, Eye, AlertCircle, Send, Users } from 'lucide-react';
-import { TextileDesign, ShareOptions, Group } from '../types';
-import { groupsApi } from '../services/api';
-import { GroupDialog } from './GroupDialog';
+import { TextileDesign, ShareOptions, Contact } from '../types';
+import { contactsApi } from '../services/api';
 
 interface Props {
   selectedDesigns: TextileDesign[];
@@ -16,10 +15,11 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isMobile] = useState(() => /iPhone|iPad|iPod|Android/i.test(navigator.userAgent));
   const [readyToLink, setReadyToLink] = useState(false);
-  const [shareMode, setShareMode] = useState<'whatsapp' | 'group'>('whatsapp');
-  const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
-  const [showGroupDialog, setShowGroupDialog] = useState(false);
-  const [groups, setGroups] = useState<Group[]>([]);
+  const [shareMode, setShareMode] = useState<'whatsapp' | 'broadcast'>('whatsapp');
+  const [selectedContacts, setSelectedContacts] = useState<Contact[]>([]);
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [undeliveredContacts, setUndeliveredContacts] = useState<Contact[]>([]);
+  const [showUndelivered, setShowUndelivered] = useState(false);
   const [options, setOptions] = useState<ShareOptions>({
     includeWholesale: false,
     includeRetail: true,
@@ -27,6 +27,7 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
     includeDescription: false,
     includeFirmName: false
   });
+  const [selectedPriceType, setSelectedPriceType] = useState<string>('base'); // 'base' or name of additional price
 
   const previewUrlRef = useRef<string | null>(null);
 
@@ -80,7 +81,7 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
         URL.revokeObjectURL(previewUrlRef.current);
       }
     };
-  }, [options, selectedDesigns]);
+  }, [options, selectedDesigns, selectedPriceType]);
 
   const generateBrandedImage = async (design: TextileDesign): Promise<Blob> => {
     return new Promise((resolve, reject) => {
@@ -135,11 +136,24 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
         if (options.includeFabric && design.fabric) {
           lines.push(`Fabric: ${design.fabric}`);
         }
-        if (options.includeRetail) {
-          lines.push(`Retail: ₹${design.retailPrice.toLocaleString()}`);
-        }
-        if (options.includeWholesale) {
-          lines.push(`Wholesale: ₹${design.wholesalePrice.toLocaleString()}`);
+        
+        // Show selected price type
+        if (options.includeRetail || options.includeWholesale) {
+          let priceToShow = design.basePrice || design.retailPrice || 0;
+          let priceLabel = 'Price';
+          
+          if (selectedPriceType === 'base') {
+            priceToShow = design.basePrice || design.retailPrice || 0;
+            priceLabel = 'Price';
+          } else if (design.additionalPrices) {
+            const selectedPrice = design.additionalPrices.find(ap => ap.name === selectedPriceType);
+            if (selectedPrice && selectedPrice.calculatedPrice) {
+              priceToShow = selectedPrice.calculatedPrice;
+              priceLabel = selectedPrice.name;
+            }
+          }
+          
+          lines.push(`${priceLabel}: ₹${priceToShow.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`);
         }
         if (options.includeDescription && design.description) {
           // Truncate description if too long
@@ -363,9 +377,12 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
         files.push(new File([blob], `TextileHub_Design_${i + 1}.jpg`, { type: 'image/jpeg' }));
       }
 
-      // Create message
+      // Create message with sender identification
       const itemText = selectedDesigns.length === 1 ? 'design' : 'designs';
-      const caption = `📦 TextileHub Catalogue\n\n${selectedDesigns.length} ${itemText} attached. Check the images for details! 🎨`;
+      const senderInfo = userFirmName 
+        ? `From: ${userFirmName}` 
+        : (user?.name ? `From: ${user.name}` : '');
+      const caption = `📦 TextileHub Catalogue${senderInfo ? `\n${senderInfo}` : ''}\n\n${selectedDesigns.length} ${itemText} attached. Check the images for details! 🎨`;
 
       // Check if native share API is available
       if (navigator.share && navigator.canShare && navigator.canShare({ files })) {
@@ -510,30 +527,82 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
           </div>
 
           {!readyToLink ? (
-            <div className="grid grid-cols-2 gap-3">
-              {[
-                { id: 'includeRetail', label: 'Retail Price', key: 'includeRetail' },
-                { id: 'includeFabric', label: 'Fabric Info', key: 'includeFabric' },
-                { id: 'includeWholesale', label: 'Wholesale', key: 'includeWholesale' },
-                { id: 'includeDescription', label: 'Description', key: 'includeDescription' }
-              ].map((opt) => (
-                <button
-                  key={opt.id}
-                  disabled={processing}
-                  onClick={() => setOptions({ ...options, [opt.key]: !options[opt.key as keyof ShareOptions] })}
-                  className={`flex items-center gap-3 p-4 rounded-2xl border-2 transition-all text-left ${
-                    options[opt.key as keyof ShareOptions] 
-                      ? 'border-indigo-600 bg-indigo-50 text-indigo-900 shadow-sm' 
-                      : 'border-gray-50 bg-gray-50 text-gray-400'
-                  }`}
-                >
-                  {options[opt.key as keyof ShareOptions] ? 
-                    <CheckSquare className="w-5 h-5 text-indigo-600" /> : 
-                    <Square className="w-5 h-5" />
-                  }
-                  <span className="font-bold text-xs uppercase tracking-tight">{opt.label}</span>
-                </button>
-              ))}
+            <div className="space-y-4">
+              {/* Price Type Selection */}
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-gray-700">Select Price to Display</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    disabled={processing}
+                    onClick={() => {
+                      setSelectedPriceType('base');
+                      setOptions({ ...options, includeRetail: true, includeWholesale: false });
+                    }}
+                    className={`flex items-center gap-2 p-3 rounded-xl border-2 transition-all text-left ${
+                      selectedPriceType === 'base' && options.includeRetail
+                        ? 'border-indigo-600 bg-indigo-50 text-indigo-900 shadow-sm' 
+                        : 'border-gray-200 bg-white text-gray-600'
+                    }`}
+                  >
+                    <span className="font-bold text-xs">Base Price</span>
+                    {selectedPriceType === 'base' && options.includeRetail && (
+                      <CheckSquare className="w-4 h-4 text-indigo-600 ml-auto" />
+                    )}
+                  </button>
+                  
+                  {selectedDesigns[0]?.additionalPrices?.map((ap) => (
+                    <button
+                      key={ap.name}
+                      disabled={processing}
+                      onClick={() => {
+                        setSelectedPriceType(ap.name);
+                        setOptions({ ...options, includeRetail: true, includeWholesale: false });
+                      }}
+                      className={`flex items-center gap-2 p-3 rounded-xl border-2 transition-all text-left ${
+                        selectedPriceType === ap.name && options.includeRetail
+                          ? 'border-indigo-600 bg-indigo-50 text-indigo-900 shadow-sm' 
+                          : 'border-gray-200 bg-white text-gray-600'
+                      }`}
+                    >
+                      <span className="font-bold text-xs">{ap.name}</span>
+                      {selectedPriceType === ap.name && options.includeRetail && (
+                        <CheckSquare className="w-4 h-4 text-indigo-600 ml-auto" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+                {selectedDesigns[0]?.additionalPrices && selectedDesigns[0].additionalPrices.length === 0 && (
+                  <p className="text-xs text-gray-400 text-center py-2">
+                    No additional prices available. Add them when creating/editing the design.
+                  </p>
+                )}
+              </div>
+
+              {/* Other Options */}
+              <div className="grid grid-cols-2 gap-3">
+                {[
+                  { id: 'includeFabric', label: 'Fabric Info', key: 'includeFabric' },
+                  { id: 'includeDescription', label: 'Description', key: 'includeDescription' },
+                  { id: 'includeFirmName', label: 'Firm Name', key: 'includeFirmName' }
+                ].map((opt) => (
+                  <button
+                    key={opt.id}
+                    disabled={processing}
+                    onClick={() => setOptions({ ...options, [opt.key]: !options[opt.key as keyof ShareOptions] })}
+                    className={`flex items-center gap-3 p-4 rounded-2xl border-2 transition-all text-left ${
+                      options[opt.key as keyof ShareOptions] 
+                        ? 'border-indigo-600 bg-indigo-50 text-indigo-900 shadow-sm' 
+                        : 'border-gray-50 bg-gray-50 text-gray-400'
+                    }`}
+                  >
+                    {options[opt.key as keyof ShareOptions] ? 
+                      <CheckSquare className="w-5 h-5 text-indigo-600" /> : 
+                      <Square className="w-5 h-5" />
+                    }
+                    <span className="font-bold text-xs uppercase tracking-tight">{opt.label}</span>
+                  </button>
+                ))}
+              </div>
             </div>
           ) : (
             <div className="bg-green-50 p-6 rounded-[2rem] border border-green-100 space-y-4 animate-in fade-in zoom-in duration-300">

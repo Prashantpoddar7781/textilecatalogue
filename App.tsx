@@ -4,17 +4,29 @@ import { TextileDesign, CatalogueFilters } from './types';
 import { UploadForm } from './components/UploadForm';
 import { DesignCard } from './components/DesignCard';
 import { ShareDialog } from './components/ShareDialog';
+import { ShareLinkDialog } from './components/ShareLinkDialog';
+import { ShareView } from './components/ShareView';
 import { LoginDialog } from './components/LoginDialog';
-import { GroupDialog } from './components/GroupDialog';
-import { designsApi, authApi } from './services/api';
+import { ContactDialog } from './components/ContactDialog';
+import { designsApi, authApi, shareLinksApi } from './services/api';
 
 const App: React.FC = () => {
+  // Check if we're on a share route
+  const pathname = window.location.pathname;
+  const shareMatch = pathname.match(/^\/share\/([^/]+)$/);
+  
+  if (shareMatch) {
+    const token = shareMatch[1];
+    return <ShareView token={token} />;
+  }
   const [designs, setDesigns] = useState<TextileDesign[]>([]);
   const [isReady, setIsReady] = useState(false);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [isShareOpen, setIsShareOpen] = useState(false);
+  const [isShareLinkOpen, setIsShareLinkOpen] = useState(false);
+  const [selectedDesignForLink, setSelectedDesignForLink] = useState<TextileDesign | null>(null);
   const [isLoginOpen, setIsLoginOpen] = useState(false);
-  const [isGroupDialogOpen, setIsGroupDialogOpen] = useState(false);
+  const [isContactDialogOpen, setIsContactDialogOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(false);
@@ -74,8 +86,10 @@ const App: React.FC = () => {
         catalogueId: d.catalogueId,
         catalogueName: d.catalogue?.name,
         image: d.image,
-        wholesalePrice: d.wholesalePrice,
-        retailPrice: d.retailPrice,
+        basePrice: d.basePrice || d.retailPrice || 0,
+        additionalPrices: d.additionalPrices,
+        wholesalePrice: d.wholesalePrice || d.basePrice || d.retailPrice || 0,
+        retailPrice: d.retailPrice || d.basePrice || 0,
         fabric: d.fabric,
         description: d.description || '',
         firmName: d.user?.firmName,
@@ -138,8 +152,12 @@ const App: React.FC = () => {
       const created = await designsApi.create({
         name: design.name,
         image: design.image,
-        wholesalePrice: design.wholesalePrice,
-        retailPrice: design.retailPrice,
+        basePrice: design.basePrice,
+        additionalPrices: design.additionalPrices?.map(ap => ({
+          name: ap.name,
+          type: ap.type,
+          value: ap.value
+        })),
         fabric: design.fabric,
         description: design.description,
         catalogueId: design.catalogueId
@@ -151,8 +169,10 @@ const App: React.FC = () => {
         catalogueId: created.catalogueId,
         catalogueName: created.catalogue?.name,
         image: created.image,
-        wholesalePrice: created.wholesalePrice,
-        retailPrice: created.retailPrice,
+        basePrice: created.basePrice || created.retailPrice || 0,
+        additionalPrices: created.additionalPrices,
+        wholesalePrice: created.wholesalePrice || created.basePrice || 0,
+        retailPrice: created.retailPrice || created.basePrice || 0,
         fabric: created.fabric,
         description: created.description || '',
         firmName: created.user?.firmName,
@@ -181,8 +201,12 @@ const App: React.FC = () => {
       const updated = await designsApi.update(editingDesign.id, {
         name: design.name,
         image: design.image,
-        wholesalePrice: design.wholesalePrice,
-        retailPrice: design.retailPrice,
+        basePrice: design.basePrice,
+        additionalPrices: design.additionalPrices?.map(ap => ({
+          name: ap.name,
+          type: ap.type,
+          value: ap.value
+        })),
         fabric: design.fabric,
         description: design.description,
         catalogueId: design.catalogueId
@@ -195,8 +219,10 @@ const App: React.FC = () => {
           catalogueId: updated.catalogueId,
           catalogueName: updated.catalogue?.name,
           image: updated.image,
-          wholesalePrice: updated.wholesalePrice,
-          retailPrice: updated.retailPrice,
+          basePrice: updated.basePrice || updated.retailPrice || 0,
+          additionalPrices: updated.additionalPrices,
+          wholesalePrice: updated.wholesalePrice || updated.basePrice || 0,
+          retailPrice: updated.retailPrice || updated.basePrice || 0,
           fabric: updated.fabric,
           description: updated.description || '',
           firmName: updated.user?.firmName,
@@ -302,11 +328,11 @@ const App: React.FC = () => {
             </div>
             <div className="hidden sm:flex items-center gap-2">
               <button
-                onClick={() => setIsGroupDialogOpen(true)}
+                onClick={() => setIsContactDialogOpen(true)}
                 className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-2xl font-bold transition-all shadow-lg active:scale-95"
               >
                 <Package className="w-4 h-4" />
-                <span>Groups</span>
+                <span>Contacts</span>
               </button>
               <button
                 onClick={() => setIsUploadOpen(true)}
@@ -424,6 +450,10 @@ const App: React.FC = () => {
                 onSelect={() => toggleSelection(design.id)}
                 onDelete={() => handleDeleteDesign(design.id)}
                 onEdit={() => handleEditDesign(design)}
+                onShareLink={() => {
+                  setSelectedDesignForLink(design);
+                  setIsShareLinkOpen(true);
+                }}
               />
             ))}
           </div>
@@ -484,7 +514,16 @@ const App: React.FC = () => {
         />
       )}
       {isShareOpen && <ShareDialog selectedDesigns={selectedDesigns} userFirmName={user?.firmName} onClose={() => setIsShareOpen(false)} />}
-      {isGroupDialogOpen && <GroupDialog onClose={() => setIsGroupDialogOpen(false)} mode="manage" />}
+      {isShareLinkOpen && selectedDesignForLink && (
+        <ShareLinkDialog 
+          design={selectedDesignForLink} 
+          onClose={() => {
+            setIsShareLinkOpen(false);
+            setSelectedDesignForLink(null);
+          }} 
+        />
+      )}
+      {isContactDialogOpen && <ContactDialog onClose={() => setIsContactDialogOpen(false)} />}
     </div>
   );
 };

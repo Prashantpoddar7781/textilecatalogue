@@ -1,4 +1,4 @@
-import { Group, GroupMember } from '../types';
+import { Contact } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
 
@@ -89,8 +89,8 @@ export const designsApi = {
   create: async (design: {
     name: string;
     image: string;
-    wholesalePrice: number;
-    retailPrice: number;
+    basePrice: number;
+    additionalPrices?: Array<{ name: string; type: 'percentage' | 'fixed'; value: number }>;
     fabric: string;
     description?: string;
     catalogueId?: string;
@@ -104,8 +104,8 @@ export const designsApi = {
   update: async (id: string, design: Partial<{
     name?: string;
     image?: string;
-    wholesalePrice?: number;
-    retailPrice?: number;
+    basePrice?: number;
+    additionalPrices?: Array<{ name: string; type: 'percentage' | 'fixed'; value: number }>;
     fabric?: string;
     description?: string;
     catalogueId?: string;
@@ -162,45 +162,85 @@ export const cataloguesApi = {
   },
 };
 
-// Groups API
-export const groupsApi = {
+// Contacts API
+export const contactsApi = {
   getAll: async () => {
-    return request<Group[]>('/groups');
+    return request<Contact[]>('/contacts');
   },
 
-  getById: async (id: string) => {
-    return request<Group>(`/groups/${id}`);
+  getByStatus: async (status: 'delivered' | 'undelivered' | 'unknown') => {
+    return request<Contact[]>(`/contacts/status/${status}`);
   },
 
-  create: async (group: { name: string; members: { name: string; phoneNumber: string }[] }) => {
-    return request<Group>('/groups', {
+  create: async (contact: { name: string; phoneNumber: string; isSaved?: boolean }) => {
+    return request<Contact>('/contacts', {
       method: 'POST',
-      body: JSON.stringify(group),
+      body: JSON.stringify(contact),
     });
   },
 
-  update: async (id: string, group: { name?: string; members?: { name: string; phoneNumber: string }[] }) => {
-    return request<Group>(`/groups/${id}`, {
+  update: async (id: string, contact: { 
+    name?: string; 
+    phoneNumber?: string; 
+    isSaved?: boolean;
+    deliveryStatus?: 'delivered' | 'undelivered' | 'unknown';
+    lastShared?: number;
+  }) => {
+    return request<Contact>(`/contacts/${id}`, {
       method: 'PUT',
-      body: JSON.stringify(group),
+      body: JSON.stringify(contact),
     });
   },
 
   delete: async (id: string) => {
-    return request<{ message: string }>(`/groups/${id}`, {
+    return request<{ message: string }>(`/contacts/${id}`, {
       method: 'DELETE',
     });
   },
 
-  addMember: async (groupId: string, member: { name: string; phoneNumber: string }) => {
-    return request<GroupMember>(`/groups/${groupId}/members`, {
+  updateDeliveryStatus: async (contacts: { id: string; deliveryStatus: 'delivered' | 'undelivered' | 'unknown' }[]) => {
+    return request<{ message: string }>('/contacts/update-delivery-status', {
       method: 'POST',
-      body: JSON.stringify(member),
+      body: JSON.stringify({ contacts }),
+    });
+  },
+};
+
+// Share Links API
+export const shareLinksApi = {
+  create: async (data: {
+    designId: string;
+    expiresAt?: string;
+    selectedPriceType?: string;
+  }) => {
+    return request<any>('/share-links', {
+      method: 'POST',
+      body: JSON.stringify(data),
     });
   },
 
-  removeMember: async (groupId: string, memberId: string) => {
-    return request<{ message: string }>(`/groups/${groupId}/members/${memberId}`, {
+  getAll: async () => {
+    return request<{ shareLinks: any[] }>('/share-links');
+  },
+
+  getByToken: async (token: string) => {
+    return request<any>(`/share-links/${token}`);
+  },
+
+  disable: async (id: string) => {
+    return request<{ message: string; shareLink: any }>(`/share-links/${id}/disable`, {
+      method: 'PUT',
+    });
+  },
+
+  enable: async (id: string) => {
+    return request<{ message: string; shareLink: any }>(`/share-links/${id}/enable`, {
+      method: 'PUT',
+    });
+  },
+
+  delete: async (id: string) => {
+    return request<{ message: string }>(`/share-links/${id}`, {
       method: 'DELETE',
     });
   },
