@@ -469,7 +469,8 @@ const App: React.FC = () => {
             </div>
           </div>
         )}
-
+      </div>
+      
       {/* Orders Section */}
       <div className="max-w-7xl mx-auto px-4 pb-4">
         <div className="bg-white border border-gray-100 rounded-3xl p-4 sm:p-6 shadow-sm">
