@@ -51,7 +51,6 @@ const App: React.FC = () => {
         .then(({ user }) => {
           setUser(user);
           loadDesigns();
-          loadOrders();
         })
         .catch(() => {
           localStorage.removeItem('auth_token');
@@ -63,6 +62,13 @@ const App: React.FC = () => {
       setIsLoginOpen(true);
     }
   }, []);
+
+  // Load orders when user is available
+  useEffect(() => {
+    if (user) {
+      loadOrders();
+    }
+  }, [user]);
 
   // Load designs from API
   const loadDesigns = async () => {
@@ -366,21 +372,27 @@ const App: React.FC = () => {
               <User className="w-4 h-4" />
               <span className="font-medium">{user.name || user.email}</span>
             </div>
-            <div className="hidden sm:flex items-center gap-2">
+            <div className="flex items-center gap-2">
               <button
                 onClick={handleShareCollection}
                 disabled={isSharingCollection}
                 className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-2xl font-bold transition-all shadow-lg active:scale-95 disabled:opacity-60"
               >
                 <Share2 className="w-4 h-4" />
-                <span>{isSharingCollection ? 'Creating Link...' : 'Share My Collection'}</span>
+                <span className="hidden sm:inline">
+                  {isSharingCollection ? 'Creating Link...' : 'Share My Collection'}
+                </span>
+                <span className="sm:hidden">
+                  {isSharingCollection ? 'Creating...' : 'Share'}
+                </span>
               </button>
               <button
                 onClick={() => setIsUploadOpen(true)}
                 className="flex items-center gap-2 bg-gray-900 hover:bg-black text-white px-5 py-2.5 rounded-2xl font-bold transition-all shadow-lg active:scale-95"
               >
                 <Plus className="w-5 h-5" />
-                <span>Add Design</span>
+                <span className="hidden sm:inline">Add Design</span>
+                <span className="sm:hidden">Add</span>
               </button>
             </div>
             <button

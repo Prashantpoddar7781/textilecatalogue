@@ -119,7 +119,6 @@ export const ShareView: React.FC<{ token: string }> = ({ token }) => {
       });
       if (result.order?.id) {
         setOrderSuccess('Order placed successfully!');
-        setOrderDesign(null);
       }
     } catch (err: any) {
       alert(err.message || 'Failed to place order. Please try again.');
@@ -228,10 +227,23 @@ export const ShareView: React.FC<{ token: string }> = ({ token }) => {
           <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl p-6 space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-bold text-gray-900">Place Order</h3>
-              <button onClick={() => setOrderDesign(null)} className="text-gray-400 hover:text-gray-600">✕</button>
+              <button
+                onClick={() => {
+                  setOrderDesign(null);
+                  setOrderSuccess(null);
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                ✕
+              </button>
             </div>
             <p className="text-sm text-gray-600">{orderDesign.name || 'Design'}</p>
             <div className="space-y-3">
+              {orderSuccess && (
+                <div className="bg-green-50 border border-green-200 text-green-700 text-sm font-semibold p-3 rounded-lg">
+                  {orderSuccess}
+                </div>
+              )}
               <input
                 type="text"
                 placeholder="Your Name"
@@ -254,15 +266,19 @@ export const ShareView: React.FC<{ token: string }> = ({ token }) => {
                 onChange={e => setOrderForm({ ...orderForm, quantity: Number(e.target.value) })}
               />
               <button
-                onClick={submitOrder}
+                onClick={() => {
+                  if (orderSuccess) {
+                    setOrderDesign(null);
+                    setOrderSuccess(null);
+                  } else {
+                    submitOrder();
+                  }
+                }}
                 disabled={placingOrder}
                 className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded-lg font-bold"
               >
-                {placingOrder ? 'Placing Order...' : 'Place Order'}
+                {placingOrder ? 'Placing Order...' : orderSuccess ? 'Done' : 'Place Order'}
               </button>
-              {orderSuccess && (
-                <p className="text-green-600 text-sm font-semibold">{orderSuccess}</p>
-              )}
             </div>
           </div>
         </div>
