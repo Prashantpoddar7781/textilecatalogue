@@ -6,6 +6,7 @@ import { DesignCard } from './components/DesignCard';
 import { ShareDialog } from './components/ShareDialog';
 import { ShareLinkDialog } from './components/ShareLinkDialog';
 import { ShareView } from './components/ShareView';
+import { OrdersPage } from './components/OrdersPage';
 import { LoginDialog } from './components/LoginDialog';
 import { designsApi, authApi, shareLinksApi, ordersApi } from './services/api';
 import { Order } from './types';
@@ -14,10 +15,14 @@ const App: React.FC = () => {
   // Check if we're on a share route
   const pathname = window.location.pathname;
   const shareMatch = pathname.match(/^\/share\/([^/]+)$/);
+  const ordersMatch = pathname.match(/^\/orders\/?$/);
   
   if (shareMatch) {
     const token = shareMatch[1];
     return <ShareView token={token} />;
+  }
+  if (ordersMatch) {
+    return <OrdersPage onBack={() => { window.location.href = '/'; }} />;
   }
   const [designs, setDesigns] = useState<TextileDesign[]>([]);
   const [isReady, setIsReady] = useState(false);
@@ -374,6 +379,14 @@ const App: React.FC = () => {
             </div>
             <div className="flex items-center gap-2">
               <button
+                onClick={() => { window.location.href = '/orders'; }}
+                className="flex items-center gap-2 bg-white border border-gray-200 text-gray-700 px-4 py-2.5 rounded-2xl font-bold transition-all shadow-sm active:scale-95"
+              >
+                <CheckCircle className="w-4 h-4" />
+                <span className="hidden sm:inline">Orders</span>
+                <span className="sm:hidden">Orders</span>
+              </button>
+              <button
                 onClick={handleShareCollection}
                 disabled={isSharingCollection}
                 className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-2xl font-bold transition-all shadow-lg active:scale-95 disabled:opacity-60"
@@ -483,44 +496,6 @@ const App: React.FC = () => {
         )}
       </div>
       
-      {/* Orders Section */}
-      <div className="max-w-7xl mx-auto px-4 pb-4">
-        <div className="bg-white border border-gray-100 rounded-3xl p-4 sm:p-6 shadow-sm">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-black text-gray-900">Orders</h2>
-            <span className="text-xs text-gray-500 font-semibold">
-              {orders.length} {orders.length === 1 ? 'order' : 'orders'}
-            </span>
-          </div>
-          {loadingOrders ? (
-            <p className="text-sm text-gray-500">Loading orders...</p>
-          ) : orders.length === 0 ? (
-            <p className="text-sm text-gray-400">No orders yet.</p>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {orders.map(order => (
-                <div key={order.id} className="border border-gray-100 rounded-2xl p-4 bg-gray-50">
-                  <div className="flex items-center gap-3">
-                    {order.design?.image && (
-                      <img src={order.design.image} alt={order.design?.name || 'Design'} className="w-12 h-12 rounded-lg object-cover" />
-                    )}
-                    <div>
-                      <p className="text-sm font-bold text-gray-900">{order.design?.name || 'Design'}</p>
-                      <p className="text-xs text-gray-500">{order.design?.fabric}</p>
-                    </div>
-                  </div>
-                  <div className="mt-3 text-xs text-gray-600 space-y-1">
-                    <p><span className="font-semibold">Buyer:</span> {order.buyerName}</p>
-                    <p><span className="font-semibold">Phone:</span> {order.buyerPhone}</p>
-                    <p><span className="font-semibold">Qty:</span> {order.quantity}</p>
-                    <p><span className="font-semibold">Status:</span> {order.status}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
 
 
       <main className="max-w-7xl mx-auto px-4 pb-8">

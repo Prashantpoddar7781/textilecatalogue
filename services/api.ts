@@ -261,6 +261,12 @@ export const ordersApi = {
   getAll: async () => {
     return request<{ orders: any[] }>('/orders');
   },
+  updateStatus: async (id: string, status: string) => {
+    return request<{ order: any }>(`/orders/${id}/status`, {
+      method: 'PUT',
+      body: JSON.stringify({ status }),
+    });
+  },
   createPublic: async (data: {
     token: string;
     designId: string;
