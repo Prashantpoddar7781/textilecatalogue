@@ -89,6 +89,76 @@ router.post('/', authenticateToken, [
   }
 });
 
+// Create shareable link for entire collection (requires auth)
+router.post('/collection', authenticateToken, [
+  body('expiresAt').optional().isISO8601(),
+  body('selectedPriceType').optional().trim()
+], async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { expiresAt, selectedPriceType } = req.body;
+    const userId = req.user.userId;
+
+    const designs = await prisma.design.findMany({
+      where: { userId },
+      select: { id: true }
+    });
+
+    if (designs.length === 0) {
+      return res.status(400).json({ error: 'No designs found to share' });
+    }
+
+    const idsToShare = designs.map(d => d.id);
+
+    const shareLink = await prisma.shareLink.create({
+      data: {
+        userId,
+        designId: null,
+        token: generateToken(),
+        expiresAt: expiresAt ? new Date(expiresAt) : null,
+        isActive: true,
+        selectedPriceType: selectedPriceType || null,
+        designs: {
+          createMany: {
+            data: idsToShare.map(id => ({ designId: id }))
+          }
+        }
+      },
+      include: {
+        designs: {
+          include: {
+            design: {
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    name: true,
+                    firmName: true
+                  }
+                },
+                catalogue: {
+                  select: {
+                    id: true,
+                    name: true
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    });
+
+    res.status(201).json(shareLink);
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Get all share links for user (requires auth)
 router.get('/', authenticateToken, async (req, res, next) => {
   try {

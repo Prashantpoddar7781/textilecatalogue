@@ -9,6 +9,7 @@ import userRoutes from './routes/users.js';
 import catalogueRoutes from './routes/catalogues.js';
 import contactRoutes from './routes/contacts.js';
 import shareLinkRoutes from './routes/shareLinks.js';
+import orderRoutes from './routes/orders.js';
 
 dotenv.config();
 
@@ -127,7 +128,8 @@ try {
   app.use('/api/catalogues', catalogueRoutes);
   app.use('/api/contacts', contactRoutes);
   app.use('/api/share-links', shareLinkRoutes);
-  console.log('Routes configured: /api/auth, /api/designs, /api/users, /api/catalogues, /api/contacts, /api/share-links');
+  app.use('/api/orders', orderRoutes);
+  console.log('Routes configured: /api/auth, /api/designs, /api/users, /api/catalogues, /api/contacts, /api/share-links, /api/orders');
 } catch (error) {
   console.error('Error setting up routes:', error);
   // Server will still start, but routes may not work

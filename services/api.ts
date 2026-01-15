@@ -219,6 +219,15 @@ export const shareLinksApi = {
       body: JSON.stringify(data),
     });
   },
+  createCollection: async (data?: {
+    expiresAt?: string;
+    selectedPriceType?: string;
+  }) => {
+    return request<any>('/share-links/collection', {
+      method: 'POST',
+      body: JSON.stringify(data || {}),
+    });
+  },
 
   getAll: async () => {
     return request<{ shareLinks: any[] }>('/share-links');
@@ -243,6 +252,25 @@ export const shareLinksApi = {
   delete: async (id: string) => {
     return request<{ message: string }>(`/share-links/${id}`, {
       method: 'DELETE',
+    });
+  },
+};
+
+// Orders API
+export const ordersApi = {
+  getAll: async () => {
+    return request<{ orders: any[] }>('/orders');
+  },
+  createPublic: async (data: {
+    token: string;
+    designId: string;
+    buyerName: string;
+    buyerPhone: string;
+    quantity: number;
+  }) => {
+    return request<{ order: any }>('/orders/public', {
+      method: 'POST',
+      body: JSON.stringify(data),
     });
   },
 };

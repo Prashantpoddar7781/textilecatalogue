@@ -7,8 +7,8 @@ import { ShareDialog } from './components/ShareDialog';
 import { ShareLinkDialog } from './components/ShareLinkDialog';
 import { ShareView } from './components/ShareView';
 import { LoginDialog } from './components/LoginDialog';
-import { ContactDialog } from './components/ContactDialog';
-import { designsApi, authApi, shareLinksApi } from './services/api';
+import { designsApi, authApi, shareLinksApi, ordersApi } from './services/api';
+import { Order } from './types';
 
 const App: React.FC = () => {
   // Check if we're on a share route
@@ -26,10 +26,12 @@ const App: React.FC = () => {
   const [isShareLinkOpen, setIsShareLinkOpen] = useState(false);
   const [selectedDesignForLink, setSelectedDesignForLink] = useState<TextileDesign | null>(null);
   const [isLoginOpen, setIsLoginOpen] = useState(false);
-  const [isContactDialogOpen, setIsContactDialogOpen] = useState(false);
+  const [isSharingCollection, setIsSharingCollection] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [loadingOrders, setLoadingOrders] = useState(false);
   const [fabrics, setFabrics] = useState<string[]>(['All']);
   const [catalogues, setCatalogues] = useState<{ id: string; name: string }[]>([]);
   const [filters, setFilters] = useState<CatalogueFilters>({
@@ -49,6 +51,7 @@ const App: React.FC = () => {
         .then(({ user }) => {
           setUser(user);
           loadDesigns();
+          loadOrders();
         })
         .catch(() => {
           localStorage.removeItem('auth_token');
@@ -268,13 +271,50 @@ const App: React.FC = () => {
     setUser(userData);
     setIsLoginOpen(false);
     loadDesigns();
+    loadOrders();
   };
 
   const handleLogout = () => {
     localStorage.removeItem('auth_token');
     setUser(null);
     setDesigns([]);
+    setOrders([]);
     setIsLoginOpen(true);
+  };
+
+  const loadOrders = async () => {
+    if (!user) return;
+    try {
+      setLoadingOrders(true);
+      const { orders: fetchedOrders } = await ordersApi.getAll();
+      setOrders(fetchedOrders);
+    } catch (error: any) {
+      console.error('Failed to load orders:', error);
+    } finally {
+      setLoadingOrders(false);
+    }
+  };
+
+  const handleShareCollection = async () => {
+    try {
+      setIsSharingCollection(true);
+      const shareLink = await shareLinksApi.createCollection();
+      const shareUrl = `${window.location.origin}/share/${shareLink.token}`;
+      try {
+        await navigator.clipboard.writeText(shareUrl);
+      } catch (e) {
+        console.warn('Clipboard write failed:', e);
+      }
+      const waUrl = `https://wa.me/?text=${encodeURIComponent(shareUrl)}`;
+      const newWindow = window.open(waUrl, '_blank');
+      if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
+        window.location.href = waUrl;
+      }
+    } catch (error: any) {
+      alert('Failed to create collection link: ' + (error.message || 'Unknown error'));
+    } finally {
+      setIsSharingCollection(false);
+    }
   };
 
   const selectedDesigns = designs.filter(d => selectedIds.has(d.id));
@@ -328,11 +368,12 @@ const App: React.FC = () => {
             </div>
             <div className="hidden sm:flex items-center gap-2">
               <button
-                onClick={() => setIsContactDialogOpen(true)}
-                className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-2xl font-bold transition-all shadow-lg active:scale-95"
+                onClick={handleShareCollection}
+                disabled={isSharingCollection}
+                className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-2xl font-bold transition-all shadow-lg active:scale-95 disabled:opacity-60"
               >
-                <Package className="w-4 h-4" />
-                <span>Contacts</span>
+                <Share2 className="w-4 h-4" />
+                <span>{isSharingCollection ? 'Creating Link...' : 'Share My Collection'}</span>
               </button>
               <button
                 onClick={() => setIsUploadOpen(true)}
@@ -427,6 +468,45 @@ const App: React.FC = () => {
               />
             </div>
           </div>
+
+      {/* Orders Section */}
+      <div className="max-w-7xl mx-auto px-4 pb-4">
+        <div className="bg-white border border-gray-100 rounded-3xl p-4 sm:p-6 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-black text-gray-900">Orders</h2>
+            <span className="text-xs text-gray-500 font-semibold">
+              {orders.length} {orders.length === 1 ? 'order' : 'orders'}
+            </span>
+          </div>
+          {loadingOrders ? (
+            <p className="text-sm text-gray-500">Loading orders...</p>
+          ) : orders.length === 0 ? (
+            <p className="text-sm text-gray-400">No orders yet.</p>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {orders.map(order => (
+                <div key={order.id} className="border border-gray-100 rounded-2xl p-4 bg-gray-50">
+                  <div className="flex items-center gap-3">
+                    {order.design?.image && (
+                      <img src={order.design.image} alt={order.design?.name || 'Design'} className="w-12 h-12 rounded-lg object-cover" />
+                    )}
+                    <div>
+                      <p className="text-sm font-bold text-gray-900">{order.design?.name || 'Design'}</p>
+                      <p className="text-xs text-gray-500">{order.design?.fabric}</p>
+                    </div>
+                  </div>
+                  <div className="mt-3 text-xs text-gray-600 space-y-1">
+                    <p><span className="font-semibold">Buyer:</span> {order.buyerName}</p>
+                    <p><span className="font-semibold">Phone:</span> {order.buyerPhone}</p>
+                    <p><span className="font-semibold">Qty:</span> {order.quantity}</p>
+                    <p><span className="font-semibold">Status:</span> {order.status}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
         )}
       </div>
 
@@ -537,7 +617,6 @@ const App: React.FC = () => {
           }} 
         />
       )}
-      {isContactDialogOpen && <ContactDialog onClose={() => setIsContactDialogOpen(false)} />}
     </div>
   );
 };

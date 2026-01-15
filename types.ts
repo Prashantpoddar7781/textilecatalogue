@@ -69,3 +69,17 @@ export interface ShareLink {
   design?: TextileDesign;
   designs?: Array<{ design: TextileDesign }>;
 }
+
+export interface Order {
+  id: string;
+  userId: string;
+  shareLinkId: string;
+  designId: string;
+  buyerName: string;
+  buyerPhone: string;
+  quantity: number;
+  status: string;
+  createdAt: string;
+  design?: TextileDesign;
+  shareLink?: ShareLink;
+}

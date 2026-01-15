@@ -22,6 +22,7 @@ model User {
   catalogues Catalogue[]
   contacts  Contact[]
   shareLinks ShareLink[]
+  orders    Order[]
 }
 
 model Catalogue {
@@ -53,6 +54,7 @@ model Design {
   description    String?
   shareLinks     ShareLink[]
   shareLinkDesigns ShareLinkDesign[]
+  orders         Order[]
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -85,6 +87,7 @@ model ShareLink {
   designId    String?
   design      Design?   @relation(fields: [designId], references: [id], onDelete: Cascade)
   designs     ShareLinkDesign[]
+  orders      Order[]
   token       String   @unique // Unique token for the shareable link
   expiresAt   DateTime? // Optional expiration date
   isActive    Boolean  @default(true) // Can be disabled by user
@@ -96,6 +99,27 @@ model ShareLink {
   @@index([designId])
   @@index([token])
   @@index([isActive])
+}
+
+model Order {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  shareLinkId String
+  shareLink   ShareLink @relation(fields: [shareLinkId], references: [id], onDelete: Cascade)
+  designId    String
+  design      Design   @relation(fields: [designId], references: [id], onDelete: Cascade)
+  buyerName   String
+  buyerPhone  String
+  quantity    Int
+  status      String   @default("pending")
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@index([shareLinkId])
+  @@index([designId])
+  @@index([status])
+  @@index([createdAt])
 }
 
 model ShareLinkDesign {
