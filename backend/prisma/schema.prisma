@@ -125,6 +125,19 @@ model Order {
   @@index([createdAt])
 }
 
+model OrderDraft {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sourceText  String
+  draftJson   Json
+  status      String   @default("draft")
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@index([createdAt])
+}
+
 model ShareLinkDesign {
   id         String   @id @default(cuid())
   shareLinkId String

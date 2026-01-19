@@ -109,6 +109,49 @@ router.get('/', authenticateToken, async (req, res, next) => {
   }
 });
 
+// Auth: create draft order from AI output
+router.post('/drafts', authenticateToken, [
+  body('sourceText').notEmpty().trim(),
+  body('draft').notEmpty()
+], async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const userId = req.user.userId;
+    const { sourceText, draft } = req.body;
+
+    const saved = await prisma.orderDraft.create({
+      data: {
+        userId,
+        sourceText: sourceText.trim(),
+        draftJson: draft,
+        status: 'draft'
+      }
+    });
+
+    res.status(201).json({ draft: saved });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Auth: get draft orders
+router.get('/drafts', authenticateToken, async (req, res, next) => {
+  try {
+    const userId = req.user.userId;
+    const drafts = await prisma.orderDraft.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' }
+    });
+    res.json({ drafts });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Auth: update order status
 router.put('/:id/status', authenticateToken, [
   body('status').notEmpty().trim()

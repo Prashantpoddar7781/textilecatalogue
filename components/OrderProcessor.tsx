@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { MessageSquare, Sparkles, Loader2, Clipboard, AlertCircle, CheckCircle2, Package } from "lucide-react";
 import { processWhatsAppOrder } from "../services/orderIntelligence";
 import { TextileDesign, Order, OrderDraft } from "../types";
+import { ordersApi } from "../services/api";
 
 interface Props {
   catalog: TextileDesign[];
@@ -14,6 +15,8 @@ export const OrderProcessor: React.FC<Props> = ({ catalog, pastOrders, onDraftCr
   const [loading, setLoading] = useState(false);
   const [draft, setDraft] = useState<OrderDraft | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [savingDraft, setSavingDraft] = useState(false);
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
 
   const handleProcess = async () => {
     if (!inputText.trim()) return;
@@ -33,6 +36,22 @@ export const OrderProcessor: React.FC<Props> = ({ catalog, pastOrders, onDraftCr
       setError(e?.message || "AI processing failed. Check API key and try again.");
     } finally {
       setLoading(false);
+    }
+  };
+  const handleSaveDraft = async () => {
+    if (!draft) return;
+    try {
+      setSavingDraft(true);
+      setSaveMessage(null);
+      await ordersApi.createDraft({
+        sourceText: inputText,
+        draft
+      });
+      setSaveMessage("Draft saved successfully.");
+    } catch (e: any) {
+      setSaveMessage(e?.message || "Failed to save draft.");
+    } finally {
+      setSavingDraft(false);
     }
   };
 
@@ -115,7 +134,15 @@ export const OrderProcessor: React.FC<Props> = ({ catalog, pastOrders, onDraftCr
             {draft.detected_designs.map((item, idx) => (
               <div key={idx} className="flex items-center gap-4 p-5 bg-gray-50 rounded-2xl border border-gray-100">
                 <div className="bg-white p-3 rounded-xl shadow-sm">
-                  <Package className="w-6 h-6 text-indigo-600" />
+                  {catalog.find(d => d.id === item.matched_design_id)?.image ? (
+                    <img
+                      src={catalog.find(d => d.id === item.matched_design_id)!.image}
+                      alt="Design"
+                      className="w-10 h-10 rounded-lg object-cover"
+                    />
+                  ) : (
+                    <Package className="w-6 h-6 text-indigo-600" />
+                  )}
                 </div>
                 <div className="flex-1">
                   <div className="flex items-center justify-between">
@@ -153,11 +180,20 @@ export const OrderProcessor: React.FC<Props> = ({ catalog, pastOrders, onDraftCr
             >
               Discard
             </button>
-            <button className="flex-[2] py-4 bg-green-600 hover:bg-green-700 text-white font-black rounded-2xl shadow-xl shadow-green-100 flex items-center justify-center gap-3 transition-all active:scale-95">
+            <button
+              onClick={handleSaveDraft}
+              disabled={savingDraft}
+              className="flex-[2] py-4 bg-green-600 hover:bg-green-700 text-white font-black rounded-2xl shadow-xl shadow-green-100 flex items-center justify-center gap-3 transition-all active:scale-95 disabled:opacity-60"
+            >
               <CheckCircle2 className="w-5 h-5" />
-              Save Draft (Manual)
+              {savingDraft ? "Saving..." : "Save Draft"}
             </button>
           </div>
+          {saveMessage && (
+            <div className="mt-4 text-sm font-semibold text-green-600">
+              {saveMessage}
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { ArrowLeft, CheckCircle, MessageSquare, LayoutGrid } from 'lucide-react';
 import { ordersApi } from '../services/api';
-import { Order, TextileDesign } from '../types';
+import { Order, TextileDesign, OrderDraftRecord } from '../types';
 import { OrderProcessor } from './OrderProcessor';
 
 interface Props {
@@ -14,6 +14,8 @@ export const OrdersPage: React.FC<Props> = ({ onBack, catalog }) => {
   const [loading, setLoading] = useState(false);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'orders' | 'ai'>('orders');
+  const [drafts, setDrafts] = useState<OrderDraftRecord[]>([]);
+  const [loadingDrafts, setLoadingDrafts] = useState(false);
 
   const loadOrders = async () => {
     try {
@@ -27,8 +29,21 @@ export const OrdersPage: React.FC<Props> = ({ onBack, catalog }) => {
     }
   };
 
+  const loadDrafts = async () => {
+    try {
+      setLoadingDrafts(true);
+      const { drafts: fetchedDrafts } = await ordersApi.getDrafts();
+      setDrafts(fetchedDrafts);
+    } catch (error) {
+      console.error('Failed to load drafts:', error);
+    } finally {
+      setLoadingDrafts(false);
+    }
+  };
+
   useEffect(() => {
     loadOrders();
+    loadDrafts();
   }, []);
 
   const markCompleted = async (orderId: string) => {
@@ -82,45 +97,86 @@ export const OrdersPage: React.FC<Props> = ({ onBack, catalog }) => {
           <>
             {loading ? (
               <p className="text-sm text-gray-500">Loading orders...</p>
-            ) : orders.length === 0 ? (
-              <div className="bg-white border border-gray-100 rounded-3xl p-6 text-center text-gray-400">
-                No orders yet.
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {orders.map(order => (
-                  <div key={order.id} className="bg-white border border-gray-100 rounded-2xl p-4 shadow-sm">
-                    <div className="flex items-center gap-3">
-                      {order.design?.image && (
-                        <img
-                          src={order.design.image}
-                          alt={order.design?.name || 'Design'}
-                          className="w-12 h-12 rounded-lg object-cover"
-                        />
-                      )}
-                      <div>
-                        <p className="text-sm font-bold text-gray-900">{order.design?.name || 'Design'}</p>
-                        <p className="text-xs text-gray-500">{order.design?.fabric}</p>
+            <div className="space-y-6">
+              <div className="bg-white border border-gray-100 rounded-3xl p-6 shadow-sm">
+                <h3 className="text-sm font-black text-gray-900 uppercase tracking-widest mb-4">Draft Orders</h3>
+                {loadingDrafts ? (
+                  <p className="text-sm text-gray-500">Loading drafts...</p>
+                ) : drafts.length === 0 ? (
+                  <p className="text-sm text-gray-400">No drafts yet.</p>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {drafts.map(draft => (
+                      <div key={draft.id} className="border border-gray-100 rounded-2xl p-4 bg-gray-50">
+                        <p className="text-xs text-gray-500 mb-2">Draft • {new Date(draft.createdAt).toLocaleString()}</p>
+                        <p className="text-sm font-bold text-gray-900 mb-2">
+                          {draft.draftJson?.buyer_intent_summary || 'Draft Order'}
+                        </p>
+                        <div className="space-y-2">
+                          {draft.draftJson?.detected_designs?.map((item, idx) => {
+                            const design = catalog.find(d => d.id === item.matched_design_id);
+                            return (
+                              <div key={idx} className="flex items-center gap-2">
+                                {design?.image && (
+                                  <img src={design.image} alt="Design" className="w-8 h-8 rounded-lg object-cover" />
+                                )}
+                                <div className="text-xs text-gray-600">
+                                  <div className="font-semibold">{item.design_code || design?.name || 'Design'}</div>
+                                  <div>Qty: {item.quantity || '??'}</div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
                       </div>
-                    </div>
-                    <div className="mt-3 text-xs text-gray-600 space-y-1">
-                      <p><span className="font-semibold">Buyer:</span> {order.buyerName}</p>
-                      <p><span className="font-semibold">Phone:</span> {order.buyerPhone}</p>
-                      <p><span className="font-semibold">Qty:</span> {order.quantity}</p>
-                      <p><span className="font-semibold">Status:</span> {order.status}</p>
-                    </div>
-                    <button
-                      onClick={() => markCompleted(order.id)}
-                      disabled={order.status === 'completed' || updatingId === order.id}
-                      className="mt-4 w-full bg-green-600 hover:bg-green-700 text-white py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 disabled:opacity-50"
-                    >
-                      <CheckCircle className="w-4 h-4" />
-                      {order.status === 'completed' ? 'Completed' : updatingId === order.id ? 'Updating...' : 'Mark Completed'}
-                    </button>
+                    ))}
                   </div>
-                ))}
+                )}
               </div>
-            )}
+
+              <div className="bg-white border border-gray-100 rounded-3xl p-6 shadow-sm">
+                <h3 className="text-sm font-black text-gray-900 uppercase tracking-widest mb-4">Confirmed Orders</h3>
+                {loading ? (
+                  <p className="text-sm text-gray-500">Loading orders...</p>
+                ) : orders.length === 0 ? (
+                  <p className="text-sm text-gray-400">No orders yet.</p>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {orders.map(order => (
+                      <div key={order.id} className="bg-white border border-gray-100 rounded-2xl p-4 shadow-sm">
+                        <div className="flex items-center gap-3">
+                          {order.design?.image && (
+                            <img
+                              src={order.design.image}
+                              alt={order.design?.name || 'Design'}
+                              className="w-12 h-12 rounded-lg object-cover"
+                            />
+                          )}
+                          <div>
+                            <p className="text-sm font-bold text-gray-900">{order.design?.name || 'Design'}</p>
+                            <p className="text-xs text-gray-500">{order.design?.fabric}</p>
+                          </div>
+                        </div>
+                        <div className="mt-3 text-xs text-gray-600 space-y-1">
+                          <p><span className="font-semibold">Buyer:</span> {order.buyerName}</p>
+                          <p><span className="font-semibold">Phone:</span> {order.buyerPhone}</p>
+                          <p><span className="font-semibold">Qty:</span> {order.quantity}</p>
+                          <p><span className="font-semibold">Status:</span> {order.status}</p>
+                        </div>
+                        <button
+                          onClick={() => markCompleted(order.id)}
+                          disabled={order.status === 'completed' || updatingId === order.id}
+                          className="mt-4 w-full bg-green-600 hover:bg-green-700 text-white py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 disabled:opacity-50"
+                        >
+                          <CheckCircle className="w-4 h-4" />
+                          {order.status === 'completed' ? 'Completed' : updatingId === order.id ? 'Updating...' : 'Mark Completed'}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
           </>
         ) : (
           <OrderProcessor catalog={catalog} pastOrders={orders} />

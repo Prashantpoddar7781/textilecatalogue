@@ -87,6 +87,15 @@ export interface Order {
   shareLink?: ShareLink;
 }
 
+export interface OrderDraftRecord {
+  id: string;
+  userId: string;
+  sourceText: string;
+  draftJson: OrderDraft;
+  status: string;
+  createdAt: string;
+}
+
 export interface OrderDraft {
   buyer_intent_summary: string;
   confidence_score: number;
