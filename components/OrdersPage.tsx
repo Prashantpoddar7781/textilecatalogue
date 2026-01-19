@@ -113,6 +113,7 @@ export const OrdersPage: React.FC<Props> = ({ onBack, catalog }) => {
           <>
             {loading ? (
               <p className="text-sm text-gray-500">Loading orders...</p>
+            ) : (
             <div className="space-y-6">
               <div className="bg-white border border-gray-100 rounded-3xl p-6 shadow-sm">
                 <h3 className="text-sm font-black text-gray-900 uppercase tracking-widest mb-4">Draft Orders</h3>
@@ -200,6 +201,7 @@ export const OrdersPage: React.FC<Props> = ({ onBack, catalog }) => {
                 )}
               </div>
             </div>
+            )}
           </>
         ) : (
           <OrderProcessor catalog={catalog} pastOrders={orders} />
