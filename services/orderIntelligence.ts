@@ -14,6 +14,11 @@ export async function processWhatsAppOrder(
     throw new Error("Missing VITE_GEMINI_API_KEY");
   }
 
+  const fallbackDraft = buildFallbackDraft(message, catalog, pastOrders);
+  if (fallbackDraft) {
+    return fallbackDraft;
+  }
+
   const catalogSummary = catalog.map(d => ({
     id: d.id,
     design_code: d.designCode || d.name || d.id.slice(-4),
@@ -111,6 +116,58 @@ RULES:
     return JSON.parse(response.text);
   } catch (error) {
     console.error("Order extraction failed:", error);
-    return null;
+    return fallbackDraft || null;
   }
+}
+
+function buildFallbackDraft(message: string, catalog: TextileDesign[], pastOrders: Order[]): OrderDraft | null {
+  const text = message.toLowerCase();
+  const detected: OrderDraft["detected_designs"] = [];
+
+  const qtyMatch = text.match(/(\d+)\s*(pcs|pieces|pc|piece|qty|quantity)?/);
+  const quantity = qtyMatch ? parseInt(qtyMatch[1], 10) : undefined;
+
+  // Try exact design code or name match
+  const exactMatch = catalog.find(d => {
+    const code = d.designCode?.toLowerCase();
+    const name = d.name?.toLowerCase();
+    return (code && text.includes(code)) || (name && text.includes(name));
+  });
+
+  if (exactMatch) {
+    detected.push({
+      design_code: exactMatch.designCode || exactMatch.name,
+      matched_design_id: exactMatch.id,
+      quantity: quantity || 1,
+      color: exactMatch.color,
+      notes: "Fallback rule-based match"
+    });
+  }
+
+  if (detected.length === 0) {
+    // Try “same as before”
+    if (text.includes("same as before") || text.includes("same as last time")) {
+      const last = pastOrders[0];
+      if (last?.designId) {
+        detected.push({
+          design_code: last.design?.designCode || last.design?.name,
+          matched_design_id: last.designId,
+          quantity: quantity || last.quantity || 1,
+          color: last.design?.color,
+          notes: "Fallback based on past order"
+        });
+      }
+    }
+  }
+
+  if (detected.length === 0) return null;
+
+  return {
+    buyer_intent_summary: "Fallback draft generated from simple message.",
+    confidence_score: 55,
+    detected_designs: detected,
+    missing_information: quantity ? [] : ["Quantity not specified"],
+    delivery_notes: "",
+    price_constraints: ""
+  };
 }
