@@ -21,9 +21,6 @@ const App: React.FC = () => {
     const token = shareMatch[1];
     return <ShareView token={token} />;
   }
-  if (ordersMatch) {
-    return <OrdersPage onBack={() => { window.location.href = '/'; }} />;
-  }
   const [designs, setDesigns] = useState<TextileDesign[]>([]);
   const [isReady, setIsReady] = useState(false);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
@@ -100,6 +97,9 @@ const App: React.FC = () => {
         catalogueId: d.catalogueId,
         catalogueName: d.catalogue?.name,
         image: d.image,
+        designCode: d.designCode,
+        color: d.color,
+        stockQuantity: d.stockQuantity,
         basePrice: d.basePrice || d.retailPrice || 0,
         additionalPrices: d.additionalPrices,
         wholesalePrice: d.wholesalePrice || d.basePrice || d.retailPrice || 0,
@@ -166,6 +166,9 @@ const App: React.FC = () => {
       const created = await designsApi.create({
         name: design.name,
         image: design.image,
+        designCode: design.designCode,
+        color: design.color,
+        stockQuantity: design.stockQuantity,
         basePrice: design.basePrice,
         additionalPrices: design.additionalPrices?.map(ap => ({
           name: ap.name,
@@ -183,6 +186,9 @@ const App: React.FC = () => {
         catalogueId: created.catalogueId,
         catalogueName: created.catalogue?.name,
         image: created.image,
+        designCode: created.designCode,
+        color: created.color,
+        stockQuantity: created.stockQuantity,
         basePrice: created.basePrice || created.retailPrice || 0,
         additionalPrices: created.additionalPrices,
         wholesalePrice: created.wholesalePrice || created.basePrice || 0,
@@ -215,6 +221,9 @@ const App: React.FC = () => {
       const updated = await designsApi.update(editingDesign.id, {
         name: design.name,
         image: design.image,
+        designCode: design.designCode,
+        color: design.color,
+        stockQuantity: design.stockQuantity,
         basePrice: design.basePrice,
         additionalPrices: design.additionalPrices?.map(ap => ({
           name: ap.name,
@@ -233,6 +242,9 @@ const App: React.FC = () => {
           catalogueId: updated.catalogueId,
           catalogueName: updated.catalogue?.name,
           image: updated.image,
+          designCode: updated.designCode,
+          color: updated.color,
+          stockQuantity: updated.stockQuantity,
           basePrice: updated.basePrice || updated.retailPrice || 0,
           additionalPrices: updated.additionalPrices,
           wholesalePrice: updated.wholesalePrice || updated.basePrice || 0,
@@ -345,6 +357,10 @@ const App: React.FC = () => {
         {isLoginOpen && <LoginDialog onClose={() => {}} onSuccess={handleLoginSuccess} />}
       </>
     );
+  }
+
+  if (ordersMatch) {
+    return <OrdersPage catalog={designs} onBack={() => { window.location.href = '/'; }} />;
   }
 
   return (

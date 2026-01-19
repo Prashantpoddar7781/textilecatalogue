@@ -89,6 +89,9 @@ export const designsApi = {
   create: async (design: {
     name: string;
     image: string;
+    designCode?: string;
+    color?: string;
+    stockQuantity?: number;
     basePrice: number;
     additionalPrices?: Array<{ name: string; type: 'percentage' | 'fixed'; value: number }>;
     fabric: string;
@@ -104,6 +107,9 @@ export const designsApi = {
   update: async (id: string, design: Partial<{
     name?: string;
     image?: string;
+    designCode?: string;
+    color?: string;
+    stockQuantity?: number;
     basePrice?: number;
     additionalPrices?: Array<{ name: string; type: 'percentage' | 'fixed'; value: number }>;
     fabric?: string;

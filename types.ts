@@ -12,6 +12,9 @@ export interface TextileDesign {
   catalogueName?: string;
   name: string; // Design name
   image: string; // Base64
+  designCode?: string;
+  color?: string;
+  stockQuantity?: number;
   basePrice: number;
   additionalPrices?: AdditionalPrice[];
   wholesalePrice: number; // For backward compatibility
@@ -82,4 +85,24 @@ export interface Order {
   createdAt: string;
   design?: TextileDesign;
   shareLink?: ShareLink;
+}
+
+export interface OrderDraft {
+  buyer_intent_summary: string;
+  confidence_score: number;
+  detected_designs: Array<{
+    design_code?: string;
+    matched_design_id?: string;
+    quantity?: number;
+    color?: string;
+    notes?: string;
+    is_out_of_stock?: boolean;
+  }>;
+  missing_information?: string[];
+  delivery_notes?: string;
+  price_constraints?: string;
+  suggested_alternatives?: Array<{
+    design_id?: string;
+    reason?: string;
+  }>;
 }

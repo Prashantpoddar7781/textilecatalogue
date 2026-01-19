@@ -46,6 +46,9 @@ model Design {
   catalogue     Catalogue? @relation(fields: [catalogueId], references: [id], onDelete: SetNull)
   name          String?  // Design name (optional for backward compatibility)
   image         String   // Base64 or URL
+  designCode    String?  // Optional design code for AI matching
+  color         String?  // Optional color
+  stockQuantity Int?     // Optional stock quantity
   basePrice     Float?   // Base price (replaces wholesalePrice/retailPrice) - nullable for migration
   additionalPrices Json?  // Additional price types: [{name: "WSP", type: "percentage|fixed", value: 5}]
   wholesalePrice Float   @default(0) // Kept for backward compatibility

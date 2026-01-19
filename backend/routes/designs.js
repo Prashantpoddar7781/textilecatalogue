@@ -150,6 +150,9 @@ router.post('/', authenticateToken, [
   body('basePrice').optional().isFloat({ min: 0 }),
   body('wholesalePrice').optional().isFloat({ min: 0 }),
   body('retailPrice').optional().isFloat({ min: 0 }),
+  body('designCode').optional().trim(),
+  body('color').optional().trim(),
+  body('stockQuantity').optional().isInt({ min: 0 }),
   body('additionalPrices').optional().isArray(),
   body('fabric').notEmpty().trim(),
   body('description').optional().trim(),
@@ -161,7 +164,7 @@ router.post('/', authenticateToken, [
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { image, name, basePrice, wholesalePrice: wsPrice, retailPrice: rtPrice, additionalPrices, fabric, description, catalogueId } = req.body;
+    const { image, name, basePrice, wholesalePrice: wsPrice, retailPrice: rtPrice, additionalPrices, fabric, description, catalogueId, designCode, color, stockQuantity } = req.body;
     const userId = req.user.userId;
 
     // Validate that at least one price is provided
@@ -206,6 +209,9 @@ router.post('/', authenticateToken, [
         name: name?.trim() || `Design ${new Date().toISOString()}`,
         catalogueId: catalogueId || null,
         image,
+        designCode: designCode || null,
+        color: color || null,
+        stockQuantity: stockQuantity !== undefined ? parseInt(stockQuantity, 10) : null,
         basePrice: basePriceNum,
         additionalPrices: processedAdditionalPrices,
         wholesalePrice, // For backward compatibility
@@ -233,6 +239,11 @@ router.post('/', authenticateToken, [
 // Update design (requires auth, owner only)
 router.put('/:id', authenticateToken, [
   body('basePrice').optional().isFloat({ min: 0 }),
+  body('wholesalePrice').optional().isFloat({ min: 0 }),
+  body('retailPrice').optional().isFloat({ min: 0 }),
+  body('designCode').optional().trim(),
+  body('color').optional().trim(),
+  body('stockQuantity').optional().isInt({ min: 0 }),
   body('additionalPrices').optional().isArray(),
   body('fabric').optional().notEmpty().trim(),
   body('description').optional().trim()
@@ -276,6 +287,9 @@ router.put('/:id', authenticateToken, [
     if (req.body.description !== undefined) updateData.description = req.body.description;
     if (req.body.image !== undefined) updateData.image = req.body.image;
     if (req.body.catalogueId !== undefined) updateData.catalogueId = req.body.catalogueId || null;
+    if (req.body.designCode !== undefined) updateData.designCode = req.body.designCode || null;
+    if (req.body.color !== undefined) updateData.color = req.body.color || null;
+    if (req.body.stockQuantity !== undefined) updateData.stockQuantity = parseInt(req.body.stockQuantity, 10);
     
     // Handle pricing updates with backward compatibility
     if (req.body.basePrice !== undefined) {
