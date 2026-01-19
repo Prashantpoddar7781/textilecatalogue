@@ -62,8 +62,8 @@ export const OrdersPage: React.FC<Props> = ({ onBack, catalog }) => {
     try {
       setUpdatingId(draftId);
       const { orders: newOrders } = await ordersApi.confirmDraft(draftId);
+      setDrafts(prev => prev.filter(d => d.id !== draftId));
       await loadOrders();
-      await loadDrafts();
       if (!newOrders || newOrders.length === 0) {
         alert('No orders created from this draft.');
       }
@@ -123,7 +123,7 @@ export const OrdersPage: React.FC<Props> = ({ onBack, catalog }) => {
                   <p className="text-sm text-gray-400">No drafts yet.</p>
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {drafts.map(draft => (
+                    {drafts.filter(d => d.status === 'draft').map(draft => (
                       <div key={draft.id} className="border border-gray-100 rounded-2xl p-4 bg-gray-50">
                         <p className="text-xs text-gray-500 mb-2">Draft • {new Date(draft.createdAt).toLocaleString()}</p>
                         <p className="text-sm font-bold text-gray-900 mb-2">
