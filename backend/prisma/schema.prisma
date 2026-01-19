@@ -23,6 +23,7 @@ model User {
   contacts  Contact[]
   shareLinks ShareLink[]
   orders    Order[]
+  orderDrafts OrderDraft[]
 }
 
 model Catalogue {
