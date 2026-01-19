@@ -13,18 +13,27 @@ export const OrderProcessor: React.FC<Props> = ({ catalog, pastOrders, onDraftCr
   const [inputText, setInputText] = useState("");
   const [loading, setLoading] = useState(false);
   const [draft, setDraft] = useState<OrderDraft | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const handleProcess = async () => {
     if (!inputText.trim()) return;
     setLoading(true);
-    const result = await processWhatsAppOrder(inputText, catalog, pastOrders);
-    if (result) {
-      setDraft(result);
-      onDraftCreated?.(result);
-    } else {
+    setError(null);
+    try {
+      const result = await processWhatsAppOrder(inputText, catalog, pastOrders);
+      if (result) {
+        setDraft(result);
+        onDraftCreated?.(result);
+      } else {
+        setDraft(null);
+        setError("No draft generated. Please try a more detailed message.");
+      }
+    } catch (e: any) {
       setDraft(null);
+      setError(e?.message || "AI processing failed. Check API key and try again.");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const getConfidenceColor = (score: number) => {
@@ -74,6 +83,12 @@ export const OrderProcessor: React.FC<Props> = ({ catalog, pastOrders, onDraftCr
           <span>{loading ? "Analyzing Conversation..." : "Extract Draft Order"}</span>
         </button>
       </div>
+
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 text-sm font-semibold p-4 rounded-2xl">
+          {error}
+        </div>
+      )}
 
       {draft && (
         <div className="bg-white rounded-[2.5rem] p-8 shadow-xl border-2 border-indigo-50 animate-in zoom-in duration-300">
