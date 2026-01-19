@@ -177,12 +177,84 @@ router.put('/:id/status', authenticateToken, [
       return res.status(403).json({ error: 'Access denied' });
     }
 
-    const updated = await prisma.order.update({
-      where: { id },
-      data: { status }
+    if (existing.status === status) {
+      return res.json({ order: existing });
+    }
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const order = await tx.order.update({
+        where: { id },
+        data: { status }
+      });
+
+      if (status === 'completed') {
+        const design = await tx.design.findUnique({
+          where: { id: order.designId }
+        });
+
+        if (design) {
+          const currentStock = design.stockQuantity ?? 0;
+          const newStock = Math.max(currentStock - order.quantity, 0);
+          await tx.design.update({
+            where: { id: order.designId },
+            data: { stockQuantity: newStock }
+          });
+        }
+      }
+
+      return order;
     });
 
     res.json({ order: updated });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Auth: confirm draft and create orders
+router.post('/drafts/:id/confirm', authenticateToken, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.userId;
+
+    const draft = await prisma.orderDraft.findUnique({
+      where: { id }
+    });
+
+    if (!draft) {
+      return res.status(404).json({ error: 'Draft not found' });
+    }
+    if (draft.userId !== userId) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const draftJson = draft.draftJson || {};
+    const detected = draftJson.detected_designs || [];
+
+    const createdOrders = [];
+    for (const item of detected) {
+      if (!item.matched_design_id) continue;
+      const qty = item.quantity ? parseInt(item.quantity, 10) : 1;
+      const order = await prisma.order.create({
+        data: {
+          userId,
+          shareLinkId: null,
+          designId: item.matched_design_id,
+          buyerName: 'AI Draft',
+          buyerPhone: 'N/A',
+          quantity: qty,
+          status: 'pending'
+        }
+      });
+      createdOrders.push(order);
+    }
+
+    await prisma.orderDraft.update({
+      where: { id },
+      data: { status: 'confirmed' }
+    });
+
+    res.json({ orders: createdOrders });
   } catch (error) {
     next(error);
   }

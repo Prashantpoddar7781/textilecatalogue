@@ -58,6 +58,22 @@ export const OrdersPage: React.FC<Props> = ({ onBack, catalog }) => {
     }
   };
 
+  const confirmDraft = async (draftId: string) => {
+    try {
+      setUpdatingId(draftId);
+      const { orders: newOrders } = await ordersApi.confirmDraft(draftId);
+      await loadOrders();
+      await loadDrafts();
+      if (!newOrders || newOrders.length === 0) {
+        alert('No orders created from this draft.');
+      }
+    } catch (error) {
+      alert('Failed to convert draft to orders.');
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#FDFDFF]">
       <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-xl border-b px-4 py-3 md:px-8 shadow-sm">
@@ -128,6 +144,13 @@ export const OrdersPage: React.FC<Props> = ({ onBack, catalog }) => {
                             );
                           })}
                         </div>
+                        <button
+                          onClick={() => confirmDraft(draft.id)}
+                          disabled={updatingId === draft.id}
+                          className="mt-3 w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded-lg text-xs font-bold disabled:opacity-50"
+                        >
+                          {updatingId === draft.id ? 'Converting...' : 'Convert to Order'}
+                        </button>
                       </div>
                     ))}
                   </div>

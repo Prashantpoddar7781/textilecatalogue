@@ -211,7 +211,7 @@ router.post('/', authenticateToken, [
         image,
         designCode: designCode || null,
         color: color || null,
-        stockQuantity: stockQuantity !== undefined ? parseInt(stockQuantity, 10) : null,
+        stockQuantity: stockQuantity !== undefined ? parseInt(stockQuantity, 10) : 1000,
         basePrice: basePriceNum,
         additionalPrices: processedAdditionalPrices,
         wholesalePrice, // For backward compatibility

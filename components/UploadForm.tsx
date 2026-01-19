@@ -286,6 +286,7 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
               placeholder="e.g. 120"
               value={formData.stockQuantity}
               onChange={e => setFormData({...formData, stockQuantity: e.target.value})}
+              required
             />
           </div>
 

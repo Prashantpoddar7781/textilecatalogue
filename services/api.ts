@@ -276,6 +276,11 @@ export const ordersApi = {
       body: JSON.stringify(data),
     });
   },
+  confirmDraft: async (id: string) => {
+    return request<{ orders: any[] }>(`/orders/drafts/${id}/confirm`, {
+      method: 'POST',
+    });
+  },
   updateStatus: async (id: string, status: string) => {
     return request<{ order: any }>(`/orders/${id}/status`, {
       method: 'PUT',

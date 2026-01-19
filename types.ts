@@ -76,7 +76,7 @@ export interface ShareLink {
 export interface Order {
   id: string;
   userId: string;
-  shareLinkId: string;
+  shareLinkId?: string;
   designId: string;
   buyerName: string;
   buyerPhone: string;
