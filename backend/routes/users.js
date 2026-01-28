@@ -1,6 +1,7 @@
 import express from 'express';
 import { PrismaClient } from '@prisma/client';
 import { authenticateToken } from '../middleware/auth.js';
+import { requireActiveSubscription } from '../middleware/subscription.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -36,7 +37,7 @@ router.get('/me', authenticateToken, async (req, res, next) => {
 });
 
 // Get user's designs
-router.get('/me/designs', authenticateToken, async (req, res, next) => {
+router.get('/me/designs', authenticateToken, requireActiveSubscription, async (req, res, next) => {
   try {
     const userId = req.user.userId;
     const { page = 1, limit = 50 } = req.query;

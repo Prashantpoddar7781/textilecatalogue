@@ -115,3 +115,14 @@ export interface OrderDraft {
     reason?: string;
   }>;
 }
+
+export interface SubscriptionStatus {
+  status: string | null;
+  plan: string | null;
+  trialEndsAt: string | null;
+  subscriptionEndsAt: string | null;
+  isTrialActive: boolean;
+  isFree: boolean;
+  isActive: boolean;
+  needsPayment: boolean;
+}

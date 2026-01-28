@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { PrismaClient } from '@prisma/client';
 import { body, validationResult } from 'express-validator';
+import { ensureSubscriptionDefaults, getTrialEndsAt, isFreeEmail } from '../middleware/subscription.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -34,19 +35,28 @@ router.post('/register', [
     const hashedPassword = await bcrypt.hash(password, 10);
 
     // Create user
+    const trialEndsAt = getTrialEndsAt(new Date());
     const user = await prisma.user.create({
       data: {
         email,
         password: hashedPassword,
         name: name || email.split('@')[0],
-        firmName: firmName || null
+        firmName: firmName || null,
+        trialEndsAt,
+        subscriptionStatus: 'trialing',
+        freeOverride: isFreeEmail(email)
       },
       select: {
         id: true,
         email: true,
         name: true,
         firmName: true,
-        createdAt: true
+        createdAt: true,
+        trialEndsAt: true,
+        subscriptionStatus: true,
+        subscriptionPlan: true,
+        subscriptionEndsAt: true,
+        freeOverride: true
       }
     });
 
@@ -95,6 +105,7 @@ router.post('/login', [
     }
 
     // Generate token
+    const normalizedUser = await ensureSubscriptionDefaults(user.id);
     const token = jwt.sign(
       { userId: user.id, email: user.email },
       process.env.JWT_SECRET || 'your-secret-key',
@@ -103,10 +114,15 @@ router.post('/login', [
 
     res.json({
       user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        firmName: user.firmName
+        id: normalizedUser.id,
+        email: normalizedUser.email,
+        name: normalizedUser.name,
+        firmName: normalizedUser.firmName,
+        trialEndsAt: normalizedUser.trialEndsAt,
+        subscriptionStatus: normalizedUser.subscriptionStatus,
+        subscriptionPlan: normalizedUser.subscriptionPlan,
+        subscriptionEndsAt: normalizedUser.subscriptionEndsAt,
+        freeOverride: normalizedUser.freeOverride
       },
       token
     });
@@ -133,7 +149,12 @@ router.get('/me', async (req, res, next) => {
         email: true,
         name: true,
         firmName: true,
-        createdAt: true
+        createdAt: true,
+        trialEndsAt: true,
+        subscriptionStatus: true,
+        subscriptionPlan: true,
+        subscriptionEndsAt: true,
+        freeOverride: true
       }
     });
 
@@ -141,7 +162,21 @@ router.get('/me', async (req, res, next) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    res.json({ user });
+    const normalizedUser = await ensureSubscriptionDefaults(user.id);
+    res.json({
+      user: {
+        id: normalizedUser.id,
+        email: normalizedUser.email,
+        name: normalizedUser.name,
+        firmName: normalizedUser.firmName,
+        createdAt: normalizedUser.createdAt,
+        trialEndsAt: normalizedUser.trialEndsAt,
+        subscriptionStatus: normalizedUser.subscriptionStatus,
+        subscriptionPlan: normalizedUser.subscriptionPlan,
+        subscriptionEndsAt: normalizedUser.subscriptionEndsAt,
+        freeOverride: normalizedUser.freeOverride
+      }
+    });
   } catch (error) {
     res.status(401).json({ error: 'Invalid token' });
   }

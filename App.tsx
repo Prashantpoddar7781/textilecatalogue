@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Plus, Search, Share2, Package, CheckCircle, SlidersHorizontal, LogOut, User } from 'lucide-react';
-import { TextileDesign, CatalogueFilters } from './types';
+import { Plus, Search, Share2, Package, CheckCircle, SlidersHorizontal, LogOut, User, Crown } from 'lucide-react';
+import { TextileDesign, CatalogueFilters, SubscriptionStatus } from './types';
 import { UploadForm } from './components/UploadForm';
 import { DesignCard } from './components/DesignCard';
 import { ShareDialog } from './components/ShareDialog';
@@ -8,7 +8,9 @@ import { ShareLinkDialog } from './components/ShareLinkDialog';
 import { ShareView } from './components/ShareView';
 import { OrdersPage } from './components/OrdersPage';
 import { LoginDialog } from './components/LoginDialog';
-import { designsApi, authApi, shareLinksApi, ordersApi } from './services/api';
+import { PricingDialog } from './components/PricingDialog';
+import { BillingPage } from './components/BillingPage';
+import { designsApi, authApi, shareLinksApi, ordersApi, billingApi } from './services/api';
 import { Order } from './types';
 
 const App: React.FC = () => {
@@ -16,6 +18,7 @@ const App: React.FC = () => {
   const pathname = window.location.pathname;
   const shareMatch = pathname.match(/^\/share\/([^/]+)$/);
   const ordersMatch = pathname.match(/^\/orders\/?$/);
+  const billingMatch = pathname.match(/^\/billing\/?$/);
   
   if (shareMatch) {
     const token = shareMatch[1];
@@ -34,6 +37,9 @@ const App: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [orders, setOrders] = useState<Order[]>([]);
   const [loadingOrders, setLoadingOrders] = useState(false);
+  const [subscription, setSubscription] = useState<SubscriptionStatus | null>(null);
+  const [isPricingOpen, setIsPricingOpen] = useState(false);
+  const [isSubscriptionBlocked, setIsSubscriptionBlocked] = useState(false);
   const [fabrics, setFabrics] = useState<string[]>(['All']);
   const [catalogues, setCatalogues] = useState<{ id: string; name: string }[]>([]);
   const [filters, setFilters] = useState<CatalogueFilters>({
@@ -65,11 +71,40 @@ const App: React.FC = () => {
     }
   }, []);
 
+  useEffect(() => {
+    const handler = () => {
+      setIsPricingOpen(true);
+      setIsSubscriptionBlocked(true);
+    };
+    window.addEventListener('subscription-required', handler as EventListener);
+    return () => window.removeEventListener('subscription-required', handler as EventListener);
+  }, []);
+
   // Load orders when user is available
   useEffect(() => {
     if (user) {
       loadOrders();
     }
+  }, [user]);
+
+  const refreshSubscription = async () => {
+    if (!user) return;
+    try {
+      const { subscription: status } = await billingApi.getStatus();
+      setSubscription(status);
+      if (status?.needsPayment) {
+        setIsPricingOpen(true);
+        setIsSubscriptionBlocked(true);
+      } else {
+        setIsSubscriptionBlocked(false);
+      }
+    } catch (error) {
+      console.warn('Failed to load subscription status', error);
+    }
+  };
+
+  useEffect(() => {
+    refreshSubscription();
   }, [user]);
 
   // Load designs from API
@@ -295,6 +330,7 @@ const App: React.FC = () => {
     setIsLoginOpen(false);
     loadDesigns();
     loadOrders();
+    refreshSubscription();
   };
 
   const handleLogout = () => {
@@ -302,6 +338,9 @@ const App: React.FC = () => {
     setUser(null);
     setDesigns([]);
     setOrders([]);
+    setSubscription(null);
+    setIsPricingOpen(false);
+    setIsSubscriptionBlocked(false);
     setIsLoginOpen(true);
   };
 
@@ -341,6 +380,9 @@ const App: React.FC = () => {
   };
 
   const selectedDesigns = designs.filter(d => selectedIds.has(d.id));
+  const trialDaysLeft = subscription?.trialEndsAt
+    ? Math.max(Math.ceil((new Date(subscription.trialEndsAt).getTime() - Date.now()) / (24 * 60 * 60 * 1000)), 0)
+    : null;
 
   if (!user) {
     return (
@@ -361,6 +403,17 @@ const App: React.FC = () => {
 
   if (ordersMatch) {
     return <OrdersPage catalog={designs} onBack={() => { window.location.href = '/'; }} />;
+  }
+
+  if (billingMatch) {
+    return (
+      <BillingPage
+        user={user}
+        subscription={subscription}
+        refreshSubscription={refreshSubscription}
+        onBack={() => { window.location.href = '/'; }}
+      />
+    );
   }
 
   return (
@@ -393,7 +446,30 @@ const App: React.FC = () => {
               <User className="w-4 h-4" />
               <span className="font-medium">{user.name || user.email}</span>
             </div>
+            {subscription && !subscription.isFree && (
+              <button
+                onClick={() => setIsPricingOpen(true)}
+                className="hidden sm:flex items-center gap-2 bg-indigo-50 text-indigo-700 border border-indigo-100 px-3 py-2 rounded-2xl text-xs font-bold"
+              >
+                <Crown className="w-4 h-4" />
+                <span>
+                  {subscription.isTrialActive && trialDaysLeft !== null
+                    ? `Trial ${trialDaysLeft}d left`
+                    : subscription.isActive
+                      ? 'Pro Active'
+                      : 'Upgrade'}
+                </span>
+              </button>
+            )}
             <div className="flex items-center gap-2">
+              <button
+                onClick={() => { window.location.href = '/billing'; }}
+                className="flex items-center gap-2 bg-white border border-gray-200 text-gray-700 px-4 py-2.5 rounded-2xl font-bold transition-all shadow-sm active:scale-95"
+              >
+                <Crown className="w-4 h-4" />
+                <span className="hidden sm:inline">Billing</span>
+                <span className="sm:hidden">Billing</span>
+              </button>
               <button
                 onClick={() => { window.location.href = '/orders'; }}
                 className="flex items-center gap-2 bg-white border border-gray-200 text-gray-700 px-4 py-2.5 rounded-2xl font-bold transition-all shadow-sm active:scale-95"
@@ -434,6 +510,27 @@ const App: React.FC = () => {
           </div>
         </div>
       </header>
+
+      {subscription && !subscription.isFree && (subscription.needsPayment || subscription.isTrialActive) && (
+        <div className="bg-indigo-600 text-white">
+          <div className="max-w-7xl mx-auto px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div>
+              <p className="text-sm font-bold">
+                {subscription.needsPayment
+                  ? 'Your trial is over. Please upgrade to continue.'
+                  : `Trial active: ${trialDaysLeft ?? 0} day${trialDaysLeft === 1 ? '' : 's'} left.`}
+              </p>
+              <p className="text-xs text-indigo-100">Monthly ₹299 or Annual ₹2999</p>
+            </div>
+            <button
+              onClick={() => { window.location.href = '/billing'; }}
+              className="bg-white text-indigo-700 px-4 py-2 rounded-xl text-sm font-bold shadow-sm"
+            >
+              Upgrade Now
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="max-w-7xl mx-auto px-4 py-4">
         <div className="flex items-center gap-3 overflow-x-auto no-scrollbar scroll-smooth pb-2">
@@ -621,6 +718,13 @@ const App: React.FC = () => {
           }} 
         />
       )}
+      <PricingDialog
+        isOpen={isPricingOpen}
+        subscription={subscription || undefined}
+        isBlocking={isSubscriptionBlocked}
+        onClose={() => setIsPricingOpen(false)}
+        onSubscribed={() => refreshSubscription()}
+      />
     </div>
   );
 };

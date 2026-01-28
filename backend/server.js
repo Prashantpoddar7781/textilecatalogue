@@ -10,6 +10,7 @@ import catalogueRoutes from './routes/catalogues.js';
 import contactRoutes from './routes/contacts.js';
 import shareLinkRoutes from './routes/shareLinks.js';
 import orderRoutes from './routes/orders.js';
+import billingRoutes from './routes/billing.js';
 
 dotenv.config();
 
@@ -103,7 +104,14 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
-app.use(express.json({ limit: '50mb' }));
+app.use(express.json({
+  limit: '50mb',
+  verify: (req, res, buf) => {
+    if (req.originalUrl === '/api/billing/razorpay/webhook') {
+      req.rawBody = buf;
+    }
+  }
+}));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 console.log('Middleware configured');
@@ -123,13 +131,14 @@ console.log('Health check endpoint configured');
 console.log('Setting up routes...');
 try {
   app.use('/api/auth', authRoutes);
+  app.use('/api/billing', billingRoutes);
   app.use('/api/designs', designRoutes);
   app.use('/api/users', userRoutes);
   app.use('/api/catalogues', catalogueRoutes);
   app.use('/api/contacts', contactRoutes);
   app.use('/api/share-links', shareLinkRoutes);
   app.use('/api/orders', orderRoutes);
-  console.log('Routes configured: /api/auth, /api/designs, /api/users, /api/catalogues, /api/contacts, /api/share-links, /api/orders');
+  console.log('Routes configured: /api/auth, /api/billing, /api/designs, /api/users, /api/catalogues, /api/contacts, /api/share-links, /api/orders');
 } catch (error) {
   console.error('Error setting up routes:', error);
   // Server will still start, but routes may not work

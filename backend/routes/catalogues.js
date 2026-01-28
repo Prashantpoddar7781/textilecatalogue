@@ -2,12 +2,13 @@ import express from 'express';
 import { PrismaClient } from '@prisma/client';
 import { body, validationResult } from 'express-validator';
 import { authenticateToken } from '../middleware/auth.js';
+import { requireActiveSubscription } from '../middleware/subscription.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
 
 // Get all catalogues for current user
-router.get('/', authenticateToken, async (req, res, next) => {
+router.get('/', authenticateToken, requireActiveSubscription, async (req, res, next) => {
   try {
     const userId = req.user.userId;
     const catalogues = await prisma.catalogue.findMany({
@@ -29,7 +30,7 @@ router.get('/', authenticateToken, async (req, res, next) => {
 });
 
 // Create catalogue
-router.post('/', authenticateToken, [
+router.post('/', authenticateToken, requireActiveSubscription, [
   body('name').notEmpty().trim()
 ], async (req, res, next) => {
   try {
@@ -67,7 +68,7 @@ router.post('/', authenticateToken, [
 });
 
 // Get single catalogue with designs
-router.get('/:id', authenticateToken, async (req, res, next) => {
+router.get('/:id', authenticateToken, requireActiveSubscription, async (req, res, next) => {
   try {
     const userId = req.user.userId;
     const { id } = req.params;
@@ -95,7 +96,7 @@ router.get('/:id', authenticateToken, async (req, res, next) => {
 });
 
 // Update catalogue
-router.put('/:id', authenticateToken, [
+router.put('/:id', authenticateToken, requireActiveSubscription, [
   body('name').optional().notEmpty().trim()
 ], async (req, res, next) => {
   try {
@@ -128,7 +129,7 @@ router.put('/:id', authenticateToken, [
 });
 
 // Delete catalogue
-router.delete('/:id', authenticateToken, async (req, res, next) => {
+router.delete('/:id', authenticateToken, requireActiveSubscription, async (req, res, next) => {
   try {
     const userId = req.user.userId;
     const { id } = req.params;

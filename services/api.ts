@@ -31,6 +31,9 @@ async function request<T>(
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: response.statusText }));
+    if (response.status === 402 && typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('subscription-required', { detail: error }));
+    }
     throw new ApiError(response.status, error.error || error.message || 'Request failed');
   }
 
@@ -299,6 +302,25 @@ export const ordersApi = {
       body: JSON.stringify(data),
     });
   },
+};
+
+// Billing API
+export const billingApi = {
+  getPlans: async () => {
+    return request<{ plans: Array<{ id: string; name: string; price: number; currency: string; interval: string }> }>('/billing/plans');
+  },
+  getStatus: async () => {
+    return request<{ subscription: any }>('/billing/status');
+  },
+  createRazorpaySubscription: async (plan: 'monthly' | 'annual') => {
+    return request<{ subscriptionId: string; razorpayKeyId: string; plan: string; customerId: string; email: string }>(
+      '/billing/razorpay/subscription',
+      {
+        method: 'POST',
+        body: JSON.stringify({ plan })
+      }
+    );
+  }
 };
 
 export { ApiError };

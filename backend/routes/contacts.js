@@ -2,12 +2,13 @@ import express from 'express';
 import { PrismaClient } from '@prisma/client';
 import { body, validationResult } from 'express-validator';
 import { authenticateToken } from '../middleware/auth.js';
+import { requireActiveSubscription } from '../middleware/subscription.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
 
 // Get all contacts for the authenticated user
-router.get('/', authenticateToken, async (req, res, next) => {
+router.get('/', authenticateToken, requireActiveSubscription, async (req, res, next) => {
   try {
     const userId = req.user.userId;
     const contacts = await prisma.contact.findMany({
@@ -21,7 +22,7 @@ router.get('/', authenticateToken, async (req, res, next) => {
 });
 
 // Get contacts by delivery status
-router.get('/status/:status', authenticateToken, async (req, res, next) => {
+router.get('/status/:status', authenticateToken, requireActiveSubscription, async (req, res, next) => {
   try {
     const userId = req.user.userId;
     const { status } = req.params;
@@ -40,7 +41,7 @@ router.get('/status/:status', authenticateToken, async (req, res, next) => {
 });
 
 // Create a new contact
-router.post('/', authenticateToken, [
+router.post('/', authenticateToken, requireActiveSubscription, [
   body('name').notEmpty().trim().withMessage('Contact name is required'),
   body('phoneNumber').notEmpty().trim().withMessage('Phone number is required')
 ], async (req, res, next) => {
@@ -75,7 +76,7 @@ router.post('/', authenticateToken, [
 });
 
 // Update contact (including delivery status)
-router.put('/:id', authenticateToken, [
+router.put('/:id', authenticateToken, requireActiveSubscription, [
   body('name').optional().trim(),
   body('phoneNumber').optional().trim(),
   body('isSaved').optional().isBoolean(),
@@ -115,7 +116,7 @@ router.put('/:id', authenticateToken, [
 });
 
 // Bulk update delivery status (after broadcast)
-router.post('/update-delivery-status', authenticateToken, [
+router.post('/update-delivery-status', authenticateToken, requireActiveSubscription, [
   body('contacts').isArray().withMessage('Contacts must be an array'),
   body('contacts.*.id').notEmpty(),
   body('contacts.*.deliveryStatus').isIn(['delivered', 'undelivered', 'unknown'])
@@ -149,7 +150,7 @@ router.post('/update-delivery-status', authenticateToken, [
 });
 
 // Delete a contact
-router.delete('/:id', authenticateToken, async (req, res, next) => {
+router.delete('/:id', authenticateToken, requireActiveSubscription, async (req, res, next) => {
   try {
     const { id } = req.params;
     const userId = req.user.userId;

@@ -2,6 +2,7 @@ import express from 'express';
 import { PrismaClient } from '@prisma/client';
 import { body, validationResult } from 'express-validator';
 import { authenticateToken, optionalAuth } from '../middleware/auth.js';
+import { requireActiveSubscription, requireActiveSubscriptionIfAuthenticated } from '../middleware/subscription.js';
 import crypto from 'crypto';
 
 const router = express.Router();
@@ -13,7 +14,7 @@ function generateToken() {
 }
 
 // Create shareable link (requires auth)
-router.post('/', authenticateToken, [
+router.post('/', authenticateToken, requireActiveSubscription, [
   body('designId').optional().notEmpty(),
   body('designIds').optional().isArray({ min: 1 }),
   body('expiresAt').optional().isISO8601(),
@@ -90,7 +91,7 @@ router.post('/', authenticateToken, [
 });
 
 // Create shareable link for entire collection (requires auth)
-router.post('/collection', authenticateToken, [
+router.post('/collection', authenticateToken, requireActiveSubscription, [
   body('expiresAt').optional().isISO8601(),
   body('selectedPriceType').optional().trim()
 ], async (req, res, next) => {
@@ -160,7 +161,7 @@ router.post('/collection', authenticateToken, [
 });
 
 // Get all share links for user (requires auth)
-router.get('/', authenticateToken, async (req, res, next) => {
+router.get('/', authenticateToken, requireActiveSubscription, async (req, res, next) => {
   try {
     const userId = req.user.userId;
     const shareLinks = await prisma.shareLink.findMany({
@@ -197,7 +198,7 @@ router.get('/', authenticateToken, async (req, res, next) => {
 });
 
 // Get share link by token (public, no auth required)
-router.get('/:token', optionalAuth, async (req, res, next) => {
+router.get('/:token', optionalAuth, requireActiveSubscriptionIfAuthenticated, async (req, res, next) => {
   try {
     const { token } = req.params;
     const shareLink = await prisma.shareLink.findUnique({
@@ -265,7 +266,7 @@ router.get('/:token', optionalAuth, async (req, res, next) => {
 });
 
 // Disable share link (requires auth, owner only)
-router.put('/:id/disable', authenticateToken, async (req, res, next) => {
+router.put('/:id/disable', authenticateToken, requireActiveSubscription, async (req, res, next) => {
   try {
     const { id } = req.params;
     const userId = req.user.userId;
@@ -292,7 +293,7 @@ router.put('/:id/disable', authenticateToken, async (req, res, next) => {
 });
 
 // Enable share link (requires auth, owner only)
-router.put('/:id/enable', authenticateToken, async (req, res, next) => {
+router.put('/:id/enable', authenticateToken, requireActiveSubscription, async (req, res, next) => {
   try {
     const { id } = req.params;
     const userId = req.user.userId;
@@ -319,7 +320,7 @@ router.put('/:id/enable', authenticateToken, async (req, res, next) => {
 });
 
 // Delete share link (requires auth, owner only)
-router.delete('/:id', authenticateToken, async (req, res, next) => {
+router.delete('/:id', authenticateToken, requireActiveSubscription, async (req, res, next) => {
   try {
     const { id } = req.params;
     const userId = req.user.userId;

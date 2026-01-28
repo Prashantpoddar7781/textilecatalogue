@@ -16,6 +16,14 @@ model User {
   name      String?
   firmName  String?
   password  String
+  trialEndsAt DateTime?
+  subscriptionStatus String?
+  subscriptionPlan String?
+  subscriptionStartedAt DateTime?
+  subscriptionEndsAt DateTime?
+  razorpayCustomerId String?
+  razorpaySubscriptionId String?
+  freeOverride Boolean @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   designs   Design[]

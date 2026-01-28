@@ -2,6 +2,7 @@ import express from 'express';
 import { PrismaClient } from '@prisma/client';
 import { body, validationResult } from 'express-validator';
 import { authenticateToken } from '../middleware/auth.js';
+import { requireActiveSubscription } from '../middleware/subscription.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -79,7 +80,7 @@ router.post('/public', [
 });
 
 // Auth: get orders for current user
-router.get('/', authenticateToken, async (req, res, next) => {
+router.get('/', authenticateToken, requireActiveSubscription, async (req, res, next) => {
   try {
     const userId = req.user.userId;
     const orders = await prisma.order.findMany({
@@ -110,7 +111,7 @@ router.get('/', authenticateToken, async (req, res, next) => {
 });
 
 // Auth: create draft order from AI output
-router.post('/drafts', authenticateToken, [
+router.post('/drafts', authenticateToken, requireActiveSubscription, [
   body('sourceText').notEmpty().trim(),
   body('draft').notEmpty()
 ], async (req, res, next) => {
@@ -139,7 +140,7 @@ router.post('/drafts', authenticateToken, [
 });
 
 // Auth: get draft orders
-router.get('/drafts', authenticateToken, async (req, res, next) => {
+router.get('/drafts', authenticateToken, requireActiveSubscription, async (req, res, next) => {
   try {
     const userId = req.user.userId;
     const drafts = await prisma.orderDraft.findMany({
@@ -153,7 +154,7 @@ router.get('/drafts', authenticateToken, async (req, res, next) => {
 });
 
 // Auth: update order status
-router.put('/:id/status', authenticateToken, [
+router.put('/:id/status', authenticateToken, requireActiveSubscription, [
   body('status').notEmpty().trim()
 ], async (req, res, next) => {
   try {
@@ -212,7 +213,7 @@ router.put('/:id/status', authenticateToken, [
 });
 
 // Auth: confirm draft and create orders
-router.post('/drafts/:id/confirm', authenticateToken, async (req, res, next) => {
+router.post('/drafts/:id/confirm', authenticateToken, requireActiveSubscription, async (req, res, next) => {
   try {
     const { id } = req.params;
     const userId = req.user.userId;

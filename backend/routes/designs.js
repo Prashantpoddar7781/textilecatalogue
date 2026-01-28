@@ -2,12 +2,13 @@ import express from 'express';
 import { PrismaClient } from '@prisma/client';
 import { body, validationResult, query } from 'express-validator';
 import { authenticateToken, optionalAuth } from '../middleware/auth.js';
+import { requireActiveSubscription, requireActiveSubscriptionIfAuthenticated } from '../middleware/subscription.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
 
 // Get all designs (with optional auth for user-specific filtering)
-router.get('/', optionalAuth, async (req, res, next) => {
+router.get('/', optionalAuth, requireActiveSubscriptionIfAuthenticated, async (req, res, next) => {
   try {
     const {
       fabric,
@@ -110,7 +111,7 @@ router.get('/', optionalAuth, async (req, res, next) => {
 });
 
 // Get single design
-router.get('/:id', optionalAuth, async (req, res, next) => {
+router.get('/:id', optionalAuth, requireActiveSubscriptionIfAuthenticated, async (req, res, next) => {
   try {
     const { id } = req.params;
     const userId = req.user?.userId;
@@ -144,7 +145,7 @@ router.get('/:id', optionalAuth, async (req, res, next) => {
 });
 
 // Create design (requires auth)
-router.post('/', authenticateToken, [
+router.post('/', authenticateToken, requireActiveSubscription, [
   body('image').notEmpty(),
   body('name').optional().trim(),
   body('basePrice').optional().isFloat({ min: 0 }),
@@ -237,7 +238,7 @@ router.post('/', authenticateToken, [
 });
 
 // Update design (requires auth, owner only)
-router.put('/:id', authenticateToken, [
+router.put('/:id', authenticateToken, requireActiveSubscription, [
   body('basePrice').optional().isFloat({ min: 0 }),
   body('wholesalePrice').optional().isFloat({ min: 0 }),
   body('retailPrice').optional().isFloat({ min: 0 }),
@@ -359,7 +360,7 @@ router.put('/:id', authenticateToken, [
 });
 
 // Delete design (requires auth, owner only)
-router.delete('/:id', authenticateToken, async (req, res, next) => {
+router.delete('/:id', authenticateToken, requireActiveSubscription, async (req, res, next) => {
   try {
     const { id } = req.params;
     const userId = req.user.userId;
@@ -404,7 +405,7 @@ router.get('/meta/fabrics', async (req, res, next) => {
 });
 
 // Get unique catalogues (for filter)
-router.get('/meta/catalogues', authenticateToken, async (req, res, next) => {
+router.get('/meta/catalogues', authenticateToken, requireActiveSubscription, async (req, res, next) => {
   try {
     const userId = req.user.userId;
     const catalogues = await prisma.catalogue.findMany({
