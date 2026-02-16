@@ -39,7 +39,6 @@ const App: React.FC = () => {
   const [loadingOrders, setLoadingOrders] = useState(false);
   const [subscription, setSubscription] = useState<SubscriptionStatus | null>(null);
   const [isPricingOpen, setIsPricingOpen] = useState(false);
-  const [isSubscriptionBlocked, setIsSubscriptionBlocked] = useState(false);
   const [fabrics, setFabrics] = useState<string[]>(['All']);
   const [catalogues, setCatalogues] = useState<{ id: string; name: string }[]>([]);
   const [filters, setFilters] = useState<CatalogueFilters>({
@@ -74,7 +73,6 @@ const App: React.FC = () => {
   useEffect(() => {
     const handler = () => {
       setIsPricingOpen(true);
-      setIsSubscriptionBlocked(true);
     };
     window.addEventListener('subscription-required', handler as EventListener);
     return () => window.removeEventListener('subscription-required', handler as EventListener);
@@ -94,9 +92,6 @@ const App: React.FC = () => {
       setSubscription(status);
       if (status?.needsPayment) {
         setIsPricingOpen(true);
-        setIsSubscriptionBlocked(true);
-      } else {
-        setIsSubscriptionBlocked(false);
       }
     } catch (error) {
       console.warn('Failed to load subscription status', error);
@@ -340,7 +335,6 @@ const App: React.FC = () => {
     setOrders([]);
     setSubscription(null);
     setIsPricingOpen(false);
-    setIsSubscriptionBlocked(false);
     setIsLoginOpen(true);
   };
 
@@ -721,7 +715,6 @@ const App: React.FC = () => {
       <PricingDialog
         isOpen={isPricingOpen}
         subscription={subscription || undefined}
-        isBlocking={isSubscriptionBlocked}
         onClose={() => setIsPricingOpen(false)}
         onSubscribed={() => refreshSubscription()}
       />

@@ -3,6 +3,7 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
 const TRIAL_DAYS = Number.parseInt(process.env.TRIAL_DAYS || '7', 10);
+const FORCE_FREE = process.env.FORCE_FREE !== 'false';
 const DEFAULT_FREE_EMAILS = ['sunitapoddar95@gmail.com'];
 const FREE_EMAILS = new Set(
   (process.env.FREE_EMAILS || DEFAULT_FREE_EMAILS.join(','))
@@ -48,7 +49,7 @@ export const getSubscriptionSnapshot = (user) => {
   const now = new Date();
   const trialEndsAt = user.trialEndsAt ? new Date(user.trialEndsAt) : null;
   const isTrialActive = Boolean(trialEndsAt && trialEndsAt > now);
-  const isFree = Boolean(user.freeOverride || isFreeEmail(user.email));
+  const isFree = Boolean(FORCE_FREE || user.freeOverride || isFreeEmail(user.email));
   const isActive = isFree || isTrialActive || isSubscriptionActive(user, now);
   const needsPayment = !isActive;
 

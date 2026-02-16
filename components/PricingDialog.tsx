@@ -14,7 +14,6 @@ interface Plan {
 interface Props {
   isOpen: boolean;
   subscription?: SubscriptionStatus | null;
-  isBlocking?: boolean;
   onClose: () => void;
   onSubscribed?: () => void;
 }
@@ -37,7 +36,7 @@ const loadRazorpayScript = () =>
     document.body.appendChild(script);
   });
 
-export const PricingDialog: React.FC<Props> = ({ isOpen, subscription, isBlocking, onClose, onSubscribed }) => {
+export const PricingDialog: React.FC<Props> = ({ isOpen, subscription, onClose, onSubscribed }) => {
   const [plans, setPlans] = useState<Plan[]>(defaultPlans);
   const [loadingPlan, setLoadingPlan] = useState<Plan['id'] | null>(null);
   const [error, setError] = useState('');
@@ -107,11 +106,9 @@ export const PricingDialog: React.FC<Props> = ({ isOpen, subscription, isBlockin
                   : 'Start a subscription to continue'}
             </p>
           </div>
-          {!isBlocking && (
-            <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
-              <X className="w-5 h-5 text-gray-500" />
-            </button>
-          )}
+          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
+            <X className="w-5 h-5 text-gray-500" />
+          </button>
         </div>
 
         <div className="p-6 space-y-4">
