@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Loader2, AlertCircle, IndianRupee, ShoppingCart, ZoomIn, ZoomOut, X, Maximize2 } from 'lucide-react';
+import { Loader2, AlertCircle, IndianRupee, ShoppingCart, X, Maximize2 } from 'lucide-react';
 import { shareLinksApi, ordersApi } from '../services/api';
 import { ShareLink, TextileDesign } from '../types';
 
@@ -14,6 +14,13 @@ function getOrCreateSessionId(): string {
   return id;
 }
 
+function getTouchDistance(touches: TouchList): number {
+  if (touches.length < 2) return 0;
+  const a = touches[0];
+  const b = touches[1];
+  return Math.hypot(b.clientX - a.clientX, b.clientY - a.clientY);
+}
+
 const FullScreenDesignView: React.FC<{
   design: TextileDesign;
   token: string;
@@ -21,9 +28,13 @@ const FullScreenDesignView: React.FC<{
 }> = ({ design, token, onClose }) => {
   const [zoom, setZoom] = useState(1);
   const [position, setPosition] = useState({ x: 0, y: 0 });
+  const positionRef = useRef(position);
   const isDragging = useRef(false);
+  const isPinching = useRef(false);
   const startPos = useRef({ x: 0, y: 0, imgX: 0, imgY: 0 });
+  const pinchStart = useRef({ dist: 0, zoom: 1 });
   const containerRef = useRef<HTMLDivElement>(null);
+  positionRef.current = position;
 
   // Record view when full-screen modal opens (once per session)
   useEffect(() => {
@@ -34,14 +45,12 @@ const FullScreenDesignView: React.FC<{
     shareLinksApi.recordDesignView(token, design.id, sessionId).catch(() => {});
   }, [token, design.id]);
 
-  const zoomIn = useCallback(() => setZoom(z => Math.min(z + 0.5, 4)), []);
-  const zoomOut = useCallback(() => setZoom(z => Math.max(z - 0.5, 0.5)), []);
-
   const handleWheel = useCallback((e: React.WheelEvent) => {
-    if (!e.ctrlKey && !e.metaKey) return;
-    e.preventDefault();
-    if (e.deltaY < 0) setZoom(z => Math.min(z + 0.2, 4));
-    else setZoom(z => Math.max(z - 0.2, 0.5));
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      const delta = e.deltaY > 0 ? -0.1 : 0.1;
+      setZoom(z => Math.min(4, Math.max(0.5, z + delta)));
+    }
   }, []);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
@@ -58,14 +67,73 @@ const FullScreenDesignView: React.FC<{
   }, []);
   const handleMouseUp = useCallback(() => { isDragging.current = false; }, []);
 
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    if (e.touches.length === 2) {
+      isPinching.current = true;
+      isDragging.current = false;
+      pinchStart.current = { dist: getTouchDistance(e.touches), zoom };
+    } else if (e.touches.length === 1) {
+      isDragging.current = true;
+      startPos.current = {
+        x: e.touches[0].clientX,
+        y: e.touches[0].clientY,
+        imgX: positionRef.current.x,
+        imgY: positionRef.current.y
+      };
+    }
+  }, [zoom]);
+
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    if (e.touches.length === 2) {
+      e.preventDefault();
+      const dist = getTouchDistance(e.touches);
+      if (pinchStart.current.dist > 0) {
+        const scale = dist / pinchStart.current.dist;
+        const newZoom = Math.min(4, Math.max(0.5, pinchStart.current.zoom * scale));
+        setZoom(newZoom);
+      }
+    } else if (e.touches.length === 1 && isDragging.current) {
+      setPosition({
+        x: startPos.current.imgX + e.touches[0].clientX - startPos.current.x,
+        y: startPos.current.imgY + e.touches[0].clientY - startPos.current.y
+      });
+    }
+  }, []);
+
+  const handleTouchEnd = useCallback((e: React.TouchEvent) => {
+    if (e.touches.length < 2) isPinching.current = false;
+    if (e.touches.length === 0) {
+      isDragging.current = false;
+    } else if (e.touches.length === 1) {
+      startPos.current = {
+        x: e.touches[0].clientX,
+        y: e.touches[0].clientY,
+        imgX: positionRef.current.x,
+        imgY: positionRef.current.y
+      };
+    }
+  }, []);
+
   const resetView = useCallback(() => {
     setZoom(1);
     setPosition({ x: 0, y: 0 });
   }, []);
 
+  // Prevent browser zoom during pinch - need passive: false
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const preventZoom = (e: TouchEvent) => {
+      if (e.touches.length >= 2) e.preventDefault();
+    };
+    el.addEventListener('touchmove', preventZoom, { passive: false });
+    return () => el.removeEventListener('touchmove', preventZoom);
+  }, []);
+
   return (
     <div
       className="fixed inset-0 z-50 bg-black/95 flex flex-col"
+      style={{ touchAction: 'none' }}
       onWheel={handleWheel}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
@@ -74,23 +142,7 @@ const FullScreenDesignView: React.FC<{
       <div className="absolute top-4 left-4 right-4 flex items-center justify-between z-10">
         <h3 className="text-white font-bold truncate max-w-[60%]">{design.name || 'Design'}</h3>
         <div className="flex items-center gap-2">
-          <button
-            onClick={zoomOut}
-            disabled={zoom <= 0.5}
-            className="p-2 bg-white/20 hover:bg-white/30 rounded-lg text-white disabled:opacity-40 transition-colors"
-            aria-label="Zoom out"
-          >
-            <ZoomOut className="w-5 h-5" />
-          </button>
           <span className="text-white text-sm font-medium min-w-[3rem] text-center">{Math.round(zoom * 100)}%</span>
-          <button
-            onClick={zoomIn}
-            disabled={zoom >= 4}
-            className="p-2 bg-white/20 hover:bg-white/30 rounded-lg text-white disabled:opacity-40 transition-colors"
-            aria-label="Zoom in"
-          >
-            <ZoomIn className="w-5 h-5" />
-          </button>
           <button
             onClick={resetView}
             className="p-2 bg-white/20 hover:bg-white/30 rounded-lg text-white text-xs font-medium transition-colors"
@@ -108,8 +160,11 @@ const FullScreenDesignView: React.FC<{
       </div>
       <div
         ref={containerRef}
-        className="flex-1 overflow-hidden flex items-center justify-center cursor-grab active:cursor-grabbing touch-none"
+        className="flex-1 overflow-hidden flex items-center justify-center cursor-grab active:cursor-grabbing"
         onMouseDown={handleMouseDown}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
       >
         <img
           src={design.image}
@@ -117,13 +172,12 @@ const FullScreenDesignView: React.FC<{
           className="max-w-full max-h-full object-contain select-none"
           style={{
             transform: `translate(${position.x}px, ${position.y}px) scale(${zoom})`,
-            transition: isDragging.current ? 'none' : 'transform 0.15s ease-out'
           }}
           draggable={false}
         />
       </div>
       <p className="text-center text-white/70 text-xs pb-4">
-        Zoom: buttons or Ctrl+scroll • Drag to pan when zoomed
+        Pinch to zoom • Drag to pan
       </p>
     </div>
   );
