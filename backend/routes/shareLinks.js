@@ -160,6 +160,68 @@ router.post('/collection', authenticateToken, requireActiveSubscription, [
   }
 });
 
+// Get share link analytics for user (requires auth) - must be before GET /:token
+router.get('/stats', authenticateToken, requireActiveSubscription, async (req, res, next) => {
+  try {
+    const userId = req.user.userId;
+
+    const shareLinks = await prisma.shareLink.findMany({
+      where: { userId },
+      select: { id: true, token: true }
+    });
+    const shareLinkIds = shareLinks.map(s => s.id);
+
+    const [totalOpens, opensByLink, designViewCounts] = await Promise.all([
+      prisma.shareLinkOpen.count({ where: { shareLinkId: { in: shareLinkIds } } }),
+      prisma.shareLinkOpen.groupBy({
+        by: ['shareLinkId'],
+        where: { shareLinkId: { in: shareLinkIds } },
+        _count: { id: true }
+      }),
+      prisma.shareLinkDesignView.groupBy({
+        by: ['designId'],
+        where: { shareLinkId: { in: shareLinkIds } },
+        _count: { id: true }
+      })
+    ]);
+
+    const designIds = [...new Set(designViewCounts.map(d => d.designId))];
+    const designs = designIds.length
+      ? await prisma.design.findMany({
+          where: { id: { in: designIds } },
+          select: { id: true, name: true, image: true, fabric: true }
+        })
+      : [];
+    const designMap = Object.fromEntries(designs.map(d => [d.id, d]));
+
+    const mostViewedDesigns = designViewCounts
+      .map(({ designId, _count }) => ({
+        designId,
+        viewCount: _count.id,
+        design: designMap[designId] || null
+      }))
+      .sort((a, b) => b.viewCount - a.viewCount)
+      .slice(0, 20);
+
+    const openCountByLinkId = Object.fromEntries(
+      opensByLink.map(o => [o.shareLinkId, o._count.id])
+    );
+    const linksWithOpens = shareLinks.map(link => ({
+      id: link.id,
+      token: link.token,
+      openCount: openCountByLinkId[link.id] || 0
+    }));
+
+    res.json({
+      totalOpens,
+      mostViewedDesigns,
+      linksWithOpens: linksWithOpens
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Get all share links for user (requires auth)
 router.get('/', authenticateToken, requireActiveSubscription, async (req, res, next) => {
   try {
@@ -192,6 +254,76 @@ router.get('/', authenticateToken, requireActiveSubscription, async (req, res, n
     });
 
     res.json({ shareLinks });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Record share link open (public, no auth) - call when someone opens the shared page
+router.post('/:token/open', async (req, res, next) => {
+  try {
+    const { token } = req.params;
+    const { sessionId } = req.body || {};
+    const shareLink = await prisma.shareLink.findUnique({
+      where: { token }
+    });
+    if (!shareLink || !shareLink.isActive) {
+      return res.status(404).json({ error: 'Share link not found' });
+    }
+    if (shareLink.expiresAt && new Date() > new Date(shareLink.expiresAt)) {
+      return res.status(403).json({ error: 'Share link expired' });
+    }
+    await prisma.shareLinkOpen.create({
+      data: {
+        shareLinkId: shareLink.id,
+        sessionId: sessionId || null
+      }
+    });
+    res.status(201).json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Record design view on share page (public, no auth)
+router.post('/:token/view', [
+  body('designId').notEmpty()
+], async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+    const { token } = req.params;
+    const { designId, sessionId } = req.body || {};
+    const shareLink = await prisma.shareLink.findUnique({
+      where: { token },
+      include: {
+        designs: { select: { designId: true } },
+        design: { select: { id: true } }
+      }
+    });
+    if (!shareLink || !shareLink.isActive) {
+      return res.status(404).json({ error: 'Share link not found' });
+    }
+    if (shareLink.expiresAt && new Date() > new Date(shareLink.expiresAt)) {
+      return res.status(403).json({ error: 'Share link expired' });
+    }
+    const allowedIds = new Set([
+      ...shareLink.designs.map(d => d.designId),
+      ...(shareLink.design ? [shareLink.design.id] : [])
+    ]);
+    if (!allowedIds.has(designId)) {
+      return res.status(400).json({ error: 'Design not in this share link' });
+    }
+    await prisma.shareLinkDesignView.create({
+      data: {
+        shareLinkId: shareLink.id,
+        designId,
+        sessionId: sessionId || null
+      }
+    });
+    res.status(201).json({ ok: true });
   } catch (error) {
     next(error);
   }

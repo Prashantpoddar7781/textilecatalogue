@@ -1,7 +1,103 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Loader2, AlertCircle, IndianRupee, ShoppingCart } from 'lucide-react';
 import { shareLinksApi, ordersApi } from '../services/api';
 import { ShareLink, TextileDesign } from '../types';
+
+const SESSION_KEY = 'textilehub_share_session';
+
+function getOrCreateSessionId(): string {
+  let id = sessionStorage.getItem(SESSION_KEY);
+  if (!id) {
+    id = `s_${Date.now()}_${Math.random().toString(36).slice(2, 12)}`;
+    sessionStorage.setItem(SESSION_KEY, id);
+  }
+  return id;
+}
+
+const DesignViewCard: React.FC<{
+  design: TextileDesign;
+  token: string;
+  getDisplayPrice: (d: TextileDesign) => { displayPrice: number; priceLabel: string };
+  onBuyNow: (d: TextileDesign) => void;
+}> = ({ design, token, getDisplayPrice, onBuyNow }) => {
+  const cardRef = useRef<HTMLDivElement>(null);
+  const viewRecorded = useRef(false);
+
+  useEffect(() => {
+    const el = cardRef.current;
+    if (!el) return;
+    const viewKey = `share_view_${token}_${design.id}`;
+    if (sessionStorage.getItem(viewKey)) {
+      viewRecorded.current = true;
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (viewRecorded.current) return;
+        const [e] = entries;
+        if (e?.isIntersecting) {
+          viewRecorded.current = true;
+          sessionStorage.setItem(viewKey, '1');
+          const sessionId = getOrCreateSessionId();
+          shareLinksApi.recordDesignView(token, design.id, sessionId).catch(() => {});
+        }
+      },
+      { threshold: 0.25, rootMargin: '0px' }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [token, design.id]);
+
+  const { displayPrice, priceLabel } = getDisplayPrice(design);
+  return (
+    <div ref={cardRef} className="bg-gray-50 rounded-xl overflow-hidden">
+      <div className="aspect-[3/4] bg-gray-100 overflow-hidden">
+        <img
+          src={design.image}
+          alt={design.name || 'Design'}
+          className="w-full h-full object-cover"
+        />
+      </div>
+      <div className="p-4 space-y-3">
+        <div>
+          <h3 className="text-lg font-bold text-gray-900">
+            {design.name || 'Untitled Design'}
+          </h3>
+          {design.catalogueName && (
+            <p className="text-indigo-600 font-semibold text-xs uppercase tracking-wide">
+              {design.catalogueName}
+            </p>
+          )}
+        </div>
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+              {priceLabel}
+            </p>
+            <div className="flex items-center text-xl font-black text-gray-900">
+              <IndianRupee className="w-4 h-4" />
+              <span>{displayPrice.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+            </div>
+          </div>
+          <div className="text-right">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Fabric</p>
+            <p className="text-sm font-bold text-gray-900">{design.fabric}</p>
+          </div>
+        </div>
+        {design.description && (
+          <p className="text-xs text-gray-600 line-clamp-2">{design.description}</p>
+        )}
+        <button
+          onClick={() => onBuyNow(design)}
+          className="w-full mt-2 bg-green-600 hover:bg-green-700 text-white py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2"
+        >
+          <ShoppingCart className="w-4 h-4" />
+          Buy Now
+        </button>
+      </div>
+    </div>
+  );
+};
 
 export const ShareView: React.FC<{ token: string }> = ({ token }) => {
   const [loading, setLoading] = useState(true);
@@ -26,6 +122,14 @@ export const ShareView: React.FC<{ token: string }> = ({ token }) => {
       setError(null);
       const link = await shareLinksApi.getByToken(token);
       setShareLink(link);
+      // Record open once per session (so admin sees "how many people opened")
+      const openKey = `share_open_${token}`;
+      if (!sessionStorage.getItem(openKey)) {
+        const sessionId = getOrCreateSessionId();
+        shareLinksApi.recordOpen(token, sessionId).catch(() => {}).finally(() => {
+          sessionStorage.setItem(openKey, '1');
+        });
+      }
     } catch (err: any) {
       setError(err.message || 'Failed to load shared design');
     } finally {
@@ -150,57 +254,15 @@ export const ShareView: React.FC<{ token: string }> = ({ token }) => {
                   </span>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                  {groupedDesigns[fabric].map((design) => {
-                    const { displayPrice, priceLabel } = getDisplayPrice(design);
-                    return (
-                      <div key={design.id} className="bg-gray-50 rounded-xl overflow-hidden">
-                        <div className="aspect-[3/4] bg-gray-100 overflow-hidden">
-                          <img 
-                            src={design.image} 
-                            alt={design.name || 'Design'} 
-                            className="w-full h-full object-cover"
-                          />
-                        </div>
-                        <div className="p-4 space-y-3">
-                          <div>
-                            <h3 className="text-lg font-bold text-gray-900">
-                              {design.name || 'Untitled Design'}
-                            </h3>
-                            {design.catalogueName && (
-                              <p className="text-indigo-600 font-semibold text-xs uppercase tracking-wide">
-                                {design.catalogueName}
-                              </p>
-                            )}
-                          </div>
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                                {priceLabel}
-                              </p>
-                              <div className="flex items-center text-xl font-black text-gray-900">
-                                <IndianRupee className="w-4 h-4" />
-                                <span>{displayPrice.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
-                              </div>
-                            </div>
-                            <div className="text-right">
-                              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Fabric</p>
-                              <p className="text-sm font-bold text-gray-900">{design.fabric}</p>
-                            </div>
-                          </div>
-                          {design.description && (
-                            <p className="text-xs text-gray-600 line-clamp-2">{design.description}</p>
-                          )}
-                          <button
-                            onClick={() => handleBuyNow(design)}
-                            className="w-full mt-2 bg-green-600 hover:bg-green-700 text-white py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2"
-                          >
-                            <ShoppingCart className="w-4 h-4" />
-                            Buy Now
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
+                  {groupedDesigns[fabric].map((design) => (
+                    <DesignViewCard
+                      key={design.id}
+                      design={design}
+                      token={token}
+                      getDisplayPrice={getDisplayPrice}
+                      onBuyNow={handleBuyNow}
+                    />
+                  ))}
                 </div>
               </div>
             ))}

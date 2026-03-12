@@ -246,6 +246,31 @@ export const shareLinksApi = {
     return request<any>(`/share-links/${token}`);
   },
 
+  /** Record that someone opened the shared page (public, no auth). Call once per session. */
+  recordOpen: async (token: string, sessionId?: string) => {
+    return request<{ ok: boolean }>(`/share-links/${token}/open`, {
+      method: 'POST',
+      body: JSON.stringify({ sessionId: sessionId ?? null }),
+    });
+  },
+
+  /** Record that a design was viewed on the share page (public, no auth). Call once per design per session. */
+  recordDesignView: async (token: string, designId: string, sessionId?: string) => {
+    return request<{ ok: boolean }>(`/share-links/${token}/view`, {
+      method: 'POST',
+      body: JSON.stringify({ designId, sessionId: sessionId ?? null }),
+    });
+  },
+
+  /** Get analytics for the current user's share links (auth required). */
+  getStats: async () => {
+    return request<{
+      totalOpens: number;
+      mostViewedDesigns: { designId: string; viewCount: number; design: { id: string; name: string | null; image: string; fabric: string } | null }[];
+      linksWithOpens: { id: string; token: string; openCount: number }[];
+    }>('/share-links/stats');
+  },
+
   disable: async (id: string) => {
     return request<{ message: string; shareLink: any }>(`/share-links/${id}/disable`, {
       method: 'PUT',

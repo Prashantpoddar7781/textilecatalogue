@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Plus, Search, Share2, Package, CheckCircle, SlidersHorizontal, LogOut, User, Crown } from 'lucide-react';
+import { Plus, Search, Share2, Package, CheckCircle, SlidersHorizontal, LogOut, User, Crown, BarChart3 } from 'lucide-react';
 import { TextileDesign, CatalogueFilters, SubscriptionStatus } from './types';
 import { UploadForm } from './components/UploadForm';
 import { DesignCard } from './components/DesignCard';
@@ -7,6 +7,7 @@ import { ShareDialog } from './components/ShareDialog';
 import { ShareLinkDialog } from './components/ShareLinkDialog';
 import { ShareView } from './components/ShareView';
 import { OrdersPage } from './components/OrdersPage';
+import { ShareStatsPage } from './components/ShareStatsPage';
 import { LoginDialog } from './components/LoginDialog';
 import { PricingDialog } from './components/PricingDialog';
 import { BillingPage } from './components/BillingPage';
@@ -19,6 +20,7 @@ const App: React.FC = () => {
   const shareMatch = pathname.match(/^\/share\/([^/]+)$/);
   const ordersMatch = pathname.match(/^\/orders\/?$/);
   const billingMatch = pathname.match(/^\/billing\/?$/);
+  const shareStatsMatch = pathname.match(/^\/share-stats\/?$/);
   
   if (shareMatch) {
     const token = shareMatch[1];
@@ -410,6 +412,10 @@ const App: React.FC = () => {
     );
   }
 
+  if (shareStatsMatch) {
+    return <ShareStatsPage onBack={() => { window.location.href = '/'; }} />;
+  }
+
   return (
     <div className="min-h-screen bg-[#FDFDFF] pb-36">
       <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-xl border-b px-4 py-3 md:px-8 shadow-sm">
@@ -463,6 +469,14 @@ const App: React.FC = () => {
                 <Crown className="w-4 h-4" />
                 <span className="hidden sm:inline">Billing</span>
                 <span className="sm:hidden">Billing</span>
+              </button>
+              <button
+                onClick={() => { window.location.href = '/share-stats'; }}
+                className="flex items-center gap-2 bg-white border border-gray-200 text-gray-700 px-4 py-2.5 rounded-2xl font-bold transition-all shadow-sm active:scale-95"
+              >
+                <BarChart3 className="w-4 h-4" />
+                <span className="hidden sm:inline">Link stats</span>
+                <span className="sm:hidden">Stats</span>
               </button>
               <button
                 onClick={() => { window.location.href = '/orders'; }}

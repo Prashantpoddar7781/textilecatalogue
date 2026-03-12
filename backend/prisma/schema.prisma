@@ -66,6 +66,7 @@ model Design {
   description    String?
   shareLinks     ShareLink[]
   shareLinkDesigns ShareLinkDesign[]
+  shareLinkDesignViews ShareLinkDesignView[]
   orders         Order[]
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -100,6 +101,8 @@ model ShareLink {
   design      Design?   @relation(fields: [designId], references: [id], onDelete: Cascade)
   designs     ShareLinkDesign[]
   orders      Order[]
+  opens       ShareLinkOpen[]
+  designViews ShareLinkDesignView[]
   token       String   @unique // Unique token for the shareable link
   expiresAt   DateTime? // Optional expiration date
   isActive    Boolean  @default(true) // Can be disabled by user
@@ -111,6 +114,31 @@ model ShareLink {
   @@index([designId])
   @@index([token])
   @@index([isActive])
+}
+
+model ShareLinkOpen {
+  id          String   @id @default(cuid())
+  shareLinkId String
+  shareLink   ShareLink @relation(fields: [shareLinkId], references: [id], onDelete: Cascade)
+  sessionId   String?   // Client session to avoid double-counting same visitor
+  openedAt    DateTime @default(now())
+
+  @@index([shareLinkId])
+  @@index([openedAt])
+}
+
+model ShareLinkDesignView {
+  id          String   @id @default(cuid())
+  shareLinkId String
+  designId    String
+  shareLink   ShareLink @relation(fields: [shareLinkId], references: [id], onDelete: Cascade)
+  design      Design    @relation(fields: [designId], references: [id], onDelete: Cascade)
+  sessionId   String?
+  viewedAt    DateTime @default(now())
+
+  @@index([shareLinkId])
+  @@index([designId])
+  @@index([viewedAt])
 }
 
 model Order {

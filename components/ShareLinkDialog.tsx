@@ -11,6 +11,7 @@ interface Props {
 
 export const ShareLinkDialog: React.FC<Props> = ({ design, designs, onClose }) => {
   const [shareLinks, setShareLinks] = useState<ShareLink[]>([]);
+  const [openCountByLinkId, setOpenCountByLinkId] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
   const [expiresIn, setExpiresIn] = useState<string>('7'); // days
@@ -32,8 +33,11 @@ export const ShareLinkDialog: React.FC<Props> = ({ design, designs, onClose }) =
     if (!primaryDesign) return;
     try {
       setLoading(true);
-      const { shareLinks: links } = await shareLinksApi.getAll();
-      // Filter links for selected designs
+      const [listRes, statsRes] = await Promise.all([
+        shareLinksApi.getAll(),
+        shareLinksApi.getStats().catch(() => null)
+      ]);
+      const { shareLinks: links } = listRes;
       const designIds = designList.map(d => d.id);
       const designLinks = links.filter(link => {
         if (link.designId && designIds.includes(link.designId)) return true;
@@ -41,6 +45,11 @@ export const ShareLinkDialog: React.FC<Props> = ({ design, designs, onClose }) =
         return false;
       });
       setShareLinks(designLinks);
+      const openMap: Record<string, number> = {};
+      if (statsRes?.linksWithOpens) {
+        statsRes.linksWithOpens.forEach(l => { openMap[l.id] = l.openCount; });
+      }
+      setOpenCountByLinkId(openMap);
     } catch (error) {
       console.error('Failed to load share links:', error);
       alert('Failed to load share links');
@@ -290,6 +299,12 @@ export const ShareLinkDialog: React.FC<Props> = ({ design, designs, onClose }) =
                           )}
                         </div>
                         <div className="space-y-1 text-xs text-gray-600">
+                          {(openCountByLinkId[link.id] ?? 0) > 0 && (
+                            <div className="flex items-center gap-2 text-indigo-600 font-semibold">
+                              <Eye className="w-3.5 h-3.5" />
+                              <span>{openCountByLinkId[link.id]} open{openCountByLinkId[link.id] === 1 ? '' : 's'}</span>
+                            </div>
+                          )}
                           <div className="flex items-center gap-2">
                             <Clock className="w-3.5 h-3.5" />
                             <span>Expires: {formatExpirationDate(link.expiresAt)}</span>
