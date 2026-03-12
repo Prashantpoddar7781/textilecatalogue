@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Loader2, AlertCircle, IndianRupee, ShoppingCart } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { Loader2, AlertCircle, IndianRupee, ShoppingCart, ZoomIn, ZoomOut, X, Maximize2 } from 'lucide-react';
 import { shareLinksApi, ordersApi } from '../services/api';
 import { ShareLink, TextileDesign } from '../types';
 
@@ -14,50 +14,148 @@ function getOrCreateSessionId(): string {
   return id;
 }
 
+const FullScreenDesignView: React.FC<{
+  design: TextileDesign;
+  token: string;
+  onClose: () => void;
+}> = ({ design, token, onClose }) => {
+  const [zoom, setZoom] = useState(1);
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const isDragging = useRef(false);
+  const startPos = useRef({ x: 0, y: 0, imgX: 0, imgY: 0 });
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Record view when full-screen modal opens (once per session)
+  useEffect(() => {
+    const viewKey = `share_view_${token}_${design.id}`;
+    if (sessionStorage.getItem(viewKey)) return;
+    sessionStorage.setItem(viewKey, '1');
+    const sessionId = getOrCreateSessionId();
+    shareLinksApi.recordDesignView(token, design.id, sessionId).catch(() => {});
+  }, [token, design.id]);
+
+  const zoomIn = useCallback(() => setZoom(z => Math.min(z + 0.5, 4)), []);
+  const zoomOut = useCallback(() => setZoom(z => Math.max(z - 0.5, 0.5)), []);
+
+  const handleWheel = useCallback((e: React.WheelEvent) => {
+    if (!e.ctrlKey && !e.metaKey) return;
+    e.preventDefault();
+    if (e.deltaY < 0) setZoom(z => Math.min(z + 0.2, 4));
+    else setZoom(z => Math.max(z - 0.2, 0.5));
+  }, []);
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (zoom <= 1) return;
+    isDragging.current = true;
+    startPos.current = { x: e.clientX, y: e.clientY, imgX: position.x, imgY: position.y };
+  }, [zoom, position]);
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!isDragging.current) return;
+    setPosition({
+      x: startPos.current.imgX + e.clientX - startPos.current.x,
+      y: startPos.current.imgY + e.clientY - startPos.current.y
+    });
+  }, []);
+  const handleMouseUp = useCallback(() => { isDragging.current = false; }, []);
+
+  const resetView = useCallback(() => {
+    setZoom(1);
+    setPosition({ x: 0, y: 0 });
+  }, []);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-black/95 flex flex-col"
+      onWheel={handleWheel}
+      onMouseMove={handleMouseMove}
+      onMouseUp={handleMouseUp}
+      onMouseLeave={handleMouseUp}
+    >
+      <div className="absolute top-4 left-4 right-4 flex items-center justify-between z-10">
+        <h3 className="text-white font-bold truncate max-w-[60%]">{design.name || 'Design'}</h3>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={zoomOut}
+            disabled={zoom <= 0.5}
+            className="p-2 bg-white/20 hover:bg-white/30 rounded-lg text-white disabled:opacity-40 transition-colors"
+            aria-label="Zoom out"
+          >
+            <ZoomOut className="w-5 h-5" />
+          </button>
+          <span className="text-white text-sm font-medium min-w-[3rem] text-center">{Math.round(zoom * 100)}%</span>
+          <button
+            onClick={zoomIn}
+            disabled={zoom >= 4}
+            className="p-2 bg-white/20 hover:bg-white/30 rounded-lg text-white disabled:opacity-40 transition-colors"
+            aria-label="Zoom in"
+          >
+            <ZoomIn className="w-5 h-5" />
+          </button>
+          <button
+            onClick={resetView}
+            className="p-2 bg-white/20 hover:bg-white/30 rounded-lg text-white text-xs font-medium transition-colors"
+          >
+            Reset
+          </button>
+          <button
+            onClick={onClose}
+            className="p-2 bg-white/20 hover:bg-white/30 rounded-lg text-white transition-colors"
+            aria-label="Close"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+      </div>
+      <div
+        ref={containerRef}
+        className="flex-1 overflow-hidden flex items-center justify-center cursor-grab active:cursor-grabbing touch-none"
+        onMouseDown={handleMouseDown}
+      >
+        <img
+          src={design.image}
+          alt={design.name || 'Design'}
+          className="max-w-full max-h-full object-contain select-none"
+          style={{
+            transform: `translate(${position.x}px, ${position.y}px) scale(${zoom})`,
+            transition: isDragging.current ? 'none' : 'transform 0.15s ease-out'
+          }}
+          draggable={false}
+        />
+      </div>
+      <p className="text-center text-white/70 text-xs pb-4">
+        Zoom: buttons or Ctrl+scroll • Drag to pan when zoomed
+      </p>
+    </div>
+  );
+};
+
 const DesignViewCard: React.FC<{
   design: TextileDesign;
   token: string;
   getDisplayPrice: (d: TextileDesign) => { displayPrice: number; priceLabel: string };
   onBuyNow: (d: TextileDesign) => void;
-}> = ({ design, token, getDisplayPrice, onBuyNow }) => {
-  const cardRef = useRef<HTMLDivElement>(null);
-  const viewRecorded = useRef(false);
-
-  useEffect(() => {
-    const el = cardRef.current;
-    if (!el) return;
-    const viewKey = `share_view_${token}_${design.id}`;
-    if (sessionStorage.getItem(viewKey)) {
-      viewRecorded.current = true;
-      return;
-    }
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (viewRecorded.current) return;
-        const [e] = entries;
-        if (e?.isIntersecting) {
-          viewRecorded.current = true;
-          sessionStorage.setItem(viewKey, '1');
-          const sessionId = getOrCreateSessionId();
-          shareLinksApi.recordDesignView(token, design.id, sessionId).catch(() => {});
-        }
-      },
-      { threshold: 0.25, rootMargin: '0px' }
-    );
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [token, design.id]);
-
+  onViewFullScreen: (d: TextileDesign) => void;
+}> = ({ design, token, getDisplayPrice, onBuyNow, onViewFullScreen }) => {
   const { displayPrice, priceLabel } = getDisplayPrice(design);
   return (
-    <div ref={cardRef} className="bg-gray-50 rounded-xl overflow-hidden">
-      <div className="aspect-[3/4] bg-gray-100 overflow-hidden">
+    <div className="bg-gray-50 rounded-xl overflow-hidden">
+      <button
+        type="button"
+        onClick={() => onViewFullScreen(design)}
+        className="block w-full aspect-[3/4] bg-gray-100 overflow-hidden relative group focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 rounded-t-xl"
+      >
         <img
           src={design.image}
           alt={design.name || 'Design'}
-          className="w-full h-full object-cover"
+          className="w-full h-full object-cover group-hover:opacity-90 transition-opacity"
         />
-      </div>
+        <div className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/20 transition-colors">
+          <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-2 bg-white/90 text-gray-900 px-4 py-2 rounded-full font-semibold text-sm">
+            <Maximize2 className="w-4 h-4" />
+            View full screen
+          </div>
+        </div>
+      </button>
       <div className="p-4 space-y-3">
         <div>
           <h3 className="text-lg font-bold text-gray-900">
@@ -104,6 +202,7 @@ export const ShareView: React.FC<{ token: string }> = ({ token }) => {
   const [error, setError] = useState<string | null>(null);
   const [shareLink, setShareLink] = useState<ShareLink | null>(null);
   const [orderDesign, setOrderDesign] = useState<TextileDesign | null>(null);
+  const [fullScreenDesign, setFullScreenDesign] = useState<TextileDesign | null>(null);
   const [orderForm, setOrderForm] = useState({
     buyerName: '',
     buyerPhone: '',
@@ -261,6 +360,7 @@ export const ShareView: React.FC<{ token: string }> = ({ token }) => {
                       token={token}
                       getDisplayPrice={getDisplayPrice}
                       onBuyNow={handleBuyNow}
+                      onViewFullScreen={setFullScreenDesign}
                     />
                   ))}
                 </div>
@@ -283,6 +383,14 @@ export const ShareView: React.FC<{ token: string }> = ({ token }) => {
           <p>Shared via TextileHub</p>
         </div>
       </div>
+
+      {fullScreenDesign && (
+        <FullScreenDesignView
+          design={fullScreenDesign}
+          token={token}
+          onClose={() => setFullScreenDesign(null)}
+        />
+      )}
       
       {orderDesign && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
