@@ -95,6 +95,9 @@ export const designsApi = {
     designCode?: string;
     color?: string;
     stockQuantity?: number;
+    stockUnit?: 'pcs' | 'mtrs';
+    pcsPerParcel?: number;
+    moq?: number;
     basePrice: number;
     additionalPrices?: Array<{ name: string; type: 'percentage' | 'fixed'; value: number }>;
     fabric: string;
@@ -113,6 +116,9 @@ export const designsApi = {
     designCode?: string;
     color?: string;
     stockQuantity?: number;
+    stockUnit?: 'pcs' | 'mtrs';
+    pcsPerParcel?: number;
+    moq?: number;
     basePrice?: number;
     additionalPrices?: Array<{ name: string; type: 'percentage' | 'fixed'; value: number }>;
     fabric?: string;

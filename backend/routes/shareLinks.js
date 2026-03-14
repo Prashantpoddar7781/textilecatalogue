@@ -34,13 +34,20 @@ router.post('/', authenticateToken, requireActiveSubscription, [
       return res.status(400).json({ error: 'designId or designIds is required' });
     }
 
-    // Verify all designs belong to user
+    // Verify all designs belong to user and are in stock (exclude stockQuantity === 0)
     const designs = await prisma.design.findMany({
-      where: { id: { in: idsToShare }, userId }
+      where: {
+        id: { in: idsToShare },
+        userId,
+        OR: [
+          { stockQuantity: { gt: 0 } },
+          { stockQuantity: null }
+        ]
+      }
     });
 
     if (designs.length !== idsToShare.length) {
-      return res.status(404).json({ error: 'One or more designs not found' });
+      return res.status(400).json({ error: 'One or more designs are out of stock and cannot be shared' });
     }
 
     // Create share link
@@ -105,12 +112,18 @@ router.post('/collection', authenticateToken, requireActiveSubscription, [
     const userId = req.user.userId;
 
     const designs = await prisma.design.findMany({
-      where: { userId },
+      where: {
+        userId,
+        OR: [
+          { stockQuantity: { gt: 0 } },
+          { stockQuantity: null }
+        ]
+      },
       select: { id: true }
     });
 
     if (designs.length === 0) {
-      return res.status(400).json({ error: 'No designs found to share' });
+      return res.status(400).json({ error: 'No in-stock designs found to share' });
     }
 
     const idsToShare = designs.map(d => d.id);
@@ -391,7 +404,16 @@ router.get('/:token', optionalAuth, requireActiveSubscriptionIfAuthenticated, as
       return res.status(403).json({ error: 'This share link has expired' });
     }
 
-    res.json(shareLink);
+    // Filter out out-of-stock designs from response
+    const inStockDesigns = shareLink.designs?.filter(
+      (sd) => sd.design && (sd.design.stockQuantity ?? 0) > 0
+    ) || [];
+    const payload = {
+      ...shareLink,
+      designs: inStockDesigns,
+      design: shareLink.design && (shareLink.design.stockQuantity ?? 0) > 0 ? shareLink.design : null
+    };
+    res.json(payload);
   } catch (error) {
     next(error);
   }

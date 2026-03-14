@@ -57,7 +57,10 @@ model Design {
   image         String   // Base64 or URL
   designCode    String?  // Optional design code for AI matching
   color         String?  // Optional color
-  stockQuantity Int?     @default(1000) // Optional stock quantity
+  stockQuantity Int?     @default(1000) // Stock quantity
+  stockUnit     String?  @default("pcs") // "pcs" or "mtrs"
+  pcsPerParcel  Int?     // How many pieces in one parcel
+  moq           Int?     // Minimum order quantity (optional)
   basePrice     Float?   // Base price (replaces wholesalePrice/retailPrice) - nullable for migration
   additionalPrices Json?  // Additional price types: [{name: "WSP", type: "percentage|fixed", value: 5}]
   wholesalePrice Float   @default(0) // Kept for backward compatibility

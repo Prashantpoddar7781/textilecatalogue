@@ -132,6 +132,9 @@ const App: React.FC = () => {
         designCode: d.designCode,
         color: d.color,
         stockQuantity: d.stockQuantity,
+        stockUnit: d.stockUnit,
+        pcsPerParcel: d.pcsPerParcel,
+        moq: d.moq,
         basePrice: d.basePrice || d.retailPrice || 0,
         additionalPrices: d.additionalPrices,
         wholesalePrice: d.wholesalePrice || d.basePrice || d.retailPrice || 0,
@@ -201,6 +204,9 @@ const App: React.FC = () => {
         designCode: design.designCode,
         color: design.color,
         stockQuantity: design.stockQuantity,
+        stockUnit: design.stockUnit,
+        pcsPerParcel: design.pcsPerParcel,
+        moq: design.moq,
         basePrice: design.basePrice,
         additionalPrices: design.additionalPrices?.map(ap => ({
           name: ap.name,
@@ -221,6 +227,9 @@ const App: React.FC = () => {
         designCode: created.designCode,
         color: created.color,
         stockQuantity: created.stockQuantity,
+        stockUnit: created.stockUnit,
+        pcsPerParcel: created.pcsPerParcel,
+        moq: created.moq,
         basePrice: created.basePrice || created.retailPrice || 0,
         additionalPrices: created.additionalPrices,
         wholesalePrice: created.wholesalePrice || created.basePrice || 0,
@@ -256,6 +265,9 @@ const App: React.FC = () => {
         designCode: design.designCode,
         color: design.color,
         stockQuantity: design.stockQuantity,
+        stockUnit: design.stockUnit,
+        pcsPerParcel: design.pcsPerParcel,
+        moq: design.moq,
         basePrice: design.basePrice,
         additionalPrices: design.additionalPrices?.map(ap => ({
           name: ap.name,
@@ -277,6 +289,9 @@ const App: React.FC = () => {
           designCode: updated.designCode,
           color: updated.color,
           stockQuantity: updated.stockQuantity,
+          stockUnit: updated.stockUnit,
+          pcsPerParcel: updated.pcsPerParcel,
+          moq: updated.moq,
           basePrice: updated.basePrice || updated.retailPrice || 0,
           additionalPrices: updated.additionalPrices,
           wholesalePrice: updated.wholesalePrice || updated.basePrice || 0,
@@ -376,6 +391,7 @@ const App: React.FC = () => {
   };
 
   const selectedDesigns = designs.filter(d => selectedIds.has(d.id));
+  const inStockSelectedDesigns = selectedDesigns.filter(d => (d.stockQuantity ?? 0) > 0);
   const trialDaysLeft = subscription?.trialEndsAt
     ? Math.max(Math.ceil((new Date(subscription.trialEndsAt).getTime() - Date.now()) / (24 * 60 * 60 * 1000)), 0)
     : null;
@@ -681,7 +697,13 @@ const App: React.FC = () => {
                 Clear
               </button>
               <button
-                onClick={() => setIsShareOpen(true)}
+                onClick={() => {
+                  if (inStockSelectedDesigns.length === 0) {
+                    alert('No in-stock designs selected. Out-of-stock designs cannot be shared.');
+                    return;
+                  }
+                  setIsShareOpen(true);
+                }}
                 className="flex items-center gap-2 bg-indigo-500 hover:bg-indigo-600 px-6 py-3.5 rounded-2xl font-black text-sm transition-all active:scale-95 shadow-lg shadow-indigo-500/20"
               >
                 <Share2 className="w-4 h-4" />
@@ -704,22 +726,21 @@ const App: React.FC = () => {
       )}
       {isShareOpen && (
         <ShareDialog 
-          selectedDesigns={selectedDesigns} 
+          selectedDesigns={inStockSelectedDesigns} 
           userFirmName={user?.firmName} 
           onClose={() => setIsShareOpen(false)}
           onShareLink={(designs) => {
-            // Open ShareLinkDialog with all selected designs
             if (designs.length > 0) {
-              setSelectedDesignForLink(designs[0]); // Keep for backward compatibility
+              setSelectedDesignForLink(designs[0]);
               setIsShareLinkOpen(true);
             }
           }}
         />
       )}
-      {isShareLinkOpen && selectedDesigns.length > 0 && (
+      {isShareLinkOpen && (inStockSelectedDesigns.length > 0 || selectedDesignForLink) && (
         <ShareLinkDialog 
-          designs={selectedDesigns}
-          design={selectedDesignForLink || undefined} // For backward compatibility
+          designs={inStockSelectedDesigns.length > 0 ? inStockSelectedDesigns : undefined}
+          design={selectedDesignForLink || undefined}
           onClose={() => {
             setIsShareLinkOpen(false);
             setSelectedDesignForLink(null);

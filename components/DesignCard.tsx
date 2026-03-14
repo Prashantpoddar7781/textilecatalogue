@@ -1,7 +1,14 @@
 
 import React from 'react';
-import { Trash2, CheckCircle, IndianRupee, Edit, Link2 } from 'lucide-react';
+import { Trash2, CheckCircle, IndianRupee, Edit, Link2, Package } from 'lucide-react';
 import { TextileDesign } from '../types';
+
+function formatInventory(design: TextileDesign): string {
+  const qty = design.stockQuantity ?? 0;
+  if (qty <= 0) return 'Out of stock';
+  const unit = design.stockUnit || 'pcs';
+  return `${qty} ${unit}`;
+}
 
 interface Props {
   design: TextileDesign;
@@ -28,10 +35,15 @@ export const DesignCard: React.FC<Props> = ({ design, isSelected, onSelect, onDe
           loading="lazy"
         />
         
-        <div className="absolute top-2 left-2">
+        <div className="absolute top-2 left-2 flex flex-wrap gap-1">
           <span className="bg-white/95 backdrop-blur shadow-sm text-gray-900 text-[10px] font-bold px-2 py-0.5 rounded-lg uppercase">
             {design.fabric}
           </span>
+          {(design.stockQuantity ?? 0) <= 0 && (
+            <span className="bg-red-500/95 text-white text-[10px] font-bold px-2 py-0.5 rounded-lg uppercase">
+              Out of stock
+            </span>
+          )}
         </div>
 
         {isSelected && (
@@ -43,7 +55,7 @@ export const DesignCard: React.FC<Props> = ({ design, isSelected, onSelect, onDe
         )}
 
         <div className="absolute bottom-2 right-2 flex gap-2">
-          {onShareLink && (
+          {onShareLink && (design.stockQuantity ?? 0) > 0 && (
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -83,6 +95,10 @@ export const DesignCard: React.FC<Props> = ({ design, isSelected, onSelect, onDe
             <IndianRupee className="w-3.5 h-3.5" />
             <span>{(design.basePrice || design.retailPrice || 0).toLocaleString()}</span>
           </div>
+        </div>
+        <div className={`flex items-center gap-1 mt-1.5 text-[11px] font-semibold ${(design.stockQuantity ?? 0) <= 0 ? 'text-red-600' : 'text-gray-600'}`}>
+          <Package className="w-3 h-3" />
+          {formatInventory(design)}
         </div>
         <p className="text-xs font-bold text-gray-900 line-clamp-1 mt-1">
           {design.name || 'Untitled Design'}

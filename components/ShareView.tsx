@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Loader2, AlertCircle, IndianRupee, ShoppingCart, X, Maximize2 } from 'lucide-react';
+import { Loader2, AlertCircle, IndianRupee, ShoppingCart, X, Maximize2, Package } from 'lucide-react';
 import { shareLinksApi, ordersApi } from '../services/api';
 import { ShareLink, TextileDesign } from '../types';
 
@@ -236,15 +236,24 @@ const DesignViewCard: React.FC<{
             <p className="text-sm font-bold text-gray-900">{design.fabric}</p>
           </div>
         </div>
+        <div className={`flex items-center gap-1.5 text-sm font-semibold ${(design.stockQuantity ?? 0) <= 0 ? 'text-red-600' : 'text-gray-600'}`}>
+          <Package className="w-4 h-4" />
+          {(design.stockQuantity ?? 0) <= 0 ? 'Out of stock' : `${design.stockQuantity} ${design.stockUnit || 'pcs'}`}
+        </div>
         {design.description && (
           <p className="text-xs text-gray-600 line-clamp-2">{design.description}</p>
         )}
         <button
           onClick={() => onBuyNow(design)}
-          className="w-full mt-2 bg-green-600 hover:bg-green-700 text-white py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2"
+          disabled={(design.stockQuantity ?? 0) <= 0}
+          className={`w-full mt-2 py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 ${
+            (design.stockQuantity ?? 0) <= 0
+              ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+              : 'bg-green-600 hover:bg-green-700 text-white'
+          }`}
         >
           <ShoppingCart className="w-4 h-4" />
-          Buy Now
+          {(design.stockQuantity ?? 0) <= 0 ? 'Out of stock' : 'Buy Now'}
         </button>
       </div>
     </div>

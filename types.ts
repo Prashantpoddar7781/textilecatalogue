@@ -15,6 +15,9 @@ export interface TextileDesign {
   designCode?: string;
   color?: string;
   stockQuantity?: number;
+  stockUnit?: 'pcs' | 'mtrs';
+  pcsPerParcel?: number;
+  moq?: number;
   basePrice: number;
   additionalPrices?: AdditionalPrice[];
   wholesalePrice: number; // For backward compatibility

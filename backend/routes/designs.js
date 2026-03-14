@@ -154,6 +154,9 @@ router.post('/', authenticateToken, requireActiveSubscription, [
   body('designCode').optional().trim(),
   body('color').optional().trim(),
   body('stockQuantity').optional().isInt({ min: 0 }),
+  body('stockUnit').optional().isIn(['pcs', 'mtrs']),
+  body('pcsPerParcel').optional().isInt({ min: 1 }),
+  body('moq').optional().isInt({ min: 0 }),
   body('additionalPrices').optional().isArray(),
   body('fabric').notEmpty().trim(),
   body('description').optional().trim(),
@@ -165,7 +168,7 @@ router.post('/', authenticateToken, requireActiveSubscription, [
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { image, name, basePrice, wholesalePrice: wsPrice, retailPrice: rtPrice, additionalPrices, fabric, description, catalogueId, designCode, color, stockQuantity } = req.body;
+    const { image, name, basePrice, wholesalePrice: wsPrice, retailPrice: rtPrice, additionalPrices, fabric, description, catalogueId, designCode, color, stockQuantity, stockUnit, pcsPerParcel, moq } = req.body;
     const userId = req.user.userId;
 
     // Validate that at least one price is provided
@@ -213,6 +216,9 @@ router.post('/', authenticateToken, requireActiveSubscription, [
         designCode: designCode || null,
         color: color || null,
         stockQuantity: stockQuantity !== undefined ? parseInt(stockQuantity, 10) : 1000,
+        stockUnit: stockUnit === 'mtrs' ? 'mtrs' : 'pcs',
+        pcsPerParcel: pcsPerParcel !== undefined ? parseInt(pcsPerParcel, 10) : null,
+        moq: moq !== undefined ? parseInt(moq, 10) : null,
         basePrice: basePriceNum,
         additionalPrices: processedAdditionalPrices,
         wholesalePrice, // For backward compatibility
@@ -245,6 +251,9 @@ router.put('/:id', authenticateToken, requireActiveSubscription, [
   body('designCode').optional().trim(),
   body('color').optional().trim(),
   body('stockQuantity').optional().isInt({ min: 0 }),
+  body('stockUnit').optional().isIn(['pcs', 'mtrs']),
+  body('pcsPerParcel').optional().isInt({ min: 1 }),
+  body('moq').optional().isInt({ min: 0 }),
   body('additionalPrices').optional().isArray(),
   body('fabric').optional().notEmpty().trim(),
   body('description').optional().trim()
@@ -291,6 +300,9 @@ router.put('/:id', authenticateToken, requireActiveSubscription, [
     if (req.body.designCode !== undefined) updateData.designCode = req.body.designCode || null;
     if (req.body.color !== undefined) updateData.color = req.body.color || null;
     if (req.body.stockQuantity !== undefined) updateData.stockQuantity = parseInt(req.body.stockQuantity, 10);
+    if (req.body.stockUnit !== undefined) updateData.stockUnit = req.body.stockUnit === 'mtrs' ? 'mtrs' : 'pcs';
+    if (req.body.pcsPerParcel !== undefined) updateData.pcsPerParcel = req.body.pcsPerParcel ? parseInt(req.body.pcsPerParcel, 10) : null;
+    if (req.body.moq !== undefined) updateData.moq = req.body.moq ? parseInt(req.body.moq, 10) : null;
     
     // Handle pricing updates with backward compatibility
     if (req.body.basePrice !== undefined) {

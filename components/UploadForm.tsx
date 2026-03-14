@@ -25,6 +25,9 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
     designCode: '',
     color: '',
     stockQuantity: '',
+    stockUnit: 'pcs' as 'pcs' | 'mtrs',
+    pcsPerParcel: '',
+    moq: '',
     fabric: '',
     description: ''
   });
@@ -45,6 +48,9 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
         designCode: initialData.designCode || '',
         color: initialData.color || '',
         stockQuantity: initialData.stockQuantity?.toString() || '',
+        stockUnit: (initialData.stockUnit as 'pcs' | 'mtrs') || 'pcs',
+        pcsPerParcel: initialData.pcsPerParcel?.toString() || '',
+        moq: initialData.moq?.toString() || '',
         fabric: initialData.fabric || '',
         description: initialData.description || ''
       });
@@ -59,6 +65,9 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
         designCode: '',
         color: '',
         stockQuantity: '',
+        stockUnit: 'pcs',
+        pcsPerParcel: '',
+        moq: '',
         fabric: '',
         description: ''
       });
@@ -155,6 +164,9 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
       designCode: formData.designCode || undefined,
       color: formData.color || undefined,
       stockQuantity: formData.stockQuantity ? Number(formData.stockQuantity) : undefined,
+      stockUnit: formData.stockUnit,
+      pcsPerParcel: formData.pcsPerParcel ? Number(formData.pcsPerParcel) : undefined,
+      moq: formData.moq ? Number(formData.moq) : undefined,
       basePrice: basePriceNum,
       additionalPrices: processedAdditionalPrices.length > 0 ? processedAdditionalPrices : undefined,
       wholesalePrice: basePriceNum, // For backward compatibility
@@ -277,17 +289,57 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
             </div>
           </div>
 
-          <div className="space-y-1">
+          <div className="space-y-3">
             <label className="text-sm font-semibold text-gray-700">Stock Quantity</label>
-            <input
-              type="number"
-              min="0"
-              className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
-              placeholder="e.g. 120"
-              value={formData.stockQuantity}
-              onChange={e => setFormData({...formData, stockQuantity: e.target.value})}
-              required
-            />
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-medium text-gray-500 mb-1 block">Unit</label>
+                <select
+                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                  value={formData.stockUnit}
+                  onChange={e => setFormData({...formData, stockUnit: e.target.value as 'pcs' | 'mtrs'})}
+                >
+                  <option value="pcs">Pieces (pcs)</option>
+                  <option value="mtrs">Meters (mtrs)</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-500 mb-1 block">Quantity</label>
+                <input
+                  type="number"
+                  min="0"
+                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                  placeholder="e.g. 120"
+                  value={formData.stockQuantity}
+                  onChange={e => setFormData({...formData, stockQuantity: e.target.value})}
+                  required
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-medium text-gray-500 mb-1 block">Pcs per parcel</label>
+                <input
+                  type="number"
+                  min="1"
+                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                  placeholder="e.g. 10"
+                  value={formData.pcsPerParcel}
+                  onChange={e => setFormData({...formData, pcsPerParcel: e.target.value})}
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-500 mb-1 block">MOQ (optional)</label>
+                <input
+                  type="number"
+                  min="0"
+                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                  placeholder="Min order qty"
+                  value={formData.moq}
+                  onChange={e => setFormData({...formData, moq: e.target.value})}
+                />
+              </div>
+            </div>
           </div>
 
           {/* Catalogue Selection */}
