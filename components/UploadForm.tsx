@@ -32,6 +32,7 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
     description: ''
   });
   const [additionalPrices, setAdditionalPrices] = useState<AdditionalPrice[]>([]);
+  const [calculatedPriceOverrides, setCalculatedPriceOverrides] = useState<Record<number, number>>({});
 
   // Load catalogues on mount
   useEffect(() => {
@@ -55,6 +56,7 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
         description: initialData.description || ''
       });
       setAdditionalPrices(initialData.additionalPrices || []);
+      setCalculatedPriceOverrides({});
       setPreview(initialData.image);
     } else {
       // Reset form when not editing
@@ -72,6 +74,7 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
         description: ''
       });
       setAdditionalPrices([]);
+      setCalculatedPriceOverrides({});
       setPreview(null);
     }
   }, [initialData]);
@@ -85,6 +88,37 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
       console.error('Failed to load catalogues:', error);
     } finally {
       setLoadingCatalogues(false);
+    }
+  };
+
+  const loadCatalogueDefaults = async (catalogueId: string) => {
+    try {
+      const { designs } = await designsApi.getAll({ catalogue: catalogueId, limit: 1, sortBy: 'newest' });
+      if (designs && designs.length > 0) {
+        const d = designs[0];
+        setFormData(prev => ({
+          ...prev,
+          catalogueId,
+          basePrice: (d.basePrice ?? d.retailPrice ?? 0).toString(),
+          designCode: d.designCode ?? '',
+          color: d.color ?? '',
+          stockQuantity: d.stockQuantity?.toString() ?? '',
+          stockUnit: (d.stockUnit as 'pcs' | 'mtrs') || 'pcs',
+          pcsPerParcel: d.pcsPerParcel?.toString() ?? '',
+          moq: d.moq?.toString() ?? '',
+          fabric: d.fabric ?? '',
+          description: d.description ?? ''
+        }));
+        setAdditionalPrices(d.additionalPrices?.map((ap: any) => ({
+          name: ap.name ?? '',
+          type: ap.type ?? 'percentage',
+          value: ap.value ?? 0,
+          calculatedPrice: ap.calculatedPrice
+        })) ?? []);
+        setCalculatedPriceOverrides({});
+      }
+    } catch (err) {
+      console.warn('Could not load catalogue defaults', err);
     }
   };
 
@@ -133,10 +167,20 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
     setAdditionalPrices(additionalPrices.filter((_, i) => i !== index));
   };
 
-  const handlePriceChange = (index: number, field: keyof AdditionalPrice, value: string | number) => {
+  const handlePriceChange = (index: number, field: keyof AdditionalPrice | 'calculatedPrice', value: string | number) => {
+    if (field === 'calculatedPrice') {
+      const num = typeof value === 'number' ? value : parseFloat(String(value));
+      if (!isNaN(num)) setCalculatedPriceOverrides(prev => ({ ...prev, [index]: num }));
+      return;
+    }
     const updated = [...additionalPrices];
     updated[index] = { ...updated[index], [field]: value };
     setAdditionalPrices(updated);
+    setCalculatedPriceOverrides(prev => {
+      const next = { ...prev };
+      delete next[index];
+      return next;
+    });
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -150,9 +194,9 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
     // Calculate prices for additional price types
     const processedAdditionalPrices = additionalPrices
       .filter(ap => ap.name.trim() && ap.value > 0)
-      .map(ap => ({
+      .map((ap, i) => ({
         ...ap,
-        calculatedPrice: calculatePrice(basePriceNum, ap)
+        calculatedPrice: calculatedPriceOverrides[i] ?? calculatePrice(basePriceNum, ap)
       }));
 
     const newDesign: TextileDesign = {
@@ -252,6 +296,71 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
             </div>
           </div>
 
+          {/* Catalogue Selection - right below image */}
+          <div className="space-y-1">
+            <label className="text-sm font-semibold text-gray-700">Catalogue</label>
+            {!showNewCatalogue ? (
+              <div className="flex gap-2">
+                <select
+                  className="flex-1 px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                  value={formData.catalogueId}
+                  onChange={e => {
+                    const catalogueId = e.target.value;
+                    setFormData(prev => ({ ...prev, catalogueId }));
+                    if (catalogueId && !initialData) {
+                      loadCatalogueDefaults(catalogueId);
+                    }
+                  }}
+                >
+                  <option value="">Select Catalogue (Optional)</option>
+                  {loadingCatalogues ? (
+                    <option>Loading...</option>
+                  ) : (
+                    catalogues.map(cat => (
+                      <option key={cat.id} value={cat.id}>{cat.name}</option>
+                    ))
+                  )}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => setShowNewCatalogue(true)}
+                  className="px-4 py-3 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 rounded-xl font-medium transition-colors flex items-center gap-2"
+                >
+                  <Plus className="w-4 h-4" />
+                  New
+                </button>
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  className="flex-1 px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                  placeholder="Enter catalogue name"
+                  value={newCatalogueName}
+                  onChange={e => setNewCatalogueName(e.target.value)}
+                  onKeyPress={e => e.key === 'Enter' && handleCreateCatalogue()}
+                />
+                <button
+                  type="button"
+                  onClick={handleCreateCatalogue}
+                  className="px-4 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-medium transition-colors"
+                >
+                  Create
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowNewCatalogue(false);
+                    setNewCatalogueName('');
+                  }}
+                  className="px-4 py-3 bg-gray-100 hover:bg-gray-200 rounded-xl font-medium transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
+          </div>
+
           {/* Design Name */}
           <div className="space-y-1">
             <label className="text-sm font-semibold text-gray-700">Design Name *</label>
@@ -340,65 +449,6 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
                 />
               </div>
             </div>
-          </div>
-
-          {/* Catalogue Selection */}
-          <div className="space-y-1">
-            <label className="text-sm font-semibold text-gray-700">Catalogue</label>
-            {!showNewCatalogue ? (
-              <div className="flex gap-2">
-                <select
-                  className="flex-1 px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
-                  value={formData.catalogueId}
-                  onChange={e => setFormData({...formData, catalogueId: e.target.value})}
-                >
-                  <option value="">Select Catalogue (Optional)</option>
-                  {loadingCatalogues ? (
-                    <option>Loading...</option>
-                  ) : (
-                    catalogues.map(cat => (
-                      <option key={cat.id} value={cat.id}>{cat.name}</option>
-                    ))
-                  )}
-                </select>
-                <button
-                  type="button"
-                  onClick={() => setShowNewCatalogue(true)}
-                  className="px-4 py-3 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 rounded-xl font-medium transition-colors flex items-center gap-2"
-                >
-                  <Plus className="w-4 h-4" />
-                  New
-                </button>
-              </div>
-            ) : (
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  className="flex-1 px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
-                  placeholder="Enter catalogue name"
-                  value={newCatalogueName}
-                  onChange={e => setNewCatalogueName(e.target.value)}
-                  onKeyPress={e => e.key === 'Enter' && handleCreateCatalogue()}
-                />
-                <button
-                  type="button"
-                  onClick={handleCreateCatalogue}
-                  className="px-4 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-medium transition-colors"
-                >
-                  Create
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowNewCatalogue(false);
-                    setNewCatalogueName('');
-                  }}
-                  className="px-4 py-3 bg-gray-100 hover:bg-gray-200 rounded-xl font-medium transition-colors"
-                >
-                  Cancel
-                </button>
-              </div>
-            )}
           </div>
 
           {/* Base Price */}
@@ -498,11 +548,16 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
                   
                   {formData.basePrice && price.name && price.value > 0 && (
                     <div className="pt-2 border-t border-gray-200">
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="text-gray-600">Calculated Price:</span>
-                        <span className="font-bold text-indigo-600">
-                          ₹{calculatedPrice.toFixed(2)}
-                        </span>
+                      <label className="text-xs font-medium text-gray-600 mb-1 block">Calculated Price (editable)</label>
+                      <div className="relative">
+                        <IndianRupee className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                        <input
+                          type="number"
+                          step="0.01"
+                          className="w-full pl-9 pr-3 py-2 bg-white border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-bold text-indigo-600"
+                          value={calculatedPriceOverrides[index] ?? calculatedPrice}
+                          onChange={e => handlePriceChange(index, 'calculatedPrice', e.target.value)}
+                        />
                       </div>
                     </div>
                   )}
