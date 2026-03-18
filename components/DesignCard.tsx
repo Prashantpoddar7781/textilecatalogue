@@ -34,6 +34,17 @@ export const DesignCard: React.FC<Props> = ({ design, isSelected, onSelect, onDe
           className="w-full h-full object-cover"
           loading="lazy"
         />
+        
+        <div className="absolute top-2 left-2 flex flex-wrap gap-1">
+          <span className="bg-white/95 backdrop-blur shadow-sm text-gray-900 text-[10px] font-bold px-2 py-0.5 rounded-lg uppercase">
+            {design.fabric}
+          </span>
+          {(design.stockQuantity ?? 0) <= 0 && (
+            <span className="bg-red-500/95 text-white text-[10px] font-bold px-2 py-0.5 rounded-lg uppercase">
+              Out of stock
+            </span>
+          )}
+        </div>
 
         {isSelected && (
           <div className="absolute inset-0 bg-indigo-600/10 flex items-center justify-center">
@@ -77,20 +88,10 @@ export const DesignCard: React.FC<Props> = ({ design, isSelected, onSelect, onDe
         </div>
       </div>
 
-      <div className="p-3 bg-white/75 backdrop-blur-sm border-t border-white/50">
-        <div className="flex flex-wrap gap-1 mb-1.5">
-          <span className="bg-white/70 text-gray-700 text-[10px] font-bold px-2 py-0.5 rounded uppercase">
-            {design.fabric}
-          </span>
-          {(design.stockQuantity ?? 0) <= 0 && (
-            <span className="bg-red-400/80 text-white text-[10px] font-bold px-2 py-0.5 rounded uppercase">
-              Out of stock
-            </span>
-          )}
-        </div>
+      <div className="p-3 bg-white/80 backdrop-blur-sm">
         <div className="flex flex-col">
-          <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wide">Price</span>
-          <div className="flex items-center text-lg font-black text-gray-700 leading-tight">
+          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Price</span>
+          <div className="flex items-center text-lg font-black text-gray-900 leading-tight">
             <IndianRupee className="w-3.5 h-3.5" />
             <span>{(design.basePrice || design.retailPrice || 0).toLocaleString()}</span>
           </div>
@@ -99,15 +100,15 @@ export const DesignCard: React.FC<Props> = ({ design, isSelected, onSelect, onDe
           <Package className="w-3 h-3" />
           {formatInventory(design)}
         </div>
-        <p className="text-xs font-bold text-gray-700 line-clamp-1 mt-1">
+        <p className="text-xs font-bold text-gray-900 line-clamp-1 mt-1">
           {design.name || 'Untitled Design'}
         </p>
         {design.catalogueName && (
-          <p className="text-[10px] text-indigo-600/90 font-medium mt-0.5">
+          <p className="text-[10px] text-indigo-600 font-medium mt-0.5">
             {design.catalogueName}
           </p>
         )}
-        <p className="text-xs text-gray-600/90 line-clamp-1 mt-1 font-medium italic">
+        <p className="text-xs text-gray-500 line-clamp-1 mt-1 font-medium italic">
           {design.description}
         </p>
       </div>
