@@ -1,0 +1,7 @@
+Place your reference model image here as:
+
+  model.png
+
+Vite serves files in this folder at the site root, so the app loads it as /model.png
+
+The AI modelling feature uses this image as the person reference for generated catalogue shots.
