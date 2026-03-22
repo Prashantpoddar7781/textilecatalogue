@@ -344,10 +344,11 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
   // Group sharing functionality removed - groups feature not available
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/95 backdrop-blur-md p-0 sm:p-4 safe-area-top safe-area-bottom">
-      <div className="bg-white w-full max-w-lg rounded-t-[2.5rem] sm:rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col animate-in slide-in-from-bottom duration-300 max-h-[95vh] touch-manipulation">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/95 backdrop-blur-md p-0 sm:p-4 safe-area-top safe-area-bottom overflow-hidden">
+      {/* min-h-0 lets flex children shrink so the footer (WhatsApp / Prepare) stays on screen on mobile */}
+      <div className="bg-white w-full max-w-lg rounded-t-[2.5rem] sm:rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col min-h-0 max-h-[min(92dvh,100vh)] sm:max-h-[95vh] animate-in slide-in-from-bottom duration-300 touch-manipulation">
         
-        <div className="px-6 py-5 flex items-center justify-between border-b bg-white">
+        <div className="shrink-0 px-6 py-5 flex items-center justify-between border-b bg-white">
           <div className="flex items-center gap-3">
             <div className="bg-green-100 p-2 rounded-xl">
               <MessageCircle className="w-6 h-6 text-green-600 fill-green-600/10" />
@@ -366,10 +367,10 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 sm:p-6 space-y-4 sm:space-y-6">
           {/* Live Preview Area - Only show for WhatsApp/Group sharing */}
           {shareMode !== 'link' && (
-          <div className="relative aspect-[4/3] bg-gray-900 rounded-[2rem] overflow-hidden shadow-2xl ring-4 ring-white">
+          <div className="relative aspect-[4/3] max-h-[min(38vh,260px)] sm:max-h-none bg-gray-900 rounded-[2rem] overflow-hidden shadow-2xl ring-4 ring-white">
             {previewUrl ? (
               <img src={previewUrl} className="w-full h-full object-contain" alt="Preview" key={previewUrl} />
             ) : (
@@ -501,7 +502,7 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
           )}
         </div>
 
-        <div className="p-8 bg-gray-50 border-t space-y-4">
+        <div className="shrink-0 p-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))] sm:p-8 bg-gray-50 border-t space-y-3 sm:space-y-4">
           {/* Share Mode Selection */}
           {!readyToLink && (
             <div className="grid grid-cols-2 gap-2">
