@@ -683,8 +683,8 @@ const App: React.FC = () => {
       </button>
 
       {selectedIds.size > 0 && (
-        <div className="fixed bottom-8 inset-x-4 z-40 animate-in slide-in-from-bottom duration-500 max-w-lg mx-auto">
-          <div className="bg-gray-900 text-white px-6 py-4 rounded-[2.5rem] shadow-2xl flex items-center justify-between border border-white/10 ring-[12px] ring-black/5">
+        <div className="fixed z-50 inset-x-4 max-w-lg mx-auto bottom-[calc(6.25rem+env(safe-area-inset-bottom,0px))] md:bottom-8 animate-in slide-in-from-bottom duration-500">
+          <div className="bg-gray-900 text-white px-4 py-3 sm:px-6 sm:py-4 rounded-[2rem] sm:rounded-[2.5rem] shadow-2xl flex items-center justify-between border border-white/10 ring-[12px] ring-black/5">
             <div className="flex flex-col">
               <span className="text-[9px] font-black text-indigo-400 uppercase tracking-widest leading-none mb-1">Selections</span>
               <span className="font-black text-sm">{selectedIds.size} Designs ready</span>

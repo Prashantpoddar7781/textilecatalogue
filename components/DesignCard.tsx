@@ -23,8 +23,8 @@ export const DesignCard: React.FC<Props> = ({ design, isSelected, onSelect, onDe
   return (
     <div 
       onClick={onSelect}
-      className={`group relative bg-white rounded-2xl overflow-hidden border-2 transition-all active:scale-95 touch-manipulation ${
-        isSelected ? 'border-indigo-600 ring-4 ring-indigo-50 shadow-xl' : 'border-transparent shadow-sm'
+      className={`group relative bg-white rounded-2xl overflow-hidden transition-all active:scale-95 touch-manipulation ring-1 ring-gray-200/90 shadow-[0_0_0_1px_rgba(0,0,0,0.04)] ${
+        isSelected ? 'ring-2 ring-indigo-600 ring-offset-2 ring-offset-[#FDFDFF] shadow-xl' : ''
       }`}
     >
       <div className="aspect-[3/4] overflow-hidden bg-gray-100 relative">
@@ -54,14 +54,15 @@ export const DesignCard: React.FC<Props> = ({ design, isSelected, onSelect, onDe
           </div>
         )}
 
-        <div className="absolute bottom-2 right-2 flex gap-2">
+        {/* Actions: top-right on mobile (visible); bottom-right on sm+ hover */}
+        <div className="absolute top-2 right-2 flex gap-1.5 sm:top-auto sm:bottom-2 sm:right-2">
           {onShareLink && (design.stockQuantity ?? 0) > 0 && (
             <button
               onClick={(e) => {
                 e.stopPropagation();
                 onShareLink();
               }}
-              className="bg-white/90 text-green-600 p-2 rounded-xl shadow-md sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
+              className="bg-white/95 text-green-600 p-2 rounded-xl shadow-md ring-1 ring-black/5 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
               title="Create share link"
             >
               <Link2 className="w-4 h-4" />
@@ -72,7 +73,7 @@ export const DesignCard: React.FC<Props> = ({ design, isSelected, onSelect, onDe
               e.stopPropagation();
               onEdit();
             }}
-            className="bg-white/90 text-indigo-600 p-2 rounded-xl shadow-md sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
+            className="bg-white/95 text-indigo-600 p-2 rounded-xl shadow-md ring-1 ring-black/5 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
           >
             <Edit className="w-4 h-4" />
           </button>
@@ -81,7 +82,7 @@ export const DesignCard: React.FC<Props> = ({ design, isSelected, onSelect, onDe
               e.stopPropagation();
               onDelete();
             }}
-            className="bg-white/90 text-red-500 p-2 rounded-xl shadow-md sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
+            className="bg-white/95 text-red-500 p-2 rounded-xl shadow-md ring-1 ring-black/5 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
           >
             <Trash2 className="w-4 h-4" />
           </button>
