@@ -2,7 +2,6 @@ import React, { useState, useRef, useEffect } from 'react';
 import { X, Upload, IndianRupee, Camera, Plus, Trash2 } from 'lucide-react';
 import { TextileDesign, AdditionalPrice } from '../types';
 import { cataloguesApi, designsApi } from '../services/api';
-import { AIModelingPanel } from './AIModelingPanel';
 
 interface Props {
   onClose: () => void;
@@ -235,71 +234,64 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
         </div>
 
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-6">
-          {/* Image upload + AI modelling (side by side on md+) */}
+          {/* Image Upload Area */}
           <div className="space-y-3">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-stretch">
-              <div className="space-y-3 min-w-0">
-                <p className="text-sm font-semibold text-gray-700">Design image</p>
-                <div
-                  onClick={() => fileInputRef.current?.click()}
-                  className={`relative aspect-video rounded-xl sm:rounded-2xl border-2 border-dashed flex flex-col items-center justify-center cursor-pointer transition-all overflow-hidden touch-manipulation ${
-                    preview ? 'border-transparent' : 'border-gray-200 hover:border-indigo-400 bg-gray-50 active:bg-gray-100'
-                  }`}
-                >
-                  {preview ? (
-                    <>
-                      <img src={preview} className="w-full h-full object-cover" alt="Preview" />
-                      <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
-                        <p className="text-white font-medium text-sm px-2 text-center">Click to change image</p>
-                      </div>
-                    </>
-                  ) : (
-                    <div className="text-center p-4">
-                      <div className="bg-indigo-50 p-3 rounded-full inline-block mb-3">
-                        <Upload className="w-8 h-8 text-indigo-500" />
-                      </div>
-                      <p className="text-sm font-medium text-gray-700">Drop image here or click to browse</p>
-                      <p className="text-xs text-gray-400 mt-1">Supports JPG, PNG (Max 5MB)</p>
-                    </div>
-                  )}
-                  <input
-                    type="file"
-                    ref={fileInputRef}
-                    hidden
-                    accept="image/*"
-                    onChange={handleImageChange}
-                  />
-                  <input
-                    type="file"
-                    ref={cameraInputRef}
-                    hidden
-                    accept="image/*"
-                    capture="environment"
-                    onChange={handleImageChange}
-                  />
+            <div
+              onClick={() => fileInputRef.current?.click()}
+              className={`relative aspect-video rounded-xl sm:rounded-2xl border-2 border-dashed flex flex-col items-center justify-center cursor-pointer transition-all overflow-hidden touch-manipulation ${
+                preview ? 'border-transparent' : 'border-gray-200 hover:border-indigo-400 bg-gray-50 active:bg-gray-100'
+              }`}
+            >
+              {preview ? (
+                <>
+                  <img src={preview} className="w-full h-full object-cover" alt="Preview" />
+                  <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
+                    <p className="text-white font-medium">Click to change image</p>
+                  </div>
+                </>
+              ) : (
+                <div className="text-center p-4">
+                  <div className="bg-indigo-50 p-3 rounded-full inline-block mb-3">
+                    <Upload className="w-8 h-8 text-indigo-500" />
+                  </div>
+                  <p className="text-sm font-medium text-gray-700">Drop image here or click to browse</p>
+                  <p className="text-xs text-gray-400 mt-1">Supports JPG, PNG (Max 5MB)</p>
                 </div>
+              )}
+              <input
+                type="file"
+                ref={fileInputRef}
+                hidden
+                accept="image/*"
+                onChange={handleImageChange}
+              />
+              <input
+                type="file"
+                ref={cameraInputRef}
+                hidden
+                accept="image/*"
+                capture="environment"
+                onChange={handleImageChange}
+              />
+            </div>
 
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-gray-100 hover:bg-gray-200 rounded-xl font-medium text-sm transition-colors"
-                  >
-                    <Upload className="w-4 h-4" />
-                    Gallery
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleCameraCapture}
-                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 rounded-xl font-medium text-sm transition-colors"
-                  >
-                    <Camera className="w-4 h-4" />
-                    Camera
-                  </button>
-                </div>
-              </div>
-
-              <AIModelingPanel productImage={preview} onUseAsDesign={setPreview} />
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-gray-100 hover:bg-gray-200 rounded-xl font-medium text-sm transition-colors"
+              >
+                <Upload className="w-4 h-4" />
+                Gallery
+              </button>
+              <button
+                type="button"
+                onClick={handleCameraCapture}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 rounded-xl font-medium text-sm transition-colors"
+              >
+                <Camera className="w-4 h-4" />
+                Camera
+              </button>
             </div>
           </div>
 
