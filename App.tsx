@@ -414,7 +414,7 @@ const App: React.FC = () => {
   }
 
   if (ordersMatch) {
-    return <OrdersPage catalog={designs} onBack={() => { window.location.href = '/'; }} />;
+    return <OrdersPage onBack={() => { window.location.href = '/'; }} />;
   }
 
   if (billingMatch) {

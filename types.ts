@@ -90,35 +90,6 @@ export interface Order {
   shareLink?: ShareLink;
 }
 
-export interface OrderDraftRecord {
-  id: string;
-  userId: string;
-  sourceText: string;
-  draftJson: OrderDraft;
-  status: string;
-  createdAt: string;
-}
-
-export interface OrderDraft {
-  buyer_intent_summary: string;
-  confidence_score: number;
-  detected_designs: Array<{
-    design_code?: string;
-    matched_design_id?: string;
-    quantity?: number;
-    color?: string;
-    notes?: string;
-    is_out_of_stock?: boolean;
-  }>;
-  missing_information?: string[];
-  delivery_notes?: string;
-  price_constraints?: string;
-  suggested_alternatives?: Array<{
-    design_id?: string;
-    reason?: string;
-  }>;
-}
-
 export interface SubscriptionStatus {
   status: string | null;
   plan: string | null;

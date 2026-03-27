@@ -301,20 +301,6 @@ export const ordersApi = {
   getAll: async () => {
     return request<{ orders: any[] }>('/orders');
   },
-  getDrafts: async () => {
-    return request<{ drafts: any[] }>('/orders/drafts');
-  },
-  createDraft: async (data: { sourceText: string; draft: any }) => {
-    return request<{ draft: any }>('/orders/drafts', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
-  },
-  confirmDraft: async (id: string) => {
-    return request<{ orders: any[] }>(`/orders/drafts/${id}/confirm`, {
-      method: 'POST',
-    });
-  },
   updateStatus: async (id: string, status: string) => {
     return request<{ order: any }>(`/orders/${id}/status`, {
       method: 'PUT',
