@@ -3,6 +3,7 @@ import { Plus, Search, Share2, Package, CheckCircle, SlidersHorizontal, LogOut, 
 import { TextileDesign, CatalogueFilters, SubscriptionStatus } from './types';
 import { UploadForm } from './components/UploadForm';
 import { DesignCard } from './components/DesignCard';
+import { DesignFullscreenModal } from './components/DesignFullscreenModal';
 import { ShareDialog } from './components/ShareDialog';
 import { ShareLinkDialog } from './components/ShareLinkDialog';
 import { ShareView } from './components/ShareView';
@@ -32,6 +33,7 @@ const App: React.FC = () => {
   const [isShareOpen, setIsShareOpen] = useState(false);
   const [isShareLinkOpen, setIsShareLinkOpen] = useState(false);
   const [selectedDesignForLink, setSelectedDesignForLink] = useState<TextileDesign | null>(null);
+  const [viewingDesign, setViewingDesign] = useState<TextileDesign | null>(null);
   const [isLoginOpen, setIsLoginOpen] = useState(false);
   const [isSharingCollection, setIsSharingCollection] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -660,6 +662,7 @@ const App: React.FC = () => {
                 onSelect={() => toggleSelection(design.id)}
                 onDelete={() => handleDeleteDesign(design.id)}
                 onEdit={() => handleEditDesign(design)}
+                onView={() => setViewingDesign(design)}
                 onShareLink={() => {
                   setSelectedDesignForLink(design);
                   setIsShareLinkOpen(true);
@@ -717,6 +720,10 @@ const App: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {viewingDesign && (
+        <DesignFullscreenModal design={viewingDesign} onClose={() => setViewingDesign(null)} />
       )}
 
       {isUploadOpen && (

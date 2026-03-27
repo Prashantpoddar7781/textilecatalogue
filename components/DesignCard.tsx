@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Trash2, CheckCircle, IndianRupee, Edit, Link2, Package } from 'lucide-react';
+import { Trash2, CheckCircle, IndianRupee, Edit, Link2, Package, Eye } from 'lucide-react';
 import { TextileDesign } from '../types';
 
 function formatInventory(design: TextileDesign): string {
@@ -16,10 +16,11 @@ interface Props {
   onSelect: () => void;
   onDelete: () => void;
   onEdit: () => void;
+  onView: () => void;
   onShareLink?: () => void;
 }
 
-export const DesignCard: React.FC<Props> = ({ design, isSelected, onSelect, onDelete, onEdit, onShareLink }) => {
+export const DesignCard: React.FC<Props> = ({ design, isSelected, onSelect, onDelete, onEdit, onView, onShareLink }) => {
   return (
     <div 
       onClick={onSelect}
@@ -36,7 +37,7 @@ export const DesignCard: React.FC<Props> = ({ design, isSelected, onSelect, onDe
         />
 
         {design.aiModels && design.aiModels.length > 0 && (
-          <div className="absolute bottom-2 left-2 flex -space-x-2 z-10">
+          <div className="absolute bottom-2 left-2 flex -space-x-2 z-10 pointer-events-none">
             {design.aiModels.slice(0, 3).map((img, i) => (
               <div key={i} className="w-6 h-6 rounded-full border-2 border-white overflow-hidden shadow-sm">
                 <img src={img} className="w-full h-full object-cover" alt="" />
@@ -50,7 +51,7 @@ export const DesignCard: React.FC<Props> = ({ design, isSelected, onSelect, onDe
           </div>
         )}
         
-        <div className="absolute top-2 left-2 flex flex-wrap gap-1">
+        <div className="absolute top-2 left-2 flex flex-wrap gap-1 pointer-events-none">
           <span className="bg-white/95 backdrop-blur shadow-sm text-gray-900 text-[10px] font-bold px-2 py-0.5 rounded-lg uppercase">
             {design.fabric}
           </span>
@@ -62,46 +63,12 @@ export const DesignCard: React.FC<Props> = ({ design, isSelected, onSelect, onDe
         </div>
 
         {isSelected && (
-          <div className="absolute inset-0 bg-indigo-600/10 flex items-center justify-center">
+          <div className="absolute inset-0 bg-indigo-600/10 flex items-center justify-center pointer-events-none">
             <div className="bg-indigo-600 text-white p-1.5 rounded-full shadow-lg scale-125">
               <CheckCircle className="w-5 h-5" />
             </div>
           </div>
         )}
-
-        {/* Actions: top-right on mobile (visible); bottom-right on sm+ hover */}
-        <div className="absolute top-2 right-2 flex gap-1.5 sm:top-auto sm:bottom-2 sm:right-2">
-          {onShareLink && (design.stockQuantity ?? 0) > 0 && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onShareLink();
-              }}
-              className="bg-white/95 text-green-600 p-2 rounded-xl shadow-md ring-1 ring-black/5 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
-              title="Create share link"
-            >
-              <Link2 className="w-4 h-4" />
-            </button>
-          )}
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onEdit();
-            }}
-            className="bg-white/95 text-indigo-600 p-2 rounded-xl shadow-md ring-1 ring-black/5 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
-          >
-            <Edit className="w-4 h-4" />
-          </button>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onDelete();
-            }}
-            className="bg-white/95 text-red-500 p-2 rounded-xl shadow-md ring-1 ring-black/5 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
-        </div>
       </div>
 
       <div className="p-3 bg-white/80 backdrop-blur-sm">
@@ -127,6 +94,58 @@ export const DesignCard: React.FC<Props> = ({ design, isSelected, onSelect, onDe
         <p className="text-xs text-gray-500 line-clamp-1 mt-1 font-medium italic">
           {design.description}
         </p>
+
+        <div className="grid grid-cols-4 gap-1.5 mt-3 pt-3 border-t border-gray-100">
+          <button
+            type="button"
+            onClick={e => {
+              e.stopPropagation();
+              onView();
+            }}
+            className="flex flex-col items-center gap-1 py-2 rounded-xl bg-gray-50 hover:bg-indigo-50 text-gray-700 hover:text-indigo-700 transition-colors"
+            title="View fullscreen"
+          >
+            <Eye className="w-4 h-4" />
+            <span className="text-[9px] font-bold uppercase tracking-tight">View</span>
+          </button>
+          <button
+            type="button"
+            disabled={!onShareLink || (design.stockQuantity ?? 0) <= 0}
+            onClick={e => {
+              e.stopPropagation();
+              onShareLink?.();
+            }}
+            className="flex flex-col items-center gap-1 py-2 rounded-xl bg-gray-50 hover:bg-green-50 text-gray-700 hover:text-green-700 transition-colors disabled:opacity-40 disabled:hover:bg-gray-50 disabled:cursor-not-allowed"
+            title={(design.stockQuantity ?? 0) <= 0 ? 'Out of stock' : 'Create share link'}
+          >
+            <Link2 className="w-4 h-4" />
+            <span className="text-[9px] font-bold uppercase tracking-tight">Link</span>
+          </button>
+          <button
+            type="button"
+            onClick={e => {
+              e.stopPropagation();
+              onEdit();
+            }}
+            className="flex flex-col items-center gap-1 py-2 rounded-xl bg-gray-50 hover:bg-indigo-50 text-gray-700 hover:text-indigo-700 transition-colors"
+            title="Edit"
+          >
+            <Edit className="w-4 h-4" />
+            <span className="text-[9px] font-bold uppercase tracking-tight">Edit</span>
+          </button>
+          <button
+            type="button"
+            onClick={e => {
+              e.stopPropagation();
+              onDelete();
+            }}
+            className="flex flex-col items-center gap-1 py-2 rounded-xl bg-gray-50 hover:bg-red-50 text-gray-700 hover:text-red-600 transition-colors"
+            title="Delete"
+          >
+            <Trash2 className="w-4 h-4" />
+            <span className="text-[9px] font-bold uppercase tracking-tight">Delete</span>
+          </button>
+        </div>
       </div>
     </div>
   );

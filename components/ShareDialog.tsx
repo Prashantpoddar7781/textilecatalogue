@@ -1,7 +1,33 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { X, MessageCircle, CheckSquare, Square, Loader2, Download, Eye, AlertCircle, Send, Link2 } from 'lucide-react';
 import { TextileDesign, ShareOptions } from '../types';
+
+/** Which image to use per design when generating WhatsApp assets (original / variant index / all). */
+function getShareJobs(
+  designs: TextileDesign[],
+  choiceById: Record<string, string>
+): { design: TextileDesign; imageUrl: string }[] {
+  const jobs: { design: TextileDesign; imageUrl: string }[] = [];
+  for (const d of designs) {
+    const raw = choiceById[d.id] ?? 'original';
+    if (raw === 'all' && d.aiModels && d.aiModels.length > 0) {
+      for (const url of d.aiModels) {
+        jobs.push({ design: d, imageUrl: url });
+      }
+    } else if (raw === 'original' || !d.aiModels?.length) {
+      jobs.push({ design: d, imageUrl: d.image });
+    } else {
+      const idx = parseInt(raw, 10);
+      if (!isNaN(idx) && d.aiModels[idx]) {
+        jobs.push({ design: d, imageUrl: d.aiModels[idx] });
+      } else {
+        jobs.push({ design: d, imageUrl: d.image });
+      }
+    }
+  }
+  return jobs;
+}
 
 interface Props {
   selectedDesigns: TextileDesign[];
@@ -15,6 +41,7 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isMobile] = useState(() => /iPhone|iPad|iPod|Android/i.test(navigator.userAgent));
   const [readyToLink, setReadyToLink] = useState(false);
+  const [lastPreparedImageCount, setLastPreparedImageCount] = useState(0);
   const [shareMode, setShareMode] = useState<'whatsapp' | 'link'>('whatsapp');
   const [options, setOptions] = useState<ShareOptions>({
     includeWholesale: false,
@@ -24,16 +51,36 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
     includeFirmName: false
   });
   const [selectedPriceType, setSelectedPriceType] = useState<string>('base'); // 'base' or name of additional price
+  const [imageChoice, setImageChoice] = useState<Record<string, string>>({});
 
   const previewUrlRef = useRef<string | null>(null);
+
+  const shareJobs = useMemo(
+    () => getShareJobs(selectedDesigns, imageChoice),
+    [selectedDesigns, imageChoice]
+  );
+
+  useEffect(() => {
+    setImageChoice(prev => {
+      const next = { ...prev };
+      for (const d of selectedDesigns) {
+        if (next[d.id] === undefined) next[d.id] = 'original';
+      }
+      for (const k of Object.keys(next)) {
+        if (!selectedDesigns.some(d => d.id === k)) delete next[k];
+      }
+      return next;
+    });
+  }, [selectedDesigns]);
 
   useEffect(() => {
     let isMounted = true;
 
     const updatePreview = async () => {
-      if (selectedDesigns.length > 0) {
+      if (shareJobs.length > 0) {
         try {
-          const blob = await generateBrandedImage(selectedDesigns[0]);
+          const first = shareJobs[0];
+          const blob = await generateBrandedImage(first.design, first.imageUrl);
           if (!isMounted) return;
 
           const newUrl = URL.createObjectURL(blob);
@@ -58,9 +105,9 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
         URL.revokeObjectURL(previewUrlRef.current);
       }
     };
-  }, [options, selectedDesigns, selectedPriceType]);
+  }, [options, shareJobs, selectedPriceType]);
 
-  const generateBrandedImage = async (design: TextileDesign): Promise<Blob> => {
+  const generateBrandedImage = async (design: TextileDesign, imageDataUrl?: string): Promise<Blob> => {
     return new Promise((resolve, reject) => {
       const img = new Image();
       img.crossOrigin = "anonymous";
@@ -218,7 +265,7 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
       };
 
       img.onerror = () => reject('Image source failed to load');
-      img.src = design.image;
+      img.src = imageDataUrl || design.image;
     });
   };
 
@@ -239,16 +286,16 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
     try {
       const files: File[] = [];
       const blobs: Blob[] = [];
-      
-      // Generate all images with progress feedback
-      for (let i = 0; i < selectedDesigns.length; i++) {
+      const jobs = shareJobs;
+
+      for (let i = 0; i < jobs.length; i++) {
         try {
-          const blob = await generateBrandedImage(selectedDesigns[i]);
+          const { design, imageUrl } = jobs[i];
+          const blob = await generateBrandedImage(design, imageUrl);
           blobs.push(blob);
           files.push(new File([blob], `TextileHub_Design_${i + 1}.jpg`, { type: 'image/jpeg' }));
         } catch (error) {
-          console.error(`Failed to generate image for design ${i + 1}:`, error);
-          // Continue with other images
+          console.error(`Failed to generate image ${i + 1}:`, error);
         }
       }
 
@@ -256,8 +303,8 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
         throw new Error('Failed to generate any images');
       }
 
-      const itemText = selectedDesigns.length === 1 ? 'design' : 'designs';
-      const caption = `📦 TextileHub Catalogue\n\n${selectedDesigns.length} ${itemText} attached. Check the images for details! 🎨`;
+      const imgWord = blobs.length === 1 ? 'image' : 'images';
+      const caption = `📦 TextileHub Catalogue\n\n${blobs.length} ${imgWord} attached. Check the images for details! 🎨`;
 
       // Priority 1: Mobile Native Sharing API (best for WhatsApp on mobile)
       if (isMobile && navigator.share) {
@@ -309,7 +356,7 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
         if (blobs.length > 1) await new Promise(r => setTimeout(r, 300));
       }
 
-      // Set ready state to show WhatsApp button
+      setLastPreparedImageCount(blobs.length);
       setReadyToLink(true);
       setProcessing(false);
 
@@ -321,8 +368,9 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
   };
 
   const openWhatsAppLink = () => {
-    const itemText = selectedDesigns.length === 1 ? 'design' : 'designs';
-    const caption = `📦 TextileHub Catalogue\n\n${selectedDesigns.length} ${itemText} attached. Check the images for details! 🎨`;
+    const n = lastPreparedImageCount || shareJobs.length;
+    const imgWord = n === 1 ? 'image' : 'images';
+    const caption = `📦 TextileHub Catalogue\n\n${n} ${imgWord} attached. Check the images for details! 🎨`;
     
     // Use WhatsApp API - works on both mobile and desktop
     const waUrl = `https://wa.me/?text=${encodeURIComponent(caption)}`;
@@ -368,6 +416,46 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
         </div>
 
         <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 sm:p-6 space-y-4 sm:space-y-6">
+          {shareMode === 'whatsapp' && selectedDesigns.some(d => (d.aiModels?.length ?? 0) > 0) && (
+            <div className="space-y-3 rounded-2xl border border-indigo-100 bg-indigo-50/40 p-4">
+              <p className="text-sm font-bold text-gray-900">Photo for WhatsApp</p>
+              <p className="text-xs text-gray-600 leading-relaxed">
+                Designs with AI modelling: choose the product image, a single AI variant, or all variants (one file per variant).
+              </p>
+              {selectedDesigns
+                .filter(d => (d.aiModels?.length ?? 0) > 0)
+                .map(d => (
+                  <div key={d.id} className="space-y-1">
+                    <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wide">
+                      {d.name || d.fabric || 'Design'}
+                    </label>
+                    <select
+                      value={imageChoice[d.id] ?? 'original'}
+                      onChange={e =>
+                        setImageChoice(prev => ({ ...prev, [d.id]: e.target.value }))
+                      }
+                      disabled={processing}
+                      className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-white text-sm font-semibold text-gray-900 outline-none focus:ring-2 focus:ring-indigo-500"
+                    >
+                      <option value="original">Product image (original)</option>
+                      {d.aiModels!.map((_, i) => (
+                        <option key={i} value={String(i)}>
+                          AI variant {i + 1}
+                        </option>
+                      ))}
+                      <option value="all">All AI variants (separate images)</option>
+                    </select>
+                  </div>
+                ))}
+            </div>
+          )}
+
+          {shareMode === 'link' && selectedDesigns.some(d => (d.aiModels?.length ?? 0) > 0) && (
+            <p className="text-xs text-gray-500 leading-relaxed rounded-xl bg-gray-50 border border-gray-100 p-3">
+              Share links open your saved catalogue in the browser. To send a specific AI model shot by image, use WhatsApp mode and choose a variant above.
+            </p>
+          )}
+
           {/* Live Preview Area - Only show for WhatsApp/Group sharing */}
           {shareMode !== 'link' && (
           <div className="relative aspect-[4/3] max-h-[min(38vh,260px)] sm:max-h-none bg-gray-900 rounded-[2rem] overflow-hidden shadow-2xl ring-4 ring-white">
