@@ -1,7 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { X, Upload, IndianRupee, Camera, Plus, Trash2 } from 'lucide-react';
+import { X, Upload, IndianRupee, Camera, Plus, Trash2, Sparkles, Loader2 } from 'lucide-react';
+import { HexColorPicker } from 'react-colorful';
 import { TextileDesign, AdditionalPrice } from '../types';
 import { cataloguesApi, designsApi } from '../services/api';
+import { generateAIModelling } from '../services/gemini';
+import { FIXED_MODEL_IMAGE } from '../constants';
 
 interface Props {
   onClose: () => void;
@@ -34,6 +37,17 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
   const [additionalPrices, setAdditionalPrices] = useState<AdditionalPrice[]>([]);
   const [calculatedPriceOverrides, setCalculatedPriceOverrides] = useState<Record<number, number>>({});
 
+  const [modelling, setModelling] = useState(false);
+  const [aiModellingEnabled, setAiModellingEnabled] = useState(false);
+  const [modellingOption, setModellingOption] = useState<'colors' | 'variants'>('colors');
+  const [selectedColors, setSelectedColors] = useState<string[]>([]);
+  const [variantPreviews, setVariantPreviews] = useState<string[]>([]);
+  const [generatedModels, setGeneratedModels] = useState<string[]>([]);
+  const [customModelImage, setCustomModelImage] = useState<string | null>(null);
+  const [currentColor, setCurrentColor] = useState('#ff0000');
+  const variantInputRef = useRef<HTMLInputElement>(null);
+  const modelInputRef = useRef<HTMLInputElement>(null);
+
   // Load catalogues on mount
   useEffect(() => {
     loadCatalogues();
@@ -58,6 +72,7 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
       setAdditionalPrices(initialData.additionalPrices || []);
       setCalculatedPriceOverrides({});
       setPreview(initialData.image);
+      setGeneratedModels(initialData.aiModels ?? []);
     } else {
       // Reset form when not editing
       setFormData({
@@ -76,6 +91,13 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
       setAdditionalPrices([]);
       setCalculatedPriceOverrides({});
       setPreview(null);
+      setGeneratedModels([]);
+      setAiModellingEnabled(false);
+      setModellingOption('colors');
+      setSelectedColors([]);
+      setVariantPreviews([]);
+      setCustomModelImage(null);
+      setCurrentColor('#ff0000');
     }
   }, [initialData]);
 
@@ -151,6 +173,52 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
     cameraInputRef.current?.click();
   };
 
+  const handleVariantChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files) {
+      Array.from(files).forEach((file: File) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          setVariantPreviews(prev => [...prev, reader.result as string].slice(0, 6));
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+  };
+
+  const handleRunModelling = async () => {
+    if (!preview) return alert('Main product image required');
+    setModelling(true);
+    try {
+      const modelToUse = customModelImage || FIXED_MODEL_IMAGE;
+      let generationPromises: Promise<string | null>[] = [];
+
+      if (modellingOption === 'colors') {
+        if (selectedColors.length === 0) {
+          generationPromises = [generateAIModelling(preview, modelToUse)];
+        } else {
+          generationPromises = selectedColors.map(color => generateAIModelling(preview, modelToUse, color));
+        }
+      } else {
+        generationPromises = variantPreviews.map(variant => generateAIModelling(variant, modelToUse));
+      }
+
+      const rawResults = await Promise.all(generationPromises);
+      const validResults = rawResults.filter((res): res is string => res !== null);
+
+      setGeneratedModels(validResults);
+
+      if (validResults.length === 0) {
+        alert('AI generation failed. Check VITE_GEMINI_API_KEY and try again.');
+      }
+    } catch (e) {
+      console.error(e);
+      alert('An error occurred during AI generation. Check your connection and API key.');
+    } finally {
+      setModelling(false);
+    }
+  };
+
   const calculatePrice = (basePrice: number, price: AdditionalPrice): number => {
     if (price.type === 'percentage') {
       return basePrice * (1 + price.value / 100);
@@ -217,7 +285,8 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
       retailPrice: basePriceNum, // For backward compatibility
       fabric: formData.fabric || 'Unknown',
       description: formData.description || '',
-      createdAt: initialData?.createdAt || Date.now()
+      createdAt: initialData?.createdAt || Date.now(),
+      aiModels: generatedModels.length > 0 ? generatedModels : undefined
     };
 
     onSubmit(newDesign);
@@ -293,6 +362,205 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
                 Camera
               </button>
             </div>
+          </div>
+
+          <div className="space-y-4 border-2 border-indigo-50 p-6 rounded-2xl bg-indigo-50/30">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-5 h-5 text-indigo-600" />
+                <h3 className="text-sm font-black text-gray-900 uppercase tracking-widest">AI Modelling</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAiModellingEnabled(!aiModellingEnabled)}
+                className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest transition-all ${
+                  aiModellingEnabled ? 'bg-indigo-600 text-white' : 'bg-gray-200 text-gray-500'
+                }`}
+              >
+                {aiModellingEnabled ? 'Enabled' : 'Disabled'}
+              </button>
+            </div>
+
+            {aiModellingEnabled && (
+              <div className="space-y-6 animate-in fade-in slide-in-from-top-2 duration-300">
+                <div className="grid grid-cols-2 gap-4">
+                  <div
+                    onClick={() => modelInputRef.current?.click()}
+                    className="aspect-square rounded-3xl border-2 border-indigo-100 flex flex-col items-center justify-center bg-white transition-all overflow-hidden relative cursor-pointer hover:border-indigo-300"
+                  >
+                    <img src={customModelImage || FIXED_MODEL_IMAGE} className="w-full h-full object-cover" alt="Model" />
+                    <div className="absolute bottom-2 left-2 right-2 bg-indigo-600/90 backdrop-blur-sm text-white text-[8px] font-black py-1 px-2 rounded-lg text-center uppercase tracking-widest">
+                      {customModelImage ? 'Custom Model' : 'Default Model'}
+                    </div>
+                    <div className="absolute top-2 right-2 bg-white/90 p-1 rounded-full shadow-sm">
+                      <Upload className="w-3 h-3 text-indigo-600" />
+                    </div>
+                    <input
+                      type="file"
+                      ref={modelInputRef}
+                      hidden
+                      accept="image/*"
+                      onChange={e => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          const reader = new FileReader();
+                          reader.onloadend = () => setCustomModelImage(reader.result as string);
+                          reader.readAsDataURL(file);
+                        }
+                      }}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Modelling Option</p>
+                    <p className="text-[8px] text-indigo-400 italic">Click the model image on the left to upload your own reference model.</p>
+                    <div className="flex flex-col gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setModellingOption('colors')}
+                        className={`px-4 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest text-left transition-all ${
+                          modellingOption === 'colors' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200' : 'bg-white text-gray-500 border border-gray-100'
+                        }`}
+                      >
+                        1. Color Palette
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setModellingOption('variants')}
+                        className={`px-4 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest text-left transition-all ${
+                          modellingOption === 'variants' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200' : 'bg-white text-gray-500 border border-gray-100'
+                        }`}
+                      >
+                        2. Color Variants
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {modellingOption === 'colors' ? (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Select up to 6 colors</p>
+                      <span className="text-[10px] font-black text-indigo-600">{selectedColors.length}/6</span>
+                    </div>
+
+                    <div className="flex flex-col md:flex-row gap-6 items-center bg-white p-6 rounded-[2rem] border border-gray-100 shadow-sm overflow-hidden">
+                      <div className="custom-color-picker shrink-0 w-full md:w-auto flex flex-col items-center">
+                        <HexColorPicker color={currentColor} onChange={setCurrentColor} />
+                        <p className="mt-2 text-[8px] font-black text-gray-400 uppercase tracking-widest">Drag bottom slider to change color</p>
+                      </div>
+
+                      <div className="flex-1 space-y-4 w-full">
+                        <div className="flex items-center gap-3 p-4 bg-gray-50 rounded-2xl border border-gray-100">
+                          <div className="w-12 h-12 rounded-xl shadow-inner border-2 border-white" style={{ backgroundColor: currentColor }} />
+                          <div className="flex-1">
+                            <p className="text-[8px] font-black text-gray-400 uppercase tracking-widest">Selected Shade</p>
+                            <p className="text-xs font-bold text-gray-900 uppercase tracking-wider">{currentColor}</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (selectedColors.length < 6 && !selectedColors.includes(currentColor)) {
+                                setSelectedColors(prev => [...prev, currentColor]);
+                              }
+                            }}
+                            disabled={selectedColors.length >= 6 || selectedColors.includes(currentColor)}
+                            className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-700 disabled:opacity-50 transition-all shadow-lg shadow-indigo-100"
+                          >
+                            Add to Palette
+                          </button>
+                        </div>
+
+                        <div className="space-y-2">
+                          <p className="text-[8px] font-black text-gray-400 uppercase tracking-widest">Your Palette</p>
+                          <div className="grid grid-cols-6 gap-2">
+                            {selectedColors.map(color => (
+                              <button
+                                key={color}
+                                type="button"
+                                onClick={() => setSelectedColors(prev => prev.filter(c => c !== color))}
+                                className="aspect-square rounded-xl border-2 border-indigo-600 scale-105 shadow-md relative group transition-all"
+                                style={{ backgroundColor: color }}
+                              >
+                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center rounded-lg transition-opacity">
+                                  <X className="w-3 h-3 text-white" />
+                                </div>
+                              </button>
+                            ))}
+                            {Array.from({ length: 6 - selectedColors.length }).map((_, i) => (
+                              <div key={i} className="aspect-square rounded-xl border-2 border-dashed border-gray-200 bg-gray-50/50" />
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Upload up to 6 variants</p>
+                      <span className="text-[10px] font-black text-indigo-600">{variantPreviews.length}/6</span>
+                    </div>
+                    <div className="grid grid-cols-4 gap-2">
+                      {variantPreviews.map((v, i) => (
+                        <div key={i} className="relative aspect-square rounded-xl overflow-hidden group">
+                          <img src={v} className="w-full h-full object-cover" alt="" />
+                          <button
+                            type="button"
+                            onClick={() => setVariantPreviews(prev => prev.filter((_, idx) => idx !== i))}
+                            className="absolute top-1 right-1 bg-red-500 text-white p-1 rounded-md opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))}
+                      {variantPreviews.length < 6 && (
+                        <button
+                          type="button"
+                          onClick={() => variantInputRef.current?.click()}
+                          className="aspect-square rounded-xl border-2 border-dashed border-indigo-200 flex items-center justify-center bg-white hover:bg-indigo-50"
+                        >
+                          <Plus className="w-4 h-4 text-indigo-300" />
+                        </button>
+                      )}
+                    </div>
+                    <input type="file" ref={variantInputRef} hidden multiple accept="image/*" onChange={handleVariantChange} />
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  onClick={handleRunModelling}
+                  disabled={modelling || (modellingOption === 'variants' && variantPreviews.length === 0)}
+                  className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-indigo-700 transition-all disabled:opacity-50 shadow-xl shadow-indigo-100"
+                >
+                  {modelling ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Generating {modellingOption === 'colors' ? selectedColors.length || 1 : variantPreviews.length} AI Models...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-4 h-4" />
+                      Generate AI Models
+                    </>
+                  )}
+                </button>
+
+                {generatedModels.length > 0 && (
+                  <div className="space-y-3">
+                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Generated Results</p>
+                    <div className="grid grid-cols-3 gap-2">
+                      {generatedModels.map((img, i) => (
+                        <div key={i} className="aspect-square rounded-xl overflow-hidden border-2 border-indigo-100">
+                          <img src={img} className="w-full h-full object-cover" alt="" />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Catalogue Selection - right below image */}

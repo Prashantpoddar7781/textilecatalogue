@@ -34,6 +34,21 @@ export const DesignCard: React.FC<Props> = ({ design, isSelected, onSelect, onDe
           className="w-full h-full object-cover"
           loading="lazy"
         />
+
+        {design.aiModels && design.aiModels.length > 0 && (
+          <div className="absolute bottom-2 left-2 flex -space-x-2 z-10">
+            {design.aiModels.slice(0, 3).map((img, i) => (
+              <div key={i} className="w-6 h-6 rounded-full border-2 border-white overflow-hidden shadow-sm">
+                <img src={img} className="w-full h-full object-cover" alt="" />
+              </div>
+            ))}
+            {design.aiModels.length > 3 && (
+              <div className="w-6 h-6 rounded-full border-2 border-white bg-gray-900 text-white flex items-center justify-center text-[8px] font-black">
+                +{design.aiModels.length - 3}
+              </div>
+            )}
+          </div>
+        )}
         
         <div className="absolute top-2 left-2 flex flex-wrap gap-1">
           <span className="bg-white/95 backdrop-blur shadow-sm text-gray-900 text-[10px] font-bold px-2 py-0.5 rounded-lg uppercase">

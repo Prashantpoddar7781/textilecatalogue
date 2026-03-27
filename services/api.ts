@@ -103,6 +103,7 @@ export const designsApi = {
     fabric: string;
     description?: string;
     catalogueId?: string;
+    aiModels?: string[];
   }) => {
     return request<any>('/designs', {
       method: 'POST',
@@ -124,6 +125,7 @@ export const designsApi = {
     fabric?: string;
     description?: string;
     catalogueId?: string;
+    aiModels?: string[];
   }>) => {
     return request<any>(`/designs/${id}`, {
       method: 'PUT',

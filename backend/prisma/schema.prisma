@@ -67,6 +67,7 @@ model Design {
   retailPrice    Float   @default(0) // Kept for backward compatibility
   fabric         String
   description    String?
+  aiModels       Json?    // Optional: base64 images from AI modelling (model wearing design)
   shareLinks     ShareLink[]
   shareLinkDesigns ShareLinkDesign[]
   shareLinkDesignViews ShareLinkDesignView[]

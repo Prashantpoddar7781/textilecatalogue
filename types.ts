@@ -25,6 +25,8 @@ export interface TextileDesign {
   fabric: string;
   description: string;
   createdAt: number;
+  /** Base64 images from AI modelling (model wearing the design) */
+  aiModels?: string[];
 }
 
 export interface Catalogue {
