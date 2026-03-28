@@ -4,7 +4,7 @@ import { HexColorPicker } from 'react-colorful';
 import { TextileDesign, AdditionalPrice } from '../types';
 import { cataloguesApi, designsApi } from '../services/api';
 import { generateAIModelling } from '../services/gemini';
-import { FIXED_MODEL_IMAGE } from '../constants';
+import { DEFAULT_AI_MODEL_IMAGE } from '../constants';
 
 interface Props {
   onClose: () => void;
@@ -190,7 +190,7 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
     if (!preview) return alert('Main product image required');
     setModelling(true);
     try {
-      const modelToUse = customModelImage || FIXED_MODEL_IMAGE;
+      const modelToUse = customModelImage || DEFAULT_AI_MODEL_IMAGE;
       let generationPromises: Promise<string | null>[] = [];
 
       if (modellingOption === 'colors') {
@@ -384,36 +384,65 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
             {aiModellingEnabled && (
               <div className="space-y-6 animate-in fade-in slide-in-from-top-2 duration-300">
                 <div className="grid grid-cols-2 gap-4">
-                  <div
-                    onClick={() => modelInputRef.current?.click()}
-                    className="aspect-square rounded-3xl border-2 border-indigo-100 flex flex-col items-center justify-center bg-white transition-all overflow-hidden relative cursor-pointer hover:border-indigo-300"
-                  >
-                    <img src={customModelImage || FIXED_MODEL_IMAGE} className="w-full h-full object-cover" alt="Model" />
-                    <div className="absolute bottom-2 left-2 right-2 bg-indigo-600/90 backdrop-blur-sm text-white text-[8px] font-black py-1 px-2 rounded-lg text-center uppercase tracking-widest">
-                      {customModelImage ? 'Custom Model' : 'Default Model'}
-                    </div>
-                    <div className="absolute top-2 right-2 bg-white/90 p-1 rounded-full shadow-sm">
-                      <Upload className="w-3 h-3 text-indigo-600" />
-                    </div>
-                    <input
-                      type="file"
-                      ref={modelInputRef}
-                      hidden
-                      accept="image/*"
-                      onChange={e => {
-                        const file = e.target.files?.[0];
-                        if (file) {
-                          const reader = new FileReader();
-                          reader.onloadend = () => setCustomModelImage(reader.result as string);
-                          reader.readAsDataURL(file);
+                  <div className="flex flex-col gap-2">
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => modelInputRef.current?.click()}
+                      onKeyDown={e => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          modelInputRef.current?.click();
                         }
                       }}
-                    />
+                      className="aspect-square rounded-3xl border-2 border-indigo-100 flex flex-col items-center justify-center bg-white transition-all overflow-hidden relative cursor-pointer hover:border-indigo-300"
+                    >
+                      <img
+                        src={customModelImage || DEFAULT_AI_MODEL_IMAGE}
+                        className="w-full h-full object-cover"
+                        alt={customModelImage ? "Your reference model" : "Default catalogue model"}
+                      />
+                      <div className="absolute bottom-2 left-2 right-2 bg-indigo-600/90 backdrop-blur-sm text-white text-[8px] font-black py-1 px-2 rounded-lg text-center uppercase tracking-widest">
+                        {customModelImage ? "Custom model" : "Default model"}
+                      </div>
+                      <div className="absolute top-2 right-2 bg-white/90 p-1 rounded-full shadow-sm">
+                        <Upload className="w-3 h-3 text-indigo-600" />
+                      </div>
+                      <input
+                        type="file"
+                        ref={modelInputRef}
+                        hidden
+                        accept="image/*"
+                        onChange={e => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            const reader = new FileReader();
+                            reader.onloadend = () => setCustomModelImage(reader.result as string);
+                            reader.readAsDataURL(file);
+                          }
+                          e.target.value = "";
+                        }}
+                      />
+                    </div>
+                    {customModelImage && (
+                      <button
+                        type="button"
+                        onClick={e => {
+                          e.stopPropagation();
+                          setCustomModelImage(null);
+                        }}
+                        className="text-[9px] font-bold text-indigo-600 hover:text-indigo-800 underline"
+                      >
+                        Use default model (project image)
+                      </button>
+                    )}
                   </div>
 
                   <div className="space-y-2">
                     <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Modelling Option</p>
-                    <p className="text-[8px] text-indigo-400 italic">Click the model image on the left to upload your own reference model.</p>
+                    <p className="text-[8px] text-indigo-400 italic leading-relaxed">
+                      Tap the image to upload your own model; otherwise the project default (model.png) is used.
+                    </p>
                     <div className="flex flex-col gap-2">
                       <button
                         type="button"

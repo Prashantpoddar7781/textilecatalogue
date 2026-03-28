@@ -50,19 +50,27 @@ export async function analyzeTextileImage(base64Image: string) {
   }
 }
 
-async function urlToBase64(url: string): Promise<string> {
+async function fetchImageAsBase64Parts(url: string): Promise<{ mime: string; b64: string }> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 10000);
 
   try {
     const response = await fetch(url, { signal: controller.signal });
     clearTimeout(timeoutId);
+    if (!response.ok) {
+      throw new Error(`Failed to load model image: ${response.status}`);
+    }
     const blob = await response.blob();
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onloadend = () => {
-        const base64String = (reader.result as string).split(",")[1];
-        resolve(base64String);
+        const dataUrl = reader.result as string;
+        const m = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+        if (m) {
+          resolve({ mime: m[1], b64: m[2] });
+        } else {
+          reject(new Error("Could not read model image"));
+        }
       };
       reader.onerror = reject;
       reader.readAsDataURL(blob);
@@ -91,12 +99,27 @@ export async function generateAIModelling(
   }
 
   try {
-    let modelData = modelImage;
-    if (modelImage.startsWith("http")) {
+    let modelMime = "image/jpeg";
+    let modelData: string;
+
+    if (modelImage.startsWith("data:")) {
+      const m = modelImage.match(/^data:([^;]+);base64,(.+)$/);
+      if (m) {
+        modelMime = m[1];
+        modelData = m[2];
+      } else {
+        modelData = modelImage.split(",")[1] || modelImage;
+      }
+    } else if (modelImage.startsWith("http") || modelImage.startsWith("/")) {
+      const url = modelImage.startsWith("http")
+        ? modelImage
+        : `${typeof window !== "undefined" ? window.location.origin : ""}${modelImage}`;
       try {
-        modelData = await urlToBase64(modelImage);
+        const parts = await fetchImageAsBase64Parts(url);
+        modelMime = parts.mime;
+        modelData = parts.b64;
       } catch (e) {
-        console.error("Failed to fetch model image from URL:", e);
+        console.error("Failed to fetch model image:", e);
         return null;
       }
     } else {
@@ -119,7 +142,7 @@ export async function generateAIModelling(
           },
           {
             inlineData: {
-              mimeType: "image/jpeg",
+              mimeType: modelMime,
               data: modelData,
             },
           },
