@@ -87,6 +87,80 @@ function dataUrlMimeAndB64(dataUrl: string): { mime: string; b64: string } {
   return { mime: "image/jpeg", b64: dataUrl.split(",")[1] || dataUrl };
 }
 
+/** Max dimension (px) for product images sent to Gemini — smaller payloads = faster requests. */
+const PRODUCT_MAX_SIDE_PX = 1536;
+
+/**
+ * Load a model image URL/path once into a data URL so it can be reused for many generations
+ * without refetching the network on every API call.
+ */
+export async function ensureModelImageDataUrl(modelImage: string): Promise<string | null> {
+  if (modelImage.startsWith("data:")) {
+    return modelImage;
+  }
+  const url = modelImage.startsWith("http")
+    ? modelImage
+    : `${typeof window !== "undefined" ? window.location.origin : ""}${modelImage}`;
+  try {
+    const parts = await fetchImageAsBase64Parts(url);
+    return `data:${parts.mime};base64,${parts.b64}`;
+  } catch (e) {
+    console.error("ensureModelImageDataUrl failed:", e);
+    return null;
+  }
+}
+
+/**
+ * Downscale very large product/variant photos before sending to the image model (faster uploads & generation).
+ */
+export async function resizeProductImageForGemini(productImage: string): Promise<string> {
+  if (typeof document === "undefined") return productImage;
+
+  const src = productImage.startsWith("data:")
+    ? productImage
+    : productImage.startsWith("http") || productImage.startsWith("/")
+      ? productImage.startsWith("http")
+        ? productImage
+        : `${typeof window !== "undefined" ? window.location.origin : ""}${productImage}`
+      : `data:image/jpeg;base64,${productImage}`;
+
+  return new Promise(resolve => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      try {
+        let w = img.naturalWidth;
+        let h = img.naturalHeight;
+        if (!w || !h) {
+          resolve(src);
+          return;
+        }
+        if (Math.max(w, h) <= PRODUCT_MAX_SIDE_PX) {
+          resolve(src);
+          return;
+        }
+        const scale = PRODUCT_MAX_SIDE_PX / Math.max(w, h);
+        w = Math.round(w * scale);
+        h = Math.round(h * scale);
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          resolve(src);
+          return;
+        }
+        ctx.drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL("image/jpeg", 0.88));
+      } catch {
+        resolve(src);
+      }
+    };
+    img.onerror = () => resolve(src);
+    img.src = src;
+  });
+}
+
 /** AI modelling: model wears the product (from textilehub---smart-category-manager (2)). */
 export async function generateAIModelling(
   productImage: string,

@@ -1,10 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { X, Upload, IndianRupee, Camera, Plus, Trash2, Sparkles, Loader2 } from 'lucide-react';
+import { X, Upload, IndianRupee, Camera, Plus, Trash2, Sparkles, Loader2, Maximize2 } from 'lucide-react';
 import { HexColorPicker } from 'react-colorful';
 import { TextileDesign, AdditionalPrice } from '../types';
 import { cataloguesApi, designsApi } from '../services/api';
-import { generateAIModelling } from '../services/gemini';
+import { generateAIModelling, ensureModelImageDataUrl, resizeProductImageForGemini } from '../services/gemini';
 import { DEFAULT_AI_MODEL_IMAGE } from '../constants';
+import { ImageLightbox } from './ImageLightbox';
 
 interface Props {
   onClose: () => void;
@@ -43,6 +44,9 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
   const [selectedColors, setSelectedColors] = useState<string[]>([]);
   const [variantPreviews, setVariantPreviews] = useState<string[]>([]);
   const [generatedModels, setGeneratedModels] = useState<string[]>([]);
+  /** While generating: ordered slots (null = still loading). Null = not in generation UI. */
+  const [generatingSlots, setGeneratingSlots] = useState<(string | null)[] | null>(null);
+  const [lightbox, setLightbox] = useState<{ images: string[]; index: number } | null>(null);
   const [customModelImage, setCustomModelImage] = useState<string | null>(null);
   const [currentColor, setCurrentColor] = useState('#ff0000');
   const variantInputRef = useRef<HTMLInputElement>(null);
@@ -73,6 +77,7 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
       setCalculatedPriceOverrides({});
       setPreview(initialData.image);
       setGeneratedModels(initialData.aiModels ?? []);
+      setGeneratingSlots(null);
     } else {
       // Reset form when not editing
       setFormData({
@@ -92,6 +97,7 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
       setCalculatedPriceOverrides({});
       setPreview(null);
       setGeneratedModels([]);
+      setGeneratingSlots(null);
       setAiModellingEnabled(false);
       setModellingOption('colors');
       setSelectedColors([]);
@@ -186,27 +192,69 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
     }
   };
 
+  const openAiLightboxAt = (slotIndex: number) => {
+    const slots = generatingSlots ?? generatedModels;
+    if (!slots.length) return;
+    const clicked = slots[slotIndex];
+    if (typeof clicked !== 'string') return;
+    const images = slots.filter((x): x is string => x != null);
+    const index = images.indexOf(clicked);
+    setLightbox({ images, index: Math.max(0, index) });
+  };
+
   const handleRunModelling = async () => {
     if (!preview) return alert('Main product image required');
     setModelling(true);
+    setGeneratingSlots(null);
     try {
       const modelToUse = customModelImage || DEFAULT_AI_MODEL_IMAGE;
-      let generationPromises: Promise<string | null>[] = [];
-
-      if (modellingOption === 'colors') {
-        if (selectedColors.length === 0) {
-          generationPromises = [generateAIModelling(preview, modelToUse)];
-        } else {
-          generationPromises = selectedColors.map(color => generateAIModelling(preview, modelToUse, color));
-        }
-      } else {
-        generationPromises = variantPreviews.map(variant => generateAIModelling(variant, modelToUse));
+      const modelResolved = await ensureModelImageDataUrl(modelToUse);
+      if (!modelResolved) {
+        alert('Could not load the model image. Try uploading a custom model image.');
+        return;
       }
 
-      const rawResults = await Promise.all(generationPromises);
-      const validResults = rawResults.filter((res): res is string => res !== null);
+      let jobs: Promise<string | null>[] = [];
+      let n = 0;
 
+      if (modellingOption === 'colors') {
+        const productPrepared = await resizeProductImageForGemini(preview);
+        if (selectedColors.length === 0) {
+          n = 1;
+          jobs = [generateAIModelling(productPrepared, modelResolved)];
+        } else {
+          n = selectedColors.length;
+          jobs = selectedColors.map(color =>
+            generateAIModelling(productPrepared, modelResolved, color)
+          );
+        }
+      } else {
+        if (variantPreviews.length === 0) {
+          alert('Add at least one color variant image first.');
+          return;
+        }
+        const variantsPrepared = await Promise.all(
+          variantPreviews.map(v => resizeProductImageForGemini(v))
+        );
+        n = variantsPrepared.length;
+        jobs = variantsPrepared.map(vp => generateAIModelling(vp, modelResolved));
+      }
+
+      const results: (string | null)[] = new Array(n).fill(null);
+      setGeneratingSlots([...results]);
+
+      await Promise.all(
+        jobs.map((p, i) =>
+          p.then(res => {
+            results[i] = res;
+            setGeneratingSlots([...results]);
+          })
+        )
+      );
+
+      const validResults = results.filter((res): res is string => res !== null);
       setGeneratedModels(validResults);
+      setGeneratingSlots(null);
 
       if (validResults.length === 0) {
         alert('AI generation failed. Check VITE_GEMINI_API_KEY and try again.');
@@ -214,6 +262,7 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
     } catch (e) {
       console.error(e);
       alert('An error occurred during AI generation. Check your connection and API key.');
+      setGeneratingSlots(null);
     } finally {
       setModelling(false);
     }
@@ -576,14 +625,48 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
                   )}
                 </button>
 
-                {generatedModels.length > 0 && (
+                {(generatingSlots || generatedModels.length > 0) && (
                   <div className="space-y-3">
-                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Generated Results</p>
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
+                        {modelling ? 'Generating…' : 'Generated results'}
+                      </p>
+                      {modelling && generatingSlots && (
+                        <span className="text-[9px] font-bold text-indigo-600">
+                          {generatingSlots.filter(s => s != null).length}/{generatingSlots.length} ready
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[9px] text-gray-500">
+                      Tap a finished image to view fullscreen; use +/- to zoom.
+                    </p>
                     <div className="grid grid-cols-3 gap-2">
-                      {generatedModels.map((img, i) => (
-                        <div key={i} className="aspect-square rounded-xl overflow-hidden border-2 border-indigo-100">
-                          <img src={img} className="w-full h-full object-cover" alt="" />
-                        </div>
+                      {(generatingSlots ?? generatedModels).map((img, i) => (
+                        <button
+                          key={i}
+                          type="button"
+                          disabled={img == null}
+                          onClick={() => openAiLightboxAt(i)}
+                          className={`relative aspect-square rounded-xl overflow-hidden border-2 text-left transition-all ${
+                            img
+                              ? 'border-indigo-100 cursor-zoom-in hover:ring-2 hover:ring-indigo-300 active:scale-[0.98]'
+                              : 'border-indigo-50 bg-indigo-50/80 cursor-wait'
+                          }`}
+                        >
+                          {img ? (
+                            <>
+                              <img src={img} className="w-full h-full object-cover" alt="" />
+                              <span className="absolute bottom-1 right-1 rounded-md bg-black/50 p-1 text-white pointer-events-none">
+                                <Maximize2 className="w-3 h-3" />
+                              </span>
+                            </>
+                          ) : (
+                            <div className="absolute inset-0 flex flex-col items-center justify-center gap-1">
+                              <Loader2 className="w-6 h-6 animate-spin text-indigo-500" />
+                              <span className="text-[8px] font-bold text-indigo-400 uppercase">Wait</span>
+                            </div>
+                          )}
+                        </button>
                       ))}
                     </div>
                   </div>
@@ -900,6 +983,15 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
           </button>
         </div>
       </div>
+
+      {lightbox && (
+        <ImageLightbox
+          images={lightbox.images}
+          initialIndex={lightbox.index}
+          onClose={() => setLightbox(null)}
+          title="AI generated"
+        />
+      )}
     </div>
   );
 };
