@@ -116,10 +116,10 @@ export const DesignCard: React.FC<Props> = ({ design, isSelected, onSelect, onDe
               onShareLink?.();
             }}
             className="flex flex-col items-center gap-1 py-2 rounded-xl bg-gray-50 hover:bg-green-50 text-gray-700 hover:text-green-700 transition-colors disabled:opacity-40 disabled:hover:bg-gray-50 disabled:cursor-not-allowed"
-            title={(design.stockQuantity ?? 0) <= 0 ? 'Out of stock' : 'Create share link'}
+            title={(design.stockQuantity ?? 0) <= 0 ? 'Out of stock' : 'Share link for this design only'}
           >
             <Link2 className="w-4 h-4" />
-            <span className="text-[9px] font-bold uppercase tracking-tight">Link</span>
+            <span className="text-[9px] font-bold uppercase tracking-tight leading-tight text-center">Get link</span>
           </button>
           <button
             type="button"

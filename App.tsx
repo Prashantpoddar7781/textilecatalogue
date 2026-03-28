@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Plus, Search, Share2, Package, CheckCircle, SlidersHorizontal, LogOut, User, Crown, BarChart3 } from 'lucide-react';
+import { Plus, Search, Package, CheckCircle, SlidersHorizontal, LogOut, User, Crown, BarChart3, Menu, MessageCircle, Link2 } from 'lucide-react';
 import { TextileDesign, CatalogueFilters, SubscriptionStatus } from './types';
 import { UploadForm } from './components/UploadForm';
 import { DesignCard } from './components/DesignCard';
@@ -30,6 +30,7 @@ const App: React.FC = () => {
   const [designs, setDesigns] = useState<TextileDesign[]>([]);
   const [isReady, setIsReady] = useState(false);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isShareOpen, setIsShareOpen] = useState(false);
   const [isShareLinkOpen, setIsShareLinkOpen] = useState(false);
   const [selectedDesignForLink, setSelectedDesignForLink] = useState<TextileDesign | null>(null);
@@ -440,107 +441,253 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-[#FDFDFF] pb-36">
-      <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-xl border-b px-4 py-3 md:px-8 shadow-sm">
-        <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
-          <div className="flex items-center gap-2.5">
-            <div className="bg-indigo-600 p-2 rounded-xl shadow-indigo-200 shadow-xl transform rotate-3">
-              <Package className="text-white w-5 h-5" />
+    <div className="min-h-screen bg-[#FDFDFF] pb-28 md:pb-6">
+      <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-xl border-b shadow-sm safe-area-top">
+        <div className="max-w-7xl mx-auto px-4 py-3 md:px-8">
+          {/* Mobile header */}
+          <div className="flex flex-col gap-3 md:hidden">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="bg-indigo-600 p-2 rounded-xl shadow-indigo-200 shadow-xl transform rotate-3 shrink-0">
+                  <Package className="text-white w-5 h-5" />
+                </div>
+                <div className="min-w-0">
+                  <h1 className="text-lg font-black text-gray-900 tracking-tight leading-none truncate">TextileHub</h1>
+                  <span className="text-[9px] font-black text-indigo-500 uppercase tracking-widest">Catalogue</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setIsUploadOpen(true)}
+                  className="touch-target flex items-center gap-1.5 bg-gray-900 text-white px-4 rounded-2xl font-bold text-sm shadow-lg active:scale-95"
+                  aria-label="Add design"
+                >
+                  <Plus className="w-5 h-5" />
+                  <span>Add</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMobileMenuOpen(true)}
+                  className="touch-target flex items-center justify-center rounded-2xl border border-gray-200 bg-white text-gray-800 shadow-sm"
+                  aria-label="Menu"
+                >
+                  <Menu className="w-6 h-6" />
+                </button>
+              </div>
             </div>
-            <div>
-              <h1 className="text-lg font-black text-gray-900 tracking-tight leading-none">TextileHub</h1>
-              <span className="text-[9px] font-black text-indigo-500 uppercase tracking-widest mt-0.5 inline-block">Pro Manager</span>
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
+              <input
+                type="search"
+                enterKeyHint="search"
+                placeholder="Search catalogue…"
+                className="w-full pl-10 pr-4 py-3 bg-gray-100 border border-transparent focus:bg-white focus:border-indigo-500 rounded-2xl text-base outline-none transition-all"
+                value={filters.search}
+                onChange={e => setFilters(f => ({ ...f, search: e.target.value }))}
+              />
             </div>
           </div>
 
-          <div className="flex-1 max-w-md relative group">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4 group-focus-within:text-indigo-500 transition-colors" />
-            <input
-              type="text"
-              placeholder="Search catalogue..."
-              className="w-full pl-9 pr-4 py-2.5 bg-gray-100 border-transparent focus:bg-white border focus:border-indigo-500 rounded-2xl text-sm outline-none transition-all placeholder:text-gray-400"
-              value={filters.search}
-              onChange={e => setFilters(f => ({ ...f, search: e.target.value }))}
-            />
-          </div>
-
-          <div className="flex items-center gap-2">
-            <div className="hidden sm:flex items-center gap-2 text-sm text-gray-600">
-              <User className="w-4 h-4" />
-              <span className="font-medium">{user.name || user.email}</span>
+          {/* Desktop header */}
+          <div className="hidden md:flex items-center justify-between gap-4">
+            <div className="flex items-center gap-2.5">
+              <div className="bg-indigo-600 p-2 rounded-xl shadow-indigo-200 shadow-xl transform rotate-3">
+                <Package className="text-white w-5 h-5" />
+              </div>
+              <div>
+                <h1 className="text-lg font-black text-gray-900 tracking-tight leading-none">TextileHub</h1>
+                <span className="text-[9px] font-black text-indigo-500 uppercase tracking-widest mt-0.5 inline-block">Pro Manager</span>
+              </div>
             </div>
-            {subscription && !subscription.isFree && (
-              <button
-                onClick={() => setIsPricingOpen(true)}
-                className="hidden sm:flex items-center gap-2 bg-indigo-50 text-indigo-700 border border-indigo-100 px-3 py-2 rounded-2xl text-xs font-bold"
-              >
-                <Crown className="w-4 h-4" />
-                <span>
-                  {subscription.isTrialActive && trialDaysLeft !== null
-                    ? `Trial ${trialDaysLeft}d left`
-                    : subscription.isActive
-                      ? 'Pro Active'
-                      : 'Upgrade'}
-                </span>
-              </button>
-            )}
+
+            <div className="flex-1 max-w-md relative group">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4 group-focus-within:text-indigo-500 transition-colors" />
+              <input
+                type="search"
+                placeholder="Search catalogue…"
+                className="w-full pl-9 pr-4 py-2.5 bg-gray-100 border-transparent focus:bg-white border focus:border-indigo-500 rounded-2xl text-sm outline-none transition-all placeholder:text-gray-400"
+                value={filters.search}
+                onChange={e => setFilters(f => ({ ...f, search: e.target.value }))}
+              />
+            </div>
+
             <div className="flex items-center gap-2">
+              <div className="hidden lg:flex items-center gap-2 text-sm text-gray-600 max-w-[140px]">
+                <User className="w-4 h-4 shrink-0" />
+                <span className="font-medium truncate">{user.name || user.email}</span>
+              </div>
+              {subscription && !subscription.isFree && (
+                <button
+                  type="button"
+                  onClick={() => setIsPricingOpen(true)}
+                  className="hidden sm:flex items-center gap-2 bg-indigo-50 text-indigo-700 border border-indigo-100 px-3 py-2 rounded-2xl text-xs font-bold"
+                >
+                  <Crown className="w-4 h-4" />
+                  <span>
+                    {subscription.isTrialActive && trialDaysLeft !== null
+                      ? `Trial ${trialDaysLeft}d left`
+                      : subscription.isActive
+                        ? 'Pro Active'
+                        : 'Upgrade'}
+                  </span>
+                </button>
+              )}
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => { window.location.href = '/billing'; }}
+                  className="px-3 py-2 rounded-2xl text-xs font-bold border border-gray-200 bg-white text-gray-700 shadow-sm hover:bg-gray-50"
+                >
+                  Billing
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { window.location.href = '/share-stats'; }}
+                  className="px-3 py-2 rounded-2xl text-xs font-bold border border-gray-200 bg-white text-gray-700 shadow-sm hover:bg-gray-50"
+                >
+                  Stats
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { window.location.href = '/orders'; }}
+                  className="px-3 py-2 rounded-2xl text-xs font-bold border border-gray-200 bg-white text-gray-700 shadow-sm hover:bg-gray-50"
+                >
+                  Orders
+                </button>
+                <button
+                  type="button"
+                  onClick={handleShareCollection}
+                  disabled={isSharingCollection}
+                  title="Copy one link to your entire catalogue (opens WhatsApp)"
+                  className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded-2xl text-xs font-bold shadow-lg disabled:opacity-60"
+                >
+                  <Link2 className="w-4 h-4 shrink-0" />
+                  <span className="hidden xl:inline">{isSharingCollection ? '…' : 'Catalogue link'}</span>
+                  <span className="xl:hidden">{isSharingCollection ? '…' : 'Link'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsUploadOpen(true)}
+                  className="flex items-center gap-1.5 bg-gray-900 hover:bg-black text-white px-4 py-2 rounded-2xl text-xs font-bold shadow-lg"
+                >
+                  <Plus className="w-4 h-4" />
+                  Add
+                </button>
+              </div>
               <button
-                onClick={() => { window.location.href = '/billing'; }}
-                className="flex items-center gap-2 bg-white border border-gray-200 text-gray-700 px-4 py-2.5 rounded-2xl font-bold transition-all shadow-sm active:scale-95"
+                type="button"
+                onClick={handleLogout}
+                className="p-2 hover:bg-gray-100 rounded-xl transition-colors"
+                title="Logout"
               >
-                <Crown className="w-4 h-4" />
-                <span className="hidden sm:inline">Billing</span>
-                <span className="sm:hidden">Billing</span>
-              </button>
-              <button
-                onClick={() => { window.location.href = '/share-stats'; }}
-                className="flex items-center gap-2 bg-white border border-gray-200 text-gray-700 px-4 py-2.5 rounded-2xl font-bold transition-all shadow-sm active:scale-95"
-              >
-                <BarChart3 className="w-4 h-4" />
-                <span className="hidden sm:inline">Link stats</span>
-                <span className="sm:hidden">Stats</span>
-              </button>
-              <button
-                onClick={() => { window.location.href = '/orders'; }}
-                className="flex items-center gap-2 bg-white border border-gray-200 text-gray-700 px-4 py-2.5 rounded-2xl font-bold transition-all shadow-sm active:scale-95"
-              >
-                <CheckCircle className="w-4 h-4" />
-                <span className="hidden sm:inline">Orders</span>
-                <span className="sm:hidden">Orders</span>
-              </button>
-              <button
-                onClick={handleShareCollection}
-                disabled={isSharingCollection}
-                className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-2xl font-bold transition-all shadow-lg active:scale-95 disabled:opacity-60"
-              >
-                <Share2 className="w-4 h-4" />
-                <span className="hidden sm:inline">
-                  {isSharingCollection ? 'Creating Link...' : 'Share My Collection'}
-                </span>
-                <span className="sm:hidden">
-                  {isSharingCollection ? 'Creating...' : 'Share'}
-                </span>
-              </button>
-              <button
-                onClick={() => setIsUploadOpen(true)}
-                className="flex items-center gap-2 bg-gray-900 hover:bg-black text-white px-5 py-2.5 rounded-2xl font-bold transition-all shadow-lg active:scale-95"
-              >
-                <Plus className="w-5 h-5" />
-                <span className="hidden sm:inline">Add Design</span>
-                <span className="sm:hidden">Add</span>
+                <LogOut className="w-5 h-5 text-gray-600" />
               </button>
             </div>
-            <button
-              onClick={handleLogout}
-              className="p-2 hover:bg-gray-100 rounded-xl transition-colors"
-              title="Logout"
-            >
-              <LogOut className="w-5 h-5 text-gray-600" />
-            </button>
           </div>
         </div>
       </header>
+
+      {mobileMenuOpen && (
+        <div className="fixed inset-0 z-[45] md:hidden" role="dialog" aria-modal="true" aria-labelledby="mobile-menu-title">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/45 backdrop-blur-[2px]"
+            aria-label="Close menu"
+            onClick={() => setMobileMenuOpen(false)}
+          />
+          <div className="absolute bottom-0 left-0 right-0 max-h-[min(88vh,720px)] flex flex-col rounded-t-3xl bg-white shadow-2xl ring-1 ring-black/5 safe-area-bottom">
+            <div className="mx-auto mt-2 h-1 w-10 rounded-full bg-gray-200 shrink-0" aria-hidden />
+            <div className="overflow-y-auto overscroll-contain px-4 pb-safe pt-2">
+              <h2 id="mobile-menu-title" className="text-lg font-black text-gray-900 mb-1">Account &amp; tools</h2>
+              <p className="text-xs text-gray-500 mb-4 truncate" title={user?.email}>
+                {user?.name || user?.email || 'Signed in'}
+              </p>
+              <nav className="flex flex-col gap-2">
+                <button
+                  type="button"
+                  className="touch-target flex w-full items-center gap-3 rounded-2xl border border-gray-100 bg-gray-50 px-4 text-left font-bold text-gray-900 active:bg-gray-100"
+                  onClick={() => {
+                    setMobileMenuOpen(false);
+                    window.location.href = '/billing';
+                  }}
+                >
+                  <Crown className="w-5 h-5 text-indigo-600 shrink-0" />
+                  Billing &amp; plan
+                </button>
+                <button
+                  type="button"
+                  className="touch-target flex w-full items-center gap-3 rounded-2xl border border-gray-100 bg-gray-50 px-4 text-left font-bold text-gray-900 active:bg-gray-100"
+                  onClick={() => {
+                    setMobileMenuOpen(false);
+                    window.location.href = '/share-stats';
+                  }}
+                >
+                  <BarChart3 className="w-5 h-5 text-indigo-600 shrink-0" />
+                  Link &amp; share statistics
+                </button>
+                <button
+                  type="button"
+                  className="touch-target flex w-full items-center gap-3 rounded-2xl border border-gray-100 bg-gray-50 px-4 text-left font-bold text-gray-900 active:bg-gray-100"
+                  onClick={() => {
+                    setMobileMenuOpen(false);
+                    window.location.href = '/orders';
+                  }}
+                >
+                  <CheckCircle className="w-5 h-5 text-indigo-600 shrink-0" />
+                  Orders
+                </button>
+                <div className="my-2 border-t border-gray-100" />
+                <button
+                  type="button"
+                  disabled={isSharingCollection}
+                  className="touch-target flex w-full flex-col items-start gap-0.5 rounded-2xl bg-indigo-600 px-4 py-3 text-left font-black text-white shadow-lg disabled:opacity-60 active:bg-indigo-700"
+                  onClick={async () => {
+                    setMobileMenuOpen(false);
+                    await handleShareCollection();
+                  }}
+                >
+                  <span className="flex items-center gap-2">
+                    <Link2 className="w-5 h-5 shrink-0" />
+                    Catalogue link
+                  </span>
+                  <span className="pl-7 text-xs font-semibold text-indigo-100">
+                    One link to your full catalogue (opens WhatsApp)
+                  </span>
+                </button>
+                {subscription && !subscription.isFree && (
+                  <button
+                    type="button"
+                    className="touch-target flex w-full items-center gap-3 rounded-2xl border border-indigo-100 bg-indigo-50 px-4 text-left font-bold text-indigo-800 active:bg-indigo-100"
+                    onClick={() => {
+                      setMobileMenuOpen(false);
+                      setIsPricingOpen(true);
+                    }}
+                  >
+                    <Crown className="w-5 h-5 shrink-0" />
+                    {subscription.isTrialActive && trialDaysLeft !== null
+                      ? `Trial — ${trialDaysLeft} day${trialDaysLeft === 1 ? '' : 's'} left`
+                      : subscription.isActive
+                        ? 'Pro active'
+                        : 'Upgrade plan'}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="touch-target mt-2 flex w-full items-center justify-center gap-2 rounded-2xl border border-gray-200 py-3 font-bold text-gray-700"
+                  onClick={() => {
+                    setMobileMenuOpen(false);
+                    handleLogout();
+                  }}
+                >
+                  <LogOut className="w-5 h-5" />
+                  Log out
+                </button>
+              </nav>
+            </div>
+          </div>
+        </div>
+      )}
 
       {subscription && !subscription.isFree && (subscription.needsPayment || subscription.isTrialActive) && (
         <div className="bg-indigo-600 text-white">
@@ -683,40 +830,51 @@ const App: React.FC = () => {
         )}
       </main>
 
-      <button
-        onClick={() => setIsUploadOpen(true)}
-        className="fixed bottom-8 right-6 sm:hidden z-40 bg-indigo-600 text-white p-5 rounded-[2rem] shadow-2xl active:scale-90 transition-all hover:bg-indigo-700 ring-4 ring-indigo-100"
-      >
-        <Plus className="w-6 h-6" />
-      </button>
+      {selectedIds.size === 0 && (
+        <button
+          type="button"
+          onClick={() => setIsUploadOpen(true)}
+          className="fixed z-40 sm:hidden bottom-[max(1rem,env(safe-area-inset-bottom))] right-[max(1rem,env(safe-area-inset-right))] flex h-14 w-14 items-center justify-center rounded-[1.75rem] bg-indigo-600 text-white shadow-2xl ring-4 ring-indigo-100 transition-all hover:bg-indigo-700 active:scale-90"
+          aria-label="Add design"
+        >
+          <Plus className="h-7 w-7" />
+        </button>
+      )}
 
       {selectedIds.size > 0 && (
-        <div className="fixed z-50 inset-x-4 max-w-lg mx-auto bottom-[calc(6.25rem+env(safe-area-inset-bottom,0px))] md:bottom-8 animate-in slide-in-from-bottom duration-500">
-          <div className="bg-gray-900 text-white px-4 py-3 sm:px-6 sm:py-4 rounded-[2rem] sm:rounded-[2.5rem] shadow-2xl flex items-center justify-between border border-white/10 ring-[12px] ring-black/5">
-            <div className="flex flex-col">
-              <span className="text-[9px] font-black text-indigo-400 uppercase tracking-widest leading-none mb-1">Selections</span>
-              <span className="font-black text-sm">{selectedIds.size} Designs ready</span>
-            </div>
-            <div className="flex items-center gap-3">
-              <button 
-                onClick={() => setSelectedIds(new Set())}
-                className="text-xs font-bold text-gray-400 hover:text-white px-3 py-2 transition-colors"
-              >
-                Clear
-              </button>
-              <button
-                onClick={() => {
-                  if (inStockSelectedDesigns.length === 0) {
-                    alert('No in-stock designs selected. Out-of-stock designs cannot be shared.');
-                    return;
-                  }
-                  setIsShareOpen(true);
-                }}
-                className="flex items-center gap-2 bg-indigo-500 hover:bg-indigo-600 px-6 py-3.5 rounded-2xl font-black text-sm transition-all active:scale-95 shadow-lg shadow-indigo-500/20"
-              >
-                <Share2 className="w-4 h-4" />
-                Share
-              </button>
+        <div className="fixed inset-x-0 bottom-0 z-50 md:inset-x-auto md:left-1/2 md:right-auto md:bottom-8 md:max-w-lg md:-translate-x-1/2 md:px-0 animate-in slide-in-from-bottom duration-300">
+          <div className="mx-auto max-w-lg border-t border-white/10 bg-gray-900 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 shadow-[0_-8px_32px_rgba(0,0,0,0.2)] md:rounded-[2.5rem] md:border md:px-6 md:py-4 md:shadow-2xl md:ring-[12px] md:ring-black/5">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0 flex flex-col">
+                <span className="text-[9px] font-black uppercase tracking-widest text-indigo-400">Selected</span>
+                <span className="truncate font-black text-sm text-white">
+                  {selectedIds.size} design{selectedIds.size === 1 ? '' : 's'}
+                </span>
+                <span className="text-[10px] font-medium text-gray-400">Prepare images &amp; WhatsApp</span>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSelectedIds(new Set())}
+                  className="touch-target rounded-xl px-3 text-xs font-bold text-gray-400 transition-colors hover:text-white"
+                >
+                  Clear
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (inStockSelectedDesigns.length === 0) {
+                      alert('No in-stock designs selected. Out-of-stock designs cannot be shared.');
+                      return;
+                    }
+                    setIsShareOpen(true);
+                  }}
+                  className="touch-target flex items-center gap-2 rounded-2xl bg-indigo-500 px-4 py-2.5 text-sm font-black text-white shadow-lg shadow-indigo-500/25 transition-all active:scale-95 hover:bg-indigo-600"
+                >
+                  <MessageCircle className="h-4 w-4 shrink-0" />
+                  WhatsApp
+                </button>
+              </div>
             </div>
           </div>
         </div>

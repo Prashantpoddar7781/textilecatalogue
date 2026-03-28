@@ -105,24 +105,30 @@ html {
   animation: zoom-in 0.3s ease-out;
 }
 
-/* Mobile-specific improvements */
-@media (max-width: 640px) {
-  /* Larger touch targets */
-  button, a {
-    min-height: 44px;
-    min-width: 44px;
-  }
-  
-  /* Better spacing on mobile */
-  .mobile-padding {
-    padding-left: 1rem;
-    padding-right: 1rem;
-  }
+.touch-target {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+/* Better spacing on mobile */
+.mobile-padding {
+  padding-left: 1rem;
+  padding-right: 1rem;
+}
+
+/* Bottom safe area for fixed bars / FAB */
+.pb-safe {
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+}
+
+.mb-safe {
+  margin-bottom: max(0.5rem, env(safe-area-inset-bottom));
 }
 
 /* Prevent zoom on input focus (iOS) */
 @media screen and (max-width: 768px) {
   input[type="text"],
+  input[type="search"],
   input[type="number"],
   input[type="email"],
   input[type="tel"],
