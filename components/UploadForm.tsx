@@ -6,10 +6,6 @@ import { cataloguesApi, designsApi } from '../services/api';
 import { generateAIModelling, ensureModelImageDataUrl, resizeProductImageForGemini } from '../services/gemini';
 import { DEFAULT_AI_MODEL_IMAGE } from '../constants';
 import { ImageLightbox } from './ImageLightbox';
-import { asyncPool } from '../utils/asyncPool';
-
-/** Parallel Gemini image calls often get throttled; queue avoids last jobs stalling for minutes. */
-const AI_MODELLING_CONCURRENCY = 2;
 
 interface Props {
   onClose: () => void;
@@ -218,16 +214,16 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
         return;
       }
 
-      const taskFactories: Array<() => Promise<string | null>> = [];
+      let jobs: Promise<string | null>[] = [];
 
       if (modellingOption === 'colors') {
         const productPrepared = await resizeProductImageForGemini(preview);
         if (selectedColors.length === 0) {
-          taskFactories.push(() => generateAIModelling(productPrepared, modelResolved));
+          jobs = [generateAIModelling(productPrepared, modelResolved)];
         } else {
-          for (const color of selectedColors) {
-            taskFactories.push(() => generateAIModelling(productPrepared, modelResolved, color));
-          }
+          jobs = selectedColors.map(color =>
+            generateAIModelling(productPrepared, modelResolved, color)
+          );
         }
       } else {
         if (variantPreviews.length === 0) {
@@ -237,21 +233,21 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
         const variantsPrepared = await Promise.all(
           variantPreviews.map(v => resizeProductImageForGemini(v))
         );
-        for (const vp of variantsPrepared) {
-          taskFactories.push(() => generateAIModelling(vp, modelResolved));
-        }
+        jobs = variantsPrepared.map(vp => generateAIModelling(vp, modelResolved));
       }
 
-      const n = taskFactories.length;
+      const n = jobs.length;
       const results: (string | null)[] = new Array(n).fill(null);
       setGeneratingSlots([...results]);
 
-      await asyncPool(taskFactories, AI_MODELLING_CONCURRENCY, async (factory, i) => {
-        const res = await factory();
-        results[i] = res;
-        setGeneratingSlots([...results]);
-        return res;
-      });
+      await Promise.all(
+        jobs.map((p, i) =>
+          p.then(res => {
+            results[i] = res;
+            setGeneratingSlots([...results]);
+          })
+        )
+      );
 
       const validResults = results.filter((res): res is string => res !== null);
       setGeneratedModels(validResults);
@@ -630,9 +626,6 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
                     </>
                   )}
                 </button>
-                <p className="text-[9px] text-center text-gray-500 leading-snug">
-                  Runs up to {AI_MODELLING_CONCURRENCY} images at a time so the API stays responsive (fewer long stalls on the last images).
-                </p>
 
                 {(generatingSlots || generatedModels.length > 0) && (
                   <div className="space-y-3">
