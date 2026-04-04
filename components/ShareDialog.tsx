@@ -118,10 +118,9 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
         if (!ctx) return reject('Canvas context not found');
 
         /**
-         * Square output so WhatsApp chat thumbnails show the full frame (including the bottom
-         * label). Tall portrait images are center-cropped in previews and hide edge-to-edge
-         * banners; a fixed 1:1 layout matches catalogue-style references where text stays readable
-         * without opening the image.
+         * Square output so WhatsApp thumbnails tend to show the full frame (product + label).
+         * The photo area uses **contain** (not cover): the whole product is visible with letterboxing
+         * if needed — no zoom/crop that cuts off garments (like aggressive catalogue-style cover).
          */
         const OUT = 1080;
         const photoH = Math.round(OUT * 0.72);
@@ -136,11 +135,13 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
         const sh = img.naturalHeight || 1000;
         const dw = width;
         const dh = photoH;
-        const scale = Math.max(dw / sw, dh / sh);
+        const scale = Math.min(dw / sw, dh / sh);
         const tw = sw * scale;
         const th = sh * scale;
         const ox = (dw - tw) / 2;
         const oy = (dh - th) / 2;
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, dw, dh);
         ctx.drawImage(img, 0, 0, sw, sh, ox, oy, tw, th);
 
         // Bottom label — taller band + larger type so it stays legible in small chat previews
