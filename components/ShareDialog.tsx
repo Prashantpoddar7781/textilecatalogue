@@ -117,33 +117,39 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
         const ctx = canvas.getContext('2d');
         if (!ctx) return reject('Canvas context not found');
 
-        // Set dimensions - maintain aspect ratio but ensure minimum quality
-        const imageMaxWidth = 1200;
-        const maxHeight = 1600;
-        let width = img.naturalWidth || 800;
-        let height = img.naturalHeight || 1000;
-        
-        // Scale down if too large to prevent memory issues on mobile
-        if (width > imageMaxWidth || height > maxHeight) {
-          const scale = Math.min(imageMaxWidth / width, maxHeight / height);
-          width = width * scale;
-          height = height * scale;
-        }
-        
+        /**
+         * Square output so WhatsApp chat thumbnails show the full frame (including the bottom
+         * label). Tall portrait images are center-cropped in previews and hide edge-to-edge
+         * banners; a fixed 1:1 layout matches catalogue-style references where text stays readable
+         * without opening the image.
+         */
+        const OUT = 1080;
+        const photoH = Math.round(OUT * 0.72);
+        const bannerH = OUT - photoH;
+        const width = OUT;
+        const height = OUT;
+
         canvas.width = width;
         canvas.height = height;
 
-        // Draw background image with high quality
-        ctx.drawImage(img, 0, 0, width, height);
+        const sw = img.naturalWidth || 800;
+        const sh = img.naturalHeight || 1000;
+        const dw = width;
+        const dh = photoH;
+        const scale = Math.max(dw / sw, dh / sh);
+        const tw = sw * scale;
+        const th = sh * scale;
+        const ox = (dw - tw) / 2;
+        const oy = (dh - th) / 2;
+        ctx.drawImage(img, 0, 0, sw, sh, ox, oy, tw, th);
 
-        // Bottom label bar — solid black, modest height (~15–18%), smaller type (reference: subtle vs product)
-        const bannerHeight = Math.max(Math.floor(height * 0.17), 72);
-        const padding = Math.floor(width * 0.035);
-        const fontSize = Math.max(12, Math.floor(height * 0.018));
-        const lineHeight = fontSize * 1.38;
-        
+        // Bottom label — taller band + larger type so it stays legible in small chat previews
+        const padding = Math.round(width * 0.04);
+        const fontSize = Math.max(24, Math.round(height * 0.028));
+        const lineHeight = fontSize * 1.42;
+
         ctx.fillStyle = '#000000';
-        ctx.fillRect(0, height - bannerHeight, width, bannerHeight);
+        ctx.fillRect(0, photoH, width, bannerH);
 
         // 2. Prepare content lines
         const lines: string[] = [];
@@ -191,7 +197,7 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
         ctx.textAlign = 'left';
         
         const textMaxWidth = width - (padding * 2);
-        let yPos = height - bannerHeight + padding;
+        let yPos = photoH + padding;
         
         lines.forEach((line) => {
           const words = line.split(' ');
