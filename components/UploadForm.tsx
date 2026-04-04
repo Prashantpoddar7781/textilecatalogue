@@ -4,6 +4,7 @@ import { HexColorPicker } from 'react-colorful';
 import { TextileDesign, AdditionalPrice } from '../types';
 import { cataloguesApi, designsApi } from '../services/api';
 import { generateAIModelling, ensureModelImageDataUrl, resizeProductImageForGemini } from '../services/gemini';
+import { pickImageFromGoogleDrive } from '../services/googleDrivePicker';
 import { DEFAULT_AI_MODEL_IMAGE } from '../constants';
 import { ImageLightbox } from './ImageLightbox';
 
@@ -38,6 +39,7 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
   const [additionalPrices, setAdditionalPrices] = useState<AdditionalPrice[]>([]);
   const [calculatedPriceOverrides, setCalculatedPriceOverrides] = useState<Record<number, number>>({});
 
+  const [driveImporting, setDriveImporting] = useState(false);
   const [modelling, setModelling] = useState(false);
   const [aiModellingEnabled, setAiModellingEnabled] = useState(false);
   const [modellingOption, setModellingOption] = useState<'colors' | 'variants'>('colors');
@@ -177,6 +179,22 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
 
   const handleCameraCapture = () => {
     cameraInputRef.current?.click();
+  };
+
+  const handleDriveImport = async () => {
+    setDriveImporting(true);
+    try {
+      const dataUrl = await pickImageFromGoogleDrive();
+      if (dataUrl) {
+        setPreview(dataUrl);
+      }
+    } catch (e: unknown) {
+      console.error(e);
+      const msg = e instanceof Error ? e.message : 'Could not import from Google Drive.';
+      alert(msg);
+    } finally {
+      setDriveImporting(false);
+    }
   };
 
   const handleVariantChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -406,13 +424,18 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
               </button>
               <button
                 type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 px-2 sm:px-3 py-2.5 bg-sky-50 hover:bg-sky-100 text-sky-900 border border-sky-200 rounded-xl font-medium text-xs sm:text-sm transition-colors touch-target"
-                aria-label="Import image from Google Drive or cloud storage"
-                title="Opens the file picker — choose Google Drive, iCloud, OneDrive, or Files"
+                disabled={driveImporting}
+                onClick={() => void handleDriveImport()}
+                className="flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 px-2 sm:px-3 py-2.5 bg-sky-50 hover:bg-sky-100 text-sky-900 border border-sky-200 rounded-xl font-medium text-xs sm:text-sm transition-colors touch-target disabled:opacity-60"
+                aria-label="Import image from Google Drive"
+                title="Choose a photo from Google Drive"
               >
-                <Cloud className="w-4 h-4 shrink-0" />
-                <span className="text-center leading-tight">Drive / cloud</span>
+                {driveImporting ? (
+                  <Loader2 className="w-4 h-4 shrink-0 animate-spin" />
+                ) : (
+                  <Cloud className="w-4 h-4 shrink-0" />
+                )}
+                <span className="text-center leading-tight">Google Drive</span>
               </button>
               <button
                 type="button"
@@ -423,9 +446,6 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
                 <span className="text-center leading-tight">Camera</span>
               </button>
             </div>
-            <p className="text-[10px] text-gray-500 text-center leading-snug">
-              Drive / cloud uses your device’s file picker — pick Google Drive, iCloud, or other storage when shown.
-            </p>
           </div>
 
           <div className="space-y-4 border-2 border-indigo-50 p-6 rounded-2xl bg-indigo-50/30">
