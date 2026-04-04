@@ -136,17 +136,13 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
         // Draw background image with high quality
         ctx.drawImage(img, 0, 0, width, height);
 
-        // Calculate banner height based on content
-        const bannerHeight = Math.max(Math.floor(height * 0.18), 120);
-        const padding = Math.floor(width * 0.04);
-        const fontSize = Math.max(20, Math.floor(height * 0.035));
-        const lineHeight = fontSize * 1.4;
+        // Bottom label bar — solid black, modest height (~15–18%), smaller type (reference: subtle vs product)
+        const bannerHeight = Math.max(Math.floor(height * 0.17), 72);
+        const padding = Math.floor(width * 0.035);
+        const fontSize = Math.max(12, Math.floor(height * 0.018));
+        const lineHeight = fontSize * 1.38;
         
-        // 1. Semi-transparent overlay for better text readability
-        const gradient = ctx.createLinearGradient(0, height - bannerHeight, 0, height);
-        gradient.addColorStop(0, 'rgba(0, 0, 0, 0.7)');
-        gradient.addColorStop(1, 'rgba(0, 0, 0, 0.95)');
-        ctx.fillStyle = gradient;
+        ctx.fillStyle = '#000000';
         ctx.fillRect(0, height - bannerHeight, width, bannerHeight);
 
         // 2. Prepare content lines
@@ -188,8 +184,8 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
           lines.push(desc);
         }
 
-        // 3. Render text with better formatting and word wrapping
-        ctx.font = `bold ${fontSize}px -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif`;
+        // 3. Label text — clean white on black (no logo overlay on photo)
+        ctx.font = `600 ${fontSize}px -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif`;
         ctx.fillStyle = '#ffffff';
         ctx.textBaseline = 'top';
         ctx.textAlign = 'left';
@@ -198,7 +194,6 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
         let yPos = height - bannerHeight + padding;
         
         lines.forEach((line) => {
-          // Word wrap for long lines
           const words = line.split(' ');
           let currentLine = '';
           
@@ -207,17 +202,7 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
             const metrics = ctx.measureText(testLine);
             
             if (metrics.width > textMaxWidth && currentLine) {
-              // Draw current line and start new one
-              ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
-              ctx.shadowBlur = 4;
-              ctx.shadowOffsetX = 0;
-              ctx.shadowOffsetY = 2;
               ctx.fillText(currentLine, padding, yPos);
-              ctx.shadowColor = 'transparent';
-              ctx.shadowBlur = 0;
-              ctx.shadowOffsetX = 0;
-              ctx.shadowOffsetY = 0;
-              
               yPos += lineHeight;
               currentLine = word;
             } else {
@@ -225,38 +210,11 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
             }
           });
           
-          // Draw remaining text
           if (currentLine) {
-            ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
-            ctx.shadowBlur = 4;
-            ctx.shadowOffsetX = 0;
-            ctx.shadowOffsetY = 2;
             ctx.fillText(currentLine, padding, yPos);
-            ctx.shadowColor = 'transparent';
-            ctx.shadowBlur = 0;
-            ctx.shadowOffsetX = 0;
-            ctx.shadowOffsetY = 0;
-            
             yPos += lineHeight;
           }
         });
-
-        // 4. Brand badge (Top Right) - only if space allows
-        if (width > 400) {
-          const tagW = Math.min(Math.floor(width * 0.3), 200);
-          const tagH = Math.floor(height * 0.06);
-          const tagX = width - tagW - 20;
-          const tagY = 20;
-          
-          ctx.fillStyle = '#4f46e5';
-          ctx.fillRect(tagX, tagY, tagW, tagH);
-          
-          ctx.fillStyle = 'white';
-          ctx.font = `900 ${Math.floor(fontSize * 0.7)}px -apple-system, BlinkMacSystemFont, 'Inter', sans-serif`;
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          ctx.fillText('TEXTILE HUB', tagX + (tagW / 2), tagY + (tagH / 2));
-        }
 
         canvas.toBlob((blob) => {
           if (blob) resolve(blob);
@@ -293,7 +251,7 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
           const { design, imageUrl } = jobs[i];
           const blob = await generateBrandedImage(design, imageUrl);
           blobs.push(blob);
-          files.push(new File([blob], `TextileHub_Design_${i + 1}.jpg`, { type: 'image/jpeg' }));
+          files.push(new File([blob], `design-${i + 1}.jpg`, { type: 'image/jpeg' }));
         } catch (error) {
           console.error(`Failed to generate image ${i + 1}:`, error);
         }
@@ -303,37 +261,32 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
         throw new Error('Failed to generate any images');
       }
 
-      const imgWord = blobs.length === 1 ? 'image' : 'images';
-      const caption = `📦 TextileHub Catalogue\n\n${blobs.length} ${imgWord} attached. Check the images for details! 🎨`;
-
-      // Priority 1: Mobile Native Sharing API (best for WhatsApp on mobile)
+      // Priority 1: Mobile Native Sharing API — share files only (no TextileHub caption; labels are on the images)
       if (isMobile && navigator.share) {
         try {
           // Check if files can be shared
           if (navigator.canShare && navigator.canShare({ files })) {
             await navigator.share({
-              files: files,
-              title: 'TextileHub Design Catalogue',
-              text: caption,
+              files,
             });
             onClose();
             setProcessing(false);
             return;
           } else {
             // Fallback: share without files (some browsers don't support file sharing)
-            // User can attach manually
-            const textWithInfo = `${caption}\n\n${selectedDesigns.map((d, i) => 
-              `${i + 1}. ${d.fabric} - ₹${(d.basePrice || d.retailPrice || 0).toLocaleString()}`
-            ).join('\n')}`;
-            
+            const textWithInfo = selectedDesigns
+              .map(
+                (d, i) =>
+                  `${i + 1}. ${d.fabric} — ₹${(d.basePrice || d.retailPrice || 0).toLocaleString()}`
+              )
+              .join('\n');
+
             if (navigator.canShare({ text: textWithInfo })) {
               await navigator.share({
                 text: textWithInfo,
-                title: 'TextileHub Catalogue',
               });
-              // Still download images for manual attachment
               for (let i = 0; i < blobs.length; i++) {
-                downloadOne(blobs[i], `TextileHub_Design_${i + 1}.jpg`);
+                downloadOne(blobs[i], `design-${i + 1}.jpg`);
                 if (blobs.length > 1) await new Promise(r => setTimeout(r, 300));
               }
               onClose();
@@ -352,7 +305,7 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
       // Priority 2: WhatsApp Web API (works on desktop and mobile browsers)
       // First download images, then open WhatsApp
       for (let i = 0; i < blobs.length; i++) {
-        downloadOne(blobs[i], `TextileHub_Design_${i + 1}.jpg`);
+        downloadOne(blobs[i], `design-${i + 1}.jpg`);
         if (blobs.length > 1) await new Promise(r => setTimeout(r, 300));
       }
 
@@ -368,14 +321,8 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
   };
 
   const openWhatsAppLink = () => {
-    const n = lastPreparedImageCount || shareJobs.length;
-    const imgWord = n === 1 ? 'image' : 'images';
-    const caption = `📦 TextileHub Catalogue\n\n${n} ${imgWord} attached. Check the images for details! 🎨`;
-    
-    // Use WhatsApp API - works on both mobile and desktop
-    const waUrl = `https://wa.me/?text=${encodeURIComponent(caption)}`;
-    
-    // Try to open in new tab/window
+    const waUrl = 'https://wa.me/';
+
     const newWindow = window.open(waUrl, '_blank');
     
     // If popup blocked, try direct navigation (mobile)
