@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { X, Upload, IndianRupee, Camera, Plus, Trash2, Sparkles, Loader2, Maximize2 } from 'lucide-react';
+import { X, Upload, IndianRupee, Camera, Plus, Trash2, Sparkles, Loader2, Maximize2, Cloud } from 'lucide-react';
 import { HexColorPicker } from 'react-colorful';
 import { TextileDesign, AdditionalPrice } from '../types';
 import { cataloguesApi, designsApi } from '../services/api';
@@ -395,24 +395,37 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
               />
             </div>
 
-            <div className="flex gap-2">
+            <div className="grid grid-cols-3 gap-2">
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-gray-100 hover:bg-gray-200 rounded-xl font-medium text-sm transition-colors"
+                className="flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 px-2 sm:px-3 py-2.5 bg-gray-100 hover:bg-gray-200 rounded-xl font-medium text-xs sm:text-sm transition-colors touch-target"
               >
-                <Upload className="w-4 h-4" />
-                Gallery
+                <Upload className="w-4 h-4 shrink-0" />
+                <span className="text-center leading-tight">Gallery</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 px-2 sm:px-3 py-2.5 bg-sky-50 hover:bg-sky-100 text-sky-900 border border-sky-200 rounded-xl font-medium text-xs sm:text-sm transition-colors touch-target"
+                aria-label="Import image from Google Drive or cloud storage"
+                title="Opens the file picker — choose Google Drive, iCloud, OneDrive, or Files"
+              >
+                <Cloud className="w-4 h-4 shrink-0" />
+                <span className="text-center leading-tight">Drive / cloud</span>
               </button>
               <button
                 type="button"
                 onClick={handleCameraCapture}
-                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 rounded-xl font-medium text-sm transition-colors"
+                className="flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 px-2 sm:px-3 py-2.5 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 rounded-xl font-medium text-xs sm:text-sm transition-colors touch-target"
               >
-                <Camera className="w-4 h-4" />
-                Camera
+                <Camera className="w-4 h-4 shrink-0" />
+                <span className="text-center leading-tight">Camera</span>
               </button>
             </div>
+            <p className="text-[10px] text-gray-500 text-center leading-snug">
+              Drive / cloud uses your device’s file picker — pick Google Drive, iCloud, or other storage when shown.
+            </p>
           </div>
 
           <div className="space-y-4 border-2 border-indigo-50 p-6 rounded-2xl bg-indigo-50/30">
