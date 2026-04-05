@@ -51,6 +51,10 @@ export interface ShareOptions {
   includeFabric: boolean;
   includeDescription: boolean;
   includeFirmName: boolean;
+  /** Show catalogue name on the shared image label */
+  includeCatalogueName: boolean;
+  /** Show design name / number on the shared image label */
+  includeDesignName: boolean;
 }
 
 export interface Contact {

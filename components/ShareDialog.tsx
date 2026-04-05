@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { X, MessageCircle, CheckSquare, Square, Loader2, Download, Eye, AlertCircle, Send, Link2 } from 'lucide-react';
 import { TextileDesign, ShareOptions } from '../types';
+import { loadSharePreferences, saveSharePreferences } from '../services/sharePreferences';
 
 /** Which image to use per design when generating WhatsApp assets (original / variant index / all). */
 function getShareJobs(
@@ -43,14 +44,11 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
   const [readyToLink, setReadyToLink] = useState(false);
   const [lastPreparedImageCount, setLastPreparedImageCount] = useState(0);
   const [shareMode, setShareMode] = useState<'whatsapp' | 'link'>('whatsapp');
-  const [options, setOptions] = useState<ShareOptions>({
-    includeWholesale: false,
-    includeRetail: true,
-    includeFabric: true,
-    includeDescription: false,
-    includeFirmName: false
+  const [options, setOptions] = useState<ShareOptions>(() => loadSharePreferences().options);
+  const [selectedPriceType, setSelectedPriceType] = useState<string>(() => {
+    const p = loadSharePreferences();
+    return p.selectedPriceType;
   });
-  const [selectedPriceType, setSelectedPriceType] = useState<string>('base'); // 'base' or name of additional price
   const [imageChoice, setImageChoice] = useState<Record<string, string>>({});
 
   const previewUrlRef = useRef<string | null>(null);
@@ -72,6 +70,10 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
       return next;
     });
   }, [selectedDesigns]);
+
+  useEffect(() => {
+    saveSharePreferences({ options, selectedPriceType });
+  }, [options, selectedPriceType]);
 
   useEffect(() => {
     let isMounted = true;
@@ -159,7 +161,19 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
         if (options.includeFirmName && userFirmName) {
           lines.push(`Firm: ${userFirmName}`);
         }
-        
+
+        if (options.includeCatalogueName && design.catalogueName?.trim()) {
+          lines.push(`Catalogue: ${design.catalogueName.trim()}`);
+        }
+
+        if (options.includeDesignName) {
+          const designLabel =
+            design.name?.trim() || design.designCode?.trim();
+          if (designLabel) {
+            lines.push(`Design: ${designLabel}`);
+          }
+        }
+
         if (options.includeFabric && design.fabric) {
           lines.push(`Fabric: ${design.fabric}`);
         }
@@ -483,6 +497,8 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
               {/* Other Options */}
               <div className="grid grid-cols-2 gap-3">
                 {[
+                  { id: 'includeCatalogueName', label: 'Catalogue name', key: 'includeCatalogueName' },
+                  { id: 'includeDesignName', label: 'Design name / No.', key: 'includeDesignName' },
                   { id: 'includeFabric', label: 'Fabric Info', key: 'includeFabric' },
                   { id: 'includeDescription', label: 'Description', key: 'includeDescription' },
                   { id: 'includeFirmName', label: 'Firm Name', key: 'includeFirmName' }

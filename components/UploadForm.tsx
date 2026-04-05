@@ -27,7 +27,6 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
     name: '',
     catalogueId: '',
     basePrice: '',
-    designCode: '',
     color: '',
     stockQuantity: '',
     stockUnit: 'pcs' as 'pcs' | 'mtrs',
@@ -66,7 +65,6 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
         name: initialData.name || '',
         catalogueId: initialData.catalogueId || '',
         basePrice: (initialData.basePrice || initialData.retailPrice || 0).toString(),
-        designCode: initialData.designCode || '',
         color: initialData.color || '',
         stockQuantity: initialData.stockQuantity?.toString() || '',
         stockUnit: (initialData.stockUnit as 'pcs' | 'mtrs') || 'pcs',
@@ -86,7 +84,6 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
         name: '',
         catalogueId: '',
         basePrice: '',
-        designCode: '',
         color: '',
         stockQuantity: '',
         stockUnit: 'pcs',
@@ -130,7 +127,6 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
           ...prev,
           catalogueId,
           basePrice: (d.basePrice ?? d.retailPrice ?? 0).toString(),
-          designCode: d.designCode ?? '',
           color: d.color ?? '',
           stockQuantity: d.stockQuantity?.toString() ?? '',
           stockUnit: (d.stockUnit as 'pcs' | 'mtrs') || 'pcs',
@@ -342,7 +338,6 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
       catalogueId: formData.catalogueId || undefined,
       catalogueName: catalogues.find(c => c.id === formData.catalogueId)?.name,
       image: imageToUse,
-      designCode: formData.designCode || undefined,
       color: formData.color || undefined,
       stockQuantity: formData.stockQuantity ? Number(formData.stockQuantity) : undefined,
       stockUnit: formData.stockUnit,
@@ -775,41 +770,29 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
             )}
           </div>
 
-          {/* Design Name */}
+          {/* Design Name / Number */}
           <div className="space-y-1">
-            <label className="text-sm font-semibold text-gray-700">Design Name *</label>
+            <label className="text-sm font-semibold text-gray-700">Design Name / Number *</label>
             <input
               required
               type="text"
               className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
-              placeholder="Enter design name"
+              placeholder="e.g. Summer-12 or SKU-045"
               value={formData.name}
               onChange={e => setFormData({...formData, name: e.target.value})}
             />
           </div>
 
           {/* Design Metadata */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1">
-              <label className="text-sm font-semibold text-gray-700">Design Code</label>
-              <input
-                type="text"
-                className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
-                placeholder="e.g. D45"
-                value={formData.designCode}
-                onChange={e => setFormData({...formData, designCode: e.target.value})}
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-sm font-semibold text-gray-700">Color</label>
-              <input
-                type="text"
-                className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
-                placeholder="e.g. Blue"
-                value={formData.color}
-                onChange={e => setFormData({...formData, color: e.target.value})}
-              />
-            </div>
+          <div className="space-y-1">
+            <label className="text-sm font-semibold text-gray-700">Color</label>
+            <input
+              type="text"
+              className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+              placeholder="e.g. Blue"
+              value={formData.color}
+              onChange={e => setFormData({...formData, color: e.target.value})}
+            />
           </div>
 
           <div className="space-y-3">
