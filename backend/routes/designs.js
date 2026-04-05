@@ -7,6 +7,24 @@ import { requireActiveSubscription, requireActiveSubscriptionIfAuthenticated } f
 const router = express.Router();
 const prisma = new PrismaClient();
 
+/** When the client sends calculatedPrice (e.g. user rounded 103.95 → 104), keep it instead of recomputing from %. */
+function resolveAdditionalPriceCalculated(ap, basePriceNum) {
+  let fromFormula = basePriceNum;
+  if (ap.type === 'percentage') {
+    fromFormula = basePriceNum * (1 + ap.value / 100);
+  } else if (ap.type === 'fixed') {
+    fromFormula = basePriceNum + ap.value;
+  }
+  const override = ap.calculatedPrice;
+  if (override !== undefined && override !== null) {
+    const n = typeof override === 'number' ? override : parseFloat(String(override));
+    if (Number.isFinite(n)) {
+      return n;
+    }
+  }
+  return fromFormula;
+}
+
 // Get all designs (with optional auth for user-specific filtering)
 router.get('/', optionalAuth, requireActiveSubscriptionIfAuthenticated, async (req, res, next) => {
   try {
@@ -192,21 +210,15 @@ router.post('/', authenticateToken, requireActiveSubscription, [
     let wholesalePrice = wsPrice ? parseFloat(wsPrice) : basePriceNum;
     let retailPrice = rtPrice ? parseFloat(rtPrice) : basePriceNum;
     
-    // If additionalPrices provided, calculate them
-    const processedAdditionalPrices = additionalPrices ? additionalPrices.map((ap) => {
-      let calculatedPrice = basePriceNum;
-      if (ap.type === 'percentage') {
-        calculatedPrice = basePriceNum * (1 + ap.value / 100);
-      } else if (ap.type === 'fixed') {
-        calculatedPrice = basePriceNum + ap.value;
-      }
-      return {
-        name: ap.name,
-        type: ap.type,
-        value: ap.value,
-        calculatedPrice: calculatedPrice
-      };
-    }) : null;
+    // If additionalPrices provided, calculate them (preserve client calculatedPrice when sent)
+    const processedAdditionalPrices = additionalPrices
+      ? additionalPrices.map((ap) => ({
+          name: ap.name,
+          type: ap.type,
+          value: ap.value,
+          calculatedPrice: resolveAdditionalPriceCalculated(ap, basePriceNum)
+        }))
+      : null;
 
     const design = await prisma.design.create({
       data: {
@@ -329,21 +341,13 @@ router.put('/:id', authenticateToken, requireActiveSubscription, [
     }
     
     if (req.body.additionalPrices !== undefined) {
-      const basePriceNum = updateData.basePrice || existing.basePrice || existing.retailPrice || 0;
-      const processedAdditionalPrices = req.body.additionalPrices.map((ap) => {
-        let calculatedPrice = basePriceNum;
-        if (ap.type === 'percentage') {
-          calculatedPrice = basePriceNum * (1 + ap.value / 100);
-        } else if (ap.type === 'fixed') {
-          calculatedPrice = basePriceNum + ap.value;
-        }
-        return {
-          name: ap.name,
-          type: ap.type,
-          value: ap.value,
-          calculatedPrice: calculatedPrice
-        };
-      });
+      const basePriceNum = updateData.basePrice ?? existing.basePrice ?? existing.retailPrice ?? 0;
+      const processedAdditionalPrices = req.body.additionalPrices.map((ap) => ({
+        name: ap.name,
+        type: ap.type,
+        value: ap.value,
+        calculatedPrice: resolveAdditionalPriceCalculated(ap, basePriceNum)
+      }));
       updateData.additionalPrices = processedAdditionalPrices;
     }
     if (req.body.aiModels !== undefined) {

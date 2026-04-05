@@ -99,7 +99,12 @@ export const designsApi = {
     pcsPerParcel?: number;
     moq?: number;
     basePrice: number;
-    additionalPrices?: Array<{ name: string; type: 'percentage' | 'fixed'; value: number }>;
+    additionalPrices?: Array<{
+      name: string;
+      type: 'percentage' | 'fixed';
+      value: number;
+      calculatedPrice?: number;
+    }>;
     fabric: string;
     description?: string;
     catalogueId?: string;
@@ -121,7 +126,12 @@ export const designsApi = {
     pcsPerParcel?: number;
     moq?: number;
     basePrice?: number;
-    additionalPrices?: Array<{ name: string; type: 'percentage' | 'fixed'; value: number }>;
+    additionalPrices?: Array<{
+      name: string;
+      type: 'percentage' | 'fixed';
+      value: number;
+      calculatedPrice?: number;
+    }>;
     fabric?: string;
     description?: string;
     catalogueId?: string;

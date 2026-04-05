@@ -215,7 +215,10 @@ const App: React.FC = () => {
         additionalPrices: design.additionalPrices?.map(ap => ({
           name: ap.name,
           type: ap.type,
-          value: ap.value
+          value: ap.value,
+          ...(typeof ap.calculatedPrice === 'number' && Number.isFinite(ap.calculatedPrice)
+            ? { calculatedPrice: ap.calculatedPrice }
+            : {})
         })),
         fabric: design.fabric,
         description: design.description,
@@ -278,7 +281,10 @@ const App: React.FC = () => {
         additionalPrices: design.additionalPrices?.map(ap => ({
           name: ap.name,
           type: ap.type,
-          value: ap.value
+          value: ap.value,
+          ...(typeof ap.calculatedPrice === 'number' && Number.isFinite(ap.calculatedPrice)
+            ? { calculatedPrice: ap.calculatedPrice }
+            : {})
         })),
         fabric: design.fabric,
         description: design.description,
