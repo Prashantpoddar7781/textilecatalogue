@@ -154,35 +154,34 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
         ctx.fillStyle = '#000000';
         ctx.fillRect(0, photoH, width, bannerH);
 
-        // 2. Prepare content lines
-        const lines: string[] = [];
-        
-        // Firm name at the top if included
+        // 2. Prepare two columns: left = firm, fabric, price, description; right = catalogue + design
+        const leftLines: string[] = [];
+        const rightLines: string[] = [];
+
         if (options.includeFirmName && userFirmName) {
-          lines.push(`Firm: ${userFirmName}`);
+          leftLines.push(`Firm: ${userFirmName}`);
         }
 
         if (options.includeCatalogueName && design.catalogueName?.trim()) {
-          lines.push(`Catalogue: ${design.catalogueName.trim()}`);
+          rightLines.push(`Catalogue: ${design.catalogueName.trim()}`);
         }
 
         if (options.includeDesignName) {
           const designLabel =
             design.name?.trim() || design.designCode?.trim();
           if (designLabel) {
-            lines.push(`Design: ${designLabel}`);
+            rightLines.push(`Design: ${designLabel}`);
           }
         }
 
         if (options.includeFabric && design.fabric) {
-          lines.push(`Fabric: ${design.fabric}`);
+          leftLines.push(`Fabric: ${design.fabric}`);
         }
-        
-        // Show selected price type
+
         if (options.includeRetail || options.includeWholesale) {
           let priceToShow = design.basePrice || design.retailPrice || 0;
           let priceLabel = 'Price';
-          
+
           if (selectedPriceType === 'base') {
             priceToShow = design.basePrice || design.retailPrice || 0;
             priceLabel = 'Price';
@@ -193,49 +192,78 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
               priceLabel = selectedPrice.name;
             }
           }
-          
-          lines.push(`${priceLabel}: ₹${priceToShow.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`);
+
+          leftLines.push(`${priceLabel}: ₹${priceToShow.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`);
         }
         if (options.includeDescription && design.description) {
-          // Truncate description if too long
           const maxDescLength = 60;
-          const desc = design.description.length > maxDescLength 
-            ? design.description.substring(0, maxDescLength) + '...'
-            : design.description;
-          lines.push(desc);
+          const desc =
+            design.description.length > maxDescLength
+              ? design.description.substring(0, maxDescLength) + '...'
+              : design.description;
+          leftLines.push(desc);
         }
 
-        // 3. Label text — clean white on black (no logo overlay on photo)
-        ctx.font = `600 ${fontSize}px -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif`;
-        ctx.fillStyle = '#ffffff';
-        ctx.textBaseline = 'top';
-        ctx.textAlign = 'left';
-        
-        const textMaxWidth = width - (padding * 2);
-        let yPos = photoH + padding;
-        
-        lines.forEach((line) => {
-          const words = line.split(' ');
+        const wrapParagraph = (text: string, maxW: number): string[] => {
+          const words = text.split(' ');
+          const out: string[] = [];
           let currentLine = '';
-          
-          words.forEach((word) => {
+          words.forEach(word => {
             const testLine = currentLine + (currentLine ? ' ' : '') + word;
             const metrics = ctx.measureText(testLine);
-            
-            if (metrics.width > textMaxWidth && currentLine) {
-              ctx.fillText(currentLine, padding, yPos);
-              yPos += lineHeight;
+            if (metrics.width > maxW && currentLine) {
+              out.push(currentLine);
               currentLine = word;
             } else {
               currentLine = testLine;
             }
           });
-          
-          if (currentLine) {
-            ctx.fillText(currentLine, padding, yPos);
-            yPos += lineHeight;
-          }
+          if (currentLine) out.push(currentLine);
+          return out;
+        };
+
+        const flattenWrapped = (raw: string[], maxW: number): string[] => {
+          const out: string[] = [];
+          raw.forEach(line => {
+            out.push(...wrapParagraph(line, maxW));
+          });
+          return out;
+        };
+
+        // 3. Label text — two columns when right column has content
+        ctx.font = `600 ${fontSize}px -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif`;
+        ctx.fillStyle = '#ffffff';
+        ctx.textBaseline = 'top';
+
+        const innerW = width - padding * 2;
+        const colGap = Math.max(12, Math.round(fontSize * 0.75));
+        const hasRight = rightLines.length > 0;
+        const leftColW = hasRight ? Math.floor((innerW - colGap) * 0.54) : innerW;
+        const rightColW = hasRight ? innerW - colGap - leftColW : 0;
+
+        const leftWrapped = flattenWrapped(leftLines, leftColW);
+        const rightWrapped = hasRight ? flattenWrapped(rightLines, rightColW) : [];
+
+        const leftX = padding;
+        const rightEdgeX = width - padding;
+        let yLeft = photoH + padding;
+        let yRight = photoH + padding;
+
+        ctx.textAlign = 'left';
+        leftWrapped.forEach(line => {
+          ctx.fillText(line, leftX, yLeft);
+          yLeft += lineHeight;
         });
+
+        if (hasRight && rightWrapped.length > 0) {
+          ctx.textAlign = 'right';
+          rightWrapped.forEach(line => {
+            ctx.fillText(line, rightEdgeX, yRight);
+            yRight += lineHeight;
+          });
+        }
+
+        ctx.textAlign = 'left';
 
         canvas.toBlob((blob) => {
           if (blob) resolve(blob);
