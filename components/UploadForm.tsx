@@ -74,7 +74,13 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
         description: initialData.description || ''
       });
       setAdditionalPrices(initialData.additionalPrices || []);
-      setCalculatedPriceOverrides({});
+      const editOverrides: Record<number, number> = {};
+      (initialData.additionalPrices || []).forEach((ap, i) => {
+        if (typeof ap.calculatedPrice === 'number' && Number.isFinite(ap.calculatedPrice)) {
+          editOverrides[i] = ap.calculatedPrice;
+        }
+      });
+      setCalculatedPriceOverrides(editOverrides);
       setPreview(initialData.image);
       setGeneratedModels(initialData.aiModels ?? []);
       setGeneratingSlots(null);
@@ -135,13 +141,20 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
           fabric: d.fabric ?? '',
           description: d.description ?? ''
         }));
-        setAdditionalPrices(d.additionalPrices?.map((ap: any) => ({
+        const mapped = d.additionalPrices?.map((ap: any) => ({
           name: ap.name ?? '',
           type: ap.type ?? 'percentage',
           value: ap.value ?? 0,
           calculatedPrice: ap.calculatedPrice
-        })) ?? []);
-        setCalculatedPriceOverrides({});
+        })) ?? [];
+        setAdditionalPrices(mapped);
+        const catOverrides: Record<number, number> = {};
+        mapped.forEach((ap, i) => {
+          if (typeof ap.calculatedPrice === 'number' && Number.isFinite(ap.calculatedPrice)) {
+            catOverrides[i] = ap.calculatedPrice;
+          }
+        });
+        setCalculatedPriceOverrides(catOverrides);
       }
     } catch (err) {
       console.warn('Could not load catalogue defaults', err);
