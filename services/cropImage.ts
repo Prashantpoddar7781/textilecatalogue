@@ -1,26 +1,21 @@
-import type { Area } from 'react-easy-crop';
+import type { PixelCrop } from 'react-image-crop';
 
-function loadImage(src: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const image = new Image();
-    image.addEventListener('load', () => resolve(image));
-    image.addEventListener('error', err => reject(err));
-    image.src = src;
-  });
-}
+/** Export cropped region to JPEG data URL. `pixelCrop` is in **display** pixels (from react-image-crop). */
+export function getCroppedImgDataUrl(image: HTMLImageElement, pixelCrop: PixelCrop): string {
+  const scaleX = image.naturalWidth / image.width;
+  const scaleY = image.naturalHeight / image.height;
+  const sx = pixelCrop.x * scaleX;
+  const sy = pixelCrop.y * scaleY;
+  const sWidth = pixelCrop.width * scaleX;
+  const sHeight = pixelCrop.height * scaleY;
 
-/** Renders the cropped region to a JPEG data URL (matches app image quality). */
-export async function getCroppedImgDataUrl(imageSrc: string, pixelCrop: Area): Promise<string> {
-  const image = await loadImage(imageSrc);
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('Could not get canvas context');
+  if (sWidth <= 0 || sHeight <= 0) throw new Error('Invalid crop area');
 
-  const { width, height, x, y } = pixelCrop;
-  if (width <= 0 || height <= 0) throw new Error('Invalid crop area');
-
-  canvas.width = width;
-  canvas.height = height;
-  ctx.drawImage(image, x, y, width, height, 0, 0, width, height);
+  canvas.width = Math.max(1, Math.round(sWidth));
+  canvas.height = Math.max(1, Math.round(sHeight));
+  ctx.drawImage(image, sx, sy, sWidth, sHeight, 0, 0, canvas.width, canvas.height);
   return canvas.toDataURL('image/jpeg', 0.92);
 }

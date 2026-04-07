@@ -1056,6 +1056,7 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
 
       {cropSource && (
         <ImageCropDialog
+          key={cropSource}
           imageSrc={cropSource}
           onCancel={() => setCropSource(null)}
           onComplete={dataUrl => {
