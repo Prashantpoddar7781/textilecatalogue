@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { X, Upload, IndianRupee, Camera, Plus, Trash2, Sparkles, Loader2, Maximize2, Cloud } from 'lucide-react';
+import { X, Upload, IndianRupee, Camera, Plus, Trash2, Sparkles, Loader2, Maximize2, Cloud, Crop } from 'lucide-react';
 import { HexColorPicker } from 'react-colorful';
 import { TextileDesign, AdditionalPrice } from '../types';
 import { cataloguesApi, designsApi } from '../services/api';
@@ -7,6 +7,7 @@ import { generateAIModelling, ensureModelImageDataUrl, resizeProductImageForGemi
 import { pickImageFromGoogleDrive } from '../services/googleDrivePicker';
 import { DEFAULT_AI_MODEL_IMAGE } from '../constants';
 import { ImageLightbox } from './ImageLightbox';
+import { ImageCropDialog } from './ImageCropDialog';
 
 interface Props {
   onClose: () => void;
@@ -52,6 +53,8 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
   const [currentColor, setCurrentColor] = useState('#ff0000');
   const variantInputRef = useRef<HTMLInputElement>(null);
   const modelInputRef = useRef<HTMLInputElement>(null);
+  /** When set, full-screen crop UI is shown for this image (data URL). */
+  const [cropSource, setCropSource] = useState<string | null>(null);
 
   // Load catalogues on mount
   useEffect(() => {
@@ -84,6 +87,7 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
       setPreview(initialData.image);
       setGeneratedModels(initialData.aiModels ?? []);
       setGeneratingSlots(null);
+      setCropSource(null);
     } else {
       // Reset form when not editing
       setFormData({
@@ -109,6 +113,7 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
       setVariantPreviews([]);
       setCustomModelImage(null);
       setCurrentColor('#ff0000');
+      setCropSource(null);
     }
   }, [initialData]);
 
@@ -180,10 +185,11 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
     if (file) {
       const reader = new FileReader();
       reader.onloadend = () => {
-        setPreview(reader.result as string);
+        setCropSource(reader.result as string);
       };
       reader.readAsDataURL(file);
     }
+    e.target.value = '';
   };
 
   const handleCameraCapture = () => {
@@ -195,7 +201,7 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
     try {
       const dataUrl = await pickImageFromGoogleDrive();
       if (dataUrl) {
-        setPreview(dataUrl);
+        setCropSource(dataUrl);
       }
     } catch (e: unknown) {
       console.error(e);
@@ -421,7 +427,7 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
               />
             </div>
 
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
@@ -452,6 +458,16 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
               >
                 <Camera className="w-4 h-4 shrink-0" />
                 <span className="text-center leading-tight">Camera</span>
+              </button>
+              <button
+                type="button"
+                disabled={!preview}
+                onClick={() => preview && setCropSource(preview)}
+                className="flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 px-2 sm:px-3 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-200 rounded-xl font-medium text-xs sm:text-sm transition-colors touch-target disabled:opacity-40 disabled:cursor-not-allowed"
+                title={preview ? 'Crop the current image' : 'Add an image first'}
+              >
+                <Crop className="w-4 h-4 shrink-0" />
+                <span className="text-center leading-tight">Crop</span>
               </button>
             </div>
           </div>
@@ -1035,6 +1051,17 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
           initialIndex={lightbox.index}
           onClose={() => setLightbox(null)}
           title="AI generated"
+        />
+      )}
+
+      {cropSource && (
+        <ImageCropDialog
+          imageSrc={cropSource}
+          onCancel={() => setCropSource(null)}
+          onComplete={dataUrl => {
+            setPreview(dataUrl);
+            setCropSource(null);
+          }}
         />
       )}
     </div>
