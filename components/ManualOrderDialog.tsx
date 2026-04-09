@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { X, Package, LayoutGrid, Plus, Trash2, Loader2 } from 'lucide-react';
+import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
+import { X, Package, LayoutGrid, Plus, Trash2, Loader2, Search } from 'lucide-react';
 import { designsApi, ordersApi } from '../services/api';
 
 interface Props {
@@ -11,8 +11,121 @@ type Kind = 'open' | 'design';
 
 interface DesignOption {
   id: string;
-  name: string;
-  catalogueLabel?: string;
+  /** Single line: name / number as stored on the design */
+  displayLabel: string;
+  searchBlob: string;
+}
+
+function mapDesignsToOptions(designs: any[]): DesignOption[] {
+  return designs.map((d: any) => {
+    const name = (d.name || '').trim();
+    const code = (d.designCode || '').trim();
+    const displayLabel = name || code || 'Untitled';
+    const searchBlob = [name, code, (d.catalogue?.name || d.catalogueName || '').trim()]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+    return { id: d.id, displayLabel, searchBlob };
+  });
+}
+
+async function fetchAllDesignsPages(): Promise<any[]> {
+  const collected: any[] = [];
+  let page = 1;
+  const limit = 100;
+  for (;;) {
+    const res = await designsApi.getAll({ page, limit, sortBy: 'newest' });
+    const batch = res.designs || [];
+    collected.push(...batch);
+    const pages = res.pagination?.pages ?? 1;
+    if (page >= pages || batch.length === 0) break;
+    page += 1;
+  }
+  return collected;
+}
+
+function DesignSearchPicker({
+  options,
+  value,
+  onChange
+}: {
+  options: DesignOption[];
+  value: string;
+  onChange: (id: string) => void;
+}) {
+  const selected = options.find(o => o.id === value);
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const close = (e: MouseEvent) => {
+      if (!containerRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('click', close);
+    return () => document.removeEventListener('click', close);
+  }, []);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return options;
+    return options.filter(o => o.searchBlob.includes(q));
+  }, [options, query]);
+
+  const displayValue = open ? query : selected?.displayLabel ?? '';
+
+  return (
+    <div ref={containerRef} className="relative flex-1 min-w-0">
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+        <input
+          type="text"
+          className="w-full pl-9 pr-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-500"
+          placeholder="Search design name / number…"
+          value={displayValue}
+          onChange={e => {
+            setQuery(e.target.value);
+            setOpen(true);
+          }}
+          onFocus={() => {
+            setOpen(true);
+            setQuery('');
+          }}
+          autoComplete="off"
+          aria-autocomplete="list"
+          aria-expanded={open}
+        />
+      </div>
+      {open && (
+        <ul
+          className="absolute z-30 left-0 right-0 mt-1 max-h-52 overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-lg py-1"
+          role="listbox"
+        >
+          {filtered.length === 0 ? (
+            <li className="px-3 py-2 text-xs text-gray-500">No matches. Try another search.</li>
+          ) : (
+            filtered.slice(0, 120).map(o => (
+              <li key={o.id} role="option">
+                <button
+                  type="button"
+                  className={`w-full text-left px-3 py-2.5 text-sm hover:bg-indigo-50 ${
+                    value === o.id ? 'bg-indigo-50 font-semibold text-indigo-900' : 'text-gray-900'
+                  }`}
+                  onClick={() => {
+                    onChange(o.id);
+                    setOpen(false);
+                    setQuery('');
+                  }}
+                >
+                  {o.displayLabel}
+                </button>
+              </li>
+            ))
+          )}
+        </ul>
+      )}
+    </div>
+  );
 }
 
 export const ManualOrderDialog: React.FC<Props> = ({ onClose, onCreated }) => {
@@ -27,35 +140,29 @@ export const ManualOrderDialog: React.FC<Props> = ({ onClose, onCreated }) => {
 
   const [designOptions, setDesignOptions] = useState<DesignOption[]>([]);
   const [loadingDesigns, setLoadingDesigns] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        setLoadingDesigns(true);
-        const { designs } = await designsApi.getAll({ limit: 500, sortBy: 'newest' });
-        if (cancelled) return;
-        setDesignOptions(
-          (designs || []).map((d: any) => ({
-            id: d.id,
-            name: (d.name || 'Untitled').trim() || 'Untitled',
-            catalogueLabel: d.catalogue?.name || d.catalogueName
-          }))
-        );
-      } catch (e) {
-        console.error(e);
-      } finally {
-        if (!cancelled) setLoadingDesigns(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
+  const loadDesigns = useCallback(async () => {
+    setLoadingDesigns(true);
+    setLoadError(null);
+    try {
+      const raw = await fetchAllDesignsPages();
+      setDesignOptions(mapDesignsToOptions(raw));
+    } catch (e) {
+      console.error(e);
+      setLoadError('Could not load designs. Check your connection and subscription, then retry.');
+      setDesignOptions([]);
+    } finally {
+      setLoadingDesigns(false);
+    }
   }, []);
 
-  const labelForDesign = (d: DesignOption) =>
-    d.catalogueLabel ? `${d.name} · ${d.catalogueLabel}` : d.name;
+  useEffect(() => {
+    if (kind === 'design' && step === 'form') {
+      void loadDesigns();
+    }
+  }, [kind, step, loadDesigns]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -116,6 +223,9 @@ export const ManualOrderDialog: React.FC<Props> = ({ onClose, onCreated }) => {
   const pickKind = (k: Kind) => {
     setKind(k);
     setStep('form');
+    if (k === 'design') {
+      setLines([{ designId: '', quantity: '1' }]);
+    }
   };
 
   return (
@@ -154,7 +264,7 @@ export const ManualOrderDialog: React.FC<Props> = ({ onClose, onCreated }) => {
               </div>
               <div>
                 <p className="font-bold text-gray-900">Design order</p>
-                <p className="text-xs text-gray-500 mt-0.5">Pick designs from your catalogue and quantities.</p>
+                <p className="text-xs text-gray-500 mt-0.5">Search by design name / number and set quantities.</p>
               </div>
             </button>
           </div>
@@ -224,50 +334,54 @@ export const ManualOrderDialog: React.FC<Props> = ({ onClose, onCreated }) => {
                   </div>
 
                   <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <label className="text-sm font-semibold text-gray-700">Designs & quantities</label>
+                    <div className="flex items-center justify-between gap-2">
+                      <label className="text-sm font-semibold text-gray-700">Design name / number &amp; qty</label>
                       <button
                         type="button"
                         onClick={() => setLines(prev => [...prev, { designId: '', quantity: '1' }])}
-                        className="text-xs font-bold text-indigo-600 flex items-center gap-1 hover:underline"
+                        className="text-xs font-bold text-indigo-600 flex items-center gap-1 hover:underline shrink-0"
                       >
                         <Plus className="w-4 h-4" />
                         Add line
                       </button>
                     </div>
+
                     {loadingDesigns ? (
-                      <p className="text-xs text-gray-500 flex items-center gap-2">
+                      <p className="text-xs text-gray-500 flex items-center gap-2 py-2">
                         <Loader2 className="w-4 h-4 animate-spin" /> Loading designs…
                       </p>
+                    ) : loadError ? (
+                      <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 space-y-2">
+                        <p>{loadError}</p>
+                        <button
+                          type="button"
+                          onClick={() => void loadDesigns()}
+                          className="font-bold text-indigo-700 underline"
+                        >
+                          Retry
+                        </button>
+                      </div>
                     ) : designOptions.length === 0 ? (
                       <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-xl p-3">
-                        No designs in your catalogue yet. Add designs first.
+                        No designs found. Add designs in your catalogue first.
                       </p>
                     ) : (
-                      <div className="space-y-2">
+                      <div className="space-y-3">
                         {lines.map((line, idx) => (
                           <div key={idx} className="flex gap-2 items-start">
-                            <select
-                              className="flex-1 min-w-0 px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-500"
+                            <DesignSearchPicker
+                              options={designOptions}
                               value={line.designId}
-                              onChange={e => {
-                                const v = e.target.value;
+                              onChange={id => {
                                 setLines(prev =>
-                                  prev.map((row, i) => (i === idx ? { ...row, designId: v } : row))
+                                  prev.map((row, i) => (i === idx ? { ...row, designId: id } : row))
                                 );
                               }}
-                            >
-                              <option value="">Select design…</option>
-                              {designOptions.map(d => (
-                                <option key={d.id} value={d.id}>
-                                  {labelForDesign(d)}
-                                </option>
-                              ))}
-                            </select>
+                            />
                             <input
                               type="number"
                               min={1}
-                              className="w-24 px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500"
+                              className="w-24 px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500 shrink-0"
                               value={line.quantity}
                               onChange={e => {
                                 const v = e.target.value;
@@ -275,6 +389,7 @@ export const ManualOrderDialog: React.FC<Props> = ({ onClose, onCreated }) => {
                                   prev.map((row, i) => (i === idx ? { ...row, quantity: v } : row))
                                 );
                               }}
+                              aria-label="Quantity"
                             />
                             {lines.length > 1 && (
                               <button
@@ -305,7 +420,9 @@ export const ManualOrderDialog: React.FC<Props> = ({ onClose, onCreated }) => {
               </button>
               <button
                 type="submit"
-                disabled={submitting}
+                disabled={
+                  submitting || (kind === 'design' && (loadingDesigns || designOptions.length === 0))
+                }
                 className="flex-1 py-3 rounded-xl font-bold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 flex items-center justify-center gap-2"
               >
                 {submitting && <Loader2 className="w-4 h-4 animate-spin" />}

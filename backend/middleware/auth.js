@@ -21,13 +21,14 @@ export const optionalAuth = (req, res, next) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
 
-  if (token) {
-    jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key', (err, user) => {
-      if (!err) {
-        req.user = user;
-      }
-    });
+  if (!token) {
+    return next();
   }
-  next();
+  jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key', (err, user) => {
+    if (!err) {
+      req.user = user;
+    }
+    next();
+  });
 };
 

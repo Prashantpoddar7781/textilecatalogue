@@ -67,6 +67,8 @@ router.get('/', optionalAuth, requireActiveSubscriptionIfAuthenticated, async (r
 
     if (search) {
       where.OR = [
+        { name: { contains: search, mode: 'insensitive' } },
+        { designCode: { contains: search, mode: 'insensitive' } },
         { description: { contains: search, mode: 'insensitive' } },
         { fabric: { contains: search, mode: 'insensitive' } }
       ];
