@@ -313,6 +313,18 @@ export const ordersApi = {
   getAll: async () => {
     return request<{ orders: any[] }>('/orders');
   },
+  createManual: async (body: {
+    kind: 'open' | 'design';
+    buyerName: string;
+    remarks?: string;
+    parcelQuantity?: number;
+    lines?: Array<{ designId: string; quantity: number }>;
+  }) => {
+    return request<{ order?: any; orders?: any[]; manualBatchId?: string }>('/orders/manual', {
+      method: 'POST',
+      body: JSON.stringify(body)
+    });
+  },
   updateStatus: async (id: string, status: string) => {
     return request<{ order: any }>(`/orders/${id}/status`, {
       method: 'PUT',

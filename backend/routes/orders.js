@@ -1,4 +1,5 @@
 import express from 'express';
+import { randomUUID } from 'crypto';
 import { PrismaClient } from '@prisma/client';
 import { body, validationResult } from 'express-validator';
 import { authenticateToken } from '../middleware/auth.js';
@@ -74,6 +75,111 @@ router.post('/public', [
     });
 
     res.status(201).json({ order });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Auth: create manual order (open parcel or design lines)
+router.post('/manual', authenticateToken, requireActiveSubscription, [
+  body('kind').isIn(['open', 'design']),
+  body('buyerName').trim().notEmpty(),
+  body('remarks').optional().trim(),
+  body('parcelQuantity').optional().isInt({ min: 1 }),
+  body('lines').optional().isArray()
+], async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const userId = req.user.userId;
+    const { kind, buyerName, remarks } = req.body;
+
+    if (kind === 'open') {
+      const qty = parseInt(req.body.parcelQuantity, 10);
+      if (!Number.isFinite(qty) || qty < 1) {
+        return res.status(400).json({ error: 'parcelQuantity is required and must be at least 1' });
+      }
+
+      const order = await prisma.order.create({
+        data: {
+          userId,
+          shareLinkId: null,
+          designId: null,
+          buyerName: buyerName.trim(),
+          buyerPhone: '-',
+          quantity: qty,
+          remarks: remarks?.trim() || null,
+          manualType: 'open',
+          status: 'pending'
+        },
+        include: {
+          design: {
+            select: {
+              id: true,
+              name: true,
+              image: true,
+              fabric: true
+            }
+          }
+        }
+      });
+
+      return res.status(201).json({ order });
+    }
+
+    const lines = req.body.lines;
+    if (!Array.isArray(lines) || lines.length === 0) {
+      return res.status(400).json({ error: 'Design order requires at least one line with designId and quantity' });
+    }
+
+    const batchId = randomUUID();
+    const created = [];
+
+    for (const line of lines) {
+      const designId = line?.designId;
+      const quantity = parseInt(line?.quantity, 10);
+      if (!designId || !Number.isFinite(quantity) || quantity < 1) {
+        return res.status(400).json({ error: 'Each line needs designId and quantity (min 1)' });
+      }
+
+      const design = await prisma.design.findFirst({
+        where: { id: designId, userId }
+      });
+      if (!design) {
+        return res.status(400).json({ error: `Design not found or not yours: ${designId}` });
+      }
+
+      const order = await prisma.order.create({
+        data: {
+          userId,
+          shareLinkId: null,
+          designId,
+          buyerName: buyerName.trim(),
+          buyerPhone: '-',
+          quantity,
+          remarks: remarks?.trim() || null,
+          manualType: 'design',
+          manualBatchId: batchId,
+          status: 'pending'
+        },
+        include: {
+          design: {
+            select: {
+              id: true,
+              name: true,
+              image: true,
+              fabric: true
+            }
+          }
+        }
+      });
+      created.push(order);
+    }
+
+    return res.status(201).json({ orders: created, manualBatchId: batchId });
   } catch (error) {
     next(error);
   }
@@ -188,7 +294,7 @@ router.put('/:id/status', authenticateToken, requireActiveSubscription, [
         data: { status }
       });
 
-      if (status === 'completed') {
+      if (status === 'completed' && order.designId) {
         const design = await tx.design.findUnique({
           where: { id: order.designId }
         });

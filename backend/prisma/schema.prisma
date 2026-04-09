@@ -151,12 +151,15 @@ model Order {
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   shareLinkId String?
   shareLink   ShareLink? @relation(fields: [shareLinkId], references: [id], onDelete: Cascade)
-  designId    String
-  design      Design   @relation(fields: [designId], references: [id], onDelete: Cascade)
+  designId    String?
+  design      Design?   @relation(fields: [designId], references: [id], onDelete: Cascade)
   buyerName   String
   buyerPhone  String
   quantity    Int
   status      String   @default("pending")
+  remarks     String? // seller notes on manual orders
+  manualType  String? // open | design; null for share-link orders
+  manualBatchId String? // groups design lines from one manual submit
   createdAt   DateTime @default(now())
 
   @@index([userId])
@@ -164,6 +167,7 @@ model Order {
   @@index([designId])
   @@index([status])
   @@index([createdAt])
+  @@index([manualBatchId])
 }
 
 model OrderDraft {

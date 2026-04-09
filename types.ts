@@ -86,11 +86,14 @@ export interface Order {
   id: string;
   userId: string;
   shareLinkId?: string;
-  designId: string;
+  designId?: string;
   buyerName: string;
   buyerPhone: string;
   quantity: number;
   status: string;
+  remarks?: string | null;
+  manualType?: 'open' | 'design' | null;
+  manualBatchId?: string | null;
   createdAt: string;
   design?: TextileDesign;
   shareLink?: ShareLink;
