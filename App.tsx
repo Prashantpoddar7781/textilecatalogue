@@ -152,7 +152,8 @@ const App: React.FC = () => {
         description: d.description || '',
         firmName: d.user?.firmName,
         createdAt: new Date(d.createdAt).getTime(),
-        aiModels: d.aiModels as string[] | undefined
+        aiModels: d.aiModels as string[] | undefined,
+        costingDetails: d.costingDetails || undefined
       })));
 
       // Load fabrics and catalogues for filter
@@ -229,7 +230,8 @@ const App: React.FC = () => {
         fabric: design.fabric,
         description: design.description,
         catalogueId: design.catalogueId,
-        aiModels: design.aiModels
+        aiModels: design.aiModels,
+        costingDetails: design.costingDetails
       });
       
       setDesigns(prev => [{
@@ -252,7 +254,8 @@ const App: React.FC = () => {
         description: created.description || '',
         firmName: created.user?.firmName,
         createdAt: new Date(created.createdAt).getTime(),
-        aiModels: created.aiModels as string[] | undefined
+        aiModels: created.aiModels as string[] | undefined,
+        costingDetails: created.costingDetails || undefined
       }, ...prev]);
       setIsUploadOpen(false);
       // Reload catalogues in case new one was created
@@ -295,7 +298,8 @@ const App: React.FC = () => {
         fabric: design.fabric,
         description: design.description,
         catalogueId: design.catalogueId,
-        aiModels: design.aiModels
+        aiModels: design.aiModels,
+        costingDetails: design.costingDetails
       });
       
       setDesigns(prev => prev.map(d => 
@@ -319,7 +323,8 @@ const App: React.FC = () => {
           description: updated.description || '',
           firmName: updated.user?.firmName,
           createdAt: new Date(updated.createdAt).getTime(),
-          aiModels: updated.aiModels as string[] | undefined
+          aiModels: updated.aiModels as string[] | undefined,
+          costingDetails: updated.costingDetails || undefined
         } : d
       ));
       setIsUploadOpen(false);

@@ -1,13 +1,14 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { X, Upload, IndianRupee, Camera, Plus, Trash2, Sparkles, Loader2, Maximize2, Cloud, Crop } from 'lucide-react';
 import { HexColorPicker } from 'react-colorful';
-import { TextileDesign, AdditionalPrice } from '../types';
+import { TextileDesign, AdditionalPrice, DesignCostingDetails } from '../types';
 import { cataloguesApi, designsApi } from '../services/api';
 import { generateAIModelling, ensureModelImageDataUrl, resizeProductImageForGemini } from '../services/gemini';
 import { pickImageFromGoogleDrive } from '../services/googleDrivePicker';
 import { DEFAULT_AI_MODEL_IMAGE } from '../constants';
 import { ImageLightbox } from './ImageLightbox';
 import { ImageCropDialog } from './ImageCropDialog';
+import { CostingCalculator } from './CostingCalculator';
 
 interface Props {
   onClose: () => void;
@@ -16,6 +17,7 @@ interface Props {
 }
 
 export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) => {
+  const emptyCostingDetails: DesignCostingDetails = { materials: [], jobs: [], otherCosts: [] };
   const [preview, setPreview] = useState<string | null>(initialData?.image || null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -38,6 +40,15 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
   });
   const [additionalPrices, setAdditionalPrices] = useState<AdditionalPrice[]>([]);
   const [calculatedPriceOverrides, setCalculatedPriceOverrides] = useState<Record<number, number>>({});
+  const [costingEnabled, setCostingEnabled] = useState(
+    !!initialData?.costingDetails &&
+    (
+      (initialData.costingDetails.materials?.length || 0) > 0 ||
+      (initialData.costingDetails.jobs?.length || 0) > 0 ||
+      (initialData.costingDetails.otherCosts?.length || 0) > 0
+    )
+  );
+  const [costingDetails, setCostingDetails] = useState<DesignCostingDetails>(initialData?.costingDetails || emptyCostingDetails);
 
   const [driveImporting, setDriveImporting] = useState(false);
   const [modelling, setModelling] = useState(false);
@@ -86,6 +97,15 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
       setCalculatedPriceOverrides(editOverrides);
       setPreview(initialData.image);
       setGeneratedModels(initialData.aiModels ?? []);
+      setCostingDetails(initialData.costingDetails || emptyCostingDetails);
+      setCostingEnabled(
+        !!initialData.costingDetails &&
+        (
+          (initialData.costingDetails.materials?.length || 0) > 0 ||
+          (initialData.costingDetails.jobs?.length || 0) > 0 ||
+          (initialData.costingDetails.otherCosts?.length || 0) > 0
+        )
+      );
       setGeneratingSlots(null);
       setCropSource(null);
     } else {
@@ -114,6 +134,8 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
       setCustomModelImage(null);
       setCurrentColor('#ff0000');
       setCropSource(null);
+      setCostingEnabled(false);
+      setCostingDetails(emptyCostingDetails);
     }
   }, [initialData]);
 
@@ -160,6 +182,13 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
           }
         });
         setCalculatedPriceOverrides(catOverrides);
+        const nextCosting = d.costingDetails || emptyCostingDetails;
+        setCostingDetails(nextCosting);
+        setCostingEnabled(
+          (nextCosting.materials?.length || 0) > 0 ||
+          (nextCosting.jobs?.length || 0) > 0 ||
+          (nextCosting.otherCosts?.length || 0) > 0
+        );
       }
     } catch (err) {
       console.warn('Could not load catalogue defaults', err);
@@ -370,6 +399,8 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
       description: formData.description || '',
       createdAt: initialData?.createdAt || Date.now(),
       aiModels: generatedModels.length > 0 ? generatedModels : undefined
+      ,
+      costingDetails: costingEnabled ? costingDetails : undefined
     };
 
     onSubmit(newDesign);
@@ -893,6 +924,13 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData }) 
               />
             </div>
           </div>
+
+          <CostingCalculator
+            enabled={costingEnabled}
+            value={costingDetails}
+            onEnabledChange={setCostingEnabled}
+            onChange={setCostingDetails}
+          />
 
           {/* Additional Prices */}
           <div className="space-y-3">

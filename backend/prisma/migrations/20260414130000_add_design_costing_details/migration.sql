@@ -1,0 +1,2 @@
+ALTER TABLE "Design"
+ADD COLUMN IF NOT EXISTS "costingDetails" JSONB;

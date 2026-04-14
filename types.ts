@@ -6,6 +6,32 @@ export interface AdditionalPrice {
   calculatedPrice?: number;
 }
 
+export interface CostingMaterial {
+  materialName: string;
+  unit: string;
+  rate: number;
+  avgPerPcs: number;
+  supplierName?: string;
+}
+
+export interface CostingJob {
+  jobType: string;
+  rate: number;
+  processDays: number;
+  karigarName?: string;
+}
+
+export interface CostingOtherCost {
+  name: string;
+  rate: number;
+}
+
+export interface DesignCostingDetails {
+  materials: CostingMaterial[];
+  jobs: CostingJob[];
+  otherCosts: CostingOtherCost[];
+}
+
 export interface TextileDesign {
   id: string;
   catalogueId?: string;
@@ -27,6 +53,8 @@ export interface TextileDesign {
   createdAt: number;
   /** Base64 images from AI modelling (model wearing the design) */
   aiModels?: string[];
+  /** Optional design costing breakdown */
+  costingDetails?: DesignCostingDetails;
 }
 
 export interface Catalogue {

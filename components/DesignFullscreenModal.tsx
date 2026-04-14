@@ -45,6 +45,10 @@ export const DesignFullscreenModal: React.FC<Props> = ({ design, onClose }) => {
   const stockLabel = (design.stockQuantity ?? 0) <= 0
     ? 'Out of stock'
     : `${design.stockQuantity} ${design.stockUnit || 'pcs'}`;
+  const materialTotal = (design.costingDetails?.materials || []).reduce((sum, m) => sum + (Number(m.rate) || 0) * (Number(m.avgPerPcs) || 0), 0);
+  const jobTotal = (design.costingDetails?.jobs || []).reduce((sum, j) => sum + (Number(j.rate) || 0), 0);
+  const otherTotal = (design.costingDetails?.otherCosts || []).reduce((sum, c) => sum + (Number(c.rate) || 0), 0);
+  const grandTotal = materialTotal + jobTotal + otherTotal;
 
   return (
     <div
@@ -138,6 +142,18 @@ export const DesignFullscreenModal: React.FC<Props> = ({ design, onClose }) => {
             )}
 
             <DesignBarcode design={design} />
+
+            {!!design.costingDetails && (
+              <div className="mt-2 border border-gray-200 rounded-xl p-3 bg-gray-50 space-y-2">
+                <p className="text-xs font-bold text-gray-700 uppercase tracking-wide">Costing Details</p>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <p className="text-gray-600">Material Cost</p><p className="text-right font-semibold text-gray-900">₹{materialTotal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</p>
+                  <p className="text-gray-600">Job Cost</p><p className="text-right font-semibold text-gray-900">₹{jobTotal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</p>
+                  <p className="text-gray-600">Other Cost</p><p className="text-right font-semibold text-gray-900">₹{otherTotal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</p>
+                  <p className="text-gray-900 font-bold">Total Cost</p><p className="text-right font-black text-indigo-700">₹{grandTotal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</p>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

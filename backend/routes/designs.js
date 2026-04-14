@@ -207,6 +207,7 @@ router.post('/', authenticateToken, requireActiveSubscription, [
   body('pcsPerParcel').optional().isInt({ min: 1 }),
   body('moq').optional().isInt({ min: 0 }),
   body('additionalPrices').optional().isArray(),
+  body('costingDetails').optional().isObject(),
   body('aiModels').optional().isArray(),
   body('fabric').notEmpty().trim(),
   body('description').optional().trim(),
@@ -218,7 +219,7 @@ router.post('/', authenticateToken, requireActiveSubscription, [
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { image, name, basePrice, wholesalePrice: wsPrice, retailPrice: rtPrice, additionalPrices, aiModels, fabric, description, catalogueId, designCode, color, stockQuantity, stockUnit, pcsPerParcel, moq } = req.body;
+    const { image, name, basePrice, wholesalePrice: wsPrice, retailPrice: rtPrice, additionalPrices, costingDetails, aiModels, fabric, description, catalogueId, designCode, color, stockQuantity, stockUnit, pcsPerParcel, moq } = req.body;
     const userId = req.user.userId;
 
     // Validate that at least one price is provided
@@ -265,6 +266,7 @@ router.post('/', authenticateToken, requireActiveSubscription, [
         moq: moq !== undefined ? parseInt(moq, 10) : null,
         basePrice: basePriceNum,
         additionalPrices: processedAdditionalPrices,
+        costingDetails: costingDetails || null,
         aiModels: Array.isArray(aiModels) && aiModels.length > 0 ? aiModels : null,
         wholesalePrice, // For backward compatibility
         retailPrice, // For backward compatibility
@@ -300,6 +302,7 @@ router.put('/:id', authenticateToken, requireActiveSubscription, [
   body('pcsPerParcel').optional().isInt({ min: 1 }),
   body('moq').optional().isInt({ min: 0 }),
   body('additionalPrices').optional().isArray(),
+  body('costingDetails').optional().isObject(),
   body('aiModels').optional().isArray(),
   body('fabric').optional().notEmpty().trim(),
   body('description').optional().trim()
@@ -380,6 +383,9 @@ router.put('/:id', authenticateToken, requireActiveSubscription, [
         calculatedPrice: resolveAdditionalPriceCalculated(ap, basePriceNum)
       }));
       updateData.additionalPrices = processedAdditionalPrices;
+    }
+    if (req.body.costingDetails !== undefined) {
+      updateData.costingDetails = req.body.costingDetails || null;
     }
     if (req.body.aiModels !== undefined) {
       updateData.aiModels = Array.isArray(req.body.aiModels) && req.body.aiModels.length > 0 ? req.body.aiModels : null;
