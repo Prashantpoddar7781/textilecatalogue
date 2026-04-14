@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
-import { X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, IndianRupee, Package } from 'lucide-react';
 import { TextileDesign } from '../types';
+import { DesignBarcode } from './DesignBarcode';
 
 interface Props {
   design: TextileDesign | null;
@@ -39,89 +40,124 @@ export const DesignFullscreenModal: React.FC<Props> = ({ design, onClose }) => {
 
   if (!design || images.length === 0) return null;
 
-  const label =
-    index === 0 ? 'Product' : `AI variant ${index}`;
+  const label = index === 0 ? 'Product' : `AI variant ${index}`;
+  const displayPrice = design.basePrice || design.retailPrice || 0;
+  const stockLabel = (design.stockQuantity ?? 0) <= 0
+    ? 'Out of stock'
+    : `${design.stockQuantity} ${design.stockUnit || 'pcs'}`;
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex flex-col bg-black/95 backdrop-blur-sm safe-area-top safe-area-bottom"
+      className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-sm p-3 sm:p-6 overflow-y-auto"
       role="dialog"
       aria-modal="true"
-      aria-label="Design fullscreen"
+      aria-label="Design details"
     >
-      <div className="shrink-0 flex items-center justify-between px-4 py-3 border-b border-white/10">
-        <p className="text-white text-sm font-bold truncate pr-4">
-          {design.name || 'Design'} · {label}
-        </p>
-        <button
-          type="button"
-          onClick={onClose}
-          className="p-2 rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors"
-          aria-label="Close"
-        >
-          <X className="w-6 h-6" />
-        </button>
-      </div>
+      <div className="max-w-4xl mx-auto bg-white rounded-2xl overflow-hidden shadow-2xl">
+        <div className="sticky top-0 z-10 flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-white">
+          <p className="text-gray-900 text-sm font-bold truncate pr-4">
+            {design.name || 'Design'} · {label}
+          </p>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-2 rounded-full bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors"
+            aria-label="Close"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
 
-      <div
-        className="flex-1 flex items-center justify-center relative min-h-0 p-2"
-        onClick={onClose}
-      >
-        <img
-          src={images[index]}
-          alt=""
-          className="max-w-full max-h-[calc(100vh-8rem)] w-auto h-auto object-contain select-none"
-          onClick={e => e.stopPropagation()}
-          draggable={false}
-        />
+        <div className="grid md:grid-cols-2 gap-0">
+          <div className="relative bg-gray-100">
+            <img
+              src={images[index]}
+              alt={design.name || 'Design'}
+              className="w-full h-full max-h-[420px] object-contain select-none"
+              draggable={false}
+            />
+            {images.length > 1 && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => go(-1)}
+                  className="absolute left-2 top-1/2 -translate-y-1/2 p-2 rounded-full bg-black/50 text-white hover:bg-black/70"
+                  aria-label="Previous image"
+                >
+                  <ChevronLeft className="w-6 h-6" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => go(1)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-full bg-black/50 text-white hover:bg-black/70"
+                  aria-label="Next image"
+                >
+                  <ChevronRight className="w-6 h-6" />
+                </button>
+              </>
+            )}
+          </div>
+
+          <div className="p-4 sm:p-5 space-y-3">
+            <div>
+              <p className="text-[11px] font-bold text-indigo-600 uppercase tracking-wider">Design Details</p>
+              <h2 className="text-xl font-black text-gray-900 mt-1">{design.name || 'Untitled Design'}</h2>
+              {design.designCode && (
+                <p className="text-sm text-gray-600 mt-1">
+                  Design Number: <span className="font-semibold text-gray-800">{design.designCode}</span>
+                </p>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div className="bg-gray-50 border border-gray-100 rounded-xl p-3">
+                <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Price</p>
+                <div className="flex items-center text-lg font-black text-gray-900 mt-0.5">
+                  <IndianRupee className="w-4 h-4" />
+                  <span>{displayPrice.toLocaleString('en-IN')}</span>
+                </div>
+              </div>
+              <div className="bg-gray-50 border border-gray-100 rounded-xl p-3">
+                <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Stock</p>
+                <div className={`mt-0.5 text-sm font-bold ${(design.stockQuantity ?? 0) <= 0 ? 'text-red-600' : 'text-gray-800'}`}>
+                  <span className="inline-flex items-center gap-1">
+                    <Package className="w-4 h-4" />
+                    {stockLabel}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {design.fabric && (
+              <p className="text-sm text-gray-700">
+                Fabric: <span className="font-semibold">{design.fabric}</span>
+              </p>
+            )}
+            {design.description && (
+              <p className="text-sm text-gray-600">{design.description}</p>
+            )}
+
+            <DesignBarcode design={design} />
+          </div>
+        </div>
 
         {images.length > 1 && (
-          <>
-            <button
-              type="button"
-              onClick={e => {
-                e.stopPropagation();
-                go(-1);
-              }}
-              className="absolute left-2 top-1/2 -translate-y-1/2 p-3 rounded-full bg-black/50 text-white hover:bg-black/70"
-              aria-label="Previous image"
-            >
-              <ChevronLeft className="w-8 h-8" />
-            </button>
-            <button
-              type="button"
-              onClick={e => {
-                e.stopPropagation();
-                go(1);
-              }}
-              className="absolute right-2 top-1/2 -translate-y-1/2 p-3 rounded-full bg-black/50 text-white hover:bg-black/70"
-              aria-label="Next image"
-            >
-              <ChevronRight className="w-8 h-8" />
-            </button>
-          </>
+          <div className="flex justify-center gap-2 py-3 px-4 border-t border-gray-100 bg-gray-50">
+            {images.map((src, i) => (
+              <button
+                key={i}
+                type="button"
+                onClick={() => setIndex(i)}
+                className={`w-12 h-12 rounded-lg overflow-hidden border-2 transition-all ${
+                  i === index ? 'border-indigo-500 ring-2 ring-indigo-200' : 'border-gray-200 opacity-70'
+                }`}
+              >
+                <img src={src} alt="" className="w-full h-full object-cover" />
+              </button>
+            ))}
+          </div>
         )}
       </div>
-
-      {images.length > 1 && (
-        <div className="shrink-0 flex justify-center gap-2 pb-6 pt-2 px-4">
-          {images.map((src, i) => (
-            <button
-              key={i}
-              type="button"
-              onClick={e => {
-                e.stopPropagation();
-                setIndex(i);
-              }}
-              className={`w-14 h-14 rounded-lg overflow-hidden border-2 transition-all ${
-                i === index ? 'border-indigo-400 ring-2 ring-indigo-400/50' : 'border-white/20 opacity-70'
-              }`}
-            >
-              <img src={src} alt="" className="w-full h-full object-cover" />
-            </button>
-          ))}
-        </div>
-      )}
     </div>
   );
 };

@@ -105,7 +105,7 @@ export const DesignCard: React.FC<Props> = ({ design, isSelected, onSelect, onDe
               onView();
             }}
             className="flex flex-col items-center gap-1 py-2 rounded-xl bg-gray-50 hover:bg-indigo-50 text-gray-700 hover:text-indigo-700 transition-colors"
-            title="View fullscreen"
+            title="View details"
           >
             <Eye className="w-4 h-4" />
             <span className="text-[9px] font-bold uppercase tracking-tight">View</span>
