@@ -88,6 +88,9 @@ export const designsApi = {
   getById: async (id: string) => {
     return request<any>(`/designs/${id}`);
   },
+  getPublicById: async (id: string) => {
+    return request<any>(`/designs/public/${id}`);
+  },
 
   create: async (design: {
     name: string;

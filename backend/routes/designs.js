@@ -130,6 +130,35 @@ router.get('/', optionalAuth, requireActiveSubscriptionIfAuthenticated, async (r
   }
 });
 
+// Public route used by barcode scan pages
+router.get('/public/:id', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const design = await prisma.design.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        name: true,
+        image: true,
+        designCode: true,
+        basePrice: true,
+        wholesalePrice: true,
+        retailPrice: true,
+        fabric: true,
+        description: true
+      }
+    });
+
+    if (!design) {
+      return res.status(404).json({ error: 'Design not found' });
+    }
+
+    res.json(design);
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Get single design
 router.get('/:id', optionalAuth, requireActiveSubscriptionIfAuthenticated, async (req, res, next) => {
   try {

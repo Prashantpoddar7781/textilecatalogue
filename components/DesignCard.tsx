@@ -2,6 +2,7 @@
 import React from 'react';
 import { Trash2, CheckCircle, IndianRupee, Edit, Link2, Package, Eye } from 'lucide-react';
 import { TextileDesign } from '../types';
+import { DesignBarcode } from './DesignBarcode';
 
 function formatInventory(design: TextileDesign): string {
   const qty = design.stockQuantity ?? 0;
@@ -94,6 +95,7 @@ export const DesignCard: React.FC<Props> = ({ design, isSelected, onSelect, onDe
         <p className="text-xs text-gray-500 line-clamp-1 mt-1 font-medium italic">
           {design.description}
         </p>
+        <DesignBarcode design={design} />
 
         <div className="grid grid-cols-4 gap-1.5 mt-3 pt-3 border-t border-gray-100">
           <button

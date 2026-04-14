@@ -7,6 +7,7 @@ import { DesignFullscreenModal } from './components/DesignFullscreenModal';
 import { ShareDialog } from './components/ShareDialog';
 import { ShareLinkDialog } from './components/ShareLinkDialog';
 import { ShareView } from './components/ShareView';
+import { BarcodeDesignView } from './components/BarcodeDesignView';
 import { OrdersPage } from './components/OrdersPage';
 import { ShareStatsPage } from './components/ShareStatsPage';
 import { LoginDialog } from './components/LoginDialog';
@@ -19,6 +20,7 @@ const App: React.FC = () => {
   // Check if we're on a share route
   const pathname = window.location.pathname;
   const shareMatch = pathname.match(/^\/share\/([^/]+)$/);
+  const barcodeMatch = pathname.match(/^\/barcode\/([^/]+)$/);
   const ordersMatch = pathname.match(/^\/orders\/?$/);
   const billingMatch = pathname.match(/^\/billing\/?$/);
   const shareStatsMatch = pathname.match(/^\/share-stats\/?$/);
@@ -26,6 +28,10 @@ const App: React.FC = () => {
   if (shareMatch) {
     const token = shareMatch[1];
     return <ShareView token={token} />;
+  }
+  if (barcodeMatch) {
+    const designId = barcodeMatch[1];
+    return <BarcodeDesignView designId={designId} />;
   }
   const [designs, setDesigns] = useState<TextileDesign[]>([]);
   const [isReady, setIsReady] = useState(false);
