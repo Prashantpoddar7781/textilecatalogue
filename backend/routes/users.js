@@ -69,5 +69,16 @@ router.get('/me/designs', authenticateToken, requireActiveSubscription, async (r
   }
 });
 
+// Delete current user and all associated data (cascaded in DB)
+router.delete('/me', authenticateToken, async (req, res, next) => {
+  try {
+    const userId = req.user.userId;
+    await prisma.user.delete({ where: { id: userId } });
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
 export default router;
 

@@ -449,6 +449,10 @@ const App: React.FC = () => {
         subscription={subscription}
         refreshSubscription={refreshSubscription}
         onBack={() => { window.location.href = '/'; }}
+        onAccountDeleted={() => {
+          localStorage.removeItem('auth_token');
+          window.location.href = '/';
+        }}
       />
     );
   }
@@ -697,6 +701,15 @@ const App: React.FC = () => {
                   onClick={() => setMobileMenuOpen(false)}
                 >
                   Privacy policy
+                </a>
+                <a
+                  href="/delete-account.html"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="touch-target flex w-full items-center justify-center rounded-2xl border border-gray-100 py-3 text-sm font-semibold text-gray-600 active:bg-gray-50"
+                  onClick={() => setMobileMenuOpen(false)}
+                >
+                  Account &amp; data deletion
                 </a>
                 <button
                   type="button"

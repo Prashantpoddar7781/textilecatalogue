@@ -61,6 +61,15 @@ export const authApi = {
   },
 };
 
+// Account API
+export const usersApi = {
+  deleteAccount: async () => {
+    return request<{ ok: boolean }>('/users/me', {
+      method: 'DELETE',
+    });
+  },
+};
+
 // Designs API
 export const designsApi = {
   getAll: async (params?: {
