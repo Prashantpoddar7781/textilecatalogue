@@ -310,7 +310,7 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
         throw new Error('Failed to generate any images');
       }
 
-      // Priority 1: Mobile Native Sharing API — share files only (no TextileHub caption; labels are on the images)
+      // Priority 1: Mobile Native Sharing API — share files only (no app caption; labels are on the images)
       if (isMobile && navigator.share) {
         try {
           // Check if files can be shared

@@ -88,6 +88,35 @@ Railway should auto-detect, but verify in "Settings" → "Deploy":
 1. Push a commit or manually redeploy
 2. Your frontend will now connect to the Railway backend
 
+### 2.3 Google Drive import (optional — developer only)
+
+**Who configures what**
+
+- **Developer / app owner (you):** Configures Google **once** for the whole app. You create OAuth credentials in Google Cloud and add two environment variables to your **hosted** frontend (Vercel, Railway, etc.). You redeploy after changing them.
+- **End users (shop staff, catalogue users):** **Do not** configure anything. They tap **Google Drive**, sign in with **their own** Google account if asked, and choose a file from **their** Drive—same idea as “Sign in with Google” on any website.
+
+If you skip this section, the **Google Drive** button will show a short message and users can still use **Gallery** or **Camera**.
+
+**One-time setup in Google Cloud Console**
+
+1. Open [Google Cloud Console](https://console.cloud.google.com/), select or create a project.
+2. **APIs & Services → Library:** enable **Google Picker API** and **Google Drive API**.
+3. **APIs & Services → Credentials:**
+   - **Create credentials → OAuth client ID.** Application type: **Web application**. Under **Authorized JavaScript origins**, add your real site URL(s), for example `https://your-app.vercel.app` and, for local testing, `http://localhost:3000` (or the port your Vite dev server uses).
+   - **Create credentials → API key.** Restrict the key: **Application restrictions** → HTTP referrers (websites), add the same origins; **API restrictions** → limit to **Google Picker API** and **Google Drive API** (or a custom list that includes both).
+4. Copy the **OAuth 2.0 Client ID** and the **API key** string.
+
+**Add to your frontend hosting (not per user)**
+
+In Vercel/Railway (or `.env.local` for local builds), set:
+
+```
+VITE_GOOGLE_CLIENT_ID=<OAuth Web client ID from step 3>
+VITE_GOOGLE_API_KEY=<Browser API key from step 3>
+```
+
+Rebuild/redeploy the frontend so Vite embeds these at build time. Every user of your deployed app then uses **your** OAuth client to sign in, but each user only ever authorizes **their own** Drive.
+
 ## Step 3: Verify Deployment
 
 ### 3.1 Test Backend
@@ -159,6 +188,13 @@ PORT=3001
 ### Frontend (Vercel/Railway)
 ```
 VITE_API_URL=https://your-backend.railway.app/api
+```
+
+Optional (Google Drive button — set once by deployer, see §2.3):
+
+```
+VITE_GOOGLE_CLIENT_ID=<OAuth Web client ID>
+VITE_GOOGLE_API_KEY=<Browser API key>
 ```
 
 ## Monitoring

@@ -69,7 +69,7 @@ export const BillingPage: React.FC<Props> = ({ user, subscription, refreshSubscr
       const razorpay = new RazorpayConstructor({
         key: payload.razorpayKeyId,
         subscription_id: payload.subscriptionId,
-        name: 'TextileHub',
+        name: 'SutraDhar',
         description: planId === 'annual' ? 'Annual subscription' : 'Monthly subscription',
         prefill: { email: payload.email },
         theme: { color: '#4f46e5' },
@@ -202,6 +202,12 @@ export const BillingPage: React.FC<Props> = ({ user, subscription, refreshSubscr
             </div>
           ))}
         </div>
+
+        <p className="text-center text-xs text-gray-500 pt-4">
+          <a href="/privacy-policy.html" className="underline hover:text-gray-800">
+            Privacy policy
+          </a>
+        </p>
       </main>
     </div>
   );

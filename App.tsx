@@ -429,7 +429,7 @@ const App: React.FC = () => {
             <div className="bg-indigo-600 p-4 rounded-2xl inline-block mb-4">
               <Package className="text-white w-12 h-12" />
             </div>
-            <h1 className="text-2xl font-black text-gray-900 mb-2">TextileHub</h1>
+            <h1 className="text-2xl font-black text-gray-900 mb-2">SutraDhar</h1>
             <p className="text-gray-500">Please login to continue</p>
           </div>
         </div>
@@ -469,7 +469,7 @@ const App: React.FC = () => {
                   <Package className="text-white w-5 h-5" />
                 </div>
                 <div className="min-w-0">
-                  <h1 className="text-lg font-black text-gray-900 tracking-tight leading-none truncate">TextileHub</h1>
+                  <h1 className="text-lg font-black text-gray-900 tracking-tight leading-none truncate">SutraDhar</h1>
                   <span className="text-[9px] font-black text-indigo-500 uppercase tracking-widest">Catalogue</span>
                 </div>
               </div>
@@ -513,7 +513,7 @@ const App: React.FC = () => {
                 <Package className="text-white w-5 h-5" />
               </div>
               <div>
-                <h1 className="text-lg font-black text-gray-900 tracking-tight leading-none">TextileHub</h1>
+                <h1 className="text-lg font-black text-gray-900 tracking-tight leading-none">SutraDhar</h1>
                 <span className="text-[9px] font-black text-indigo-500 uppercase tracking-widest mt-0.5 inline-block">Pro Manager</span>
               </div>
             </div>
@@ -689,6 +689,15 @@ const App: React.FC = () => {
                         : 'Upgrade plan'}
                   </button>
                 )}
+                <a
+                  href="/privacy-policy.html"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="touch-target mt-2 flex w-full items-center justify-center rounded-2xl border border-gray-100 py-3 text-sm font-semibold text-gray-600 active:bg-gray-50"
+                  onClick={() => setMobileMenuOpen(false)}
+                >
+                  Privacy policy
+                </a>
                 <button
                   type="button"
                   className="touch-target mt-2 flex w-full items-center justify-center gap-2 rounded-2xl border border-gray-200 py-3 font-bold text-gray-700"

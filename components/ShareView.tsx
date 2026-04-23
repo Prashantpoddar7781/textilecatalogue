@@ -3,7 +3,7 @@ import { Loader2, AlertCircle, IndianRupee, ShoppingCart, X, Maximize2, Package 
 import { shareLinksApi, ordersApi } from '../services/api';
 import { ShareLink, TextileDesign } from '../types';
 
-const SESSION_KEY = 'textilehub_share_session';
+const SESSION_KEY = 'sutradhar_share_session';
 
 function getOrCreateSessionId(): string {
   let id = sessionStorage.getItem(SESSION_KEY);
@@ -402,7 +402,7 @@ export const ShareView: React.FC<{ token: string }> = ({ token }) => {
             <h1 className="text-2xl font-bold text-gray-900 mb-2">
               {designs.length === 1 ? (designs[0].name || 'Untitled Design') : `${designs.length} Designs`}
             </h1>
-            <p className="text-sm text-gray-500">Shared via TextileHub</p>
+            <p className="text-sm text-gray-500">Shared via SutraDhar</p>
           </div>
 
           {/* Designs Grid */}
@@ -443,7 +443,7 @@ export const ShareView: React.FC<{ token: string }> = ({ token }) => {
 
         {/* Footer */}
         <div className="text-center mt-8 text-sm text-gray-500">
-          <p>Shared via TextileHub</p>
+          <p>Shared via SutraDhar</p>
         </div>
       </div>
 
