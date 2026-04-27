@@ -242,7 +242,7 @@ export const CostingCalculator: React.FC<Props> = ({
                 <input type="number" step="0.01" className="px-3 py-2 rounded-lg border border-gray-200 text-sm" placeholder="Rate" value={m.rate || ''} onChange={e => updateMaterials(value.materials.map((x, i) => i === idx ? { ...x, rate: Number(e.target.value) || 0 } : x))} />
                 <input type="number" step="0.01" className="px-3 py-2 rounded-lg border border-gray-200 text-sm" placeholder="Avg. per pcs" value={m.avgPerPcs || ''} onChange={e => updateMaterials(value.materials.map((x, i) => i === idx ? { ...x, avgPerPcs: Number(e.target.value) || 0 } : x))} />
                 <div className="col-span-2 space-y-1">
-                  {customSupplierRows.has(idx) || normalizedSupplierOptions.length === 0 || (!!m.supplierName && !normalizedSupplierOptions.includes(m.supplierName)) ? (
+                  {customSupplierRows.has(idx) || (!!m.supplierName && !normalizedSupplierOptions.includes(m.supplierName)) ? (
                     <div className="space-y-1">
                       <input
                         className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm"
@@ -250,15 +250,13 @@ export const CostingCalculator: React.FC<Props> = ({
                         value={m.supplierName || ''}
                         onChange={e => updateMaterials(value.materials.map((x, i) => i === idx ? { ...x, supplierName: e.target.value } : x))}
                       />
-                      {normalizedSupplierOptions.length > 0 && (
-                        <button
-                          type="button"
-                          className="text-[10px] font-semibold text-indigo-600"
-                          onClick={() => setSupplierRowCustom(idx, false)}
-                        >
-                          Choose from previous suppliers
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        className="text-[10px] font-semibold text-indigo-600"
+                        onClick={() => setSupplierRowCustom(idx, false)}
+                      >
+                        Choose from supplier list
+                      </button>
                     </div>
                   ) : (
                     <select
