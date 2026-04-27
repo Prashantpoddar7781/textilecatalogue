@@ -114,19 +114,45 @@ export interface ShareLink {
   designs?: Array<{ design: TextileDesign }>;
 }
 
+export interface Customer {
+  id: string;
+  organizationName: string;
+  gstNumber?: string | null;
+  contactPersonName?: string | null;
+  mobileNumber?: string | null;
+  agentName?: string | null;
+  category?: string | null;
+  state?: string | null;
+  city?: string | null;
+  pincode?: string | null;
+  discountRate?: number | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface Order {
   id: string;
   userId: string;
   shareLinkId?: string;
+  customerId?: string | null;
   designId?: string;
   buyerName: string;
   buyerPhone: string;
   quantity: number;
-  status: string;
+  status: 'waiting_approval' | 'pending' | 'completed' | string;
   remarks?: string | null;
   manualType?: 'open' | 'design' | null;
   manualBatchId?: string | null;
+  priceCategory?: string | null;
+  orderNumber?: string | null;
+  agentName?: string | null;
+  transportName?: string | null;
+  discountRate?: number | null;
+  shippingCharge?: number | null;
+  orderDate?: string | null;
+  expectedDate?: string | null;
   createdAt: string;
+  customer?: Customer | null;
   design?: TextileDesign;
   shareLink?: ShareLink;
 }

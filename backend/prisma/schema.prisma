@@ -29,6 +29,7 @@ model User {
   designs   Design[]
   catalogues Catalogue[]
   contacts  Contact[]
+  customers Customer[]
   shareLinks ShareLink[]
   orders    Order[]
   orderDrafts OrderDraft[]
@@ -98,6 +99,29 @@ model Contact {
   @@unique([userId, phoneNumber])
 }
 
+model Customer {
+  id                String   @id @default(cuid())
+  userId            String
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organizationName  String
+  gstNumber         String?
+  contactPersonName String?
+  mobileNumber      String?
+  agentName         String?
+  category          String?
+  state             String?
+  city              String?
+  pincode           String?
+  discountRate      Float?
+  orders            Order[]
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([userId])
+  @@index([organizationName])
+  @@index([mobileNumber])
+}
+
 model ShareLink {
   id          String   @id @default(cuid())
   userId      String
@@ -152,6 +176,8 @@ model Order {
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   shareLinkId String?
   shareLink   ShareLink? @relation(fields: [shareLinkId], references: [id], onDelete: Cascade)
+  customerId  String?
+  customer    Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
   designId    String?
   design      Design?   @relation(fields: [designId], references: [id], onDelete: Cascade)
   buyerName   String
@@ -161,12 +187,22 @@ model Order {
   remarks     String? // seller notes on manual orders
   manualType  String? // open | design; null for share-link orders
   manualBatchId String? // groups design lines from one manual submit
+  priceCategory String?
+  orderNumber String?
+  agentName String?
+  transportName String?
+  discountRate Float?
+  shippingCharge Float?
+  orderDate DateTime?
+  expectedDate DateTime?
   createdAt   DateTime @default(now())
 
   @@index([userId])
   @@index([shareLinkId])
+  @@index([customerId])
   @@index([designId])
   @@index([status])
+  @@index([orderNumber])
   @@index([createdAt])
   @@index([manualBatchId])
 }

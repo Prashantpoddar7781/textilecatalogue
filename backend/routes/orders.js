@@ -8,6 +8,117 @@ import { requireActiveSubscription } from '../middleware/subscription.js';
 const router = express.Router();
 const prisma = new PrismaClient();
 
+const ORDER_STATUSES = ['waiting_approval', 'pending', 'completed'];
+
+const orderInclude = {
+  customer: true,
+  design: {
+    select: {
+      id: true,
+      name: true,
+      image: true,
+      fabric: true
+    }
+  },
+  shareLink: {
+    select: {
+      id: true,
+      token: true
+    }
+  }
+};
+
+const optionalString = (value) => {
+  if (value === undefined || value === null) return null;
+  const text = String(value).trim();
+  return text || null;
+};
+
+const optionalNumber = (value) => {
+  if (value === undefined || value === null || value === '') return null;
+  const num = Number(value);
+  return Number.isFinite(num) ? num : null;
+};
+
+const optionalDate = (value) => {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const getOrderMeta = (body) => ({
+  priceCategory: optionalString(body.priceCategory),
+  orderNumber: optionalString(body.orderNumber),
+  agentName: optionalString(body.agentName),
+  transportName: optionalString(body.transportName),
+  discountRate: optionalNumber(body.discountRate),
+  shippingCharge: optionalNumber(body.shippingCharge),
+  orderDate: optionalDate(body.orderDate),
+  expectedDate: optionalDate(body.expectedDate)
+});
+
+async function resolveManualCustomer(userId, body) {
+  if (body.customerId) {
+    const customer = await prisma.customer.findFirst({
+      where: { id: body.customerId, userId }
+    });
+    if (!customer) {
+      const error = new Error('Customer not found or not yours');
+      error.status = 400;
+      throw error;
+    }
+    return {
+      customerId: customer.id,
+      buyerName: customer.organizationName,
+      buyerPhone: customer.mobileNumber || '-',
+      customer
+    };
+  }
+
+  if (body.customer) {
+    const organizationName = optionalString(body.customer.organizationName);
+    if (!organizationName) {
+      const error = new Error('Customer organization name is required');
+      error.status = 400;
+      throw error;
+    }
+    const customer = await prisma.customer.create({
+      data: {
+        userId,
+        organizationName,
+        gstNumber: optionalString(body.customer.gstNumber),
+        contactPersonName: optionalString(body.customer.contactPersonName),
+        mobileNumber: optionalString(body.customer.mobileNumber),
+        agentName: optionalString(body.customer.agentName),
+        category: optionalString(body.customer.category),
+        state: optionalString(body.customer.state),
+        city: optionalString(body.customer.city),
+        pincode: optionalString(body.customer.pincode),
+        discountRate: optionalNumber(body.customer.discountRate)
+      }
+    });
+    return {
+      customerId: customer.id,
+      buyerName: customer.organizationName,
+      buyerPhone: customer.mobileNumber || '-',
+      customer
+    };
+  }
+
+  const buyerName = optionalString(body.buyerName);
+  if (!buyerName) {
+    const error = new Error('Customer name is required');
+    error.status = 400;
+    throw error;
+  }
+  return {
+    customerId: null,
+    buyerName,
+    buyerPhone: optionalString(body.buyerPhone) || '-',
+    customer: null
+  };
+}
+
 // Public: create order from share link token
 router.post('/public', [
   body('token').notEmpty(),
@@ -60,18 +171,9 @@ router.post('/public', [
         buyerName: buyerName.trim(),
         buyerPhone: buyerPhone.trim(),
         quantity: parseInt(quantity, 10),
-        status: 'pending'
+        status: 'waiting_approval'
       },
-      include: {
-        design: {
-          select: {
-            id: true,
-            name: true,
-            image: true,
-            fabric: true
-          }
-        }
-      }
+      include: orderInclude
     });
 
     res.status(201).json({ order });
@@ -83,7 +185,9 @@ router.post('/public', [
 // Auth: create manual order (open parcel or design lines)
 router.post('/manual', authenticateToken, requireActiveSubscription, [
   body('kind').isIn(['open', 'design']),
-  body('buyerName').trim().notEmpty(),
+  body('buyerName').optional().trim(),
+  body('customerId').optional().trim(),
+  body('customer').optional().isObject(),
   body('remarks').optional().trim(),
   body('parcelQuantity').optional().isInt({ min: 1 }),
   body('lines').optional().isArray()
@@ -95,7 +199,9 @@ router.post('/manual', authenticateToken, requireActiveSubscription, [
     }
 
     const userId = req.user.userId;
-    const { kind, buyerName, remarks } = req.body;
+    const { kind, remarks } = req.body;
+    const customerRef = await resolveManualCustomer(userId, req.body);
+    const orderMeta = getOrderMeta(req.body);
 
     if (kind === 'open') {
       const qty = parseInt(req.body.parcelQuantity, 10);
@@ -108,23 +214,16 @@ router.post('/manual', authenticateToken, requireActiveSubscription, [
           userId,
           shareLinkId: null,
           designId: null,
-          buyerName: buyerName.trim(),
-          buyerPhone: '-',
+          customerId: customerRef.customerId,
+          buyerName: customerRef.buyerName,
+          buyerPhone: customerRef.buyerPhone,
           quantity: qty,
           remarks: remarks?.trim() || null,
           manualType: 'open',
-          status: 'pending'
+          status: 'waiting_approval',
+          ...orderMeta
         },
-        include: {
-          design: {
-            select: {
-              id: true,
-              name: true,
-              image: true,
-              fabric: true
-            }
-          }
-        }
+        include: orderInclude
       });
 
       return res.status(201).json({ order });
@@ -157,24 +256,17 @@ router.post('/manual', authenticateToken, requireActiveSubscription, [
           userId,
           shareLinkId: null,
           designId,
-          buyerName: buyerName.trim(),
-          buyerPhone: '-',
+          customerId: customerRef.customerId,
+          buyerName: customerRef.buyerName,
+          buyerPhone: customerRef.buyerPhone,
           quantity,
           remarks: remarks?.trim() || null,
           manualType: 'design',
           manualBatchId: batchId,
-          status: 'pending'
+          status: 'waiting_approval',
+          ...orderMeta
         },
-        include: {
-          design: {
-            select: {
-              id: true,
-              name: true,
-              image: true,
-              fabric: true
-            }
-          }
-        }
+        include: orderInclude
       });
       created.push(order);
     }
@@ -191,22 +283,7 @@ router.get('/', authenticateToken, requireActiveSubscription, async (req, res, n
     const userId = req.user.userId;
     const orders = await prisma.order.findMany({
       where: { userId },
-      include: {
-        design: {
-          select: {
-            id: true,
-            name: true,
-            image: true,
-            fabric: true
-          }
-        },
-        shareLink: {
-          select: {
-            id: true,
-            token: true
-          }
-        }
-      },
+      include: orderInclude,
       orderBy: { createdAt: 'desc' }
     });
 
@@ -273,6 +350,10 @@ router.put('/:id/status', authenticateToken, requireActiveSubscription, [
     const { status } = req.body;
     const userId = req.user.userId;
 
+    if (!ORDER_STATUSES.includes(status)) {
+      return res.status(400).json({ error: 'Invalid order status' });
+    }
+
     const existing = await prisma.order.findUnique({
       where: { id }
     });
@@ -285,7 +366,8 @@ router.put('/:id/status', authenticateToken, requireActiveSubscription, [
     }
 
     if (existing.status === status) {
-      return res.json({ order: existing });
+      const order = await prisma.order.findUnique({ where: { id }, include: orderInclude });
+      return res.json({ order });
     }
 
     const updated = await prisma.$transaction(async (tx) => {
@@ -312,7 +394,12 @@ router.put('/:id/status', authenticateToken, requireActiveSubscription, [
       return order;
     });
 
-    res.json({ order: updated });
+    const orderWithDetails = await prisma.order.findUnique({
+      where: { id: updated.id },
+      include: orderInclude
+    });
+
+    res.json({ order: orderWithDetails });
   } catch (error) {
     next(error);
   }
@@ -350,7 +437,7 @@ router.post('/drafts/:id/confirm', authenticateToken, requireActiveSubscription,
           buyerName: 'AI Draft',
           buyerPhone: 'N/A',
           quantity: qty,
-          status: 'pending'
+          status: 'waiting_approval'
         }
       });
       createdOrders.push(order);

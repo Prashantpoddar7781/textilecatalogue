@@ -1,4 +1,4 @@
-import { Contact } from '../types';
+import { Contact, Customer } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
 
@@ -247,6 +247,20 @@ export const contactsApi = {
   },
 };
 
+// Customers API
+export const customersApi = {
+  getAll: async () => {
+    return request<{ customers: Customer[] }>('/customers');
+  },
+
+  create: async (customer: Omit<Customer, 'id' | 'createdAt' | 'updatedAt'>) => {
+    return request<{ customer: Customer }>('/customers', {
+      method: 'POST',
+      body: JSON.stringify(customer),
+    });
+  },
+};
+
 // Share Links API
 export const shareLinksApi = {
   create: async (data: {
@@ -329,8 +343,30 @@ export const ordersApi = {
   },
   createManual: async (body: {
     kind: 'open' | 'design';
-    buyerName: string;
+    buyerName?: string;
+    buyerPhone?: string;
+    customerId?: string;
+    customer?: {
+      organizationName: string;
+      gstNumber?: string;
+      contactPersonName?: string;
+      mobileNumber?: string;
+      agentName?: string;
+      category?: string;
+      state?: string;
+      city?: string;
+      pincode?: string;
+      discountRate?: number | null;
+    };
     remarks?: string;
+    priceCategory?: string;
+    orderNumber?: string;
+    agentName?: string;
+    transportName?: string;
+    discountRate?: number | null;
+    shippingCharge?: number | null;
+    orderDate?: string;
+    expectedDate?: string;
     parcelQuantity?: number;
     lines?: Array<{ designId: string; quantity: number }>;
   }) => {

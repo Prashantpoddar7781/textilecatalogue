@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { X, Package, LayoutGrid, Plus, Trash2, Loader2, Search } from 'lucide-react';
-import { designsApi, ordersApi } from '../services/api';
+import { customersApi, designsApi, ordersApi } from '../services/api';
+import { Customer } from '../types';
 
 interface Props {
   onClose: () => void;
@@ -8,6 +9,20 @@ interface Props {
 }
 
 type Kind = 'open' | 'design';
+type CustomerMode = 'existing' | 'new';
+
+interface CustomerForm {
+  organizationName: string;
+  gstNumber: string;
+  contactPersonName: string;
+  mobileNumber: string;
+  agentName: string;
+  category: string;
+  state: string;
+  city: string;
+  pincode: string;
+  discountRate: string;
+}
 
 interface DesignOption {
   id: string;
@@ -133,6 +148,30 @@ export const ManualOrderDialog: React.FC<Props> = ({ onClose, onCreated }) => {
   const [kind, setKind] = useState<Kind | null>(null);
 
   const [customerName, setCustomerName] = useState('');
+  const [customerMode, setCustomerMode] = useState<CustomerMode>('existing');
+  const [selectedCustomerId, setSelectedCustomerId] = useState('');
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [loadingCustomers, setLoadingCustomers] = useState(false);
+  const [customerForm, setCustomerForm] = useState<CustomerForm>({
+    organizationName: '',
+    gstNumber: '',
+    contactPersonName: '',
+    mobileNumber: '',
+    agentName: '',
+    category: '',
+    state: '',
+    city: '',
+    pincode: '',
+    discountRate: ''
+  });
+  const [priceCategory, setPriceCategory] = useState('');
+  const [orderNumber, setOrderNumber] = useState('');
+  const [agentName, setAgentName] = useState('');
+  const [transportName, setTransportName] = useState('');
+  const [discountRate, setDiscountRate] = useState('');
+  const [shippingCharge, setShippingCharge] = useState('');
+  const [orderDate, setOrderDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [expectedDate, setExpectedDate] = useState('');
   const [remarks, setRemarks] = useState('');
   const [parcelQuantity, setParcelQuantity] = useState('');
 
@@ -142,6 +181,19 @@ export const ManualOrderDialog: React.FC<Props> = ({ onClose, onCreated }) => {
   const [loadingDesigns, setLoadingDesigns] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  const loadCustomers = useCallback(async () => {
+    setLoadingCustomers(true);
+    try {
+      const { customers: fetchedCustomers } = await customersApi.getAll();
+      setCustomers(fetchedCustomers || []);
+    } catch (e) {
+      console.error('Could not load customers', e);
+      setCustomers([]);
+    } finally {
+      setLoadingCustomers(false);
+    }
+  }, []);
 
   const loadDesigns = useCallback(async () => {
     setLoadingDesigns(true);
@@ -159,19 +211,83 @@ export const ManualOrderDialog: React.FC<Props> = ({ onClose, onCreated }) => {
   }, []);
 
   useEffect(() => {
+    if (step === 'form') {
+      void loadCustomers();
+    }
+  }, [step, loadCustomers]);
+
+  useEffect(() => {
     if (kind === 'design' && step === 'form') {
       void loadDesigns();
     }
   }, [kind, step, loadDesigns]);
 
+  useEffect(() => {
+    const selected = customers.find(c => c.id === selectedCustomerId);
+    if (!selected || customerMode !== 'existing') return;
+    setCustomerName(selected.organizationName);
+    setAgentName(selected.agentName || '');
+    setDiscountRate(
+      selected.discountRate !== undefined && selected.discountRate !== null
+        ? String(selected.discountRate)
+        : ''
+    );
+  }, [customerMode, customers, selectedCustomerId]);
+
+  const setCustomerField = (field: keyof CustomerForm, fieldValue: string) => {
+    setCustomerForm(prev => ({ ...prev, [field]: fieldValue }));
+  };
+
+  const numberOrUndefined = (value: string) => {
+    if (value.trim() === '') return undefined;
+    const num = Number(value);
+    return Number.isFinite(num) ? num : undefined;
+  };
+
+  const getOrderMetaPayload = () => ({
+    priceCategory: priceCategory.trim() || undefined,
+    orderNumber: orderNumber.trim() || undefined,
+    agentName: agentName.trim() || undefined,
+    transportName: transportName.trim() || undefined,
+    discountRate: numberOrUndefined(discountRate),
+    shippingCharge: numberOrUndefined(shippingCharge),
+    orderDate: orderDate || undefined,
+    expectedDate: expectedDate || undefined
+  });
+
+  const getCustomerPayload = () => {
+    if (customerMode === 'existing' && selectedCustomerId) {
+      return { customerId: selectedCustomerId };
+    }
+    return {
+      customer: {
+        organizationName: customerForm.organizationName.trim(),
+        gstNumber: customerForm.gstNumber.trim() || undefined,
+        contactPersonName: customerForm.contactPersonName.trim() || undefined,
+        mobileNumber: customerForm.mobileNumber.trim() || undefined,
+        agentName: customerForm.agentName.trim() || undefined,
+        category: customerForm.category.trim() || undefined,
+        state: customerForm.state.trim() || undefined,
+        city: customerForm.city.trim() || undefined,
+        pincode: customerForm.pincode.trim() || undefined,
+        discountRate: numberOrUndefined(customerForm.discountRate)
+      }
+    };
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!kind) return;
-    const name = customerName.trim();
-    if (!name) {
-      alert('Please enter customer name.');
+    if (customerMode === 'existing' && !selectedCustomerId) {
+      alert('Please select a customer or add a new customer.');
       return;
     }
+    if (customerMode === 'new' && !customerForm.organizationName.trim()) {
+      alert('Please enter customer organization name.');
+      return;
+    }
+    const customerPayload = getCustomerPayload();
+    const orderMetaPayload = getOrderMetaPayload();
 
     setSubmitting(true);
     try {
@@ -184,7 +300,8 @@ export const ManualOrderDialog: React.FC<Props> = ({ onClose, onCreated }) => {
         }
         await ordersApi.createManual({
           kind: 'open',
-          buyerName: name,
+          ...customerPayload,
+          ...orderMetaPayload,
           remarks: remarks.trim() || undefined,
           parcelQuantity: pq
         });
@@ -205,7 +322,8 @@ export const ManualOrderDialog: React.FC<Props> = ({ onClose, onCreated }) => {
 
         await ordersApi.createManual({
           kind: 'design',
-          buyerName: name,
+          ...customerPayload,
+          ...orderMetaPayload,
           remarks: remarks.trim() || undefined,
           lines: parsedLines
         });
@@ -282,15 +400,194 @@ export const ManualOrderDialog: React.FC<Props> = ({ onClose, onCreated }) => {
                 ← Change order type
               </button>
 
-              <div className="space-y-1">
-                <label className="text-sm font-semibold text-gray-700">Customer name *</label>
-                <input
-                  required
-                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
-                  value={customerName}
-                  onChange={e => setCustomerName(e.target.value)}
-                  placeholder="Customer or shop name"
-                />
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-gray-700">Customer *</label>
+                {customerMode === 'existing' ? (
+                  <select
+                    required
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                    value={selectedCustomerId}
+                    onChange={e => {
+                      if (e.target.value === '__new__') {
+                        setCustomerMode('new');
+                        setSelectedCustomerId('');
+                        setCustomerName('');
+                        return;
+                      }
+                      setSelectedCustomerId(e.target.value);
+                    }}
+                    disabled={loadingCustomers}
+                  >
+                    <option value="">{loadingCustomers ? 'Loading customers...' : 'Select customer'}</option>
+                    {customers.map(customer => (
+                      <option key={customer.id} value={customer.id}>
+                        {customer.organizationName}
+                      </option>
+                    ))}
+                    <option value="__new__">+ Add new customer</option>
+                  </select>
+                ) : (
+                  <div className="grid grid-cols-2 gap-2 rounded-2xl border border-indigo-100 bg-indigo-50/30 p-3">
+                    <div className="col-span-2 flex items-center justify-between gap-2">
+                      <p className="text-xs font-bold text-gray-700 uppercase tracking-wide">Add Customer</p>
+                      <button
+                        type="button"
+                        className="text-[10px] font-semibold text-indigo-600"
+                        onClick={() => setCustomerMode('existing')}
+                      >
+                        Choose existing
+                      </button>
+                    </div>
+                    <input
+                      required
+                      className="col-span-2 px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm"
+                      placeholder="Customer organization name *"
+                      value={customerForm.organizationName}
+                      onChange={e => setCustomerField('organizationName', e.target.value)}
+                    />
+                    <input
+                      className="px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm"
+                      placeholder="GST number"
+                      value={customerForm.gstNumber}
+                      onChange={e => setCustomerField('gstNumber', e.target.value)}
+                    />
+                    <input
+                      className="px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm"
+                      placeholder="Mobile number"
+                      value={customerForm.mobileNumber}
+                      onChange={e => setCustomerField('mobileNumber', e.target.value)}
+                    />
+                    <input
+                      className="col-span-2 px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm"
+                      placeholder="Contact person name"
+                      value={customerForm.contactPersonName}
+                      onChange={e => setCustomerField('contactPersonName', e.target.value)}
+                    />
+                    <input
+                      className="px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm"
+                      placeholder="Agent"
+                      value={customerForm.agentName}
+                      onChange={e => {
+                        setCustomerField('agentName', e.target.value);
+                        setAgentName(e.target.value);
+                      }}
+                    />
+                    <input
+                      className="px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm"
+                      placeholder="Category"
+                      value={customerForm.category}
+                      onChange={e => setCustomerField('category', e.target.value)}
+                    />
+                    <input
+                      className="px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm"
+                      placeholder="State"
+                      value={customerForm.state}
+                      onChange={e => setCustomerField('state', e.target.value)}
+                    />
+                    <input
+                      className="px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm"
+                      placeholder="City"
+                      value={customerForm.city}
+                      onChange={e => setCustomerField('city', e.target.value)}
+                    />
+                    <input
+                      className="px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm"
+                      placeholder="Pincode"
+                      value={customerForm.pincode}
+                      onChange={e => setCustomerField('pincode', e.target.value)}
+                    />
+                    <input
+                      type="number"
+                      step="0.01"
+                      className="px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm"
+                      placeholder="Discount %"
+                      value={customerForm.discountRate}
+                      onChange={e => {
+                        setCustomerField('discountRate', e.target.value);
+                        setDiscountRate(e.target.value);
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-sm font-semibold text-gray-700">Order number</label>
+                  <input
+                    className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                    value={orderNumber}
+                    onChange={e => setOrderNumber(e.target.value)}
+                    placeholder="Optional"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-sm font-semibold text-gray-700">Price category</label>
+                  <input
+                    className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                    value={priceCategory}
+                    onChange={e => setPriceCategory(e.target.value)}
+                    placeholder="Base / WSP / Retail"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-sm font-semibold text-gray-700">Agent name</label>
+                  <input
+                    className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                    value={agentName}
+                    onChange={e => setAgentName(e.target.value)}
+                    placeholder="Optional"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-sm font-semibold text-gray-700">Transport</label>
+                  <input
+                    className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                    value={transportName}
+                    onChange={e => setTransportName(e.target.value)}
+                    placeholder="Transport name"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-sm font-semibold text-gray-700">Discount %</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                    value={discountRate}
+                    onChange={e => setDiscountRate(e.target.value)}
+                    placeholder="0"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-sm font-semibold text-gray-700">Shipping charge</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                    value={shippingCharge}
+                    onChange={e => setShippingCharge(e.target.value)}
+                    placeholder="0"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-sm font-semibold text-gray-700">Order date</label>
+                  <input
+                    type="date"
+                    className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                    value={orderDate}
+                    onChange={e => setOrderDate(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-sm font-semibold text-gray-700">Expected date</label>
+                  <input
+                    type="date"
+                    className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                    value={expectedDate}
+                    onChange={e => setExpectedDate(e.target.value)}
+                  />
+                </div>
               </div>
 
               {kind === 'open' && (

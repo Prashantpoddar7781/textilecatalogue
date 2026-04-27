@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { ArrowLeft, CheckCircle, Plus, Package } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { ArrowLeft, CheckCircle, Clock, Plus, Package, ThumbsUp } from 'lucide-react';
 import { ordersApi } from '../services/api';
 import { Order } from '../types';
 import { ManualOrderDialog } from './ManualOrderDialog';
@@ -13,6 +13,7 @@ export const OrdersPage: React.FC<Props> = ({ onBack }) => {
   const [loading, setLoading] = useState(false);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [showManual, setShowManual] = useState(false);
+  const [activeTab, setActiveTab] = useState<'waiting_approval' | 'pending' | 'completed' | 'all'>('waiting_approval');
 
   const loadOrders = async () => {
     try {
@@ -42,6 +43,44 @@ export const OrdersPage: React.FC<Props> = ({ onBack }) => {
     }
   };
 
+  const approveOrder = async (orderId: string) => {
+    try {
+      setUpdatingId(orderId);
+      const { order } = await ordersApi.updateStatus(orderId, 'pending');
+      setOrders(prev => prev.map(o => (o.id === order.id ? { ...o, ...order } : o)));
+    } catch (error) {
+      alert('Failed to approve order.');
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
+  const filteredOrders = useMemo(() => {
+    if (activeTab === 'all') return orders;
+    return orders.filter(order => order.status === activeTab);
+  }, [activeTab, orders]);
+
+  const counts = useMemo(() => ({
+    waiting_approval: orders.filter(order => order.status === 'waiting_approval').length,
+    pending: orders.filter(order => order.status === 'pending').length,
+    completed: orders.filter(order => order.status === 'completed').length,
+    all: orders.length
+  }), [orders]);
+
+  const formatDate = (value?: string | null) => {
+    if (!value) return '';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    return date.toLocaleDateString();
+  };
+
+  const tabItems = [
+    { id: 'waiting_approval' as const, label: 'Waiting for approval' },
+    { id: 'pending' as const, label: 'Pending' },
+    { id: 'completed' as const, label: 'Completed' },
+    { id: 'all' as const, label: 'All orders' }
+  ];
+
   return (
     <div className="min-h-screen bg-[#FDFDFF]">
       <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-xl border-b px-4 py-3 md:px-8 shadow-sm">
@@ -66,6 +105,23 @@ export const OrdersPage: React.FC<Props> = ({ onBack }) => {
       </header>
 
       <div className="max-w-7xl mx-auto px-4 py-6">
+        <div className="mb-5 flex gap-2 overflow-x-auto pb-1">
+          {tabItems.map(tab => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              className={`shrink-0 rounded-2xl px-4 py-2 text-xs font-black border transition-colors ${
+                activeTab === tab.id
+                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                  : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+              }`}
+            >
+              {tab.label} ({counts[tab.id]})
+            </button>
+          ))}
+        </div>
+
         {loading ? (
           <p className="text-sm text-gray-500">Loading orders...</p>
         ) : orders.length === 0 ? (
@@ -80,10 +136,21 @@ export const OrdersPage: React.FC<Props> = ({ onBack }) => {
               Create order manually
             </button>
           </div>
+        ) : filteredOrders.length === 0 ? (
+          <div className="text-center py-12 space-y-2">
+            <p className="text-sm text-gray-400">No orders in this section.</p>
+          </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {orders.map(order => {
+            {filteredOrders.map(order => {
               const isOpen = order.manualType === 'open';
+              const statusLabel = order.status === 'waiting_approval'
+                ? 'Waiting for approval'
+                : order.status === 'pending'
+                  ? 'Pending'
+                  : order.status === 'completed'
+                    ? 'Completed'
+                    : order.status;
               return (
                 <div key={order.id} className="bg-white border border-gray-100 rounded-2xl p-4 shadow-sm">
                   <div className="flex items-center gap-3">
@@ -122,6 +189,11 @@ export const OrdersPage: React.FC<Props> = ({ onBack }) => {
                     <p>
                       <span className="font-semibold">Customer:</span> {order.buyerName}
                     </p>
+                    {order.customer?.contactPersonName && (
+                      <p>
+                        <span className="font-semibold">Contact:</span> {order.customer.contactPersonName}
+                      </p>
+                    )}
                     {order.buyerPhone && order.buyerPhone !== '-' && (
                       <p>
                         <span className="font-semibold">Phone:</span> {order.buyerPhone}
@@ -131,6 +203,32 @@ export const OrdersPage: React.FC<Props> = ({ onBack }) => {
                       <span className="font-semibold">Qty:</span> {order.quantity}
                       {isOpen && <span className="text-gray-400"> (parcels)</span>}
                     </p>
+                    <div className="grid grid-cols-2 gap-x-3 gap-y-1 pt-1">
+                      {order.orderNumber && (
+                        <p><span className="font-semibold">Order #:</span> {order.orderNumber}</p>
+                      )}
+                      {order.priceCategory && (
+                        <p><span className="font-semibold">Price:</span> {order.priceCategory}</p>
+                      )}
+                      {order.agentName && (
+                        <p><span className="font-semibold">Agent:</span> {order.agentName}</p>
+                      )}
+                      {order.transportName && (
+                        <p><span className="font-semibold">Transport:</span> {order.transportName}</p>
+                      )}
+                      {order.discountRate !== undefined && order.discountRate !== null && (
+                        <p><span className="font-semibold">Discount:</span> {order.discountRate}%</p>
+                      )}
+                      {order.shippingCharge !== undefined && order.shippingCharge !== null && (
+                        <p><span className="font-semibold">Shipping:</span> ₹{order.shippingCharge.toLocaleString('en-IN')}</p>
+                      )}
+                      {formatDate(order.orderDate) && (
+                        <p><span className="font-semibold">Date:</span> {formatDate(order.orderDate)}</p>
+                      )}
+                      {formatDate(order.expectedDate) && (
+                        <p><span className="font-semibold">Expected:</span> {formatDate(order.expectedDate)}</p>
+                      )}
+                    </div>
                     {order.remarks && (
                       <p className="pt-1 border-t border-gray-50 mt-2">
                         <span className="font-semibold">Remarks:</span> {order.remarks}
@@ -140,21 +238,43 @@ export const OrdersPage: React.FC<Props> = ({ onBack }) => {
                       <p className="text-[10px] text-gray-400">Part of same manual order batch</p>
                     )}
                     <p>
-                      <span className="font-semibold">Status:</span> {order.status}
+                      <span className="font-semibold">Status:</span> {statusLabel}
                     </p>
                   </div>
-                  <button
-                    onClick={() => markCompleted(order.id)}
-                    disabled={order.status === 'completed' || updatingId === order.id}
-                    className="mt-4 w-full bg-green-600 hover:bg-green-700 text-white py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 disabled:opacity-50"
-                  >
-                    <CheckCircle className="w-4 h-4" />
-                    {order.status === 'completed'
-                      ? 'Completed'
-                      : updatingId === order.id
-                        ? 'Updating...'
-                        : 'Mark Completed'}
-                  </button>
+                  <div className="mt-4 space-y-2">
+                    {order.status === 'waiting_approval' && (
+                      <button
+                        onClick={() => approveOrder(order.id)}
+                        disabled={updatingId === order.id}
+                        className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 disabled:opacity-50"
+                      >
+                        <ThumbsUp className="w-4 h-4" />
+                        {updatingId === order.id ? 'Approving...' : 'Approve'}
+                      </button>
+                    )}
+                    {order.status === 'pending' && (
+                      <button
+                        onClick={() => markCompleted(order.id)}
+                        disabled={updatingId === order.id}
+                        className="w-full bg-green-600 hover:bg-green-700 text-white py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 disabled:opacity-50"
+                      >
+                        <CheckCircle className="w-4 h-4" />
+                        {updatingId === order.id ? 'Updating...' : 'Mark Completed'}
+                      </button>
+                    )}
+                    {order.status === 'completed' && (
+                      <div className="w-full bg-green-50 text-green-700 py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2">
+                        <CheckCircle className="w-4 h-4" />
+                        Completed
+                      </div>
+                    )}
+                    {order.status !== 'waiting_approval' && order.status !== 'pending' && order.status !== 'completed' && (
+                      <div className="w-full bg-gray-50 text-gray-600 py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2">
+                        <Clock className="w-4 h-4" />
+                        {statusLabel}
+                      </div>
+                    )}
+                  </div>
                 </div>
               );
             })}
