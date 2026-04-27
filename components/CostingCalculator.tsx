@@ -1,13 +1,44 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { CostingJob, CostingMaterial, CostingOtherCost, DesignCostingDetails } from '../types';
 
 interface Props {
   enabled: boolean;
   value: DesignCostingDetails;
+  materialNameOptions?: string[];
   onEnabledChange: (enabled: boolean) => void;
   onChange: (value: DesignCostingDetails) => void;
 }
+
+const MATERIAL_UNITS = [
+  'Meter',
+  'Pcs',
+  'Line',
+  'Frame',
+  'Head',
+  'Jutta',
+  'Kg',
+  'Dozen',
+  'Yard',
+  'Con',
+  'Roll',
+  'Num',
+  'Packet',
+  'Box',
+  'Taka',
+  'Than',
+  'Gram',
+  'cm',
+  'Set',
+  'Gross',
+  'Drum',
+  'Kali',
+  'Can',
+  'LTR',
+  'Pair',
+  'Square Meter',
+  'Square feet'
+];
 
 const JOB_TYPE_SUGGESTIONS = [
   'Block Print',
@@ -43,7 +74,7 @@ const emptyMaterial = (): CostingMaterial => ({
 });
 
 const emptyJob = (): CostingJob => ({
-  jobType: '',
+  jobType: JOB_TYPE_SUGGESTIONS[0],
   rate: 0,
   processDays: 0,
   karigarName: ''
@@ -54,7 +85,21 @@ const emptyOtherCost = (): CostingOtherCost => ({
   rate: 0
 });
 
-export const CostingCalculator: React.FC<Props> = ({ enabled, value, onEnabledChange, onChange }) => {
+export const CostingCalculator: React.FC<Props> = ({ enabled, value, materialNameOptions = [], onEnabledChange, onChange }) => {
+  const [customMaterialRows, setCustomMaterialRows] = useState<Set<number>>(new Set());
+
+  const normalizedMaterialOptions = useMemo(() => {
+    const seen = new Set<string>();
+    return materialNameOptions
+      .map(name => name.trim())
+      .filter(name => {
+        if (!name || seen.has(name.toLowerCase())) return false;
+        seen.add(name.toLowerCase());
+        return true;
+      })
+      .sort((a, b) => a.localeCompare(b));
+  }, [materialNameOptions]);
+
   const materialTotal = useMemo(
     () => value.materials.reduce((sum, m) => sum + (Number(m.rate) || 0) * (Number(m.avgPerPcs) || 0), 0),
     [value.materials]
@@ -72,6 +117,15 @@ export const CostingCalculator: React.FC<Props> = ({ enabled, value, onEnabledCh
   const updateMaterials = (materials: CostingMaterial[]) => onChange({ ...value, materials });
   const updateJobs = (jobs: CostingJob[]) => onChange({ ...value, jobs });
   const updateOtherCosts = (otherCosts: CostingOtherCost[]) => onChange({ ...value, otherCosts });
+
+  const setMaterialRowCustom = (idx: number, isCustom: boolean) => {
+    setCustomMaterialRows(prev => {
+      const next = new Set(prev);
+      if (isCustom) next.add(idx);
+      else next.delete(idx);
+      return next;
+    });
+  };
 
   return (
     <div className="space-y-3 border border-gray-200 rounded-2xl p-4 bg-white">
@@ -102,8 +156,55 @@ export const CostingCalculator: React.FC<Props> = ({ enabled, value, onEnabledCh
             </div>
             {value.materials.map((m, idx) => (
               <div key={idx} className="grid grid-cols-2 gap-2 p-3 rounded-xl border border-gray-100 bg-gray-50">
-                <input className="px-3 py-2 rounded-lg border border-gray-200 text-sm" placeholder="Material name" value={m.materialName} onChange={e => updateMaterials(value.materials.map((x, i) => i === idx ? { ...x, materialName: e.target.value } : x))} />
-                <input className="px-3 py-2 rounded-lg border border-gray-200 text-sm" placeholder="Unit (e.g. Meter)" value={m.unit} onChange={e => updateMaterials(value.materials.map((x, i) => i === idx ? { ...x, unit: e.target.value } : x))} />
+                <div className="col-span-2 sm:col-span-1 space-y-1">
+                  {customMaterialRows.has(idx) || normalizedMaterialOptions.length === 0 || (!!m.materialName && !normalizedMaterialOptions.includes(m.materialName)) ? (
+                    <div className="space-y-1">
+                      <input
+                        className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm"
+                        placeholder="New material name"
+                        value={m.materialName}
+                        onChange={e => updateMaterials(value.materials.map((x, i) => i === idx ? { ...x, materialName: e.target.value } : x))}
+                      />
+                      {normalizedMaterialOptions.length > 0 && (
+                        <button
+                          type="button"
+                          className="text-[10px] font-semibold text-indigo-600"
+                          onClick={() => setMaterialRowCustom(idx, false)}
+                        >
+                          Choose from previous materials
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <select
+                      className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white"
+                      value={normalizedMaterialOptions.includes(m.materialName) ? m.materialName : ''}
+                      onChange={e => {
+                        if (e.target.value === '__new__') {
+                          updateMaterials(value.materials.map((x, i) => i === idx ? { ...x, materialName: '' } : x));
+                          setMaterialRowCustom(idx, true);
+                          return;
+                        }
+                        updateMaterials(value.materials.map((x, i) => i === idx ? { ...x, materialName: e.target.value } : x));
+                      }}
+                    >
+                      <option value="" disabled>Select material</option>
+                      {normalizedMaterialOptions.map(name => <option key={name} value={name}>{name}</option>)}
+                      <option value="__new__">+ Add new material</option>
+                    </select>
+                  )}
+                  <p className="text-[10px] text-gray-500">
+                    Select a previous material or type a new one.
+                  </p>
+                </div>
+                <select
+                  className="px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white"
+                  value={m.unit || 'Meter'}
+                  onChange={e => updateMaterials(value.materials.map((x, i) => i === idx ? { ...x, unit: e.target.value } : x))}
+                >
+                  {MATERIAL_UNITS.includes(m.unit) || !m.unit ? null : <option value={m.unit}>{m.unit}</option>}
+                  {MATERIAL_UNITS.map(unit => <option key={unit} value={unit}>{unit}</option>)}
+                </select>
                 <input type="number" step="0.01" className="px-3 py-2 rounded-lg border border-gray-200 text-sm" placeholder="Rate" value={m.rate || ''} onChange={e => updateMaterials(value.materials.map((x, i) => i === idx ? { ...x, rate: Number(e.target.value) || 0 } : x))} />
                 <input type="number" step="0.01" className="px-3 py-2 rounded-lg border border-gray-200 text-sm" placeholder="Avg. per pcs" value={m.avgPerPcs || ''} onChange={e => updateMaterials(value.materials.map((x, i) => i === idx ? { ...x, avgPerPcs: Number(e.target.value) || 0 } : x))} />
                 <input className="col-span-2 px-3 py-2 rounded-lg border border-gray-200 text-sm" placeholder="Supplier name (optional)" value={m.supplierName || ''} onChange={e => updateMaterials(value.materials.map((x, i) => i === idx ? { ...x, supplierName: e.target.value } : x))} />
@@ -126,13 +227,15 @@ export const CostingCalculator: React.FC<Props> = ({ enabled, value, onEnabledCh
             {value.jobs.map((j, idx) => (
               <div key={idx} className="grid grid-cols-2 gap-2 p-3 rounded-xl border border-gray-100 bg-gray-50">
                 <div className="col-span-2">
-                  <input
-                    list="job-type-options"
+                  <select
                     className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm"
-                    placeholder="Job type"
-                    value={j.jobType}
+                    value={j.jobType || ''}
                     onChange={e => updateJobs(value.jobs.map((x, i) => i === idx ? { ...x, jobType: e.target.value } : x))}
-                  />
+                  >
+                    <option value="" disabled>Select job type</option>
+                    {JOB_TYPE_SUGGESTIONS.includes(j.jobType) || !j.jobType ? null : <option value={j.jobType}>{j.jobType}</option>}
+                    {JOB_TYPE_SUGGESTIONS.map(type => <option key={type} value={type}>{type}</option>)}
+                  </select>
                 </div>
                 <input type="number" step="0.01" className="px-3 py-2 rounded-lg border border-gray-200 text-sm" placeholder="Rate" value={j.rate || ''} onChange={e => updateJobs(value.jobs.map((x, i) => i === idx ? { ...x, rate: Number(e.target.value) || 0 } : x))} />
                 <input type="number" className="px-3 py-2 rounded-lg border border-gray-200 text-sm" placeholder="Process days" value={j.processDays || ''} onChange={e => updateJobs(value.jobs.map((x, i) => i === idx ? { ...x, processDays: Number(e.target.value) || 0 } : x))} />
@@ -142,9 +245,6 @@ export const CostingCalculator: React.FC<Props> = ({ enabled, value, onEnabledCh
                 </div>
               </div>
             ))}
-            <datalist id="job-type-options">
-              {JOB_TYPE_SUGGESTIONS.map(type => <option key={type} value={type} />)}
-            </datalist>
             <p className="text-xs font-semibold text-gray-700">Job Total: ₹{jobTotal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</p>
           </section>
 

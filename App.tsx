@@ -198,6 +198,20 @@ const App: React.FC = () => {
     });
   }, [designs, filters]);
 
+  const costingMaterialNameOptions = useMemo(() => {
+    const seen = new Set<string>();
+    return designs
+      .flatMap(d => d.costingDetails?.materials || [])
+      .map(m => m.materialName?.trim() || '')
+      .filter(name => {
+        const key = name.toLowerCase();
+        if (!name || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .sort((a, b) => a.localeCompare(b));
+  }, [designs]);
+
   useEffect(() => {
     if (designs.length > 0) {
       const newMax = Math.max(...designs.map(d => d.retailPrice), 100000);
@@ -931,6 +945,7 @@ const App: React.FC = () => {
           }} 
           onSubmit={editingDesign ? handleUpdateDesign : handleAddDesign}
           initialData={editingDesign}
+          materialNameOptions={costingMaterialNameOptions}
         />
       )}
       {isShareOpen && (
