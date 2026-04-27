@@ -15,9 +15,18 @@ interface Props {
   onSubmit: (design: TextileDesign) => void;
   initialData?: TextileDesign | null;
   materialNameOptions?: string[];
+  supplierNameOptions?: string[];
+  karigarNameOptions?: string[];
 }
 
-export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData, materialNameOptions = [] }) => {
+export const UploadForm: React.FC<Props> = ({
+  onClose,
+  onSubmit,
+  initialData,
+  materialNameOptions = [],
+  supplierNameOptions = [],
+  karigarNameOptions = []
+}) => {
   const emptyCostingDetails: DesignCostingDetails = { materials: [], jobs: [], otherCosts: [] };
   const [preview, setPreview] = useState<string | null>(initialData?.image || null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -930,6 +939,8 @@ export const UploadForm: React.FC<Props> = ({ onClose, onSubmit, initialData, ma
             enabled={costingEnabled}
             value={costingDetails}
             materialNameOptions={materialNameOptions}
+            supplierNameOptions={supplierNameOptions}
+            karigarNameOptions={karigarNameOptions}
             onEnabledChange={setCostingEnabled}
             onChange={setCostingDetails}
           />

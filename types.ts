@@ -19,6 +19,10 @@ export interface CostingJob {
   rate: number;
   processDays: number;
   karigarName?: string;
+  karigarGstNumber?: string;
+  karigarFirmName?: string;
+  karigarMobileNumber?: string;
+  karigarAgentName?: string;
 }
 
 export interface CostingOtherCost {

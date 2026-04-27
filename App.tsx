@@ -212,6 +212,34 @@ const App: React.FC = () => {
       .sort((a, b) => a.localeCompare(b));
   }, [designs]);
 
+  const costingSupplierNameOptions = useMemo(() => {
+    const seen = new Set<string>();
+    return designs
+      .flatMap(d => d.costingDetails?.materials || [])
+      .map(m => m.supplierName?.trim() || '')
+      .filter(name => {
+        const key = name.toLowerCase();
+        if (!name || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .sort((a, b) => a.localeCompare(b));
+  }, [designs]);
+
+  const costingKarigarNameOptions = useMemo(() => {
+    const seen = new Set<string>();
+    return designs
+      .flatMap(d => d.costingDetails?.jobs || [])
+      .map(j => j.karigarName?.trim() || '')
+      .filter(name => {
+        const key = name.toLowerCase();
+        if (!name || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .sort((a, b) => a.localeCompare(b));
+  }, [designs]);
+
   useEffect(() => {
     if (designs.length > 0) {
       const newMax = Math.max(...designs.map(d => d.retailPrice), 100000);
@@ -946,6 +974,8 @@ const App: React.FC = () => {
           onSubmit={editingDesign ? handleUpdateDesign : handleAddDesign}
           initialData={editingDesign}
           materialNameOptions={costingMaterialNameOptions}
+          supplierNameOptions={costingSupplierNameOptions}
+          karigarNameOptions={costingKarigarNameOptions}
         />
       )}
       {isShareOpen && (

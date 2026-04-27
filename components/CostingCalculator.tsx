@@ -6,6 +6,8 @@ interface Props {
   enabled: boolean;
   value: DesignCostingDetails;
   materialNameOptions?: string[];
+  supplierNameOptions?: string[];
+  karigarNameOptions?: string[];
   onEnabledChange: (enabled: boolean) => void;
   onChange: (value: DesignCostingDetails) => void;
 }
@@ -85,20 +87,34 @@ const emptyOtherCost = (): CostingOtherCost => ({
   rate: 0
 });
 
-export const CostingCalculator: React.FC<Props> = ({ enabled, value, materialNameOptions = [], onEnabledChange, onChange }) => {
-  const [customMaterialRows, setCustomMaterialRows] = useState<Set<number>>(new Set());
+const normalizeOptions = (options: string[]) => {
+  const seen = new Set<string>();
+  return options
+    .map(name => name.trim())
+    .filter(name => {
+      if (!name || seen.has(name.toLowerCase())) return false;
+      seen.add(name.toLowerCase());
+      return true;
+    })
+    .sort((a, b) => a.localeCompare(b));
+};
 
-  const normalizedMaterialOptions = useMemo(() => {
-    const seen = new Set<string>();
-    return materialNameOptions
-      .map(name => name.trim())
-      .filter(name => {
-        if (!name || seen.has(name.toLowerCase())) return false;
-        seen.add(name.toLowerCase());
-        return true;
-      })
-      .sort((a, b) => a.localeCompare(b));
-  }, [materialNameOptions]);
+export const CostingCalculator: React.FC<Props> = ({
+  enabled,
+  value,
+  materialNameOptions = [],
+  supplierNameOptions = [],
+  karigarNameOptions = [],
+  onEnabledChange,
+  onChange
+}) => {
+  const [customMaterialRows, setCustomMaterialRows] = useState<Set<number>>(new Set());
+  const [customSupplierRows, setCustomSupplierRows] = useState<Set<number>>(new Set());
+  const [customKarigarRows, setCustomKarigarRows] = useState<Set<number>>(new Set());
+
+  const normalizedMaterialOptions = useMemo(() => normalizeOptions(materialNameOptions), [materialNameOptions]);
+  const normalizedSupplierOptions = useMemo(() => normalizeOptions(supplierNameOptions), [supplierNameOptions]);
+  const normalizedKarigarOptions = useMemo(() => normalizeOptions(karigarNameOptions), [karigarNameOptions]);
 
   const materialTotal = useMemo(
     () => value.materials.reduce((sum, m) => sum + (Number(m.rate) || 0) * (Number(m.avgPerPcs) || 0), 0),
@@ -120,6 +136,24 @@ export const CostingCalculator: React.FC<Props> = ({ enabled, value, materialNam
 
   const setMaterialRowCustom = (idx: number, isCustom: boolean) => {
     setCustomMaterialRows(prev => {
+      const next = new Set(prev);
+      if (isCustom) next.add(idx);
+      else next.delete(idx);
+      return next;
+    });
+  };
+
+  const setSupplierRowCustom = (idx: number, isCustom: boolean) => {
+    setCustomSupplierRows(prev => {
+      const next = new Set(prev);
+      if (isCustom) next.add(idx);
+      else next.delete(idx);
+      return next;
+    });
+  };
+
+  const setKarigarRowCustom = (idx: number, isCustom: boolean) => {
+    setCustomKarigarRows(prev => {
       const next = new Set(prev);
       if (isCustom) next.add(idx);
       else next.delete(idx);
@@ -207,7 +241,44 @@ export const CostingCalculator: React.FC<Props> = ({ enabled, value, materialNam
                 </select>
                 <input type="number" step="0.01" className="px-3 py-2 rounded-lg border border-gray-200 text-sm" placeholder="Rate" value={m.rate || ''} onChange={e => updateMaterials(value.materials.map((x, i) => i === idx ? { ...x, rate: Number(e.target.value) || 0 } : x))} />
                 <input type="number" step="0.01" className="px-3 py-2 rounded-lg border border-gray-200 text-sm" placeholder="Avg. per pcs" value={m.avgPerPcs || ''} onChange={e => updateMaterials(value.materials.map((x, i) => i === idx ? { ...x, avgPerPcs: Number(e.target.value) || 0 } : x))} />
-                <input className="col-span-2 px-3 py-2 rounded-lg border border-gray-200 text-sm" placeholder="Supplier name (optional)" value={m.supplierName || ''} onChange={e => updateMaterials(value.materials.map((x, i) => i === idx ? { ...x, supplierName: e.target.value } : x))} />
+                <div className="col-span-2 space-y-1">
+                  {customSupplierRows.has(idx) || normalizedSupplierOptions.length === 0 || (!!m.supplierName && !normalizedSupplierOptions.includes(m.supplierName)) ? (
+                    <div className="space-y-1">
+                      <input
+                        className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm"
+                        placeholder="Supplier name (optional)"
+                        value={m.supplierName || ''}
+                        onChange={e => updateMaterials(value.materials.map((x, i) => i === idx ? { ...x, supplierName: e.target.value } : x))}
+                      />
+                      {normalizedSupplierOptions.length > 0 && (
+                        <button
+                          type="button"
+                          className="text-[10px] font-semibold text-indigo-600"
+                          onClick={() => setSupplierRowCustom(idx, false)}
+                        >
+                          Choose from previous suppliers
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <select
+                      className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white"
+                      value={normalizedSupplierOptions.includes(m.supplierName || '') ? m.supplierName : ''}
+                      onChange={e => {
+                        if (e.target.value === '__new__') {
+                          updateMaterials(value.materials.map((x, i) => i === idx ? { ...x, supplierName: '' } : x));
+                          setSupplierRowCustom(idx, true);
+                          return;
+                        }
+                        updateMaterials(value.materials.map((x, i) => i === idx ? { ...x, supplierName: e.target.value } : x));
+                      }}
+                    >
+                      <option value="">Select supplier (optional)</option>
+                      {normalizedSupplierOptions.map(name => <option key={name} value={name}>{name}</option>)}
+                      <option value="__new__">+ Add new supplier</option>
+                    </select>
+                  )}
+                </div>
                 <div className="col-span-2 flex justify-between items-center text-xs">
                   <span className="font-semibold text-gray-500">Line total: {(m.rate * m.avgPerPcs).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
                   <button type="button" className="text-red-600 inline-flex items-center gap-1" onClick={() => updateMaterials(value.materials.filter((_, i) => i !== idx))}><Trash2 className="w-3 h-3" /> Remove</button>
@@ -239,7 +310,79 @@ export const CostingCalculator: React.FC<Props> = ({ enabled, value, materialNam
                 </div>
                 <input type="number" step="0.01" className="px-3 py-2 rounded-lg border border-gray-200 text-sm" placeholder="Rate" value={j.rate || ''} onChange={e => updateJobs(value.jobs.map((x, i) => i === idx ? { ...x, rate: Number(e.target.value) || 0 } : x))} />
                 <input type="number" className="px-3 py-2 rounded-lg border border-gray-200 text-sm" placeholder="Process days" value={j.processDays || ''} onChange={e => updateJobs(value.jobs.map((x, i) => i === idx ? { ...x, processDays: Number(e.target.value) || 0 } : x))} />
-                <input className="col-span-2 px-3 py-2 rounded-lg border border-gray-200 text-sm" placeholder="Karigar name (optional)" value={j.karigarName || ''} onChange={e => updateJobs(value.jobs.map((x, i) => i === idx ? { ...x, karigarName: e.target.value } : x))} />
+                <div className="col-span-2 space-y-2">
+                  {customKarigarRows.has(idx) || (!!j.karigarName && !normalizedKarigarOptions.includes(j.karigarName)) ? (
+                    <div className="grid grid-cols-2 gap-2 rounded-xl border border-indigo-100 bg-white p-3">
+                      <div className="col-span-2 flex items-center justify-between gap-2">
+                        <p className="text-xs font-bold text-gray-700 uppercase tracking-wide">Add Karigar</p>
+                        {normalizedKarigarOptions.length > 0 && (
+                          <button
+                            type="button"
+                            className="text-[10px] font-semibold text-indigo-600"
+                            onClick={() => setKarigarRowCustom(idx, false)}
+                          >
+                            Choose existing
+                          </button>
+                        )}
+                      </div>
+                      <input
+                        required={customKarigarRows.has(idx)}
+                        className="col-span-2 px-3 py-2 rounded-lg border border-gray-200 text-sm"
+                        placeholder="Full name *"
+                        value={j.karigarName || ''}
+                        onChange={e => updateJobs(value.jobs.map((x, i) => i === idx ? { ...x, karigarName: e.target.value } : x))}
+                      />
+                      <input
+                        className="px-3 py-2 rounded-lg border border-gray-200 text-sm"
+                        placeholder="GST number (optional)"
+                        value={j.karigarGstNumber || ''}
+                        onChange={e => updateJobs(value.jobs.map((x, i) => i === idx ? { ...x, karigarGstNumber: e.target.value } : x))}
+                      />
+                      <input
+                        className="px-3 py-2 rounded-lg border border-gray-200 text-sm"
+                        placeholder="Mobile number (optional)"
+                        value={j.karigarMobileNumber || ''}
+                        onChange={e => updateJobs(value.jobs.map((x, i) => i === idx ? { ...x, karigarMobileNumber: e.target.value } : x))}
+                      />
+                      <input
+                        className="col-span-2 px-3 py-2 rounded-lg border border-gray-200 text-sm"
+                        placeholder="Karigar's firm name (optional)"
+                        value={j.karigarFirmName || ''}
+                        onChange={e => updateJobs(value.jobs.map((x, i) => i === idx ? { ...x, karigarFirmName: e.target.value } : x))}
+                      />
+                      <input
+                        className="col-span-2 px-3 py-2 rounded-lg border border-gray-200 text-sm"
+                        placeholder="Agent name (optional)"
+                        value={j.karigarAgentName || ''}
+                        onChange={e => updateJobs(value.jobs.map((x, i) => i === idx ? { ...x, karigarAgentName: e.target.value } : x))}
+                      />
+                    </div>
+                  ) : (
+                    <select
+                      className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white"
+                      value={normalizedKarigarOptions.includes(j.karigarName || '') ? j.karigarName : ''}
+                      onChange={e => {
+                        if (e.target.value === '__new__') {
+                          updateJobs(value.jobs.map((x, i) => i === idx ? {
+                            ...x,
+                            karigarName: '',
+                            karigarGstNumber: '',
+                            karigarFirmName: '',
+                            karigarMobileNumber: '',
+                            karigarAgentName: ''
+                          } : x));
+                          setKarigarRowCustom(idx, true);
+                          return;
+                        }
+                        updateJobs(value.jobs.map((x, i) => i === idx ? { ...x, karigarName: e.target.value } : x));
+                      }}
+                    >
+                      <option value="">Select karigar (optional)</option>
+                      {normalizedKarigarOptions.map(name => <option key={name} value={name}>{name}</option>)}
+                      <option value="__new__">+ Add new karigar</option>
+                    </select>
+                  )}
+                </div>
                 <div className="col-span-2 flex justify-end">
                   <button type="button" className="text-red-600 inline-flex items-center gap-1 text-xs" onClick={() => updateJobs(value.jobs.filter((_, i) => i !== idx))}><Trash2 className="w-3 h-3" /> Remove</button>
                 </div>
