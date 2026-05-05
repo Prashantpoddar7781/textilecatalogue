@@ -260,7 +260,7 @@ router.post('/manual', authenticateToken, requireActiveSubscription, [
           buyerName: customerRef.buyerName,
           buyerPhone: customerRef.buyerPhone,
           quantity,
-          remarks: remarks?.trim() || null,
+          remarks: optionalString(line?.remarks) || remarks?.trim() || null,
           manualType: 'design',
           manualBatchId: batchId,
           status: 'waiting_approval',

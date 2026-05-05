@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, CheckCircle, Clock, Plus, Package, ThumbsUp } from 'lucide-react';
+import { ArrowLeft, CheckCircle, Clock, Plus, Package, ScanLine, ThumbsUp } from 'lucide-react';
 import { ordersApi } from '../services/api';
 import { Order } from '../types';
+import { BarcodeOrderBuilder } from './BarcodeOrderBuilder';
 import { ManualOrderDialog } from './ManualOrderDialog';
 
 interface Props {
@@ -13,6 +14,7 @@ export const OrdersPage: React.FC<Props> = ({ onBack }) => {
   const [loading, setLoading] = useState(false);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [showManual, setShowManual] = useState(false);
+  const [showScanner, setShowScanner] = useState(false);
   const [activeTab, setActiveTab] = useState<'waiting_approval' | 'pending' | 'completed' | 'all'>('waiting_approval');
 
   const loadOrders = async () => {
@@ -93,14 +95,24 @@ export const OrdersPage: React.FC<Props> = ({ onBack }) => {
             Back
           </button>
           <h1 className="text-lg font-black text-gray-900">Orders</h1>
-          <button
-            type="button"
-            onClick={() => setShowManual(true)}
-            className="flex items-center gap-1.5 rounded-xl bg-indigo-600 text-white text-xs font-bold px-3 py-2 hover:bg-indigo-700 shadow-sm"
-          >
-            <Plus className="w-4 h-4" />
-            <span className="hidden sm:inline">Create</span>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowScanner(true)}
+              className="flex items-center gap-1.5 rounded-xl bg-gray-900 text-white text-xs font-bold px-3 py-2 hover:bg-black shadow-sm"
+            >
+              <ScanLine className="w-4 h-4" />
+              <span className="hidden sm:inline">Scanner</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowManual(true)}
+              className="flex items-center gap-1.5 rounded-xl bg-indigo-600 text-white text-xs font-bold px-3 py-2 hover:bg-indigo-700 shadow-sm"
+            >
+              <Plus className="w-4 h-4" />
+              <span className="hidden sm:inline">Create</span>
+            </button>
+          </div>
         </div>
       </header>
 
@@ -129,11 +141,19 @@ export const OrdersPage: React.FC<Props> = ({ onBack }) => {
             <p className="text-sm text-gray-400">No orders yet.</p>
             <button
               type="button"
-              onClick={() => setShowManual(true)}
+              onClick={() => setShowScanner(true)}
               className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 text-white text-sm font-bold px-5 py-3 hover:bg-indigo-700"
             >
+              <ScanLine className="w-5 h-5" />
+              Scan barcode to create order
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowManual(true)}
+              className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white text-gray-700 text-sm font-bold px-5 py-3 hover:bg-gray-50"
+            >
               <Plus className="w-5 h-5" />
-              Create order manually
+              Create manually
             </button>
           </div>
         ) : filteredOrders.length === 0 ? (
@@ -285,6 +305,12 @@ export const OrdersPage: React.FC<Props> = ({ onBack }) => {
       {showManual && (
         <ManualOrderDialog
           onClose={() => setShowManual(false)}
+          onCreated={() => void loadOrders()}
+        />
+      )}
+      {showScanner && (
+        <BarcodeOrderBuilder
+          onClose={() => setShowScanner(false)}
           onCreated={() => void loadOrders()}
         />
       )}

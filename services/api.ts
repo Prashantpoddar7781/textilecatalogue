@@ -368,7 +368,7 @@ export const ordersApi = {
     orderDate?: string;
     expectedDate?: string;
     parcelQuantity?: number;
-    lines?: Array<{ designId: string; quantity: number }>;
+    lines?: Array<{ designId: string; quantity: number; remarks?: string }>;
   }) => {
     return request<{ order?: any; orders?: any[]; manualBatchId?: string }>('/orders/manual', {
       method: 'POST',

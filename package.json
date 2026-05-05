@@ -16,6 +16,7 @@
     "@capacitor/cli": "^8.3.1",
     "@capacitor/core": "^8.3.1",
     "@google/genai": "^0.7.0",
+    "html5-qrcode": "^2.3.8",
     "jsbarcode": "^3.12.3",
     "lucide-react": "^0.562.0",
     "qrcode": "^1.5.4",
