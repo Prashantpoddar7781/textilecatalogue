@@ -235,7 +235,9 @@ router.post('/manual', authenticateToken, requireActiveSubscription, [
     }
 
     const batchId = randomUUID();
-    const created = [];
+    const orderLines = [];
+    let primaryDesignId = null;
+    let totalQuantity = 0;
 
     for (const line of lines) {
       const designId = line?.designId;
@@ -251,27 +253,41 @@ router.post('/manual', authenticateToken, requireActiveSubscription, [
         return res.status(400).json({ error: `Design not found or not yours: ${designId}` });
       }
 
-      const order = await prisma.order.create({
-        data: {
-          userId,
-          shareLinkId: null,
-          designId,
-          customerId: customerRef.customerId,
-          buyerName: customerRef.buyerName,
-          buyerPhone: customerRef.buyerPhone,
-          quantity,
-          remarks: optionalString(line?.remarks) || remarks?.trim() || null,
-          manualType: 'design',
-          manualBatchId: batchId,
-          status: 'waiting_approval',
-          ...orderMeta
-        },
-        include: orderInclude
+      if (!primaryDesignId) primaryDesignId = designId;
+      totalQuantity += quantity;
+      orderLines.push({
+        designId,
+        designName: design.name || 'Untitled Design',
+        designCode: design.designCode || null,
+        image: design.image,
+        fabric: design.fabric,
+        basePrice: design.basePrice || design.retailPrice || 0,
+        retailPrice: design.retailPrice || design.basePrice || 0,
+        quantity,
+        remarks: optionalString(line?.remarks)
       });
-      created.push(order);
     }
 
-    return res.status(201).json({ orders: created, manualBatchId: batchId });
+    const order = await prisma.order.create({
+      data: {
+        userId,
+        shareLinkId: null,
+        designId: primaryDesignId,
+        customerId: customerRef.customerId,
+        buyerName: customerRef.buyerName,
+        buyerPhone: customerRef.buyerPhone,
+        quantity: totalQuantity,
+        orderLines,
+        remarks: remarks?.trim() || null,
+        manualType: 'design',
+        manualBatchId: batchId,
+        status: 'waiting_approval',
+        ...orderMeta
+      },
+      include: orderInclude
+    });
+
+    return res.status(201).json({ order, orders: [order], manualBatchId: batchId });
   } catch (error) {
     next(error);
   }

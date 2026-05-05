@@ -164,6 +164,8 @@ export const OrdersPage: React.FC<Props> = ({ onBack }) => {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {filteredOrders.map(order => {
               const isOpen = order.manualType === 'open';
+              const orderLines = order.orderLines || [];
+              const hasGroupedLines = orderLines.length > 0;
               const statusLabel = order.status === 'waiting_approval'
                 ? 'Waiting for approval'
                 : order.status === 'pending'
@@ -177,6 +179,19 @@ export const OrdersPage: React.FC<Props> = ({ onBack }) => {
                     {isOpen ? (
                       <div className="w-12 h-12 rounded-lg bg-amber-50 flex items-center justify-center border border-amber-100">
                         <Package className="w-6 h-6 text-amber-700" />
+                      </div>
+                    ) : hasGroupedLines && orderLines[0]?.image ? (
+                      <div className="relative">
+                        <img
+                          src={orderLines[0].image}
+                          alt={orderLines[0].designName || 'Design'}
+                          className="w-12 h-12 rounded-lg object-cover"
+                        />
+                        {orderLines.length > 1 && (
+                          <span className="absolute -right-2 -top-2 rounded-full bg-indigo-600 px-1.5 py-0.5 text-[10px] font-black text-white">
+                            +{orderLines.length - 1}
+                          </span>
+                        )}
                       </div>
                     ) : order.design?.image ? (
                       <img
@@ -192,7 +207,11 @@ export const OrdersPage: React.FC<Props> = ({ onBack }) => {
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <p className="text-sm font-bold text-gray-900 truncate">
-                          {isOpen ? 'Open order' : order.design?.name || 'Design'}
+                          {isOpen
+                            ? 'Open order'
+                            : hasGroupedLines
+                              ? `${orderLines.length} design order`
+                              : order.design?.name || 'Design'}
                         </p>
                         {order.manualType && (
                           <span className="text-[10px] font-black uppercase tracking-wide px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
@@ -200,8 +219,13 @@ export const OrdersPage: React.FC<Props> = ({ onBack }) => {
                           </span>
                         )}
                       </div>
-                      {!isOpen && order.design?.fabric && (
+                      {!isOpen && !hasGroupedLines && order.design?.fabric && (
                         <p className="text-xs text-gray-500 truncate">{order.design.fabric}</p>
+                      )}
+                      {hasGroupedLines && (
+                        <p className="text-xs text-gray-500 truncate">
+                          {orderLines.map(line => line.designCode || line.designName || line.designId).join(', ')}
+                        </p>
                       )}
                     </div>
                   </div>
@@ -223,6 +247,27 @@ export const OrdersPage: React.FC<Props> = ({ onBack }) => {
                       <span className="font-semibold">Qty:</span> {order.quantity}
                       {isOpen && <span className="text-gray-400"> (parcels)</span>}
                     </p>
+                    {hasGroupedLines && (
+                      <div className="mt-2 rounded-xl border border-gray-100 bg-gray-50 p-2 space-y-2">
+                        <p className="text-[10px] font-black uppercase tracking-wide text-gray-500">Design lines</p>
+                        {orderLines.map((line, idx) => (
+                          <div key={`${line.designId}-${idx}`} className="flex items-center gap-2 rounded-lg bg-white p-2">
+                            {line.image && (
+                              <img src={line.image} alt={line.designName || 'Design'} className="h-9 w-9 rounded-md object-cover" />
+                            )}
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate font-semibold text-gray-800">
+                                {line.designCode || line.designName || line.designId}
+                              </p>
+                              <p className="text-[10px] text-gray-500">
+                                Qty: {line.quantity}
+                                {line.remarks ? ` • ${line.remarks}` : ''}
+                              </p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                     <div className="grid grid-cols-2 gap-x-3 gap-y-1 pt-1">
                       {order.orderNumber && (
                         <p><span className="font-semibold">Order #:</span> {order.orderNumber}</p>

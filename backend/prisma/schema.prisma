@@ -183,6 +183,7 @@ model Order {
   buyerName   String
   buyerPhone  String
   quantity    Int
+  orderLines  Json?
   status      String   @default("pending")
   remarks     String? // seller notes on manual orders
   manualType  String? // open | design; null for share-link orders

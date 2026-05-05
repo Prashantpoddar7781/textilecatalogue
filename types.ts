@@ -139,6 +139,17 @@ export interface Order {
   buyerName: string;
   buyerPhone: string;
   quantity: number;
+  orderLines?: Array<{
+    designId: string;
+    designName?: string | null;
+    designCode?: string | null;
+    image?: string | null;
+    fabric?: string | null;
+    basePrice?: number | null;
+    retailPrice?: number | null;
+    quantity: number;
+    remarks?: string | null;
+  }> | null;
   status: 'waiting_approval' | 'pending' | 'completed' | string;
   remarks?: string | null;
   manualType?: 'open' | 'design' | null;
