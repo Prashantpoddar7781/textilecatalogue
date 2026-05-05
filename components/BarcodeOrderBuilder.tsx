@@ -48,32 +48,72 @@ function BarcodeScanner({
   const handledRef = useRef(false);
 
   useEffect(() => {
-    const scanner = new Html5Qrcode(elementId);
-    scannerRef.current = scanner;
-    handledRef.current = false;
+    let started = false;
+    let disposed = false;
 
-    scanner.start(
-      { facingMode: 'environment' },
-      { fps: 10, qrbox: { width: 240, height: 240 } },
-      decodedText => {
-        if (handledRef.current) return;
-        handledRef.current = true;
-        scanner.stop().catch(() => undefined);
-        onScan(decodedText);
-      },
-      () => undefined
-    ).catch(err => {
-      onError(err?.message || 'Could not start camera. Please allow camera permission.');
-    });
+    try {
+      const scanner = new Html5Qrcode(elementId);
+      scannerRef.current = scanner;
+      handledRef.current = false;
+
+      scanner.start(
+        { facingMode: 'environment' },
+        { fps: 10, qrbox: { width: 240, height: 240 } },
+        decodedText => {
+          if (handledRef.current) return;
+          handledRef.current = true;
+          scanner.stop().catch(() => undefined);
+          onScan(decodedText);
+        },
+        () => undefined
+      ).then(() => {
+        started = true;
+        if (disposed) {
+          scanner.stop()
+            .catch(() => undefined)
+            .finally(() => {
+              try {
+                scanner.clear();
+              } catch {
+                // Scanner may already be cleared by the library.
+              }
+            });
+        }
+      }).catch(err => {
+        onError(err?.message || 'Could not start camera. Please allow camera permission.');
+        try {
+          scanner.clear();
+        } catch {
+          // Ignore cleanup errors so scanner UI never crashes the page.
+        }
+      });
+    } catch (err: any) {
+      onError(err?.message || 'Scanner is not available on this device/browser.');
+    }
 
     return () => {
-      scannerRef.current?.stop().catch(() => undefined);
-      scannerRef.current?.clear().catch(() => undefined);
+      disposed = true;
+      const scanner = scannerRef.current;
       scannerRef.current = null;
+      if (!scanner) return;
+
+      const clearScanner = () => {
+        try {
+          scanner.clear();
+        } catch {
+          // Ignore cleanup errors so React cleanup cannot blank the screen.
+        }
+      };
+
+      if (started) {
+        scanner.stop().catch(() => undefined).finally(clearScanner);
+      } else {
+        clearScanner();
+      }
     };
   }, [elementId, onError, onScan]);
 
-  return <div id={elementId} className="overflow-hidden rounded-2xl border border-gray-200 bg-black" />;
+  return <div id={elementId} className="min-h-[320px] overflow-hidden rounded-2xl border border-gray-200 bg-black" />;
 }
 
 export const BarcodeOrderBuilder: React.FC<Props> = ({ initialDesignId, onClose, onCreated }) => {
@@ -193,6 +233,14 @@ export const BarcodeOrderBuilder: React.FC<Props> = ({ initialDesignId, onClose,
       setSubmitting(false);
     }
   };
+
+  const handleScanValue = useCallback((value: string) => {
+    void loadDesign(extractDesignIdFromScan(value));
+  }, [loadDesign]);
+
+  const handleScannerError = useCallback((message: string) => {
+    setError(message);
+  }, []);
 
   const wrapperClass = onClose
     ? 'fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-0 sm:p-4'
@@ -325,8 +373,8 @@ export const BarcodeOrderBuilder: React.FC<Props> = ({ initialDesignId, onClose,
           ) : scannerOpen ? (
             <div className="space-y-3">
               <BarcodeScanner
-                onScan={value => void loadDesign(extractDesignIdFromScan(value))}
-                onError={message => setError(message)}
+                onScan={handleScanValue}
+                onError={handleScannerError}
               />
               <p className="text-xs text-gray-500 text-center">Point the camera at a SutraDhar design barcode.</p>
             </div>
