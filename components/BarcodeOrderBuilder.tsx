@@ -62,7 +62,6 @@ function BarcodeScanner({
         decodedText => {
           if (handledRef.current) return;
           handledRef.current = true;
-          scanner.stop().catch(() => undefined);
           onScan(decodedText);
         },
         () => undefined
