@@ -16,14 +16,14 @@ export const PRICING_PLANS = [
   {
     id: 'monthly',
     name: 'Monthly',
-    price: 299,
+    price: 599,
     currency: 'INR',
     interval: 'month'
   },
   {
     id: 'annual',
     name: 'Annual',
-    price: 2999,
+    price: 6499,
     currency: 'INR',
     interval: 'year'
   }

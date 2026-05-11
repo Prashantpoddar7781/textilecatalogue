@@ -20,8 +20,8 @@ interface Props {
 }
 
 const defaultPlans: Plan[] = [
-  { id: 'monthly', name: 'Monthly', price: 299, currency: 'INR', interval: 'month' },
-  { id: 'annual', name: 'Annual', price: 2999, currency: 'INR', interval: 'year' }
+  { id: 'monthly', name: 'Monthly', price: 599, currency: 'INR', interval: 'month' },
+  { id: 'annual', name: 'Annual', price: 6499, currency: 'INR', interval: 'year' }
 ];
 
 const loadRazorpayScript = () =>

@@ -779,7 +779,7 @@ const App: React.FC = () => {
                   ? 'Your trial is over. Please upgrade to continue.'
                   : `Trial active: ${trialDaysLeft ?? 0} day${trialDaysLeft === 1 ? '' : 's'} left.`}
               </p>
-              <p className="text-xs text-indigo-100">Monthly ₹299 or Annual ₹2999</p>
+              <p className="text-xs text-indigo-100">Monthly ₹599 or Annual ₹6499</p>
             </div>
             <button
               onClick={() => { window.location.href = '/billing'; }}

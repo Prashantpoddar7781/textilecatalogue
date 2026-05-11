@@ -1,6 +1,6 @@
 import { Contact, Customer } from '../types';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://textilecatalogue-production.up.railway.app/api';
 
 class ApiError extends Error {
   constructor(public status: number, message: string) {
