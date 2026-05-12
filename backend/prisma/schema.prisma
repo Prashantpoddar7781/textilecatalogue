@@ -21,8 +21,11 @@ model User {
   subscriptionPlan String?
   subscriptionStartedAt DateTime?
   subscriptionEndsAt DateTime?
+  subscriptionSource String?
   razorpayCustomerId String?
   razorpaySubscriptionId String?
+  googlePlayProductId String?
+  googlePlayPurchaseToken String?
   freeOverride Boolean @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

@@ -416,6 +416,12 @@ export const billingApi = {
     return request<{ subscription: any }>('/billing/razorpay/subscription/cancel', {
       method: 'POST'
     });
+  },
+  verifyGooglePlaySubscription: async (productId: string, purchaseToken: string) => {
+    return request<{ subscription: any }>('/billing/google-play/subscription/verify', {
+      method: 'POST',
+      body: JSON.stringify({ productId, purchaseToken })
+    });
   }
 };
 

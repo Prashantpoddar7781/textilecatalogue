@@ -182,6 +182,45 @@ Use the same value as `RAZORPAY_WEBHOOK_SECRET`. Enable subscription events such
 4. Confirm the app shows **Pro Active**.
 5. Test **Cancel subscription** from the billing page and confirm Razorpay schedules cancellation at the end of the paid cycle.
 
+### 2.5 Google Play Billing for Android
+
+Use Google Play Billing for Android users who install the app from Play Store. The app uses these default subscription product IDs:
+
+```
+sutra_monthly_599
+sutra_annual_6499
+```
+
+If you choose different IDs in Play Console, set matching frontend build variables before building the Android app:
+
+```
+VITE_GOOGLE_PLAY_MONTHLY_PRODUCT_ID=<your monthly product id>
+VITE_GOOGLE_PLAY_ANNUAL_PRODUCT_ID=<your annual product id>
+```
+
+**Backend verification variables**
+
+Add these to the Railway backend service:
+
+```
+GOOGLE_PLAY_PACKAGE_NAME=com.textilehub.catalogue
+GOOGLE_PLAY_MONTHLY_PRODUCT_ID=sutra_monthly_599
+GOOGLE_PLAY_ANNUAL_PRODUCT_ID=sutra_annual_6499
+GOOGLE_PLAY_SERVICE_ACCOUNT_JSON=<service account json or base64 encoded json>
+```
+
+The service account must have access to the app in Play Console API access, with permission to read/manage subscriptions.
+
+**Play Console flow**
+
+1. Upload a billing-enabled AAB to internal or closed testing.
+2. Go to **Monetise with Play** → **Products** → **Subscriptions**.
+3. Create monthly and annual subscription products using the exact product IDs above.
+4. Add and activate base plans:
+   - Monthly: `599 INR`, every `1 month`
+   - Annual: `6499 INR`, every `1 year`
+5. Add license testers and test from the Play Store testing link.
+
 ## Step 3: Verify Deployment
 
 ### 3.1 Test Backend
@@ -248,11 +287,23 @@ JWT_SECRET=<your-secret-key>
 FRONTEND_URL=<your-frontend-url>
 NODE_ENV=production
 PORT=3001
+RAZORPAY_KEY_ID=<your Razorpay key id>
+RAZORPAY_KEY_SECRET=<your Razorpay key secret>
+RAZORPAY_PLAN_MONTHLY=<monthly plan_xxxxx>
+RAZORPAY_PLAN_ANNUAL=<annual plan_xxxxx>
+RAZORPAY_WEBHOOK_SECRET=<webhook secret>
+FORCE_FREE=false
+GOOGLE_PLAY_PACKAGE_NAME=com.textilehub.catalogue
+GOOGLE_PLAY_MONTHLY_PRODUCT_ID=sutra_monthly_599
+GOOGLE_PLAY_ANNUAL_PRODUCT_ID=sutra_annual_6499
+GOOGLE_PLAY_SERVICE_ACCOUNT_JSON=<service account json or base64 encoded json>
 ```
 
 ### Frontend (Vercel/Railway)
 ```
 VITE_API_URL=https://your-backend.railway.app/api
+VITE_GOOGLE_PLAY_MONTHLY_PRODUCT_ID=sutra_monthly_599
+VITE_GOOGLE_PLAY_ANNUAL_PRODUCT_ID=sutra_annual_6499
 ```
 
 Optional (Google Drive button — set once by deployer, see §2.3):

@@ -1,6 +1,7 @@
 import express from 'express';
 import crypto from 'crypto';
 import Razorpay from 'razorpay';
+import { google } from 'googleapis';
 import { PrismaClient } from '@prisma/client';
 import { authenticateToken } from '../middleware/auth.js';
 import { PRICING_PLANS, ensureSubscriptionDefaults, getSubscriptionSnapshot } from '../middleware/subscription.js';
@@ -22,6 +23,45 @@ const getPlanId = (plan) => {
   if (plan === 'monthly') return process.env.RAZORPAY_PLAN_MONTHLY;
   if (plan === 'annual') return process.env.RAZORPAY_PLAN_ANNUAL;
   return null;
+};
+
+const GOOGLE_PLAY_PACKAGE_NAME = process.env.GOOGLE_PLAY_PACKAGE_NAME || 'com.textilehub.catalogue';
+const GOOGLE_PLAY_PRODUCT_IDS = {
+  monthly: process.env.GOOGLE_PLAY_MONTHLY_PRODUCT_ID || 'sutra_monthly_599',
+  annual: process.env.GOOGLE_PLAY_ANNUAL_PRODUCT_ID || 'sutra_annual_6499'
+};
+
+const getGooglePlayPlan = (productId) => {
+  if (productId === GOOGLE_PLAY_PRODUCT_IDS.monthly) return 'monthly';
+  if (productId === GOOGLE_PLAY_PRODUCT_IDS.annual) return 'annual';
+  return null;
+};
+
+const parseGooglePlayServiceAccount = () => {
+  const raw = process.env.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON;
+  if (!raw) return null;
+
+  try {
+    return JSON.parse(raw);
+  } catch {
+    try {
+      return JSON.parse(Buffer.from(raw, 'base64').toString('utf8'));
+    } catch {
+      return null;
+    }
+  }
+};
+
+const getAndroidPublisher = () => {
+  const credentials = parseGooglePlayServiceAccount();
+  if (!credentials) return null;
+
+  const auth = new google.auth.GoogleAuth({
+    credentials,
+    scopes: ['https://www.googleapis.com/auth/androidpublisher']
+  });
+
+  return google.androidpublisher({ version: 'v3', auth });
 };
 
 const getTotalCount = (plan) => {
@@ -96,9 +136,12 @@ router.post('/razorpay/subscription', authenticateToken, async (req, res, next) 
       data: {
         subscriptionStatus: subscription.status,
         subscriptionPlan: plan,
+        subscriptionSource: 'razorpay',
         subscriptionStartedAt: subscription.start_at ? new Date(subscription.start_at * 1000) : null,
         subscriptionEndsAt: subscription.current_end ? new Date(subscription.current_end * 1000) : null,
-        razorpaySubscriptionId: subscription.id
+        razorpaySubscriptionId: subscription.id,
+        googlePlayProductId: null,
+        googlePlayPurchaseToken: null
       }
     });
 
@@ -153,6 +196,67 @@ router.post('/razorpay/subscription/cancel', authenticateToken, async (req, res,
   }
 });
 
+router.post('/google-play/subscription/verify', authenticateToken, async (req, res, next) => {
+  try {
+    const { productId, purchaseToken } = req.body;
+    const plan = getGooglePlayPlan(productId);
+
+    if (!plan || !purchaseToken) {
+      return res.status(400).json({ error: 'Invalid Google Play subscription purchase' });
+    }
+
+    const androidPublisher = getAndroidPublisher();
+    if (!androidPublisher) {
+      return res.status(500).json({ error: 'Google Play service account is not configured' });
+    }
+
+    const user = await ensureSubscriptionDefaults(req.user.userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const { data: googleSubscription } = await androidPublisher.purchases.subscriptionsv2.get({
+      packageName: GOOGLE_PLAY_PACKAGE_NAME,
+      token: purchaseToken
+    });
+
+    const lineItem = (googleSubscription.lineItems || []).find(item => item.productId === productId)
+      || googleSubscription.lineItems?.[0];
+
+    if (!lineItem || lineItem.productId !== productId) {
+      return res.status(400).json({ error: 'Google Play purchase does not match the selected plan' });
+    }
+
+    const subscriptionEndsAt = lineItem.expiryTime ? new Date(lineItem.expiryTime) : null;
+    const expiredOrRevoked = ['SUBSCRIPTION_STATE_EXPIRED', 'SUBSCRIPTION_STATE_REVOKED'].includes(
+      googleSubscription.subscriptionState
+    );
+    const hasPaidAccess = Boolean(subscriptionEndsAt && subscriptionEndsAt > new Date() && !expiredOrRevoked);
+    const willRenew = Boolean(lineItem.autoRenewingPlan?.autoRenewEnabled);
+    const subscriptionStatus = hasPaidAccess
+      ? (willRenew ? 'active' : 'cancelled')
+      : 'expired';
+
+    const updatedUser = await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        subscriptionStatus,
+        subscriptionPlan: plan,
+        subscriptionSource: 'google_play',
+        subscriptionStartedAt: googleSubscription.startTime ? new Date(googleSubscription.startTime) : user.subscriptionStartedAt,
+        subscriptionEndsAt,
+        googlePlayProductId: productId,
+        googlePlayPurchaseToken: purchaseToken,
+        razorpaySubscriptionId: null
+      }
+    });
+
+    res.json({ subscription: getSubscriptionSnapshot(updatedUser) });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.post('/razorpay/webhook', async (req, res, next) => {
   try {
     const secret = process.env.RAZORPAY_WEBHOOK_SECRET;
@@ -196,6 +300,7 @@ router.post('/razorpay/webhook', async (req, res, next) => {
       data: {
         subscriptionStatus,
         subscriptionPlan,
+        subscriptionSource: subscriptionPlan ? 'razorpay' : undefined,
         subscriptionEndsAt,
         subscriptionStartedAt: subscription.start_at ? new Date(subscription.start_at * 1000) : undefined
       }

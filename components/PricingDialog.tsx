@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { CheckCircle, Crown, X } from 'lucide-react';
 import { billingApi } from '../services/api';
+import { getGooglePlayProductId, googlePlayBilling, isGooglePlayBillingAvailable } from '../services/googlePlayBilling';
 import { SubscriptionStatus } from '../types';
 
 interface Plan {
@@ -40,6 +41,7 @@ export const PricingDialog: React.FC<Props> = ({ isOpen, subscription, onClose, 
   const [plans, setPlans] = useState<Plan[]>(defaultPlans);
   const [loadingPlan, setLoadingPlan] = useState<Plan['id'] | null>(null);
   const [error, setError] = useState('');
+  const useGooglePlayBilling = isGooglePlayBillingAvailable();
 
   useEffect(() => {
     if (!isOpen) return;
@@ -58,6 +60,15 @@ export const PricingDialog: React.FC<Props> = ({ isOpen, subscription, onClose, 
     setError('');
     setLoadingPlan(planId);
     try {
+      if (useGooglePlayBilling) {
+        const productId = getGooglePlayProductId(planId);
+        const purchase = await googlePlayBilling.purchase({ productId });
+        const purchasedProductId = purchase.productIds?.[0] || productId;
+        await billingApi.verifyGooglePlaySubscription(purchasedProductId, purchase.purchaseToken);
+        onSubscribed?.();
+        return;
+      }
+
       const scriptLoaded = await loadRazorpayScript();
       if (!scriptLoaded) {
         setError('Unable to load Razorpay checkout. Please try again.');
@@ -151,7 +162,11 @@ export const PricingDialog: React.FC<Props> = ({ isOpen, subscription, onClose, 
                   disabled={loadingPlan === plan.id}
                   className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-xl font-bold shadow-lg transition-all disabled:opacity-50"
                 >
-                  {loadingPlan === plan.id ? 'Opening checkout...' : `Subscribe ${plan.name}`}
+                  {loadingPlan === plan.id
+                    ? 'Opening checkout...'
+                    : useGooglePlayBilling
+                      ? `Subscribe ${plan.name} with Google Play`
+                      : `Subscribe ${plan.name}`}
                 </button>
               </div>
             ))}

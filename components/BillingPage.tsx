@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, CheckCircle, Crown, ShieldCheck, Trash2 } from 'lucide-react';
 import { billingApi, usersApi } from '../services/api';
+import { getGooglePlayProductId, googlePlayBilling, isGooglePlayBillingAvailable } from '../services/googlePlayBilling';
 import { SubscriptionStatus } from '../types';
 
 interface Plan {
@@ -42,9 +43,11 @@ export const BillingPage: React.FC<Props> = ({ user, subscription, refreshSubscr
   const [loadingPlan, setLoadingPlan] = useState<Plan['id'] | null>(null);
   const [error, setError] = useState('');
   const [cancellingSubscription, setCancellingSubscription] = useState(false);
+  const [restoringSubscription, setRestoringSubscription] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [deletingAccount, setDeletingAccount] = useState(false);
+  const useGooglePlayBilling = isGooglePlayBillingAvailable();
 
   useEffect(() => {
     refreshSubscription();
@@ -52,6 +55,16 @@ export const BillingPage: React.FC<Props> = ({ user, subscription, refreshSubscr
       .then(({ plans: fetchedPlans }) => setPlans(fetchedPlans as Plan[]))
       .catch(() => setPlans(defaultPlans));
   }, []);
+
+  useEffect(() => {
+    if (!useGooglePlayBilling) return;
+
+    googlePlayBilling.querySubscriptions({
+      productIds: [getGooglePlayProductId('monthly'), getGooglePlayProductId('annual')]
+    }).catch(error => {
+      console.warn('Google Play subscriptions are not ready yet', error);
+    });
+  }, [useGooglePlayBilling]);
 
   const trialDaysLeft = useMemo(() => {
     if (!subscription?.trialEndsAt) return null;
@@ -63,6 +76,15 @@ export const BillingPage: React.FC<Props> = ({ user, subscription, refreshSubscr
     setError('');
     setLoadingPlan(planId);
     try {
+      if (useGooglePlayBilling) {
+        const productId = getGooglePlayProductId(planId);
+        const purchase = await googlePlayBilling.purchase({ productId });
+        const purchasedProductId = purchase.productIds?.[0] || productId;
+        await billingApi.verifyGooglePlaySubscription(purchasedProductId, purchase.purchaseToken);
+        await refreshSubscription();
+        return;
+      }
+
       const scriptLoaded = await loadRazorpayScript();
       if (!scriptLoaded) {
         setError('Unable to load Razorpay checkout. Please try again.');
@@ -92,6 +114,29 @@ export const BillingPage: React.FC<Props> = ({ user, subscription, refreshSubscr
       setError(err.message || 'Subscription failed. Please try again.');
     } finally {
       setLoadingPlan(null);
+    }
+  };
+
+  const handleRestoreGooglePlaySubscription = async () => {
+    setError('');
+    setRestoringSubscription(true);
+    try {
+      const { purchases } = await googlePlayBilling.restoreSubscriptions();
+      const knownProductIds = new Set([getGooglePlayProductId('monthly'), getGooglePlayProductId('annual')]);
+      const purchase = purchases.find(item => item.productIds?.some(productId => knownProductIds.has(productId)));
+      const productId = purchase?.productIds?.find(id => knownProductIds.has(id));
+
+      if (!purchase || !productId) {
+        setError('No active Google Play subscription was found for this account.');
+        return;
+      }
+
+      await billingApi.verifyGooglePlaySubscription(productId, purchase.purchaseToken);
+      await refreshSubscription();
+    } catch (err: any) {
+      setError(err.message || 'Could not restore Google Play subscription.');
+    } finally {
+      setRestoringSubscription(false);
     }
   };
 
@@ -130,8 +175,19 @@ export const BillingPage: React.FC<Props> = ({ user, subscription, refreshSubscr
     subscription?.isActive &&
       !subscription.isFree &&
       !subscription.isTrialActive &&
+      subscription.source !== 'google_play' &&
       subscription.status !== 'cancelled'
   );
+  const canManageGooglePlaySubscription = Boolean(
+    useGooglePlayBilling &&
+      subscription?.source === 'google_play' &&
+      subscription.isActive &&
+      !subscription.isFree &&
+      !subscription.isTrialActive
+  );
+  const googlePlayManagementProductId = subscription?.plan === 'annual'
+    ? getGooglePlayProductId('annual')
+    : getGooglePlayProductId('monthly');
 
   return (
     <div className="min-h-screen bg-[#FDFDFF] pb-20">
@@ -214,6 +270,15 @@ export const BillingPage: React.FC<Props> = ({ user, subscription, refreshSubscr
                 {cancellingSubscription ? 'Cancelling...' : 'Cancel subscription'}
               </button>
             )}
+            {canManageGooglePlaySubscription && (
+              <button
+                type="button"
+                onClick={() => googlePlayBilling.openSubscriptionManagement({ productId: googlePlayManagementProductId })}
+                className="mt-4 w-full px-4 py-2.5 rounded-xl border-2 border-indigo-100 text-indigo-700 text-sm font-bold hover:bg-indigo-50"
+              >
+                Manage Google Play subscription
+              </button>
+            )}
           </div>
         </div>
 
@@ -256,11 +321,26 @@ export const BillingPage: React.FC<Props> = ({ user, subscription, refreshSubscr
                 disabled={loadingPlan === plan.id}
                 className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-xl font-bold shadow-lg transition-all disabled:opacity-50"
               >
-                {loadingPlan === plan.id ? 'Opening checkout...' : `Subscribe ${plan.name}`}
+                {loadingPlan === plan.id
+                  ? 'Opening checkout...'
+                  : useGooglePlayBilling
+                    ? `Subscribe ${plan.name} with Google Play`
+                    : `Subscribe ${plan.name}`}
               </button>
             </div>
           ))}
         </div>
+
+        {useGooglePlayBilling && (
+          <button
+            type="button"
+            onClick={handleRestoreGooglePlaySubscription}
+            disabled={restoringSubscription}
+            className="w-full border-2 border-gray-200 bg-white text-gray-700 py-3 rounded-xl font-bold hover:bg-gray-50 disabled:opacity-50"
+          >
+            {restoringSubscription ? 'Restoring...' : 'Restore Google Play subscription'}
+          </button>
+        )}
 
         <div className="border-2 border-red-100 bg-red-50/50 rounded-2xl p-5 space-y-3">
           <div className="flex items-start gap-3">

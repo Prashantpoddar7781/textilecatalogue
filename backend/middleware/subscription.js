@@ -57,6 +57,7 @@ export const getSubscriptionSnapshot = (user) => {
   return {
     status: user.subscriptionStatus || (isTrialActive ? 'trialing' : null),
     plan: user.subscriptionPlan || null,
+    source: user.subscriptionSource || null,
     trialEndsAt: trialEndsAt ? trialEndsAt.toISOString() : null,
     subscriptionEndsAt: user.subscriptionEndsAt ? new Date(user.subscriptionEndsAt).toISOString() : null,
     isTrialActive,

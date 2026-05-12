@@ -171,6 +171,7 @@ export interface Order {
 export interface SubscriptionStatus {
   status: string | null;
   plan: string | null;
+  source: string | null;
   trialEndsAt: string | null;
   subscriptionEndsAt: string | null;
   isTrialActive: boolean;
