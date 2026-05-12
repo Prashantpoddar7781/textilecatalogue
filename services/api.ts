@@ -411,6 +411,11 @@ export const billingApi = {
         body: JSON.stringify({ plan })
       }
     );
+  },
+  cancelRazorpaySubscription: async () => {
+    return request<{ subscription: any }>('/billing/razorpay/subscription/cancel', {
+      method: 'POST'
+    });
   }
 };
 

@@ -42,6 +42,12 @@ JWT_SECRET=<generate-a-strong-random-secret>
 FRONTEND_URL=<your-frontend-url>
 NODE_ENV=production
 PORT=3001
+RAZORPAY_KEY_ID=<your Razorpay key id>
+RAZORPAY_KEY_SECRET=<your Razorpay key secret>
+RAZORPAY_PLAN_MONTHLY=<monthly plan_xxxxx>
+RAZORPAY_PLAN_ANNUAL=<annual plan_xxxxx>
+RAZORPAY_WEBHOOK_SECRET=<webhook secret>
+FORCE_FREE=false
 ```
 
 **To get DATABASE_URL:**
@@ -116,6 +122,65 @@ VITE_GOOGLE_API_KEY=<Browser API key from step 3>
 ```
 
 Rebuild/redeploy the frontend so Vite embeds these at build time. Every user of your deployed app then uses **your** OAuth client to sign in, but each user only ever authorizes **their own** Drive.
+
+### 2.4 Razorpay subscriptions
+
+Use Razorpay for web/iPhone users who access the app through the browser link. Android users installed from Google Play should later use Google Play Billing.
+
+**Create plans in Razorpay**
+
+1. Open Razorpay Dashboard.
+2. Go to **Subscriptions** → **Plans**.
+3. Create a monthly plan:
+   - Amount: `599`
+   - Currency: `INR`
+   - Billing cycle: every `1 month`
+4. Create an annual plan:
+   - Amount: `6499`
+   - Currency: `INR`
+   - Billing cycle: every `1 year`
+5. Copy both plan IDs. They look like `plan_xxxxx`.
+
+**Add backend variables in Railway**
+
+Add these to the backend service variables:
+
+```
+RAZORPAY_KEY_ID=<your Razorpay key id>
+RAZORPAY_KEY_SECRET=<your Razorpay key secret>
+RAZORPAY_PLAN_MONTHLY=<monthly plan_xxxxx>
+RAZORPAY_PLAN_ANNUAL=<annual plan_xxxxx>
+RAZORPAY_WEBHOOK_SECRET=<a strong webhook secret>
+FORCE_FREE=false
+```
+
+Optional:
+
+```
+RAZORPAY_MONTHLY_TOTAL_COUNT=120
+RAZORPAY_ANNUAL_TOTAL_COUNT=10
+FREE_EMAILS=sunitapoddar95@gmail.com
+```
+
+`RAZORPAY_MONTHLY_TOTAL_COUNT=120` means the monthly subscription can renew for 120 monthly cycles unless the user cancels. `RAZORPAY_ANNUAL_TOTAL_COUNT=10` means the annual subscription can renew for 10 yearly cycles unless cancelled.
+
+**Add Razorpay webhook**
+
+In Razorpay Dashboard, add this webhook URL:
+
+```
+https://textilecatalogue-production.up.railway.app/api/billing/razorpay/webhook
+```
+
+Use the same value as `RAZORPAY_WEBHOOK_SECRET`. Enable subscription events such as activated, charged, cancelled, completed, authenticated, pending, halted, and paused/resumed if available.
+
+**Test**
+
+1. Redeploy Railway backend after adding variables.
+2. Open the web app billing page.
+3. Buy the monthly or annual plan in Razorpay checkout.
+4. Confirm the app shows **Pro Active**.
+5. Test **Cancel subscription** from the billing page and confirm Razorpay schedules cancellation at the end of the paid cycle.
 
 ## Step 3: Verify Deployment
 

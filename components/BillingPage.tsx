@@ -41,6 +41,7 @@ export const BillingPage: React.FC<Props> = ({ user, subscription, refreshSubscr
   const [plans, setPlans] = useState<Plan[]>(defaultPlans);
   const [loadingPlan, setLoadingPlan] = useState<Plan['id'] | null>(null);
   const [error, setError] = useState('');
+  const [cancellingSubscription, setCancellingSubscription] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [deletingAccount, setDeletingAccount] = useState(false);
@@ -109,6 +110,29 @@ export const BillingPage: React.FC<Props> = ({ user, subscription, refreshSubscr
     }
   };
 
+  const handleCancelSubscription = async () => {
+    const confirmed = window.confirm('Cancel your subscription? You will keep access until the current paid period ends.');
+    if (!confirmed) return;
+
+    setCancellingSubscription(true);
+    setError('');
+    try {
+      await billingApi.cancelRazorpaySubscription();
+      await refreshSubscription();
+    } catch (err: any) {
+      setError(err.message || 'Could not cancel subscription. Please try again.');
+    } finally {
+      setCancellingSubscription(false);
+    }
+  };
+
+  const canCancelSubscription = Boolean(
+    subscription?.isActive &&
+      !subscription.isFree &&
+      !subscription.isTrialActive &&
+      subscription.status !== 'cancelled'
+  );
+
   return (
     <div className="min-h-screen bg-[#FDFDFF] pb-20">
       <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-xl border-b px-4 py-3 md:px-8 shadow-sm">
@@ -156,6 +180,12 @@ export const BillingPage: React.FC<Props> = ({ user, subscription, refreshSubscr
                   <span>Subscription active.</span>
                 </div>
               )}
+              {subscription?.status === 'cancelled' && subscription?.isActive && (
+                <div className="flex items-center gap-2 text-amber-700">
+                  <ShieldCheck className="w-4 h-4" />
+                  <span>Subscription cancelled. Access continues until the paid period ends.</span>
+                </div>
+              )}
               {subscription?.needsPayment && (
                 <div className="flex items-center gap-2 text-red-600">
                   <ShieldCheck className="w-4 h-4" />
@@ -171,8 +201,18 @@ export const BillingPage: React.FC<Props> = ({ user, subscription, refreshSubscr
             </p>
             {subscription?.subscriptionEndsAt && (
               <p className="text-xs text-gray-500 mt-2">
-                Renews/ends on {new Date(subscription.subscriptionEndsAt).toLocaleDateString()}
+                {subscription.status === 'cancelled' ? 'Ends on' : 'Renews on'} {new Date(subscription.subscriptionEndsAt).toLocaleDateString()}
               </p>
+            )}
+            {canCancelSubscription && (
+              <button
+                type="button"
+                onClick={handleCancelSubscription}
+                disabled={cancellingSubscription}
+                className="mt-4 w-full px-4 py-2.5 rounded-xl border-2 border-red-100 text-red-700 text-sm font-bold hover:bg-red-50 disabled:opacity-50"
+              >
+                {cancellingSubscription ? 'Cancelling...' : 'Cancel subscription'}
+              </button>
             )}
           </div>
         </div>
@@ -228,7 +268,7 @@ export const BillingPage: React.FC<Props> = ({ user, subscription, refreshSubscr
             <div>
               <h2 className="text-base font-black text-gray-900">Delete account</h2>
               <p className="text-sm text-gray-600 mt-1">
-                Permanently delete your SutraDhar account, catalogues, designs, contacts, orders, and share links. This cannot be undone. If you subscribe via Google Play, cancel the subscription there so you are not charged again.
+                Permanently delete your SutraDhar account, catalogues, designs, contacts, orders, and share links. This cannot be undone. Cancel your subscription first so you are not charged again.
               </p>
               <p className="text-xs text-gray-500 mt-2">
                 Details for the Play Store and a mail-in option:{' '}

@@ -3,7 +3,7 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
 const TRIAL_DAYS = Number.parseInt(process.env.TRIAL_DAYS || '7', 10);
-const FORCE_FREE = process.env.FORCE_FREE !== 'false';
+const FORCE_FREE = process.env.FORCE_FREE === 'true';
 const DEFAULT_FREE_EMAILS = ['sunitapoddar95@gmail.com'];
 const FREE_EMAILS = new Set(
   (process.env.FREE_EMAILS || DEFAULT_FREE_EMAILS.join(','))
@@ -40,8 +40,9 @@ export const isFreeEmail = (email) => {
 };
 
 const isSubscriptionActive = (user, now) => {
-  if (user.subscriptionStatus !== 'active') return false;
-  if (!user.subscriptionEndsAt) return true;
+  if (user.subscriptionStatus === 'active' && !user.subscriptionEndsAt) return true;
+  if (!['active', 'cancelled'].includes(user.subscriptionStatus)) return false;
+  if (!user.subscriptionEndsAt) return false;
   return new Date(user.subscriptionEndsAt) > now;
 };
 

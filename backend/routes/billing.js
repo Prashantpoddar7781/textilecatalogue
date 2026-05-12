@@ -24,6 +24,13 @@ const getPlanId = (plan) => {
   return null;
 };
 
+const getTotalCount = (plan) => {
+  const defaultCount = plan === 'monthly' ? 120 : 10;
+  const envKey = plan === 'monthly' ? 'RAZORPAY_MONTHLY_TOTAL_COUNT' : 'RAZORPAY_ANNUAL_TOTAL_COUNT';
+  const configuredCount = Number.parseInt(process.env[envKey] || '', 10);
+  return Number.isFinite(configuredCount) && configuredCount > 0 ? configuredCount : defaultCount;
+};
+
 router.get('/plans', (req, res) => {
   res.json({ plans: PRICING_PLANS });
 });
@@ -77,11 +84,10 @@ router.post('/razorpay/subscription', authenticateToken, async (req, res, next) 
       });
     }
 
-    const totalCount = plan === 'monthly' ? 12 : 1;
     const subscription = await razorpay.subscriptions.create({
       plan_id: planId,
       customer_id: customerId,
-      total_count: totalCount,
+      total_count: getTotalCount(plan),
       customer_notify: 1
     });
 
@@ -103,6 +109,45 @@ router.post('/razorpay/subscription', authenticateToken, async (req, res, next) 
       customerId,
       email: user.email
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/razorpay/subscription/cancel', authenticateToken, async (req, res, next) => {
+  try {
+    const user = await ensureSubscriptionDefaults(req.user.userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    if (!user.razorpaySubscriptionId) {
+      return res.status(400).json({ error: 'No Razorpay subscription found for this account' });
+    }
+
+    const razorpay = getRazorpayClient();
+    if (!razorpay) {
+      return res.status(500).json({ error: 'Razorpay credentials not configured' });
+    }
+
+    const cancelledSubscription = await razorpay.subscriptions.cancel(
+      user.razorpaySubscriptionId,
+      true
+    );
+
+    const subscriptionEndsAt = cancelledSubscription.current_end
+      ? new Date(cancelledSubscription.current_end * 1000)
+      : user.subscriptionEndsAt;
+
+    const updatedUser = await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        subscriptionStatus: 'cancelled',
+        subscriptionEndsAt
+      }
+    });
+
+    res.json({ subscription: getSubscriptionSnapshot(updatedUser) });
   } catch (error) {
     next(error);
   }
