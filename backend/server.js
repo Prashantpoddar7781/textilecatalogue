@@ -73,8 +73,16 @@ const allowedOrigins = [
   process.env.FRONTEND_URL?.replace(/\/$/, ''), // Remove trailing slash
   process.env.FRONTEND_URL?.replace(/\/$/, '') + '/', // Add trailing slash
   'http://localhost:3000',
+  'http://localhost',
+  'https://localhost',
+  'capacitor://localhost',
+  'ionic://localhost',
   'https://textilecatalogue.vercel.app',
-  'https://textilecatalogue.vercel.app/'
+  'https://textilecatalogue.vercel.app/',
+  ...(process.env.MOBILE_ALLOWED_ORIGINS || '')
+    .split(',')
+    .map(origin => origin.trim())
+    .filter(Boolean)
 ].filter(Boolean);
 
 app.use(cors({
