@@ -178,4 +178,8 @@ export interface SubscriptionStatus {
   isFree: boolean;
   isActive: boolean;
   needsPayment: boolean;
+  designCount?: number;
+  freeDesignLimit?: number;
+  freeDesignsRemaining?: number;
+  isFreeDesignAllowanceActive?: boolean;
 }

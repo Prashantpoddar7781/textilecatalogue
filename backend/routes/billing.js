@@ -82,7 +82,8 @@ router.get('/status', authenticateToken, async (req, res, next) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    const snapshot = getSubscriptionSnapshot(user);
+    const designCount = await prisma.design.count({ where: { userId: user.id } });
+    const snapshot = getSubscriptionSnapshot(user, designCount);
     res.json({ subscription: snapshot });
   } catch (error) {
     next(error);
@@ -190,7 +191,8 @@ router.post('/razorpay/subscription/cancel', authenticateToken, async (req, res,
       }
     });
 
-    res.json({ subscription: getSubscriptionSnapshot(updatedUser) });
+    const designCount = await prisma.design.count({ where: { userId: updatedUser.id } });
+    res.json({ subscription: getSubscriptionSnapshot(updatedUser, designCount) });
   } catch (error) {
     next(error);
   }
@@ -251,7 +253,8 @@ router.post('/google-play/subscription/verify', authenticateToken, async (req, r
       }
     });
 
-    res.json({ subscription: getSubscriptionSnapshot(updatedUser) });
+    const designCount = await prisma.design.count({ where: { userId: updatedUser.id } });
+    res.json({ subscription: getSubscriptionSnapshot(updatedUser, designCount) });
   } catch (error) {
     next(error);
   }

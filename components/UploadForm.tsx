@@ -107,6 +107,7 @@ export const UploadForm: React.FC<Props> = ({
       setCalculatedPriceOverrides(editOverrides);
       setPreview(initialData.image);
       setGeneratedModels(initialData.aiModels ?? []);
+      setAiModellingEnabled(false);
       setCostingDetails(initialData.costingDetails || emptyCostingDetails);
       setCostingEnabled(
         !!initialData.costingDetails &&
@@ -521,14 +522,15 @@ export const UploadForm: React.FC<Props> = ({
               </div>
               <button
                 type="button"
-                onClick={() => setAiModellingEnabled(!aiModellingEnabled)}
-                className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest transition-all ${
-                  aiModellingEnabled ? 'bg-indigo-600 text-white' : 'bg-gray-200 text-gray-500'
-                }`}
+                disabled
+                className="px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest bg-amber-100 text-amber-700 cursor-not-allowed"
               >
-                {aiModellingEnabled ? 'Enabled' : 'Disabled'}
+                Coming soon
               </button>
             </div>
+            <p className="text-xs text-indigo-700 bg-white/70 border border-indigo-100 rounded-2xl px-4 py-3">
+              AI modelling will return soon as a pay-per-use wallet feature. Existing saved AI model images remain available.
+            </p>
 
             {aiModellingEnabled && (
               <div className="space-y-6 animate-in fade-in slide-in-from-top-2 duration-300">

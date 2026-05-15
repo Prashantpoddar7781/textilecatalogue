@@ -2,7 +2,7 @@ import express from 'express';
 import { PrismaClient } from '@prisma/client';
 import { body, validationResult, query } from 'express-validator';
 import { authenticateToken, optionalAuth } from '../middleware/auth.js';
-import { requireActiveSubscription, requireActiveSubscriptionIfAuthenticated } from '../middleware/subscription.js';
+import { requireActiveSubscription, requireActiveSubscriptionIfAuthenticated, requireDesignCreationAllowance } from '../middleware/subscription.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -194,7 +194,7 @@ router.get('/:id', optionalAuth, requireActiveSubscriptionIfAuthenticated, async
 });
 
 // Create design (requires auth)
-router.post('/', authenticateToken, requireActiveSubscription, [
+router.post('/', authenticateToken, requireDesignCreationAllowance, [
   body('image').notEmpty(),
   body('name').optional().trim(),
   body('basePrice').optional().isFloat({ min: 0 }),

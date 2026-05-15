@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { CheckCircle, Crown, X } from 'lucide-react';
 import { billingApi } from '../services/api';
 import { getGooglePlayProductId, googlePlayBilling, isGooglePlayBillingAvailable } from '../services/googlePlayBilling';
@@ -49,12 +49,6 @@ export const PricingDialog: React.FC<Props> = ({ isOpen, subscription, onClose, 
       .then(({ plans: fetchedPlans }) => setPlans(fetchedPlans as Plan[]))
       .catch(() => setPlans(defaultPlans));
   }, [isOpen]);
-
-  const trialDaysLeft = useMemo(() => {
-    if (!subscription?.trialEndsAt) return null;
-    const msLeft = new Date(subscription.trialEndsAt).getTime() - Date.now();
-    return Math.max(Math.ceil(msLeft / (24 * 60 * 60 * 1000)), 0);
-  }, [subscription?.trialEndsAt]);
 
   const handleSubscribe = async (planId: Plan['id']) => {
     setError('');
@@ -112,8 +106,10 @@ export const PricingDialog: React.FC<Props> = ({ isOpen, subscription, onClose, 
             <p className="text-xs text-gray-500 mt-1">
               {subscription?.isFree
                 ? 'Your account has free access.'
-                : trialDaysLeft !== null
-                  ? `Free trial: ${trialDaysLeft} day${trialDaysLeft === 1 ? '' : 's'} left`
+                : subscription?.needsPayment
+                  ? `You have used your ${subscription.freeDesignLimit ?? 8} free designs. Subscribe to add more.`
+                  : subscription?.freeDesignLimit
+                    ? `Free plan: ${subscription.designCount ?? 0}/${subscription.freeDesignLimit} designs used`
                   : 'Start a subscription to continue'}
             </p>
           </div>
@@ -173,7 +169,7 @@ export const PricingDialog: React.FC<Props> = ({ isOpen, subscription, onClose, 
           </div>
 
           <div className="text-xs text-gray-500">
-            Free for 7 days on every email. <span className="font-semibold">sunitapoddar95@gmail.com</span> stays free.
+            Every account can add up to 8 designs for free. <span className="font-semibold">sunitapoddar95@gmail.com</span> stays free.
           </div>
         </div>
       </div>

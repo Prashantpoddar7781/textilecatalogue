@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { PrismaClient } from '@prisma/client';
 import { body, validationResult } from 'express-validator';
-import { ensureSubscriptionDefaults, getTrialEndsAt, isFreeEmail } from '../middleware/subscription.js';
+import { ensureSubscriptionDefaults, isFreeEmail } from '../middleware/subscription.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -35,15 +35,14 @@ router.post('/register', [
     const hashedPassword = await bcrypt.hash(password, 10);
 
     // Create user
-    const trialEndsAt = getTrialEndsAt(new Date());
     const user = await prisma.user.create({
       data: {
         email,
         password: hashedPassword,
         name: name || email.split('@')[0],
         firmName: firmName || null,
-        trialEndsAt,
-        subscriptionStatus: 'trialing',
+        trialEndsAt: null,
+        subscriptionStatus: null,
         freeOverride: isFreeEmail(email)
       },
       select: {

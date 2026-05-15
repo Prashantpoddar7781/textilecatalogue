@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ArrowLeft, CheckCircle, Crown, ShieldCheck, Trash2 } from 'lucide-react';
 import { billingApi, usersApi } from '../services/api';
 import { getGooglePlayProductId, googlePlayBilling, isGooglePlayBillingAvailable } from '../services/googlePlayBilling';
@@ -65,12 +65,6 @@ export const BillingPage: React.FC<Props> = ({ user, subscription, refreshSubscr
       console.warn('Google Play subscriptions are not ready yet', error);
     });
   }, [useGooglePlayBilling]);
-
-  const trialDaysLeft = useMemo(() => {
-    if (!subscription?.trialEndsAt) return null;
-    const msLeft = new Date(subscription.trialEndsAt).getTime() - Date.now();
-    return Math.max(Math.ceil(msLeft / (24 * 60 * 60 * 1000)), 0);
-  }, [subscription?.trialEndsAt]);
 
   const handleSubscribe = async (planId: Plan['id']) => {
     setError('');
@@ -224,13 +218,16 @@ export const BillingPage: React.FC<Props> = ({ user, subscription, refreshSubscr
                   <span>Free access enabled for this account.</span>
                 </div>
               )}
-              {subscription?.isTrialActive && trialDaysLeft !== null && (
+              {subscription?.isFreeDesignAllowanceActive && !subscription.needsPayment && !subscription.isFree && (
                 <div className="flex items-center gap-2">
                   <CheckCircle className="w-4 h-4 text-indigo-500" />
-                  <span>Trial active: {trialDaysLeft} day{trialDaysLeft === 1 ? '' : 's'} left.</span>
+                  <span>
+                    Free plan: {subscription.designCount ?? 0}/{subscription.freeDesignLimit ?? 8} designs used.
+                    {' '}{subscription.freeDesignsRemaining ?? 0} remaining.
+                  </span>
                 </div>
               )}
-              {!subscription?.isTrialActive && !subscription?.isFree && subscription?.isActive && (
+              {!subscription?.isFreeDesignAllowanceActive && !subscription?.isFree && subscription?.isActive && (
                 <div className="flex items-center gap-2">
                   <CheckCircle className="w-4 h-4 text-emerald-500" />
                   <span>Subscription active.</span>

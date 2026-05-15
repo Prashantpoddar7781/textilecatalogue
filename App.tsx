@@ -82,7 +82,11 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    const handler = () => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent).detail;
+      if (detail?.subscription) {
+        setSubscription(detail.subscription);
+      }
       setIsPricingOpen(true);
     };
     window.addEventListener('subscription-required', handler as EventListener);
@@ -303,7 +307,12 @@ const App: React.FC = () => {
       // Reload catalogues in case new one was created
       const { catalogues: cats } = await designsApi.getCatalogues();
       setCatalogues(cats);
+      await refreshSubscription();
     } catch (error: any) {
+      if (error?.status === 402) {
+        setIsPricingOpen(true);
+        return;
+      }
       alert('Failed to create design: ' + (error.message || 'Unknown error'));
     }
   };
@@ -459,9 +468,20 @@ const App: React.FC = () => {
 
   const selectedDesigns = designs.filter(d => selectedIds.has(d.id));
   const inStockSelectedDesigns = selectedDesigns.filter(d => (d.stockQuantity ?? 0) > 0);
-  const trialDaysLeft = subscription?.trialEndsAt
-    ? Math.max(Math.ceil((new Date(subscription.trialEndsAt).getTime() - Date.now()) / (24 * 60 * 60 * 1000)), 0)
-    : null;
+  const freeDesignLimit = subscription?.freeDesignLimit ?? 8;
+  const designCountForPlan = subscription?.designCount ?? designs.length;
+  const freeDesignsRemaining = subscription?.freeDesignsRemaining ?? Math.max(freeDesignLimit - designCountForPlan, 0);
+  const hasPaidPlan = Boolean(subscription?.isActive && !subscription?.isTrialActive && !subscription?.isFree && !subscription?.isFreeDesignAllowanceActive);
+  const showFreeDesignStatus = Boolean(subscription && !subscription.isFree && !hasPaidPlan);
+  const canAddDesign = Boolean(!subscription || subscription.isFree || hasPaidPlan || designCountForPlan < freeDesignLimit);
+  const handleOpenUpload = () => {
+    if (!canAddDesign) {
+      setIsPricingOpen(true);
+      return;
+    }
+    setEditingDesign(null);
+    setIsUploadOpen(true);
+  };
 
   if (!user) {
     return (
@@ -522,7 +542,7 @@ const App: React.FC = () => {
               <div className="flex items-center gap-2 shrink-0">
                 <button
                   type="button"
-                  onClick={() => setIsUploadOpen(true)}
+                  onClick={handleOpenUpload}
                   className="touch-target flex items-center gap-1.5 bg-gray-900 text-white px-4 rounded-2xl font-bold text-sm shadow-lg active:scale-95"
                   aria-label="Add design"
                 >
@@ -588,11 +608,11 @@ const App: React.FC = () => {
                 >
                   <Crown className="w-4 h-4" />
                   <span>
-                    {subscription.isTrialActive && trialDaysLeft !== null
-                      ? `Trial ${trialDaysLeft}d left`
-                      : subscription.isActive
-                        ? 'Pro Active'
-                        : 'Upgrade'}
+                    {hasPaidPlan
+                      ? 'Pro Active'
+                      : subscription.needsPayment
+                        ? 'Upgrade'
+                        : `${freeDesignsRemaining}/${freeDesignLimit} free left`}
                   </span>
                 </button>
               )}
@@ -631,7 +651,7 @@ const App: React.FC = () => {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setIsUploadOpen(true)}
+                  onClick={handleOpenUpload}
                   className="flex items-center gap-1.5 bg-gray-900 hover:bg-black text-white px-4 py-2 rounded-2xl text-xs font-bold shadow-lg"
                 >
                   <Plus className="w-4 h-4" />
@@ -728,11 +748,11 @@ const App: React.FC = () => {
                     }}
                   >
                     <Crown className="w-5 h-5 shrink-0" />
-                    {subscription.isTrialActive && trialDaysLeft !== null
-                      ? `Trial — ${trialDaysLeft} day${trialDaysLeft === 1 ? '' : 's'} left`
-                      : subscription.isActive
-                        ? 'Pro active'
-                        : 'Upgrade plan'}
+                    {hasPaidPlan
+                      ? 'Pro active'
+                      : subscription.needsPayment
+                        ? 'Upgrade plan'
+                        : `${freeDesignsRemaining} free design${freeDesignsRemaining === 1 ? '' : 's'} left`}
                   </button>
                 )}
                 <a
@@ -770,16 +790,20 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {subscription && !subscription.isFree && (subscription.needsPayment || subscription.isTrialActive) && (
+      {showFreeDesignStatus && (
         <div className="bg-indigo-600 text-white">
           <div className="max-w-7xl mx-auto px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div>
               <p className="text-sm font-bold">
                 {subscription.needsPayment
-                  ? 'Your trial is over. Please upgrade to continue.'
-                  : `Trial active: ${trialDaysLeft ?? 0} day${trialDaysLeft === 1 ? '' : 's'} left.`}
+                  ? `You have used your ${freeDesignLimit} free designs. Upgrade to add more.`
+                  : `Free plan: ${designCountForPlan}/${freeDesignLimit} designs used.`}
               </p>
-              <p className="text-xs text-indigo-100">Monthly ₹599 or Annual ₹6499</p>
+              <p className="text-xs text-indigo-100">
+                {subscription.needsPayment
+                  ? 'Monthly ₹599 or Annual ₹6499'
+                  : `${freeDesignsRemaining} free design${freeDesignsRemaining === 1 ? '' : 's'} remaining before subscription.`}
+              </p>
             </div>
             <button
               onClick={() => { window.location.href = '/billing'; }}
@@ -914,7 +938,7 @@ const App: React.FC = () => {
       {selectedIds.size === 0 && (
         <button
           type="button"
-          onClick={() => setIsUploadOpen(true)}
+          onClick={handleOpenUpload}
           className="fixed z-40 sm:hidden bottom-[max(1rem,env(safe-area-inset-bottom))] right-[max(1rem,env(safe-area-inset-right))] flex h-14 w-14 items-center justify-center rounded-[1.75rem] bg-indigo-600 text-white shadow-2xl ring-4 ring-indigo-100 transition-all hover:bg-indigo-700 active:scale-90"
           aria-label="Add design"
         >

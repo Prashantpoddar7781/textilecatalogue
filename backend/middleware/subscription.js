@@ -2,7 +2,7 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
-const TRIAL_DAYS = Number.parseInt(process.env.TRIAL_DAYS || '7', 10);
+export const FREE_DESIGN_LIMIT = Number.parseInt(process.env.FREE_DESIGN_LIMIT || '8', 10);
 const FORCE_FREE = process.env.FORCE_FREE === 'true';
 const DEFAULT_FREE_EMAILS = ['sunitapoddar95@gmail.com'];
 const FREE_EMAILS = new Set(
@@ -31,7 +31,7 @@ export const PRICING_PLANS = [
 
 export const getTrialEndsAt = (createdAt) => {
   const base = createdAt ? new Date(createdAt) : new Date();
-  return new Date(base.getTime() + TRIAL_DAYS * 24 * 60 * 60 * 1000);
+  return base;
 };
 
 export const isFreeEmail = (email) => {
@@ -46,37 +46,38 @@ const isSubscriptionActive = (user, now) => {
   return new Date(user.subscriptionEndsAt) > now;
 };
 
-export const getSubscriptionSnapshot = (user) => {
+export const getSubscriptionSnapshot = (user, designCount = 0) => {
   const now = new Date();
-  const trialEndsAt = user.trialEndsAt ? new Date(user.trialEndsAt) : null;
-  const isTrialActive = Boolean(trialEndsAt && trialEndsAt > now);
   const isFree = Boolean(FORCE_FREE || user.freeOverride || isFreeEmail(user.email));
-  const isActive = isFree || isTrialActive || isSubscriptionActive(user, now);
+  const isPaidActive = isSubscriptionActive(user, now);
+  const freeDesignsRemaining = Math.max(FREE_DESIGN_LIMIT - designCount, 0);
+  const isFreeDesignAllowanceActive = !isPaidActive && designCount <= FREE_DESIGN_LIMIT;
+  const isActive = isFree || isPaidActive || isFreeDesignAllowanceActive;
   const needsPayment = !isActive;
 
   return {
-    status: user.subscriptionStatus || (isTrialActive ? 'trialing' : null),
+    status: user.subscriptionStatus || (isFreeDesignAllowanceActive ? 'free_designs' : null),
     plan: user.subscriptionPlan || null,
     source: user.subscriptionSource || null,
-    trialEndsAt: trialEndsAt ? trialEndsAt.toISOString() : null,
+    trialEndsAt: null,
     subscriptionEndsAt: user.subscriptionEndsAt ? new Date(user.subscriptionEndsAt).toISOString() : null,
-    isTrialActive,
+    isTrialActive: false,
     isFree,
     isActive,
-    needsPayment
+    needsPayment,
+    designCount,
+    freeDesignLimit: FREE_DESIGN_LIMIT,
+    freeDesignsRemaining,
+    isFreeDesignAllowanceActive
   };
 };
 
 const ensureTrialForUser = async (user) => {
-  if (user.trialEndsAt) return user;
-  const trialEndsAt = getTrialEndsAt(user.createdAt);
-  return prisma.user.update({
-    where: { id: user.id },
-    data: {
-      trialEndsAt,
-      subscriptionStatus: user.subscriptionStatus || 'trialing'
-    }
-  });
+  return user;
+};
+
+const getDesignCount = (userId) => {
+  return prisma.design.count({ where: { userId } });
 };
 
 export const requireActiveSubscription = async (req, res, next) => {
@@ -99,7 +100,8 @@ export const requireActiveSubscription = async (req, res, next) => {
     }
 
     user = await ensureTrialForUser(user);
-    const snapshot = getSubscriptionSnapshot(user);
+    const designCount = await getDesignCount(user.id);
+    const snapshot = getSubscriptionSnapshot(user, designCount);
 
     if (!snapshot.isActive) {
       return res.status(402).json({
@@ -122,6 +124,49 @@ export const requireActiveSubscriptionIfAuthenticated = async (req, res, next) =
   return requireActiveSubscription(req, res, next);
 };
 
+export const requireDesignCreationAllowance = async (req, res, next) => {
+  try {
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    let user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    if (isFreeEmail(user.email) && !user.freeOverride) {
+      user = await prisma.user.update({
+        where: { id: user.id },
+        data: { freeOverride: true }
+      });
+    }
+
+    const designCount = await getDesignCount(user.id);
+    const snapshot = getSubscriptionSnapshot(user, designCount);
+    const hasPaidOrFreeAccess = snapshot.isFree || isSubscriptionActive(user, new Date());
+
+    if (!hasPaidOrFreeAccess && designCount >= FREE_DESIGN_LIMIT) {
+      return res.status(402).json({
+        error: `Free design limit reached. Upgrade to add more than ${FREE_DESIGN_LIMIT} designs.`,
+        subscription: {
+          ...snapshot,
+          isActive: false,
+          needsPayment: true,
+          freeDesignsRemaining: 0,
+          isFreeDesignAllowanceActive: false
+        }
+      });
+    }
+
+    req.subscription = snapshot;
+    next();
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const ensureSubscriptionDefaults = async (userId) => {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) return null;
@@ -134,6 +179,5 @@ export const ensureSubscriptionDefaults = async (userId) => {
     });
   }
 
-  updatedUser = await ensureTrialForUser(updatedUser);
   return updatedUser;
 };
