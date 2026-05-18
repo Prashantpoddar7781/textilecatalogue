@@ -3,7 +3,7 @@ import { Loader2, AlertCircle, IndianRupee, ShoppingCart, X, Maximize2, Package 
 import { shareLinksApi, ordersApi } from '../services/api';
 import { ShareLink, TextileDesign } from '../types';
 
-const SESSION_KEY = 'ThreadX_share_session';
+const SESSION_KEY = 'threadx_share_session';
 
 function getOrCreateSessionId(): string {
   let id = sessionStorage.getItem(SESSION_KEY);

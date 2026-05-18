@@ -16,6 +16,8 @@ import { BillingPage } from './components/BillingPage';
 import { designsApi, authApi, shareLinksApi, ordersApi, billingApi } from './services/api';
 import { Order } from './types';
 
+const APP_LOGO_SRC = '/threadx-logo.png';
+
 const App: React.FC = () => {
   // Check if we're on a share route
   const pathname = window.location.pathname;
@@ -488,8 +490,8 @@ const App: React.FC = () => {
       <>
         <div className="min-h-screen bg-[#FDFDFF] flex items-center justify-center">
           <div className="text-center">
-            <div className="bg-indigo-600 p-4 rounded-2xl inline-block mb-4">
-              <Package className="text-white w-12 h-12" />
+            <div className="inline-block mb-4">
+              <img src={APP_LOGO_SRC} alt="ThreadX" className="w-20 h-20 rounded-3xl object-cover shadow-xl" />
             </div>
             <h1 className="text-2xl font-black text-gray-900 mb-2">ThreadX</h1>
             <p className="text-gray-500">Please login to continue</p>
@@ -531,8 +533,8 @@ const App: React.FC = () => {
           <div className="flex flex-col gap-3 md:hidden">
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2.5 min-w-0">
-                <div className="bg-indigo-600 p-2 rounded-xl shadow-indigo-200 shadow-xl transform rotate-3 shrink-0">
-                  <Package className="text-white w-5 h-5" />
+                <div className="shrink-0">
+                  <img src={APP_LOGO_SRC} alt="ThreadX" className="w-10 h-10 rounded-xl object-cover shadow-lg" />
                 </div>
                 <div className="min-w-0">
                   <h1 className="text-lg font-black text-gray-900 tracking-tight leading-none truncate">ThreadX</h1>
@@ -575,8 +577,8 @@ const App: React.FC = () => {
           {/* Desktop header */}
           <div className="hidden md:flex items-center justify-between gap-4">
             <div className="flex items-center gap-2.5">
-              <div className="bg-indigo-600 p-2 rounded-xl shadow-indigo-200 shadow-xl transform rotate-3">
-                <Package className="text-white w-5 h-5" />
+              <div>
+                <img src={APP_LOGO_SRC} alt="ThreadX" className="w-10 h-10 rounded-xl object-cover shadow-lg" />
               </div>
               <div>
                 <h1 className="text-lg font-black text-gray-900 tracking-tight leading-none">ThreadX</h1>
