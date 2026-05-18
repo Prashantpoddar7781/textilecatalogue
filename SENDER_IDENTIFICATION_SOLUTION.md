@@ -11,7 +11,7 @@ When all users send through YOUR business number, recipients need to know WHO ac
 - Include sender's name/firm name in the message text
 - Example message:
   ```
-  📦 TextileHub Catalogue
+  📦 ThreadX Catalogue
   
   From: ABC Textiles (User A's firm name)
   
@@ -90,7 +90,7 @@ Hello! {{1}} from {{2}} has shared textile designs with you.
 
 **Message Format:**
 ```
-📦 TextileHub Catalogue
+📦 ThreadX Catalogue
 From: ABC Textiles
 
 3 designs attached. Check the images for details! 🎨
@@ -115,8 +115,8 @@ From: ABC Textiles
 Update the group sharing message to include sender info:
 
 ```javascript
-const caption = `📦 TextileHub Catalogue
-${userFirmName ? `\nFrom: ${userFirmName}` : `\nFrom: ${user?.name || 'TextileHub User'}`}
+const caption = `📦 ThreadX Catalogue
+${userFirmName ? `\nFrom: ${userFirmName}` : `\nFrom: ${user?.name || 'ThreadX User'}`}
 
 ${selectedDesigns.length} ${itemText} attached. Check the images for details! 🎨`;
 ```

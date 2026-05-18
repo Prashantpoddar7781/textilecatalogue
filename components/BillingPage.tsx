@@ -90,7 +90,7 @@ export const BillingPage: React.FC<Props> = ({ user, subscription, refreshSubscr
       const razorpay = new RazorpayConstructor({
         key: payload.razorpayKeyId,
         subscription_id: payload.subscriptionId,
-        name: 'SutraDhar',
+        name: 'ThreadX',
         description: planId === 'annual' ? 'Annual subscription' : 'Monthly subscription',
         prefill: { email: payload.email },
         theme: { color: '#4f46e5' },
@@ -345,7 +345,7 @@ export const BillingPage: React.FC<Props> = ({ user, subscription, refreshSubscr
             <div>
               <h2 className="text-base font-black text-gray-900">Delete account</h2>
               <p className="text-sm text-gray-600 mt-1">
-                Permanently delete your SutraDhar account, catalogues, designs, contacts, orders, and share links. This cannot be undone. Cancel your subscription first so you are not charged again.
+                Permanently delete your ThreadX account, catalogues, designs, contacts, orders, and share links. This cannot be undone. Cancel your subscription first so you are not charged again.
               </p>
               <p className="text-xs text-gray-500 mt-2">
                 Details for the Play Store and a mail-in option:{' '}

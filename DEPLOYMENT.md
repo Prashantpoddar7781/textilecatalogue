@@ -1,4 +1,4 @@
-# Deployment Guide for TextileHub
+# Deployment Guide for ThreadX
 
 ## Deploying to Vercel
 

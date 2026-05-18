@@ -1,4 +1,4 @@
-# Play Store Launch Checklist (TextileHub)
+# Play Store Launch Checklist (ThreadX)
 
 ## Current status
 
@@ -12,7 +12,7 @@
 
 1. Create a Google Play Console developer account.
 2. Create a new app:
-   - App name: TextileHub
+   - App name: ThreadX
    - Default language: English (or your preferred language)
    - App type: App
    - Paid/Free: choose now (cannot switch from paid to free later)

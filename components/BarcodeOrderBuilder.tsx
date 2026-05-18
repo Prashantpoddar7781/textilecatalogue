@@ -375,7 +375,7 @@ export const BarcodeOrderBuilder: React.FC<Props> = ({ initialDesignId, onClose,
                 onScan={handleScanValue}
                 onError={handleScannerError}
               />
-              <p className="text-xs text-gray-500 text-center">Point the camera at a SutraDhar design barcode.</p>
+              <p className="text-xs text-gray-500 text-center">Point the camera at a ThreadX design barcode.</p>
             </div>
           ) : (
             <div className="py-8 text-center">

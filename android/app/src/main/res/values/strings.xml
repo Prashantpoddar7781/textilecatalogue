@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">SutraDhar</string>
-    <string name="title_activity_main">SutraDhar</string>
+    <string name="app_name">ThreadX</string>
+    <string name="title_activity_main">ThreadX</string>
     <string name="package_name">com.textilehub.catalogue</string>
     <string name="custom_url_scheme">com.textilehub.catalogue</string>
 </resources>

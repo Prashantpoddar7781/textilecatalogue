@@ -1,6 +1,6 @@
-# TextileHub Backend API
+# ThreadX backend API
 
-RESTful API backend for TextileHub built with Express.js, Prisma, and PostgreSQL.
+RESTful API backend for ThreadX built with Express.js, Prisma, and PostgreSQL.
 
 ## Features
 
@@ -33,7 +33,7 @@ cp .env.example .env
 
 Edit `.env` with your configuration:
 ```
-DATABASE_URL="postgresql://user:password@localhost:5432/textilehub?schema=public"
+DATABASE_URL="postgresql://user:password@localhost:5432/ThreadX?schema=public"
 JWT_SECRET="your-super-secret-jwt-key"
 FRONTEND_URL="http://localhost:3000"
 PORT=3001

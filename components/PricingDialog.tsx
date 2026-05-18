@@ -74,7 +74,7 @@ export const PricingDialog: React.FC<Props> = ({ isOpen, subscription, onClose, 
       const razorpay = new RazorpayConstructor({
         key: payload.razorpayKeyId,
         subscription_id: payload.subscriptionId,
-        name: 'SutraDhar',
+        name: 'ThreadX',
         description: planId === 'annual' ? 'Annual subscription' : 'Monthly subscription',
         prefill: { email: payload.email },
         theme: { color: '#4f46e5' },

@@ -1,4 +1,4 @@
-# TextileHub - Smart Category Manager
+# ThreadX - Smart Category Manager
 
 <div align="center">
   <h3>Professional Textile Design Catalogue Management System</h3>
@@ -154,7 +154,7 @@ npm run dev
 ## 📂 Project Structure
 
 ```
-textilehub---smart-category-manager/
+ThreadX---smart-category-manager/
 ├── components/
 │   ├── DesignCard.tsx      # Individual design card component
 │   ├── ShareDialog.tsx     # WhatsApp sharing dialog

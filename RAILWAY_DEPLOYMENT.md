@@ -1,6 +1,6 @@
 # Railway Deployment Guide
 
-Complete guide to deploy TextileHub backend and frontend to Railway.
+Complete guide to deploy ThreadX backend and frontend to Railway.
 
 ## Prerequisites
 
