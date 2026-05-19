@@ -85,6 +85,18 @@ const allowedOrigins = [
     .filter(Boolean)
 ].filter(Boolean);
 
+const isAllowedMobileOrigin = (origin) => {
+  if (origin === 'null') return true;
+  try {
+    const url = new URL(origin);
+    const isLocalHost = ['localhost', '127.0.0.1'].includes(url.hostname);
+    const isLocalScheme = ['http:', 'https:', 'capacitor:', 'ionic:'].includes(url.protocol);
+    return isLocalHost && isLocalScheme;
+  } catch {
+    return false;
+  }
+};
+
 app.use(cors({
   origin: function (origin, callback) {
     // Allow requests with no origin (like mobile apps or curl requests)
@@ -98,7 +110,7 @@ app.use(cors({
       return normalizedOrigin === normalizedAllowed;
     });
     
-    if (isAllowed) {
+    if (isAllowed || isAllowedMobileOrigin(origin)) {
       callback(null, true);
     } else {
       // In development, allow all origins
