@@ -236,7 +236,17 @@ export const UploadForm: React.FC<Props> = ({
     cameraInputRef.current?.click();
   };
 
+  const isCapacitorWebView = () => {
+    if (typeof window === 'undefined') return false;
+    return window.location.protocol === 'capacitor:' || window.location.origin === 'https://localhost';
+  };
+
   const handleDriveImport = async () => {
+    if (isCapacitorWebView()) {
+      fileInputRef.current?.click();
+      return;
+    }
+
     setDriveImporting(true);
     try {
       const dataUrl = await pickImageFromGoogleDrive();
