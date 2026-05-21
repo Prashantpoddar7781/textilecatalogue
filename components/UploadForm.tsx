@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { X, Upload, IndianRupee, Camera, Plus, Trash2, Sparkles, Loader2, Maximize2, Cloud, Crop } from 'lucide-react';
 import { HexColorPicker } from 'react-colorful';
 import { TextileDesign, AdditionalPrice, DesignCostingDetails } from '../types';
@@ -237,8 +238,7 @@ export const UploadForm: React.FC<Props> = ({
   };
 
   const isCapacitorWebView = () => {
-    if (typeof window === 'undefined') return false;
-    return window.location.protocol === 'capacitor:' || window.location.origin === 'https://localhost';
+    return Capacitor.isNativePlatform();
   };
 
   const handleDriveImport = async () => {
