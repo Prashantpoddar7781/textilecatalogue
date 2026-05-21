@@ -49,6 +49,13 @@ RAZORPAY_PLAN_ANNUAL=<annual plan_xxxxx>
 RAZORPAY_WEBHOOK_SECRET=<webhook secret>
 FORCE_FREE=false
 OTP_SECRET=<strong random otp secret>
+EMAIL_PROVIDER=resend
+RESEND_API_KEY=<your Resend API key>
+RESEND_FROM=ThreadX <onboarding@resend.dev or verified sender>
+```
+
+Optional SMTP fallback:
+```
 SMTP_HOST=<smtp host, e.g. smtp.gmail.com>
 SMTP_PORT=587
 SMTP_USER=<smtp username/email>
@@ -214,6 +221,9 @@ GOOGLE_PLAY_MONTHLY_PRODUCT_ID=sutra_monthly_599
 GOOGLE_PLAY_ANNUAL_PRODUCT_ID=sutra_annual_6499
 GOOGLE_PLAY_SERVICE_ACCOUNT_JSON=<service account json or base64 encoded json>
 OTP_SECRET=<strong random otp secret>
+EMAIL_PROVIDER=resend
+RESEND_API_KEY=<your Resend API key>
+RESEND_FROM=ThreadX <onboarding@resend.dev or verified sender>
 SMTP_HOST=<smtp host, e.g. smtp.gmail.com>
 SMTP_PORT=587
 SMTP_USER=<smtp username/email>

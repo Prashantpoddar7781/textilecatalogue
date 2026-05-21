@@ -203,8 +203,15 @@ router.post('/otp/request', [
     await sendOtpEmail(email, otp);
     res.json({ ok: true, message: 'OTP sent' });
   } catch (error) {
-    if (error?.message?.includes('SMTP_')) {
+    if (
+      error?.message?.includes('SMTP_') ||
+      error?.message?.includes('RESEND_') ||
+      error?.message?.includes('EMAIL_PROVIDER')
+    ) {
       return res.status(503).json({ error: 'Email OTP is not configured yet. Please contact support.' });
+    }
+    if (error?.message?.includes('timed out')) {
+      return res.status(504).json({ error: 'Email provider timed out. Please try again.' });
     }
     next(error);
   }

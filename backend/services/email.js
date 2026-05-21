@@ -21,7 +21,45 @@ const buildOtpEmail = (otp) => ({
   `
 });
 
-export async function sendOtpEmail(email, otp) {
+const sendWithTimeout = async (work, timeoutMs = 12000) => {
+  let timeoutId;
+  const timeout = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error('Email provider timed out')), timeoutMs);
+  });
+
+  try {
+    return await Promise.race([work(), timeout]);
+  } finally {
+    clearTimeout(timeoutId);
+  }
+};
+
+async function sendViaResend(email, otp) {
+  const apiKey = requireEnv('RESEND_API_KEY');
+  const from = process.env.RESEND_FROM || process.env.SMTP_FROM || 'ThreadX <onboarding@resend.dev>';
+  const message = buildOtpEmail(otp);
+  const response = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      from,
+      to: email,
+      subject: message.subject,
+      html: message.html,
+      text: message.text
+    })
+  });
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => '');
+    throw new Error(`Resend failed (${response.status}): ${body.slice(0, 160)}`);
+  }
+}
+
+async function sendViaSmtp(email, otp) {
   const host = requireEnv('SMTP_HOST');
   const port = Number(process.env.SMTP_PORT || 587);
   const user = requireEnv('SMTP_USER');
@@ -32,6 +70,9 @@ export async function sendOtpEmail(email, otp) {
     host,
     port,
     secure,
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 10000,
     auth: { user, pass }
   });
   const message = buildOtpEmail(otp);
@@ -43,4 +84,20 @@ export async function sendOtpEmail(email, otp) {
     text: message.text,
     html: message.html
   });
+}
+
+export async function sendOtpEmail(email, otp) {
+  const provider = (process.env.EMAIL_PROVIDER || (process.env.RESEND_API_KEY ? 'resend' : 'smtp')).toLowerCase();
+
+  if (provider === 'resend') {
+    await sendWithTimeout(() => sendViaResend(email, otp));
+    return;
+  }
+
+  if (provider === 'smtp') {
+    await sendWithTimeout(() => sendViaSmtp(email, otp));
+    return;
+  }
+
+  throw new Error('EMAIL_PROVIDER must be resend or smtp');
 }
