@@ -42,10 +42,10 @@ async function request<T>(
 
 // Auth API
 export const authApi = {
-  register: async (email: string, password: string, name?: string, firmName?: string, mobileNumber?: string) => {
+  register: async (email: string, password: string, name?: string, firmName?: string) => {
     return request<{ user: any; token: string }>('/auth/register', {
       method: 'POST',
-      body: JSON.stringify({ email, password, name, firmName, mobileNumber }),
+      body: JSON.stringify({ email, password, name, firmName }),
     });
   },
 
@@ -60,17 +60,17 @@ export const authApi = {
     return request<{ user: any }>('/auth/me');
   },
 
-  requestOtp: async (mobileNumber: string, purpose: 'login' | 'reset') => {
+  requestOtp: async (email: string, purpose: 'login' | 'reset') => {
     return request<{ ok: boolean; message: string }>('/auth/otp/request', {
       method: 'POST',
-      body: JSON.stringify({ mobileNumber, purpose }),
+      body: JSON.stringify({ email, purpose }),
     });
   },
 
-  verifyOtp: async (mobileNumber: string, purpose: 'login' | 'reset', otp: string) => {
+  verifyOtp: async (email: string, purpose: 'login' | 'reset', otp: string) => {
     return request<{ user?: any; token?: string; resetToken?: string }>('/auth/otp/verify', {
       method: 'POST',
-      body: JSON.stringify({ mobileNumber, purpose, otp }),
+      body: JSON.stringify({ email, purpose, otp }),
     });
   },
 

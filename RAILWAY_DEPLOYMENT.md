@@ -48,8 +48,12 @@ RAZORPAY_PLAN_MONTHLY=<monthly plan_xxxxx>
 RAZORPAY_PLAN_ANNUAL=<annual plan_xxxxx>
 RAZORPAY_WEBHOOK_SECRET=<webhook secret>
 FORCE_FREE=false
-SMS_PROVIDER=<fast2sms|msg91|twilio>
 OTP_SECRET=<strong random otp secret>
+SMTP_HOST=<smtp host, e.g. smtp.gmail.com>
+SMTP_PORT=587
+SMTP_USER=<smtp username/email>
+SMTP_PASS=<smtp password or app password>
+SMTP_FROM=ThreadX <your sender email>
 ```
 
 **To get DATABASE_URL:**
@@ -209,29 +213,12 @@ GOOGLE_PLAY_PACKAGE_NAME=com.textilehub.catalogue
 GOOGLE_PLAY_MONTHLY_PRODUCT_ID=sutra_monthly_599
 GOOGLE_PLAY_ANNUAL_PRODUCT_ID=sutra_annual_6499
 GOOGLE_PLAY_SERVICE_ACCOUNT_JSON=<service account json or base64 encoded json>
-SMS_PROVIDER=<fast2sms|msg91|twilio>
 OTP_SECRET=<strong random otp secret>
-```
-
-For SMS OTP, also add variables for the provider you choose:
-
-Fast2SMS:
-```
-FAST2SMS_API_KEY=<your Fast2SMS API key>
-FAST2SMS_ROUTE=otp
-```
-
-MSG91:
-```
-MSG91_AUTH_KEY=<your MSG91 auth key>
-MSG91_OTP_TEMPLATE_ID=<approved OTP template id>
-```
-
-Twilio:
-```
-TWILIO_ACCOUNT_SID=<your Twilio account sid>
-TWILIO_AUTH_TOKEN=<your Twilio auth token>
-TWILIO_FROM_NUMBER=<your Twilio phone number>
+SMTP_HOST=<smtp host, e.g. smtp.gmail.com>
+SMTP_PORT=587
+SMTP_USER=<smtp username/email>
+SMTP_PASS=<smtp password or app password>
+SMTP_FROM=ThreadX <your sender email>
 ```
 
 The service account must have access to the app in Play Console API access, with permission to read/manage subscriptions.

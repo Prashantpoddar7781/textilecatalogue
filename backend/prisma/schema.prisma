@@ -13,7 +13,6 @@ datasource db {
 model User {
   id        String   @id @default(cuid())
   email     String   @unique
-  mobileNumber String? @unique
   name      String?
   firmName  String?
   password  String
@@ -44,7 +43,7 @@ model OtpCode {
   id          String    @id @default(cuid())
   userId      String?
   user        User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  mobileNumber String
+  email       String
   purpose     String
   codeHash    String
   attempts    Int       @default(0)
@@ -52,7 +51,7 @@ model OtpCode {
   consumedAt  DateTime?
   createdAt   DateTime  @default(now())
 
-  @@index([mobileNumber])
+  @@index([email])
   @@index([purpose])
   @@index([expiresAt])
 }

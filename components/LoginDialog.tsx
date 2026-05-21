@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Mail, Lock, User, LogIn, Phone, KeyRound } from 'lucide-react';
+import { X, Mail, Lock, User, LogIn, KeyRound } from 'lucide-react';
 import { authApi } from '../services/api';
 
 interface Props {
@@ -21,7 +21,6 @@ export const LoginDialog: React.FC<Props> = ({ onClose, onSuccess }) => {
     newPassword: '',
     name: '',
     firmName: '',
-    mobileNumber: '',
     otp: ''
   });
 
@@ -50,8 +49,7 @@ export const LoginDialog: React.FC<Props> = ({ onClose, onSuccess }) => {
           formData.email,
           formData.password,
           formData.name,
-          formData.firmName,
-          formData.mobileNumber
+          formData.firmName
         );
         localStorage.setItem('auth_token', token);
         onSuccess(token, user);
@@ -72,8 +70,8 @@ export const LoginDialog: React.FC<Props> = ({ onClose, onSuccess }) => {
 
     try {
       const purpose = authMode === 'forgot' ? 'reset' : 'login';
-      await authApi.requestOtp(formData.mobileNumber, purpose);
-      setNotice('OTP sent to your mobile number.');
+      await authApi.requestOtp(formData.email, purpose);
+      setNotice('OTP sent to your email.');
     } catch (err: any) {
       setError(err.message || 'Could not send OTP');
     } finally {
@@ -88,7 +86,7 @@ export const LoginDialog: React.FC<Props> = ({ onClose, onSuccess }) => {
 
     try {
       const purpose = authMode === 'forgot' ? 'reset' : 'login';
-      const result = await authApi.verifyOtp(formData.mobileNumber, purpose, formData.otp);
+      const result = await authApi.verifyOtp(formData.email, purpose, formData.otp);
       if (purpose === 'reset') {
         if (!result.resetToken) throw new Error('Reset token missing');
         setResetToken(result.resetToken);
@@ -189,25 +187,10 @@ export const LoginDialog: React.FC<Props> = ({ onClose, onSuccess }) => {
                   />
                 </div>
               </div>
-              <div className="space-y-1">
-                <label className="text-sm font-semibold text-gray-700">Mobile Number</label>
-                <div className="relative">
-                  <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                  <input
-                    required
-                    type="tel"
-                    className="w-full pl-9 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
-                    placeholder="10 digit mobile number"
-                    value={formData.mobileNumber}
-                    onChange={e => setFormData({...formData, mobileNumber: e.target.value})}
-                  />
-                </div>
-                <p className="text-xs text-gray-500">Used for OTP login and password reset.</p>
-              </div>
             </>
           )}
 
-          {(authMode === 'login' || authMode === 'signup') && (
+          {(authMode === 'login' || authMode === 'signup' || authMode === 'otp-login' || authMode === 'forgot') && (
             <div className="space-y-1">
               <label className="text-sm font-semibold text-gray-700">Email</label>
               <div className="relative">
@@ -245,20 +228,6 @@ export const LoginDialog: React.FC<Props> = ({ onClose, onSuccess }) => {
           {(authMode === 'otp-login' || authMode === 'forgot') && (
             <>
               <div className="space-y-1">
-                <label className="text-sm font-semibold text-gray-700">Mobile Number</label>
-                <div className="relative">
-                  <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                  <input
-                    required
-                    type="tel"
-                    className="w-full pl-9 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
-                    placeholder="10 digit mobile number"
-                    value={formData.mobileNumber}
-                    onChange={e => setFormData({...formData, mobileNumber: e.target.value})}
-                  />
-                </div>
-              </div>
-              <div className="space-y-1">
                 <label className="text-sm font-semibold text-gray-700">OTP</label>
                 <div className="flex gap-2">
                   <div className="relative flex-1">
@@ -274,7 +243,7 @@ export const LoginDialog: React.FC<Props> = ({ onClose, onSuccess }) => {
                   </div>
                   <button
                     type="button"
-                    disabled={loading || !formData.mobileNumber || !formData.otp}
+                    disabled={loading || !formData.email || !formData.otp}
                     onClick={() => void handleVerifyOtp()}
                     className="px-4 py-3 rounded-xl bg-gray-900 text-white font-semibold disabled:opacity-50"
                   >
