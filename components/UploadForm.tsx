@@ -1,11 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Capacitor } from '@capacitor/core';
 import { X, Upload, IndianRupee, Camera, Plus, Trash2, Sparkles, Loader2, Maximize2, Cloud, Crop } from 'lucide-react';
 import { HexColorPicker } from 'react-colorful';
 import { TextileDesign, AdditionalPrice, DesignCostingDetails } from '../types';
 import { cataloguesApi, designsApi } from '../services/api';
 import { generateAIModelling, ensureModelImageDataUrl, resizeProductImageForGemini } from '../services/gemini';
 import { pickImageFromGoogleDrive } from '../services/googleDrivePicker';
+import { isNativeDrivePickerAvailable, pickImageFromNativeDrive } from '../services/nativeDriveFilePicker';
 import { DEFAULT_AI_MODEL_IMAGE } from '../constants';
 import { ImageLightbox } from './ImageLightbox';
 import { ImageCropDialog } from './ImageCropDialog';
@@ -238,18 +238,15 @@ export const UploadForm: React.FC<Props> = ({
   };
 
   const isCapacitorWebView = () => {
-    return Capacitor.isNativePlatform();
+    return isNativeDrivePickerAvailable();
   };
 
   const handleDriveImport = async () => {
-    if (isCapacitorWebView()) {
-      fileInputRef.current?.click();
-      return;
-    }
-
     setDriveImporting(true);
     try {
-      const dataUrl = await pickImageFromGoogleDrive();
+      const dataUrl = isCapacitorWebView()
+        ? await pickImageFromNativeDrive()
+        : await pickImageFromGoogleDrive();
       if (dataUrl) {
         setCropSource(dataUrl);
       }
