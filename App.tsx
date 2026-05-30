@@ -495,6 +495,12 @@ const App: React.FC = () => {
             </div>
             <h1 className="text-2xl font-black text-gray-900 mb-2">ThreadX</h1>
             <p className="text-gray-500">Please login to continue</p>
+            <a
+              href="/contact-us.html"
+              className="inline-block mt-4 text-sm font-semibold text-indigo-600 hover:text-indigo-700"
+            >
+              Need help? Contact us
+            </a>
           </div>
         </div>
         {isLoginOpen && <LoginDialog onClose={() => {}} onSuccess={handleLoginSuccess} />}
@@ -758,10 +764,18 @@ const App: React.FC = () => {
                   </button>
                 )}
                 <a
+                  href="/contact-us.html"
+                  className="touch-target mt-2 flex w-full items-center justify-center gap-2 rounded-2xl border border-gray-100 py-3 text-sm font-semibold text-gray-600 active:bg-gray-50"
+                  onClick={() => setMobileMenuOpen(false)}
+                >
+                  <MessageCircle className="w-4 h-4 shrink-0" />
+                  Contact us
+                </a>
+                <a
                   href="/privacy-policy.html"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="touch-target mt-2 flex w-full items-center justify-center rounded-2xl border border-gray-100 py-3 text-sm font-semibold text-gray-600 active:bg-gray-50"
+                  className="touch-target flex w-full items-center justify-center rounded-2xl border border-gray-100 py-3 text-sm font-semibold text-gray-600 active:bg-gray-50"
                   onClick={() => setMobileMenuOpen(false)}
                 >
                   Privacy policy

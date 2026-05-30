@@ -443,8 +443,52 @@ export const billingApi = {
       method: 'POST',
       body: JSON.stringify({ productId, purchaseToken })
     });
+  },
+  getInvoices: async () => {
+    return request<{ invoices: SubscriptionInvoice[] }>('/billing/invoices');
+  },
+  syncInvoices: async () => {
+    return request<{ invoice: SubscriptionInvoice | null; invoices: SubscriptionInvoice[] }>('/billing/invoices/sync', {
+      method: 'POST'
+    });
+  },
+  downloadInvoice: async (invoiceId: string, invoiceNumber: string) => {
+    const token = localStorage.getItem('auth_token');
+    const response = await fetch(`${API_BASE_URL}/billing/invoices/${invoiceId}/download`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {}
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: response.statusText }));
+      throw new ApiError(response.status, error.error || error.message || 'Download failed');
+    }
+
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${invoiceNumber}.html`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
   }
 };
+
+export interface SubscriptionInvoice {
+  id: string;
+  invoiceNumber: string;
+  firmName?: string | null;
+  plan: string;
+  planName: string;
+  amount: number;
+  currency: string;
+  billingPeriodStart?: string | null;
+  billingPeriodEnd?: string | null;
+  paymentSource: string;
+  paidAt: string;
+  createdAt: string;
+}
 
 export { ApiError };
 

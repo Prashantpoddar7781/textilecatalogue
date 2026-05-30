@@ -37,6 +37,7 @@ model User {
   orders    Order[]
   orderDrafts OrderDraft[]
   otpCodes OtpCode[]
+  subscriptionInvoices SubscriptionInvoice[]
 }
 
 model OtpCode {
@@ -253,5 +254,29 @@ model ShareLinkDesign {
   @@index([shareLinkId])
   @@index([designId])
   @@unique([shareLinkId, designId])
+}
+
+model SubscriptionInvoice {
+  id                 String   @id @default(cuid())
+  userId             String
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  invoiceNumber      String   @unique
+  firmName           String?
+  customerName       String?
+  customerEmail      String
+  plan               String
+  planName           String
+  amount             Float
+  currency           String   @default("INR")
+  billingPeriodStart DateTime?
+  billingPeriodEnd   DateTime?
+  paymentSource      String
+  externalReference  String
+  paidAt             DateTime @default(now())
+  createdAt          DateTime @default(now())
+
+  @@unique([userId, externalReference])
+  @@index([userId])
+  @@index([createdAt])
 }
 

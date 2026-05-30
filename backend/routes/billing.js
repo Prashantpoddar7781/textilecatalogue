@@ -5,6 +5,11 @@ import { google } from 'googleapis';
 import { PrismaClient } from '@prisma/client';
 import { authenticateToken } from '../middleware/auth.js';
 import { PRICING_PLANS, ensureSubscriptionDefaults, getSubscriptionSnapshot } from '../middleware/subscription.js';
+import {
+  createSubscriptionInvoice,
+  renderInvoiceHtml,
+  syncSubscriptionInvoiceForUser
+} from '../services/invoice.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -69,6 +74,63 @@ const getTotalCount = (plan) => {
   const envKey = plan === 'monthly' ? 'RAZORPAY_MONTHLY_TOTAL_COUNT' : 'RAZORPAY_ANNUAL_TOTAL_COUNT';
   const configuredCount = Number.parseInt(process.env[envKey] || '', 10);
   return Number.isFinite(configuredCount) && configuredCount > 0 ? configuredCount : defaultCount;
+};
+
+const getPlanDetails = (plan) => PRICING_PLANS.find(item => item.id === plan) || null;
+
+const createGooglePlayInvoice = async (user, plan, googleSubscription, lineItem, productId, purchaseToken) => {
+  const planDetails = getPlanDetails(plan);
+  if (!planDetails) return null;
+
+  const billingPeriodEnd = lineItem.expiryTime ? new Date(lineItem.expiryTime) : user.subscriptionEndsAt;
+  const periodKey = billingPeriodEnd ? billingPeriodEnd.toISOString() : purchaseToken.slice(0, 24);
+  const orderReference = googleSubscription.latestOrderId || `${productId}:${periodKey}`;
+
+  return createSubscriptionInvoice({
+    user,
+    plan,
+    paymentSource: 'google_play',
+    externalReference: `google_play:${orderReference}`,
+    amount: planDetails.price,
+    currency: planDetails.currency,
+    billingPeriodStart: googleSubscription.startTime ? new Date(googleSubscription.startTime) : user.subscriptionStartedAt,
+    billingPeriodEnd,
+    paidAt: new Date()
+  });
+};
+
+const createRazorpayInvoiceFromSubscription = async (user, subscription) => {
+  const planMonthly = process.env.RAZORPAY_PLAN_MONTHLY;
+  const planAnnual = process.env.RAZORPAY_PLAN_ANNUAL;
+  let plan = user.subscriptionPlan;
+  if (subscription.plan_id && planMonthly && subscription.plan_id === planMonthly) {
+    plan = 'monthly';
+  } else if (subscription.plan_id && planAnnual && subscription.plan_id === planAnnual) {
+    plan = 'annual';
+  }
+  if (!plan) return null;
+
+  const planDetails = getPlanDetails(plan);
+  if (!planDetails) return null;
+
+  const billingPeriodEnd = subscription.current_end
+    ? new Date(subscription.current_end * 1000)
+    : user.subscriptionEndsAt;
+  const periodKey = billingPeriodEnd ? billingPeriodEnd.toISOString() : subscription.id;
+
+  return createSubscriptionInvoice({
+    user,
+    plan,
+    paymentSource: 'razorpay',
+    externalReference: `razorpay:${subscription.id}:${periodKey}`,
+    amount: (subscription.plan_amount || planDetails.price * 100) / 100,
+    currency: subscription.currency || planDetails.currency,
+    billingPeriodStart: subscription.current_start
+      ? new Date(subscription.current_start * 1000)
+      : user.subscriptionStartedAt,
+    billingPeriodEnd,
+    paidAt: new Date()
+  });
 };
 
 router.get('/plans', (req, res) => {
@@ -254,6 +316,18 @@ router.post('/google-play/subscription/verify', authenticateToken, async (req, r
     });
 
     const designCount = await prisma.design.count({ where: { userId: updatedUser.id } });
+
+    if (hasPaidAccess) {
+      await createGooglePlayInvoice(
+        updatedUser,
+        plan,
+        googleSubscription,
+        lineItem,
+        productId,
+        purchaseToken
+      );
+    }
+
     res.json({ subscription: getSubscriptionSnapshot(updatedUser, designCount) });
   } catch (error) {
     next(error);
@@ -279,6 +353,7 @@ router.post('/razorpay/webhook', async (req, res, next) => {
     const payload = rawBody && Buffer.isBuffer(rawBody)
       ? JSON.parse(rawBody.toString('utf8'))
       : req.body;
+    const event = payload?.event;
     const subscription = payload?.payload?.subscription?.entity;
     if (!subscription?.id) {
       return res.json({ received: true });
@@ -309,7 +384,100 @@ router.post('/razorpay/webhook', async (req, res, next) => {
       }
     });
 
+    if (['subscription.activated', 'subscription.charged', 'subscription.completed'].includes(event)) {
+      const users = await prisma.user.findMany({
+        where: { razorpaySubscriptionId: subscription.id }
+      });
+      for (const user of users) {
+        await createRazorpayInvoiceFromSubscription(user, subscription);
+      }
+    }
+
     res.json({ received: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/invoices', authenticateToken, async (req, res, next) => {
+  try {
+    const invoices = await prisma.subscriptionInvoice.findMany({
+      where: { userId: req.user.userId },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        invoiceNumber: true,
+        firmName: true,
+        plan: true,
+        planName: true,
+        amount: true,
+        currency: true,
+        billingPeriodStart: true,
+        billingPeriodEnd: true,
+        paymentSource: true,
+        paidAt: true,
+        createdAt: true
+      }
+    });
+    res.json({ invoices });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/invoices/sync', authenticateToken, async (req, res, next) => {
+  try {
+    const user = await ensureSubscriptionDefaults(req.user.userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const invoice = await syncSubscriptionInvoiceForUser(user);
+    const invoices = await prisma.subscriptionInvoice.findMany({
+      where: { userId: user.id },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        invoiceNumber: true,
+        firmName: true,
+        plan: true,
+        planName: true,
+        amount: true,
+        currency: true,
+        billingPeriodStart: true,
+        billingPeriodEnd: true,
+        paymentSource: true,
+        paidAt: true,
+        createdAt: true
+      }
+    });
+
+    res.json({ invoice, invoices });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/invoices/:id/download', authenticateToken, async (req, res, next) => {
+  try {
+    const invoice = await prisma.subscriptionInvoice.findFirst({
+      where: {
+        id: req.params.id,
+        userId: req.user.userId
+      }
+    });
+
+    if (!invoice) {
+      return res.status(404).json({ error: 'Invoice not found' });
+    }
+
+    const html = renderInvoiceHtml(invoice);
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${invoice.invoiceNumber}.html"`
+    );
+    res.send(html);
   } catch (error) {
     next(error);
   }

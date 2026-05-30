@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowLeft, CheckCircle, Crown, ShieldCheck, Trash2 } from 'lucide-react';
-import { billingApi, usersApi } from '../services/api';
+import { ArrowLeft, CheckCircle, Crown, Download, FileText, ShieldCheck, Trash2 } from 'lucide-react';
+import { billingApi, usersApi, SubscriptionInvoice } from '../services/api';
 import { getGooglePlayProductId, googlePlayBilling, isGooglePlayBillingAvailable } from '../services/googlePlayBilling';
 import { SubscriptionStatus } from '../types';
 
@@ -47,13 +47,38 @@ export const BillingPage: React.FC<Props> = ({ user, subscription, refreshSubscr
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [deletingAccount, setDeletingAccount] = useState(false);
+  const [invoices, setInvoices] = useState<SubscriptionInvoice[]>([]);
+  const [loadingInvoices, setLoadingInvoices] = useState(false);
+  const [downloadingInvoiceId, setDownloadingInvoiceId] = useState<string | null>(null);
   const useGooglePlayBilling = isGooglePlayBillingAvailable();
+
+  const loadInvoices = async () => {
+    setLoadingInvoices(true);
+    try {
+      const { invoices: fetchedInvoices } = await billingApi.getInvoices();
+      setInvoices(fetchedInvoices);
+    } catch {
+      setInvoices([]);
+    } finally {
+      setLoadingInvoices(false);
+    }
+  };
+
+  const refreshInvoicesAfterPurchase = async () => {
+    try {
+      const { invoices: syncedInvoices } = await billingApi.syncInvoices();
+      setInvoices(syncedInvoices);
+    } catch {
+      await loadInvoices();
+    }
+  };
 
   useEffect(() => {
     refreshSubscription();
     billingApi.getPlans()
       .then(({ plans: fetchedPlans }) => setPlans(fetchedPlans as Plan[]))
       .catch(() => setPlans(defaultPlans));
+    loadInvoices();
   }, []);
 
   useEffect(() => {
@@ -76,6 +101,7 @@ export const BillingPage: React.FC<Props> = ({ user, subscription, refreshSubscr
         const purchasedProductId = purchase.productIds?.[0] || productId;
         await billingApi.verifyGooglePlaySubscription(purchasedProductId, purchase.purchaseToken);
         await refreshSubscription();
+        await refreshInvoicesAfterPurchase();
         return;
       }
 
@@ -94,8 +120,9 @@ export const BillingPage: React.FC<Props> = ({ user, subscription, refreshSubscr
         description: planId === 'annual' ? 'Annual subscription' : 'Monthly subscription',
         prefill: { email: payload.email },
         theme: { color: '#4f46e5' },
-        handler: () => {
-          refreshSubscription();
+        handler: async () => {
+          await refreshSubscription();
+          await refreshInvoicesAfterPurchase();
         }
       });
 
@@ -127,6 +154,7 @@ export const BillingPage: React.FC<Props> = ({ user, subscription, refreshSubscr
 
       await billingApi.verifyGooglePlaySubscription(productId, purchase.purchaseToken);
       await refreshSubscription();
+      await refreshInvoicesAfterPurchase();
     } catch (err: any) {
       setError(err.message || 'Could not restore Google Play subscription.');
     } finally {
@@ -164,6 +192,26 @@ export const BillingPage: React.FC<Props> = ({ user, subscription, refreshSubscr
       setCancellingSubscription(false);
     }
   };
+
+  const handleDownloadInvoice = async (invoice: SubscriptionInvoice) => {
+    setDownloadingInvoiceId(invoice.id);
+    setError('');
+    try {
+      await billingApi.downloadInvoice(invoice.id, invoice.invoiceNumber);
+    } catch (err: any) {
+      setError(err.message || 'Could not download invoice.');
+    } finally {
+      setDownloadingInvoiceId(null);
+    }
+  };
+
+  const formatInvoiceAmount = (invoice: SubscriptionInvoice) =>
+    invoice.currency === 'INR'
+      ? `₹${invoice.amount.toLocaleString('en-IN')}`
+      : `${invoice.currency} ${invoice.amount.toLocaleString()}`;
+
+  const formatInvoiceDate = (value?: string | null) =>
+    value ? new Date(value).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
 
   const canCancelSubscription = Boolean(
     subscription?.isActive &&
@@ -339,6 +387,52 @@ export const BillingPage: React.FC<Props> = ({ user, subscription, refreshSubscr
           </button>
         )}
 
+        <div className="bg-white border-2 border-gray-100 rounded-2xl p-5 shadow-sm">
+          <div className="flex items-center gap-2 mb-4">
+            <FileText className="w-5 h-5 text-indigo-600" />
+            <h2 className="text-base font-black text-gray-900">Invoices</h2>
+          </div>
+          <p className="text-sm text-gray-600 mb-4">
+            Download receipts for your ThreadX subscription payments. Invoices include your firm name, plan details, and amount paid.
+          </p>
+          {loadingInvoices ? (
+            <p className="text-sm text-gray-500">Loading invoices...</p>
+          ) : invoices.length === 0 ? (
+            <p className="text-sm text-gray-500">
+              No invoices yet. An invoice is generated automatically after you subscribe.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {invoices.map(invoice => (
+                <div
+                  key={invoice.id}
+                  className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border border-gray-100 rounded-xl p-4"
+                >
+                  <div>
+                    <p className="font-bold text-gray-900">{invoice.invoiceNumber}</p>
+                    <p className="text-sm text-gray-600 mt-1">
+                      {invoice.firmName ? `${invoice.firmName} · ` : ''}{invoice.planName} · {formatInvoiceAmount(invoice)}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Paid on {formatInvoiceDate(invoice.paidAt)}
+                      {invoice.billingPeriodEnd ? ` · Valid until ${formatInvoiceDate(invoice.billingPeriodEnd)}` : ''}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleDownloadInvoice(invoice)}
+                    disabled={downloadingInvoiceId === invoice.id}
+                    className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border-2 border-indigo-100 text-indigo-700 text-sm font-bold hover:bg-indigo-50 disabled:opacity-50"
+                  >
+                    <Download className="w-4 h-4" />
+                    {downloadingInvoiceId === invoice.id ? 'Downloading...' : 'Download'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         <div className="border-2 border-red-100 bg-red-50/50 rounded-2xl p-5 space-y-3">
           <div className="flex items-start gap-3">
             <Trash2 className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
@@ -368,6 +462,10 @@ export const BillingPage: React.FC<Props> = ({ user, subscription, refreshSubscr
         </div>
 
         <p className="text-center text-xs text-gray-500 pt-4 space-x-3">
+          <a href="/contact-us.html" className="underline hover:text-gray-800">
+            Contact us
+          </a>
+          <span className="text-gray-300">·</span>
           <a href="/privacy-policy.html" className="underline hover:text-gray-800">
             Privacy policy
           </a>

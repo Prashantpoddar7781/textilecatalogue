@@ -346,6 +346,11 @@ export const LoginDialog: React.FC<Props> = ({ onClose, onSuccess }) => {
             )}
           </div>
         </form>
+        <p className="mt-4 text-center">
+          <a href="/contact-us.html" className="text-xs font-semibold text-gray-500 hover:text-indigo-600">
+            Need help? Contact us
+          </a>
+        </p>
       </div>
     </div>
   );
