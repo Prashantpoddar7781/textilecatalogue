@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Plus, Search, Package, CheckCircle, SlidersHorizontal, LogOut, User, Crown, BarChart3, Menu, MessageCircle, Link2 } from 'lucide-react';
+import { Plus, Search, Package, CheckCircle, SlidersHorizontal, LogOut, User, Crown, BarChart3, Menu, MessageCircle, Link2, LineChart } from 'lucide-react';
 import { TextileDesign, CatalogueFilters, SubscriptionStatus } from './types';
 import { UploadForm } from './components/UploadForm';
 import { DesignCard } from './components/DesignCard';
@@ -10,6 +10,7 @@ import { ShareView } from './components/ShareView';
 import { BarcodeDesignView } from './components/BarcodeDesignView';
 import { OrdersPage } from './components/OrdersPage';
 import { ShareStatsPage } from './components/ShareStatsPage';
+import { ReportsPage } from './components/ReportsPage';
 import { LoginDialog } from './components/LoginDialog';
 import { PricingDialog } from './components/PricingDialog';
 import { BillingPage } from './components/BillingPage';
@@ -28,6 +29,7 @@ const App: React.FC = () => {
   const ordersMatch = pathname.match(/^\/orders\/?$/);
   const billingMatch = pathname.match(/^\/billing\/?$/);
   const shareStatsMatch = pathname.match(/^\/share-stats\/?$/);
+  const reportsMatch = pathname.match(/^\/reports\/?$/);
   
   if (shareMatch) {
     const token = shareMatch[1];
@@ -432,19 +434,17 @@ const App: React.FC = () => {
   };
 
   const handleDesignLongPress = (design: TextileDesign) => {
+    if ((design.stockQuantity ?? 0) <= 0) {
+      alert('This design is out of stock and cannot be shared.');
+      return;
+    }
+
     setSelectionMode(true);
     setSelectedIds(prev => {
       const next = new Set(prev);
       next.add(design.id);
       return next;
     });
-
-    if ((design.stockQuantity ?? 0) <= 0) {
-      alert('This design is out of stock and cannot be shared.');
-      return;
-    }
-
-    setIsShareOpen(true);
   };
 
   useEffect(() => {
@@ -565,6 +565,10 @@ const App: React.FC = () => {
     return <ShareStatsPage onBack={() => { window.location.href = '/'; }} />;
   }
 
+  if (reportsMatch) {
+    return <ReportsPage onBack={() => { window.location.href = '/'; }} />;
+  }
+
   return (
     <div className="min-h-screen bg-[#FDFDFF] pb-28 md:pb-6">
       <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-xl border-b shadow-sm safe-area-top">
@@ -675,6 +679,13 @@ const App: React.FC = () => {
                 </button>
                 <button
                   type="button"
+                  onClick={() => { window.location.href = '/reports'; }}
+                  className="px-3 py-2 rounded-2xl text-xs font-bold border border-gray-200 bg-white text-gray-700 shadow-sm hover:bg-gray-50"
+                >
+                  Reports
+                </button>
+                <button
+                  type="button"
                   onClick={() => { window.location.href = '/orders'; }}
                   className="px-3 py-2 rounded-2xl text-xs font-bold border border-gray-200 bg-white text-gray-700 shadow-sm hover:bg-gray-50"
                 >
@@ -750,6 +761,17 @@ const App: React.FC = () => {
                 >
                   <BarChart3 className="w-5 h-5 text-indigo-600 shrink-0" />
                   Link &amp; share statistics
+                </button>
+                <button
+                  type="button"
+                  className="touch-target flex w-full items-center gap-3 rounded-2xl border border-gray-100 bg-gray-50 px-4 text-left font-bold text-gray-900 active:bg-gray-100"
+                  onClick={() => {
+                    setMobileMenuOpen(false);
+                    window.location.href = '/reports';
+                  }}
+                >
+                  <LineChart className="w-5 h-5 text-indigo-600 shrink-0" />
+                  Reports
                 </button>
                 <button
                   type="button"
