@@ -48,6 +48,7 @@ const App: React.FC = () => {
   const [isLoginOpen, setIsLoginOpen] = useState(false);
   const [isSharingCollection, setIsSharingCollection] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [selectionMode, setSelectionMode] = useState(false);
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [orders, setOrders] = useState<Order[]>([]);
@@ -416,6 +417,41 @@ const App: React.FC = () => {
       return next;
     });
   };
+
+  const clearSelection = () => {
+    setSelectedIds(new Set());
+    setSelectionMode(false);
+  };
+
+  const handleDesignCardClick = (design: TextileDesign) => {
+    if (selectionMode) {
+      toggleSelection(design.id);
+      return;
+    }
+    setViewingDesign(design);
+  };
+
+  const handleDesignLongPress = (design: TextileDesign) => {
+    setSelectionMode(true);
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      next.add(design.id);
+      return next;
+    });
+
+    if ((design.stockQuantity ?? 0) <= 0) {
+      alert('This design is out of stock and cannot be shared.');
+      return;
+    }
+
+    setIsShareOpen(true);
+  };
+
+  useEffect(() => {
+    if (selectedIds.size === 0) {
+      setSelectionMode(false);
+    }
+  }, [selectedIds.size]);
 
   const handleLoginSuccess = (token: string, userData: any) => {
     setUser(userData);
@@ -925,7 +961,9 @@ const App: React.FC = () => {
                 key={design.id}
                 design={design}
                 isSelected={selectedIds.has(design.id)}
-                onSelect={() => toggleSelection(design.id)}
+                selectionMode={selectionMode}
+                onCardClick={() => handleDesignCardClick(design)}
+                onImageLongPress={() => handleDesignLongPress(design)}
                 onDelete={() => handleDeleteDesign(design.id)}
                 onEdit={() => handleEditDesign(design)}
                 onView={() => setViewingDesign(design)}
@@ -969,12 +1007,14 @@ const App: React.FC = () => {
                 <span className="truncate font-black text-sm text-white">
                   {selectedIds.size} design{selectedIds.size === 1 ? '' : 's'}
                 </span>
-                <span className="text-[10px] font-medium text-gray-400">Prepare images &amp; WhatsApp</span>
+                <span className="text-[10px] font-medium text-gray-400">
+                  {selectionMode ? 'Tap more designs to add, or open WhatsApp' : 'Prepare images & WhatsApp'}
+                </span>
               </div>
               <div className="flex shrink-0 items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => setSelectedIds(new Set())}
+                  onClick={clearSelection}
                   className="touch-target rounded-xl px-3 text-xs font-bold text-gray-400 transition-colors hover:text-white"
                 >
                   Clear

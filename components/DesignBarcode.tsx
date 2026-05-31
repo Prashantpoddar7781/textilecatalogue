@@ -3,6 +3,7 @@ import { Download } from 'lucide-react';
 import QRCode from 'qrcode';
 import { TextileDesign } from '../types';
 import { getBarcodeUrl } from '../services/appUrl';
+import { buildBarcodeDownloadImage } from '../services/barcodeImage';
 import { downloadDataUrl } from '../services/nativeApp';
 
 interface Props {
@@ -39,7 +40,12 @@ export const DesignBarcode: React.FC<Props> = ({ design }) => {
     const safeName = (design.name || design.id).replace(/[^a-z0-9-_]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase();
     setDownloading(true);
     try {
-      await downloadDataUrl(qrDataUrl, `${safeName || 'design'}-barcode.png`);
+      const labelledImage = await buildBarcodeDownloadImage(
+        qrDataUrl,
+        designNumberLabel,
+        design.catalogueName
+      );
+      await downloadDataUrl(labelledImage, `${safeName || 'design'}-barcode.png`);
     } catch (error) {
       console.error(error);
       alert('Could not download barcode. Please try again.');

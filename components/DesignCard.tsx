@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useRef } from 'react';
 import { Trash2, CheckCircle, IndianRupee, Edit, Link2, Package, Eye } from 'lucide-react';
 import { TextileDesign } from '../types';
 import { DesignBarcode } from './DesignBarcode';
@@ -14,27 +14,79 @@ function formatInventory(design: TextileDesign): string {
 interface Props {
   design: TextileDesign;
   isSelected: boolean;
-  onSelect: () => void;
+  selectionMode: boolean;
+  onCardClick: () => void;
+  onImageLongPress: () => void;
   onDelete: () => void;
   onEdit: () => void;
   onView: () => void;
   onShareLink?: () => void;
 }
 
-export const DesignCard: React.FC<Props> = ({ design, isSelected, onSelect, onDelete, onEdit, onView, onShareLink }) => {
+const LONG_PRESS_MS = 500;
+
+export const DesignCard: React.FC<Props> = ({
+  design,
+  isSelected,
+  selectionMode,
+  onCardClick,
+  onImageLongPress,
+  onDelete,
+  onEdit,
+  onView,
+  onShareLink
+}) => {
+  const longPressTimerRef = useRef<number | null>(null);
+  const longPressTriggeredRef = useRef(false);
+
+  const clearLongPressTimer = () => {
+    if (longPressTimerRef.current != null) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
+  const startLongPress = () => {
+    longPressTriggeredRef.current = false;
+    clearLongPressTimer();
+    longPressTimerRef.current = window.setTimeout(() => {
+      longPressTriggeredRef.current = true;
+      onImageLongPress();
+    }, LONG_PRESS_MS);
+  };
+
+  const handleImageClick = () => {
+    if (longPressTriggeredRef.current) {
+      longPressTriggeredRef.current = false;
+      return;
+    }
+    onCardClick();
+  };
+
   return (
-    <div 
-      onClick={onSelect}
+    <div
       className={`group relative bg-white rounded-2xl overflow-hidden transition-all active:scale-95 touch-manipulation ring-1 ring-gray-200/90 shadow-[0_0_0_1px_rgba(0,0,0,0.04)] ${
         isSelected ? 'ring-2 ring-indigo-600 ring-offset-2 ring-offset-[#FDFDFF] shadow-xl' : ''
-      }`}
+      } ${selectionMode && !isSelected ? 'opacity-95' : ''}`}
     >
-      <div className="aspect-[3/4] overflow-hidden bg-gray-100 relative">
-        <img 
-          src={design.image} 
-          alt={design.fabric} 
-          className="w-full h-full object-cover"
+      <div
+        className="aspect-[3/4] overflow-hidden bg-gray-100 relative select-none"
+        onClick={handleImageClick}
+        onTouchStart={startLongPress}
+        onTouchEnd={clearLongPressTimer}
+        onTouchMove={clearLongPressTimer}
+        onTouchCancel={clearLongPressTimer}
+        onMouseDown={startLongPress}
+        onMouseUp={clearLongPressTimer}
+        onMouseLeave={clearLongPressTimer}
+        onContextMenu={(e) => e.preventDefault()}
+      >
+        <img
+          src={design.image}
+          alt={design.fabric}
+          className="w-full h-full object-cover pointer-events-none"
           loading="lazy"
+          draggable={false}
         />
 
         {design.aiModels && design.aiModels.length > 0 && (
@@ -51,7 +103,7 @@ export const DesignCard: React.FC<Props> = ({ design, isSelected, onSelect, onDe
             )}
           </div>
         )}
-        
+
         <div className="absolute top-2 left-2 flex flex-wrap gap-1 pointer-events-none">
           <span className="bg-white/95 backdrop-blur shadow-sm text-gray-900 text-[10px] font-bold px-2 py-0.5 rounded-lg uppercase">
             {design.fabric}
@@ -70,9 +122,20 @@ export const DesignCard: React.FC<Props> = ({ design, isSelected, onSelect, onDe
             </div>
           </div>
         )}
+
+        {!selectionMode && (
+          <div className="absolute bottom-2 right-2 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity hidden sm:block">
+            <span className="bg-black/55 text-white text-[9px] font-semibold px-2 py-1 rounded-lg">
+              Hold to share
+            </span>
+          </div>
+        )}
       </div>
 
-      <div className="p-3 bg-white/80 backdrop-blur-sm">
+      <div
+        className="p-3 bg-white/80 backdrop-blur-sm cursor-pointer"
+        onClick={handleImageClick}
+      >
         <div className="flex flex-col">
           <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Price</span>
           <div className="flex items-center text-lg font-black text-gray-900 leading-tight">
