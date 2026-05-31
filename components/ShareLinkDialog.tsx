@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { X, Link2, Copy, Check, Trash2, Eye, EyeOff, Calendar, Clock } from 'lucide-react';
 import { TextileDesign, ShareLink } from '../types';
 import { shareLinksApi } from '../services/api';
+import { getShareUrl } from '../services/appUrl';
+import { openWhatsAppWithText } from '../services/nativeApp';
 
 interface Props {
   design?: TextileDesign;
@@ -85,11 +87,7 @@ export const ShareLinkDialog: React.FC<Props> = ({ design, designs, onClose }) =
         } catch (e) {
           console.warn('Clipboard write failed:', e);
         }
-        const waUrl = `https://wa.me/?text=${encodeURIComponent(shareUrl)}`;
-        const newWindow = window.open(waUrl, '_blank');
-        if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
-          window.location.href = waUrl;
-        }
+        await openWhatsAppWithText(shareUrl);
       } else {
         alert('Failed to create share link. Please try again.');
       }
@@ -138,16 +136,10 @@ export const ShareLinkDialog: React.FC<Props> = ({ design, designs, onClose }) =
   };
 
   const copyToClipboard = (token: string) => {
-    const baseUrl = window.location.origin;
-    const shareUrl = `${baseUrl}/share/${token}`;
+    const shareUrl = getShareUrl(token);
     navigator.clipboard.writeText(shareUrl);
     setCopiedToken(token);
     setTimeout(() => setCopiedToken(null), 2000);
-  };
-
-  const getShareUrl = (token: string) => {
-    const baseUrl = window.location.origin;
-    return `${baseUrl}/share/${token}`;
   };
 
   const formatExpirationDate = (dateString?: string) => {

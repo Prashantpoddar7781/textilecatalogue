@@ -6,6 +6,7 @@ import { cataloguesApi, designsApi } from '../services/api';
 import { generateAIModelling, ensureModelImageDataUrl, resizeProductImageForGemini } from '../services/gemini';
 import { pickImageFromGoogleDrive } from '../services/googleDrivePicker';
 import { isNativeDrivePickerAvailable, pickImageFromNativeDrive } from '../services/nativeDriveFilePicker';
+import { isNativeAndroid, takePhotoFromNativeCamera } from '../services/nativeApp';
 import { DEFAULT_AI_MODEL_IMAGE } from '../constants';
 import { ImageLightbox } from './ImageLightbox';
 import { ImageCropDialog } from './ImageCropDialog';
@@ -233,7 +234,20 @@ export const UploadForm: React.FC<Props> = ({
     e.target.value = '';
   };
 
-  const handleCameraCapture = () => {
+  const handleCameraCapture = async () => {
+    if (isNativeAndroid()) {
+      try {
+        const dataUrl = await takePhotoFromNativeCamera();
+        if (dataUrl) {
+          setCropSource(dataUrl);
+        }
+      } catch (error) {
+        console.error(error);
+        alert('Could not open camera. Please allow camera permission and try again.');
+      }
+      return;
+    }
+
     cameraInputRef.current?.click();
   };
 
@@ -502,7 +516,7 @@ export const UploadForm: React.FC<Props> = ({
               </button>
               <button
                 type="button"
-                onClick={handleCameraCapture}
+                onClick={() => void handleCameraCapture()}
                 className="flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 px-2 sm:px-3 py-2.5 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 rounded-xl font-medium text-xs sm:text-sm transition-colors touch-target"
               >
                 <Camera className="w-4 h-4 shrink-0" />

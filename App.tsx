@@ -14,6 +14,8 @@ import { LoginDialog } from './components/LoginDialog';
 import { PricingDialog } from './components/PricingDialog';
 import { BillingPage } from './components/BillingPage';
 import { designsApi, authApi, shareLinksApi, ordersApi, billingApi } from './services/api';
+import { getShareUrl } from './services/appUrl';
+import { openWhatsAppWithText } from './services/nativeApp';
 import { Order } from './types';
 
 const APP_LOGO_SRC = '/threadx-logo.png';
@@ -450,17 +452,13 @@ const App: React.FC = () => {
     try {
       setIsSharingCollection(true);
       const shareLink = await shareLinksApi.createCollection();
-      const shareUrl = `${window.location.origin}/share/${shareLink.token}`;
+      const shareUrl = getShareUrl(shareLink.token);
       try {
         await navigator.clipboard.writeText(shareUrl);
       } catch (e) {
         console.warn('Clipboard write failed:', e);
       }
-      const waUrl = `https://wa.me/?text=${encodeURIComponent(shareUrl)}`;
-      const newWindow = window.open(waUrl, '_blank');
-      if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
-        window.location.href = waUrl;
-      }
+      await openWhatsAppWithText(shareUrl);
     } catch (error: any) {
       alert('Failed to create collection link: ' + (error.message || 'Unknown error'));
     } finally {

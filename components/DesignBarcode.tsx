@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Download } from 'lucide-react';
 import QRCode from 'qrcode';
 import { TextileDesign } from '../types';
+import { getBarcodeUrl } from '../services/appUrl';
+import { downloadDataUrl } from '../services/nativeApp';
 
 interface Props {
   design: TextileDesign;
@@ -9,9 +11,10 @@ interface Props {
 
 export const DesignBarcode: React.FC<Props> = ({ design }) => {
   const [qrDataUrl, setQrDataUrl] = useState('');
+  const [downloading, setDownloading] = useState(false);
   const designNumberLabel = design.designCode?.trim() || design.name || design.id;
   const barcodeValue = useMemo(
-    () => `${window.location.origin}/barcode/${design.id}`,
+    () => getBarcodeUrl(design.id),
     [design.id]
   );
 
@@ -31,15 +34,18 @@ export const DesignBarcode: React.FC<Props> = ({ design }) => {
     };
   }, [barcodeValue]);
 
-  const handleDownload = () => {
-    if (!qrDataUrl) return;
-    const link = document.createElement('a');
+  const handleDownload = async () => {
+    if (!qrDataUrl || downloading) return;
     const safeName = (design.name || design.id).replace(/[^a-z0-9-_]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase();
-    link.href = qrDataUrl;
-    link.download = `${safeName || 'design'}-barcode.png`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    setDownloading(true);
+    try {
+      await downloadDataUrl(qrDataUrl, `${safeName || 'design'}-barcode.png`);
+    } catch (error) {
+      console.error(error);
+      alert('Could not download barcode. Please try again.');
+    } finally {
+      setDownloading(false);
+    }
   };
 
   return (
@@ -60,14 +66,14 @@ export const DesignBarcode: React.FC<Props> = ({ design }) => {
           type="button"
           onClick={(e) => {
             e.stopPropagation();
-            handleDownload();
+            void handleDownload();
           }}
-          disabled={!qrDataUrl}
+          disabled={!qrDataUrl || downloading}
           className="inline-flex items-center gap-1 text-[10px] font-semibold text-indigo-600 hover:text-indigo-700 disabled:opacity-50"
           title="Download barcode"
         >
           <Download className="w-3 h-3" />
-          Download
+          {downloading ? 'Saving...' : 'Download'}
         </button>
       </div>
     </div>

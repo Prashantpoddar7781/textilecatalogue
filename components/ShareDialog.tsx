@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { X, MessageCircle, CheckSquare, Square, Loader2, Download, Eye, AlertCircle, Send, Link2 } from 'lucide-react';
 import { TextileDesign, ShareOptions } from '../types';
 import { loadSharePreferences, saveSharePreferences } from '../services/sharePreferences';
+import { isNativeAndroid, openWhatsAppWithText, shareImagesNative, downloadBlob } from '../services/nativeApp';
 
 /** Which image to use per design when generating WhatsApp assets (original / variant index / all). */
 function getShareJobs(
@@ -276,17 +277,17 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
     });
   };
 
-  const downloadOne = (blob: Blob, name: string) => {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = name;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    // Revoke after a delay to ensure the browser handled the download
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  const downloadOne = async (blob: Blob, name: string) => {
+    await downloadBlob(blob, name);
   };
+
+  const blobToDataUrl = (blob: Blob) =>
+    new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.onerror = () => reject(new Error('Could not prepare image for sharing'));
+      reader.readAsDataURL(blob);
+    });
 
   const handlePrepareShare = async () => {
     setProcessing(true);
@@ -308,6 +309,14 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
 
       if (blobs.length === 0) {
         throw new Error('Failed to generate any images');
+      }
+
+      if (isNativeAndroid()) {
+        const dataUrls = await Promise.all(blobs.map(blobToDataUrl));
+        await shareImagesNative(dataUrls);
+        onClose();
+        setProcessing(false);
+        return;
       }
 
       // Priority 1: Mobile Native Sharing API — share files only (no app caption; labels are on the images)
@@ -335,7 +344,7 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
                 text: textWithInfo,
               });
               for (let i = 0; i < blobs.length; i++) {
-                downloadOne(blobs[i], `design-${i + 1}.jpg`);
+                await downloadOne(blobs[i], `design-${i + 1}.jpg`);
                 if (blobs.length > 1) await new Promise(r => setTimeout(r, 300));
               }
               onClose();
@@ -354,7 +363,7 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
       // Priority 2: WhatsApp Web API (works on desktop and mobile browsers)
       // First download images, then open WhatsApp
       for (let i = 0; i < blobs.length; i++) {
-        downloadOne(blobs[i], `design-${i + 1}.jpg`);
+        await downloadOne(blobs[i], `design-${i + 1}.jpg`);
         if (blobs.length > 1) await new Promise(r => setTimeout(r, 300));
       }
 
@@ -369,17 +378,13 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
     }
   };
 
-  const openWhatsAppLink = () => {
-    const waUrl = 'https://wa.me/';
-
-    const newWindow = window.open(waUrl, '_blank');
-    
-    // If popup blocked, try direct navigation (mobile)
-    if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
-      window.location.href = waUrl;
+  const openWhatsAppLink = async () => {
+    try {
+      await openWhatsAppWithText('');
+    } catch (error) {
+      console.error(error);
     }
-    
-    // Close dialog after a short delay
+
     setTimeout(() => {
       onClose();
     }, 500);
