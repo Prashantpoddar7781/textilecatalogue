@@ -3,6 +3,7 @@ import { ArrowLeft, Camera, CheckCircle, IndianRupee, Loader2, Monitor, ScanLine
 import { Html5Qrcode } from 'html5-qrcode';
 import { customersApi, designsApi, ordersApi } from '../services/api';
 import { extractDesignIdFromScan, prefersHardwareScanner } from '../services/barcodeScan';
+import { playScanBeep, playScanErrorBeep } from '../services/scanBeep';
 import { downloadOrderSummaryPdf } from '../services/orderSummaryPdf';
 import { Customer, TextileDesign } from '../types';
 import { HardwareScannerInput } from './HardwareScannerInput';
@@ -194,9 +195,11 @@ export const BarcodeOrderBuilder: React.FC<Props> = ({
         setCurrentDesign(null);
         setScannerOpen(false);
         setCheckoutOpen(false);
+        playScanBeep();
         return design;
       }
 
+      playScanBeep();
       setCurrentDesign(design);
       setCurrentQuantity('1');
       setCurrentRemarks('');
@@ -204,6 +207,7 @@ export const BarcodeOrderBuilder: React.FC<Props> = ({
       setCheckoutOpen(false);
       return design;
     } catch (err: any) {
+      playScanErrorBeep();
       setError(err.message || 'Design not found for this barcode.');
       if (scanMethod === 'camera') setScannerOpen(true);
       return null;

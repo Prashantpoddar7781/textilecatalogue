@@ -5,6 +5,9 @@ import { Order } from '../types';
 import { BarcodeOrderBuilder } from './BarcodeOrderBuilder';
 import { ManualOrderDialog } from './ManualOrderDialog';
 
+/** How often the orders list polls for new orders from other staff/devices (ms). */
+const ORDERS_AUTO_REFRESH_MS = 8000;
+
 interface Props {
   onBack: () => void;
   firmName?: string;
@@ -38,7 +41,7 @@ export const OrdersPage: React.FC<Props> = ({ onBack, firmName }) => {
 
   useEffect(() => {
     const refresh = () => void loadOrders();
-    const intervalId = window.setInterval(refresh, 15000);
+    const intervalId = window.setInterval(refresh, ORDERS_AUTO_REFRESH_MS);
     window.addEventListener('focus', refresh);
     window.addEventListener('threadx-orders-updated', refresh);
 
@@ -153,7 +156,7 @@ export const OrdersPage: React.FC<Props> = ({ onBack, firmName }) => {
         <div className="mb-5 rounded-2xl border border-indigo-100 bg-indigo-50/70 px-4 py-3 text-sm text-indigo-900">
           <p className="font-bold">Multiple orders at once</p>
           <p className="text-indigo-800/90 mt-1">
-            During peak season, staff can create orders in parallel — scan station on PC, quick scan on mobile, or open extra scan tabs. Every saved order appears here automatically.
+            During peak season, staff can create orders in parallel — scan station on PC, quick scan on mobile, or open extra scan tabs. Every saved order appears here automatically (refreshes every {ORDERS_AUTO_REFRESH_MS / 1000} seconds).
           </p>
           <div className="mt-2 flex flex-wrap items-center gap-3 text-xs font-semibold text-indigo-700">
             <button type="button" onClick={() => void loadOrders()} className="inline-flex items-center gap-1 hover:text-indigo-900">
