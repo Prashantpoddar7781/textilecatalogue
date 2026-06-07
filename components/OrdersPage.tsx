@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, CheckCircle, Clock, Plus, Package, ScanLine, ThumbsUp } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { ArrowLeft, CheckCircle, Clock, Plus, Package, RefreshCw, ScanLine, ThumbsUp } from 'lucide-react';
 import { ordersApi } from '../services/api';
 import { Order } from '../types';
 import { BarcodeOrderBuilder } from './BarcodeOrderBuilder';
@@ -17,22 +17,37 @@ export const OrdersPage: React.FC<Props> = ({ onBack, firmName }) => {
   const [showManual, setShowManual] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
   const [activeTab, setActiveTab] = useState<'waiting_approval' | 'pending' | 'completed' | 'all'>('waiting_approval');
+  const [lastRefreshedAt, setLastRefreshedAt] = useState<Date | null>(null);
 
-  const loadOrders = async () => {
+  const loadOrders = useCallback(async () => {
     try {
       setLoading(true);
       const { orders: fetchedOrders } = await ordersApi.getAll();
       setOrders(fetchedOrders);
+      setLastRefreshedAt(new Date());
     } catch (error) {
       console.error('Failed to load orders:', error);
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    loadOrders();
-  }, []);
+    void loadOrders();
+  }, [loadOrders]);
+
+  useEffect(() => {
+    const refresh = () => void loadOrders();
+    const intervalId = window.setInterval(refresh, 15000);
+    window.addEventListener('focus', refresh);
+    window.addEventListener('threadx-orders-updated', refresh);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', refresh);
+      window.removeEventListener('threadx-orders-updated', refresh);
+    };
+  }, [loadOrders]);
 
   const markCompleted = async (orderId: string) => {
     try {
@@ -97,6 +112,15 @@ export const OrdersPage: React.FC<Props> = ({ onBack, firmName }) => {
           </button>
           <h1 className="text-lg font-black text-gray-900">Orders</h1>
           <div className="flex items-center gap-2">
+            <a
+              href="/orders/scan"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hidden md:flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 text-indigo-700 text-xs font-bold px-3 py-2 hover:bg-indigo-100"
+            >
+              <ScanLine className="w-4 h-4" />
+              New scan tab
+            </a>
             <button
               type="button"
               onClick={() => { window.location.href = '/orders/scan'; }}
@@ -126,6 +150,24 @@ export const OrdersPage: React.FC<Props> = ({ onBack, firmName }) => {
       </header>
 
       <div className="max-w-7xl mx-auto px-4 py-6">
+        <div className="mb-5 rounded-2xl border border-indigo-100 bg-indigo-50/70 px-4 py-3 text-sm text-indigo-900">
+          <p className="font-bold">Multiple orders at once</p>
+          <p className="text-indigo-800/90 mt-1">
+            During peak season, staff can create orders in parallel — scan station on PC, quick scan on mobile, or open extra scan tabs. Every saved order appears here automatically.
+          </p>
+          <div className="mt-2 flex flex-wrap items-center gap-3 text-xs font-semibold text-indigo-700">
+            <button type="button" onClick={() => void loadOrders()} className="inline-flex items-center gap-1 hover:text-indigo-900">
+              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+              Refresh now
+            </button>
+            {lastRefreshedAt && (
+              <span className="text-indigo-600">
+                Updated {lastRefreshedAt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+              </span>
+            )}
+          </div>
+        </div>
+
         <div className="mb-5 flex gap-2 overflow-x-auto pb-1">
           {tabItems.map(tab => (
             <button
@@ -374,7 +416,10 @@ export const OrdersPage: React.FC<Props> = ({ onBack, firmName }) => {
         <BarcodeOrderBuilder
           firmName={firmName}
           onClose={() => setShowScanner(false)}
-          onCreated={() => void loadOrders()}
+          onCreated={() => {
+            void loadOrders();
+            setShowScanner(false);
+          }}
         />
       )}
     </div>

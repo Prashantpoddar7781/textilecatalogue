@@ -137,6 +137,25 @@ export const BarcodeOrderBuilder: React.FC<Props> = ({
   const [customerName, setCustomerName] = useState('');
   const [orderNumber, setOrderNumber] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [savedOrderSuccess, setSavedOrderSuccess] = useState<{
+    customerName: string;
+    orderNumber?: string | null;
+    designCount: number;
+  } | null>(null);
+
+  const resetOrderForm = useCallback(() => {
+    setLines([]);
+    setCurrentDesign(null);
+    setCurrentQuantity('1');
+    setCurrentRemarks('');
+    setCheckoutOpen(false);
+    setScannerOpen(scanMethod === 'camera');
+    setSelectedCustomerId('');
+    setCustomerName('');
+    setOrderNumber('');
+    setLastScannedLabel(null);
+    setError(null);
+  }, [scanMethod]);
 
   const loadCustomers = useCallback(async () => {
     try {
@@ -289,6 +308,21 @@ export const BarcodeOrderBuilder: React.FC<Props> = ({
         }))
       });
 
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('threadx-orders-updated'));
+      }
+
+      if (stationMode) {
+        setSavedOrderSuccess({
+          customerName: customerLabel,
+          orderNumber: savedOrder?.orderNumber || orderNumber.trim() || null,
+          designCount: lines.length
+        });
+        resetOrderForm();
+        onCreated?.();
+        return;
+      }
+
       onCreated?.();
       if (onClose) onClose();
       else window.location.href = '/orders';
@@ -396,6 +430,32 @@ export const BarcodeOrderBuilder: React.FC<Props> = ({
         <div className="flex-1 overflow-y-auto p-5 space-y-4">
           {error && <div className="rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
 
+          {savedOrderSuccess && stationMode && (
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+              <p className="font-black text-emerald-900">
+                Order saved for {savedOrderSuccess.customerName}
+              </p>
+              <p className="text-sm text-emerald-800 mt-1">
+                PDF receipt downloaded. This station is ready for the next client — keep scanning or open another tab for a parallel order.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSavedOrderSuccess(null)}
+                  className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-bold text-white"
+                >
+                  Start next order here
+                </button>
+                <a
+                  href="/orders"
+                  className="rounded-xl border border-emerald-300 bg-white px-4 py-2 text-sm font-bold text-emerald-800"
+                >
+                  View all orders
+                </a>
+              </div>
+            </div>
+          )}
+
           {stationMode && (
             <div className="rounded-2xl border-2 border-dashed border-indigo-200 bg-indigo-50/70 p-4 relative">
               <HardwareScannerInput onScan={handleScanValue} disabled={checkoutOpen || submitting} />
@@ -406,8 +466,16 @@ export const BarcodeOrderBuilder: React.FC<Props> = ({
                 <div className="flex-1">
                   <p className="font-black text-gray-900">USB / wireless scanner ready</p>
                   <p className="text-sm text-gray-600 mt-1">
-                    Keep this page open on the office computer. One person scans sample barcodes; another person can update quantities in the list below.
+                    Peak season: run 3–4 orders at once — open this page on multiple PCs/phones (or extra browser tabs). Each saved order appears in Orders for your account.
                   </p>
+                  <a
+                    href="/orders/scan"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-block mt-2 text-xs font-bold text-indigo-700 hover:text-indigo-800"
+                  >
+                    Open another scan station tab
+                  </a>
                   {loadingDesign ? (
                     <p className="text-sm text-indigo-700 font-semibold mt-2 inline-flex items-center gap-2">
                       <Loader2 className="w-4 h-4 animate-spin" />

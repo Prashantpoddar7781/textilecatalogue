@@ -328,6 +328,9 @@ export const ManualOrderDialog: React.FC<Props> = ({ onClose, onCreated }) => {
           lines: parsedLines
         });
       }
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('threadx-orders-updated'));
+      }
       onCreated();
       onClose();
     } catch (err: unknown) {

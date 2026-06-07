@@ -12,7 +12,6 @@ export const ScanStationPage: React.FC<Props> = ({ onBack, firmName }) => {
       stationMode
       firmName={firmName}
       onClose={onBack}
-      onCreated={() => { window.location.href = '/orders'; }}
     />
   );
 };
