@@ -9,6 +9,7 @@ import { ShareLinkDialog } from './components/ShareLinkDialog';
 import { ShareView } from './components/ShareView';
 import { BarcodeDesignView } from './components/BarcodeDesignView';
 import { OrdersPage } from './components/OrdersPage';
+import { ScanStationPage } from './components/ScanStationPage';
 import { ShareStatsPage } from './components/ShareStatsPage';
 import { ReportsPage } from './components/ReportsPage';
 import { LoginDialog } from './components/LoginDialog';
@@ -27,6 +28,7 @@ const App: React.FC = () => {
   const shareMatch = pathname.match(/^\/share\/([^/]+)$/);
   const barcodeMatch = pathname.match(/^\/barcode\/([^/]+)$/);
   const ordersMatch = pathname.match(/^\/orders\/?$/);
+  const ordersScanMatch = pathname.match(/^\/orders\/scan\/?$/);
   const billingMatch = pathname.match(/^\/billing\/?$/);
   const shareStatsMatch = pathname.match(/^\/share-stats\/?$/);
   const reportsMatch = pathname.match(/^\/reports\/?$/);
@@ -544,6 +546,10 @@ const App: React.FC = () => {
 
   if (ordersMatch) {
     return <OrdersPage onBack={() => { window.location.href = '/'; }} />;
+  }
+
+  if (ordersScanMatch) {
+    return <ScanStationPage onBack={() => { window.location.href = '/orders'; }} />;
   }
 
   if (billingMatch) {

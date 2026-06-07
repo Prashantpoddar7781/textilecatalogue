@@ -145,7 +145,10 @@ router.get('/public/:id', async (req, res, next) => {
         wholesalePrice: true,
         retailPrice: true,
         fabric: true,
-        description: true
+        description: true,
+        catalogue: {
+          select: { name: true }
+        }
       }
     });
 
@@ -153,7 +156,11 @@ router.get('/public/:id', async (req, res, next) => {
       return res.status(404).json({ error: 'Design not found' });
     }
 
-    res.json(design);
+    res.json({
+      ...design,
+      catalogueName: design.catalogue?.name || null,
+      catalogue: undefined
+    });
   } catch (error) {
     next(error);
   }

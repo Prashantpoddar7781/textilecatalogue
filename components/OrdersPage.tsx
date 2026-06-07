@@ -98,11 +98,19 @@ export const OrdersPage: React.FC<Props> = ({ onBack }) => {
           <div className="flex items-center gap-2">
             <button
               type="button"
+              onClick={() => { window.location.href = '/orders/scan'; }}
+              className="flex items-center gap-1.5 rounded-xl bg-indigo-600 text-white text-xs font-bold px-3 py-2 hover:bg-indigo-700 shadow-sm"
+            >
+              <ScanLine className="w-4 h-4" />
+              <span className="hidden sm:inline">Scan station</span>
+            </button>
+            <button
+              type="button"
               onClick={() => setShowScanner(true)}
               className="flex items-center gap-1.5 rounded-xl bg-gray-900 text-white text-xs font-bold px-3 py-2 hover:bg-black shadow-sm"
             >
               <ScanLine className="w-4 h-4" />
-              <span className="hidden sm:inline">Scanner</span>
+              <span className="hidden sm:inline">Quick scan</span>
             </button>
             <button
               type="button"
@@ -141,11 +149,19 @@ export const OrdersPage: React.FC<Props> = ({ onBack }) => {
             <p className="text-sm text-gray-400">No orders yet.</p>
             <button
               type="button"
-              onClick={() => setShowScanner(true)}
+              onClick={() => { window.location.href = '/orders/scan'; }}
               className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 text-white text-sm font-bold px-5 py-3 hover:bg-indigo-700"
             >
               <ScanLine className="w-5 h-5" />
-              Scan barcode to create order
+              Open scan station (USB scanner)
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowScanner(true)}
+              className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white text-gray-700 text-sm font-bold px-5 py-3 hover:bg-gray-50"
+            >
+              <ScanLine className="w-5 h-5" />
+              Quick scan
             </button>
             <button
               type="button"
