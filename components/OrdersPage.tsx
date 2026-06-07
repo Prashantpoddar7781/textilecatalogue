@@ -7,9 +7,10 @@ import { ManualOrderDialog } from './ManualOrderDialog';
 
 interface Props {
   onBack: () => void;
+  firmName?: string;
 }
 
-export const OrdersPage: React.FC<Props> = ({ onBack }) => {
+export const OrdersPage: React.FC<Props> = ({ onBack, firmName }) => {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(false);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
@@ -371,6 +372,7 @@ export const OrdersPage: React.FC<Props> = ({ onBack }) => {
       )}
       {showScanner && (
         <BarcodeOrderBuilder
+          firmName={firmName}
           onClose={() => setShowScanner(false)}
           onCreated={() => void loadOrders()}
         />

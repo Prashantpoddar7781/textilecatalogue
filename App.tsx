@@ -545,11 +545,11 @@ const App: React.FC = () => {
   }
 
   if (ordersMatch) {
-    return <OrdersPage onBack={() => { window.location.href = '/'; }} />;
+    return <OrdersPage firmName={user?.firmName} onBack={() => { window.location.href = '/'; }} />;
   }
 
   if (ordersScanMatch) {
-    return <ScanStationPage onBack={() => { window.location.href = '/orders'; }} />;
+    return <ScanStationPage firmName={user?.firmName} onBack={() => { window.location.href = '/orders'; }} />;
   }
 
   if (billingMatch) {

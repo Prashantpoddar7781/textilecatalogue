@@ -3,6 +3,7 @@ import { ArrowLeft, Camera, CheckCircle, IndianRupee, Loader2, Monitor, ScanLine
 import { Html5Qrcode } from 'html5-qrcode';
 import { customersApi, designsApi, ordersApi } from '../services/api';
 import { extractDesignIdFromScan, prefersHardwareScanner } from '../services/barcodeScan';
+import { downloadOrderSummaryPdf } from '../services/orderSummaryPdf';
 import { Customer, TextileDesign } from '../types';
 import { HardwareScannerInput } from './HardwareScannerInput';
 
@@ -15,6 +16,7 @@ interface ScannedOrderLine {
 interface Props {
   initialDesignId?: string;
   stationMode?: boolean;
+  firmName?: string;
   onClose?: () => void;
   onCreated?: () => void;
 }
@@ -115,6 +117,7 @@ function BarcodeScanner({
 export const BarcodeOrderBuilder: React.FC<Props> = ({
   initialDesignId,
   stationMode = false,
+  firmName,
   onClose,
   onCreated
 }) => {
@@ -244,7 +247,7 @@ export const BarcodeOrderBuilder: React.FC<Props> = ({
 
     setSubmitting(true);
     try {
-      await ordersApi.createManual({
+      const response = await ordersApi.createManual({
         kind: 'design',
         ...(selectedCustomerId
           ? { customerId: selectedCustomerId }
@@ -256,6 +259,36 @@ export const BarcodeOrderBuilder: React.FC<Props> = ({
           remarks: line.remarks || undefined
         }))
       });
+
+      const savedOrder = response.order;
+      const customerLabel = savedOrder?.buyerName
+        || customers.find(customer => customer.id === selectedCustomerId)?.organizationName
+        || customerName.trim();
+
+      downloadOrderSummaryPdf({
+        customerName: customerLabel,
+        orderNumber: savedOrder?.orderNumber || orderNumber.trim() || null,
+        createdAt: savedOrder?.createdAt || new Date().toISOString(),
+        firmName: firmName || null,
+        orderLines: (savedOrder?.orderLines || lines.map(line => ({
+          designCode: line.design.designCode || null,
+          designName: line.design.name || null,
+          fabric: line.design.fabric || null,
+          catalogueName: line.design.catalogueName || null,
+          quantity: parseInt(line.quantity, 10),
+          basePrice: line.design.basePrice || line.design.retailPrice || 0,
+          remarks: line.remarks || null
+        }))).map((line: any) => ({
+          designCode: line.designCode,
+          designName: line.designName,
+          fabric: line.fabric,
+          catalogueName: line.catalogueName || null,
+          quantity: Number(line.quantity) || 0,
+          basePrice: line.basePrice || line.retailPrice || 0,
+          remarks: line.remarks || null
+        }))
+      });
+
       onCreated?.();
       if (onClose) onClose();
       else window.location.href = '/orders';
