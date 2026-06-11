@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, CheckCircle, Clock, Plus, Package, RefreshCw, ScanLine, ThumbsUp } from 'lucide-react';
+import { ArrowLeft, CheckCircle, Clock, Plus, Package, RefreshCw, ScanLine, Search, ThumbsUp, X } from 'lucide-react';
 import { ordersApi } from '../services/api';
+import { findOrdersByDesignQuery } from '../services/orderDesignSearch';
 import { Order } from '../types';
 import { BarcodeOrderBuilder } from './BarcodeOrderBuilder';
 import { ManualOrderDialog } from './ManualOrderDialog';
@@ -21,6 +22,7 @@ export const OrdersPage: React.FC<Props> = ({ onBack, firmName }) => {
   const [showScanner, setShowScanner] = useState(false);
   const [activeTab, setActiveTab] = useState<'waiting_approval' | 'pending' | 'completed' | 'all'>('waiting_approval');
   const [lastRefreshedAt, setLastRefreshedAt] = useState<Date | null>(null);
+  const [designSearch, setDesignSearch] = useState('');
 
   const loadOrders = useCallback(async () => {
     try {
@@ -76,10 +78,33 @@ export const OrdersPage: React.FC<Props> = ({ onBack, firmName }) => {
     }
   };
 
-  const filteredOrders = useMemo(() => {
+  const tabOrders = useMemo(() => {
     if (activeTab === 'all') return orders;
     return orders.filter(order => order.status === activeTab);
   }, [activeTab, orders]);
+
+  const designSearchMatches = useMemo(
+    () => findOrdersByDesignQuery(tabOrders, designSearch),
+    [tabOrders, designSearch]
+  );
+
+  const designSearchOrderIds = useMemo(
+    () => new Set(designSearchMatches.map(match => match.order.id)),
+    [designSearchMatches]
+  );
+
+  const totalDesignSearchQty = useMemo(
+    () => designSearchMatches.reduce((sum, match) => sum + match.quantity, 0),
+    [designSearchMatches]
+  );
+
+  const filteredOrders = useMemo(() => {
+    let list = activeTab === 'all' ? orders : orders.filter(order => order.status === activeTab);
+    if (designSearch.trim()) {
+      list = list.filter(order => designSearchOrderIds.has(order.id));
+    }
+    return list;
+  }, [activeTab, orders, designSearch, designSearchOrderIds]);
 
   const counts = useMemo(() => ({
     waiting_approval: orders.filter(order => order.status === 'waiting_approval').length,
@@ -220,7 +245,9 @@ export const OrdersPage: React.FC<Props> = ({ onBack, firmName }) => {
           </div>
         ) : filteredOrders.length === 0 ? (
           <div className="text-center py-12 space-y-2">
-            <p className="text-sm text-gray-400">No orders in this section.</p>
+            <p className="text-sm text-gray-400">
+              {designSearch.trim() ? 'No matching orders in this section.' : 'No orders in this section.'}
+            </p>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">

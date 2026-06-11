@@ -48,6 +48,7 @@ const App: React.FC = () => {
   const [isShareOpen, setIsShareOpen] = useState(false);
   const [isShareLinkOpen, setIsShareLinkOpen] = useState(false);
   const [selectedDesignForLink, setSelectedDesignForLink] = useState<TextileDesign | null>(null);
+  const [bulkShareDesigns, setBulkShareDesigns] = useState<TextileDesign[] | null>(null);
   const [viewingDesign, setViewingDesign] = useState<TextileDesign | null>(null);
   const [isLoginOpen, setIsLoginOpen] = useState(false);
   const [isSharingCollection, setIsSharingCollection] = useState(false);
@@ -203,13 +204,28 @@ const App: React.FC = () => {
     return designs.filter(d => {
       const matchesSearch = (d.description?.toLowerCase() || '').includes(filters.search.toLowerCase()) || 
                            (d.fabric?.toLowerCase() || '').includes(filters.search.toLowerCase()) ||
-                           (d.name?.toLowerCase() || '').includes(filters.search.toLowerCase());
+                           (d.name?.toLowerCase() || '').includes(filters.search.toLowerCase()) ||
+                           (d.designCode?.toLowerCase() || '').includes(filters.search.toLowerCase());
       const matchesFabric = filters.fabric === 'All' || d.fabric === filters.fabric;
       const matchesCatalogue = filters.catalogue === 'All' || d.catalogueId === filters.catalogue;
       const matchesPrice = d.retailPrice >= filters.minPrice && d.retailPrice <= filters.maxPrice;
       return matchesSearch && matchesFabric && matchesCatalogue && matchesPrice;
     });
   }, [designs, filters]);
+
+  const hasActiveFilters = useMemo(() => {
+    const defaultMax = designs.length > 0 ? Math.max(...designs.map(d => d.retailPrice), 100000) : 100000;
+    return filters.catalogue !== 'All'
+      || filters.fabric !== 'All'
+      || filters.minPrice > 0
+      || filters.search.trim() !== ''
+      || filters.maxPrice < defaultMax;
+  }, [designs, filters]);
+
+  const inStockFilteredDesigns = useMemo(
+    () => filteredDesigns.filter(d => (d.stockQuantity ?? 0) > 0),
+    [filteredDesigns]
+  );
 
   const costingMaterialNameOptions = useMemo(() => {
     const seen = new Set<string>();
@@ -506,6 +522,14 @@ const App: React.FC = () => {
 
   const selectedDesigns = designs.filter(d => selectedIds.has(d.id));
   const inStockSelectedDesigns = selectedDesigns.filter(d => (d.stockQuantity ?? 0) > 0);
+  const shareDialogDesigns = bulkShareDesigns?.length ? bulkShareDesigns : inStockSelectedDesigns;
+  const shareLinkDialogDesigns = bulkShareDesigns?.length
+    ? bulkShareDesigns
+    : inStockSelectedDesigns.length > 0
+      ? inStockSelectedDesigns
+      : selectedDesignForLink
+        ? [selectedDesignForLink]
+        : [];
   const freeDesignLimit = subscription?.freeDesignLimit ?? 8;
   const designCountForPlan = subscription?.designCount ?? designs.length;
   const freeDesignsRemaining = subscription?.freeDesignsRemaining ?? Math.max(freeDesignLimit - designCountForPlan, 0);
@@ -968,6 +992,41 @@ const App: React.FC = () => {
             </div>
           </div>
         )}
+
+        {hasActiveFilters && inStockFilteredDesigns.length > 0 && (
+          <div className="mt-3 rounded-2xl border border-emerald-200 bg-emerald-50/80 px-4 py-3">
+            <p className="text-sm font-black text-emerald-950">
+              {inStockFilteredDesigns.length} design{inStockFilteredDesigns.length === 1 ? '' : 's'} match your filters
+            </p>
+            <p className="text-xs text-emerald-800 mt-1">
+              Share the entire filtered list with one tap — e.g. all Cotton designs or everything above ₹500.
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setBulkShareDesigns(inStockFilteredDesigns);
+                  setIsShareLinkOpen(true);
+                }}
+                className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-xs font-black text-white shadow-sm hover:bg-emerald-700"
+              >
+                <Link2 className="w-4 h-4" />
+                Share link ({inStockFilteredDesigns.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setBulkShareDesigns(inStockFilteredDesigns);
+                  setIsShareOpen(true);
+                }}
+                className="inline-flex items-center gap-2 rounded-xl border border-emerald-300 bg-white px-4 py-2.5 text-xs font-black text-emerald-800 hover:bg-emerald-100"
+              >
+                <MessageCircle className="w-4 h-4" />
+                WhatsApp ({inStockFilteredDesigns.length})
+              </button>
+            </div>
+          </div>
+        )}
       </div>
       
 
@@ -1084,26 +1143,29 @@ const App: React.FC = () => {
           karigarNameOptions={costingKarigarNameOptions}
         />
       )}
-      {isShareOpen && (
+      {isShareOpen && shareDialogDesigns.length > 0 && (
         <ShareDialog 
-          selectedDesigns={inStockSelectedDesigns} 
+          selectedDesigns={shareDialogDesigns} 
           userFirmName={user?.firmName} 
-          onClose={() => setIsShareOpen(false)}
+          onClose={() => {
+            setIsShareOpen(false);
+            setBulkShareDesigns(null);
+          }}
           onShareLink={(designs) => {
             if (designs.length > 0) {
-              setSelectedDesignForLink(designs[0]);
+              setBulkShareDesigns(designs);
               setIsShareLinkOpen(true);
             }
           }}
         />
       )}
-      {isShareLinkOpen && (inStockSelectedDesigns.length > 0 || selectedDesignForLink) && (
+      {isShareLinkOpen && shareLinkDialogDesigns.length > 0 && (
         <ShareLinkDialog 
-          designs={inStockSelectedDesigns.length > 0 ? inStockSelectedDesigns : undefined}
-          design={selectedDesignForLink || undefined}
+          designs={shareLinkDialogDesigns}
           onClose={() => {
             setIsShareLinkOpen(false);
             setSelectedDesignForLink(null);
+            setBulkShareDesigns(null);
           }} 
         />
       )}
