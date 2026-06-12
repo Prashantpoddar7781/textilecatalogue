@@ -121,39 +121,15 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
         if (!ctx) return reject('Canvas context not found');
 
         /**
-         * Square output so WhatsApp thumbnails tend to show the full frame (product + label).
-         * The photo area uses **contain** (not cover): the whole product is visible with letterboxing
-         * if needed — no zoom/crop that cuts off garments (like aggressive catalogue-style cover).
+         * Photo fills canvas width (no side letterboxing); details sit in a black band below.
          */
-        const OUT = 1080;
-        const photoH = Math.round(OUT * 0.72);
-        const bannerH = OUT - photoH;
-        const width = OUT;
-        const height = OUT;
-
-        canvas.width = width;
-        canvas.height = height;
-
         const sw = img.naturalWidth || 800;
         const sh = img.naturalHeight || 1000;
-        const dw = width;
-        const dh = photoH;
-        const scale = Math.min(dw / sw, dh / sh);
-        const tw = sw * scale;
-        const th = sh * scale;
-        const ox = (dw - tw) / 2;
-        const oy = (dh - th) / 2;
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, dw, dh);
-        ctx.drawImage(img, 0, 0, sw, sh, ox, oy, tw, th);
-
-        // Bottom label — taller band + larger type so it stays legible in small chat previews
+        const width = 1080;
+        const photoH = Math.round((sh / sw) * width);
         const padding = Math.round(width * 0.04);
-        const fontSize = Math.max(24, Math.round(height * 0.028));
+        const fontSize = Math.max(22, Math.round(width * 0.028));
         const lineHeight = fontSize * 1.42;
-
-        ctx.fillStyle = '#000000';
-        ctx.fillRect(0, photoH, width, bannerH);
 
         // 2. Prepare two columns: left = firm, fabric, price, description; right = catalogue + design
         const leftLines: string[] = [];
@@ -244,6 +220,25 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
 
         const leftWrapped = flattenWrapped(leftLines, leftColW);
         const rightWrapped = hasRight ? flattenWrapped(rightLines, rightColW) : [];
+
+        const textLineCount = Math.max(leftWrapped.length, rightWrapped.length, 1);
+        const bannerH = Math.max(
+          Math.round(width * 0.12),
+          padding * 2 + textLineCount * lineHeight
+        );
+        const height = photoH + bannerH;
+
+        canvas.width = width;
+        canvas.height = height;
+
+        ctx.drawImage(img, 0, 0, sw, sh, 0, 0, width, photoH);
+
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(0, photoH, width, bannerH);
+
+        ctx.font = `600 ${fontSize}px -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif`;
+        ctx.fillStyle = '#ffffff';
+        ctx.textBaseline = 'top';
 
         const leftX = padding;
         const rightEdgeX = width - padding;

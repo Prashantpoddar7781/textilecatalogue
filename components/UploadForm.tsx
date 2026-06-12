@@ -14,7 +14,7 @@ import { CostingCalculator } from './CostingCalculator';
 
 interface Props {
   onClose: () => void;
-  onSubmit: (design: TextileDesign) => void;
+  onSubmit: (design: TextileDesign) => void | Promise<void>;
   initialData?: TextileDesign | null;
   materialNameOptions?: string[];
   supplierNameOptions?: string[];
@@ -78,6 +78,7 @@ export const UploadForm: React.FC<Props> = ({
   const modelInputRef = useRef<HTMLInputElement>(null);
   /** When set, full-screen crop UI is shown for this image (data URL). */
   const [cropSource, setCropSource] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Load catalogues on mount
   useEffect(() => {
@@ -391,8 +392,10 @@ export const UploadForm: React.FC<Props> = ({
     });
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (isSubmitting) return;
+
     // Allow editing without re-uploading image if initialData exists
     const imageToUse = preview || initialData?.image;
     if (!imageToUse) return alert('Please upload an image');
@@ -435,7 +438,12 @@ export const UploadForm: React.FC<Props> = ({
       costingDetails: costingEnabled ? costingDetails : undefined
     };
 
-    onSubmit(newDesign);
+    setIsSubmitting(true);
+    try {
+      await onSubmit(newDesign);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -1111,10 +1119,19 @@ export const UploadForm: React.FC<Props> = ({
 
         <div className="p-6 bg-gray-50 border-t">
           <button
-            onClick={handleSubmit}
-            className="w-full bg-gray-900 text-white py-4 rounded-xl font-bold shadow-xl hover:bg-black transition-all flex items-center justify-center gap-2"
+            type="button"
+            disabled={isSubmitting}
+            onClick={() => void handleSubmit()}
+            className="w-full bg-gray-900 text-white py-4 rounded-xl font-bold shadow-xl hover:bg-black transition-all flex items-center justify-center gap-2 active:scale-[0.97] disabled:opacity-60 disabled:cursor-not-allowed disabled:active:scale-100"
           >
-            {initialData ? 'Save Changes' : 'Add to Catalogue'}
+            {isSubmitting ? (
+              <>
+                <Loader2 className="w-5 h-5 animate-spin" />
+                {initialData ? 'Saving changes...' : 'Adding to catalogue...'}
+              </>
+            ) : (
+              initialData ? 'Save Changes' : 'Add to Catalogue'
+            )}
           </button>
         </div>
       </div>
