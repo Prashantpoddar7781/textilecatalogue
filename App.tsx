@@ -127,56 +127,56 @@ const App: React.FC = () => {
     refreshSubscription();
   }, [user]);
 
-  // Load designs from API
-  const loadDesigns = async () => {
-    if (!user) return;
-    
-    setLoading(true);
+  const mapDesign = (d: any): TextileDesign => ({
+    id: d.id,
+    name: d.name || 'Untitled Design',
+    catalogueId: d.catalogueId,
+    catalogueName: d.catalogue?.name,
+    image: d.image,
+    designCode: d.designCode,
+    color: d.color,
+    stockQuantity: d.stockQuantity,
+    stockUnit: d.stockUnit,
+    pcsPerParcel: d.pcsPerParcel,
+    moq: d.moq,
+    basePrice: d.basePrice || d.retailPrice || 0,
+    additionalPrices: d.additionalPrices,
+    wholesalePrice: d.wholesalePrice || d.basePrice || d.retailPrice || 0,
+    retailPrice: d.retailPrice || d.basePrice || 0,
+    fabric: d.fabric,
+    description: d.description || '',
+    firmName: d.user?.firmName,
+    createdAt: new Date(d.createdAt).getTime(),
+    aiModels: d.aiModels as string[] | undefined,
+    costingDetails: d.costingDetails || undefined
+  });
+
+  const loadFilterMetadata = async () => {
     try {
-      const params: any = {
-        sortBy: filters.sortBy,
-        page: 1,
-        limit: 1000
-      };
-
-      if (filters.fabric !== 'All') params.fabric = filters.fabric;
-      if (filters.catalogue !== 'All') params.catalogue = filters.catalogue;
-      if (filters.minPrice > 0) params.minPrice = filters.minPrice;
-      if (filters.maxPrice < 100000) params.maxPrice = filters.maxPrice;
-      if (filters.search) params.search = filters.search;
-
-      const { designs: fetchedDesigns } = await designsApi.getAll(params);
-      setDesigns(fetchedDesigns.map((d: any) => ({
-        id: d.id,
-        name: d.name || 'Untitled Design',
-        catalogueId: d.catalogueId,
-        catalogueName: d.catalogue?.name,
-        image: d.image,
-        designCode: d.designCode,
-        color: d.color,
-        stockQuantity: d.stockQuantity,
-        stockUnit: d.stockUnit,
-        pcsPerParcel: d.pcsPerParcel,
-        moq: d.moq,
-        basePrice: d.basePrice || d.retailPrice || 0,
-        additionalPrices: d.additionalPrices,
-        wholesalePrice: d.wholesalePrice || d.basePrice || d.retailPrice || 0,
-        retailPrice: d.retailPrice || d.basePrice || 0,
-        fabric: d.fabric,
-        description: d.description || '',
-        firmName: d.user?.firmName,
-        createdAt: new Date(d.createdAt).getTime(),
-        aiModels: d.aiModels as string[] | undefined,
-        costingDetails: d.costingDetails || undefined
-      })));
-
-      // Load fabrics and catalogues for filter
       const [fabricsResult, cataloguesResult] = await Promise.all([
         designsApi.getFabrics(),
         designsApi.getCatalogues()
       ]);
       setFabrics(['All', ...fabricsResult.fabrics]);
       setCatalogues(cataloguesResult.catalogues);
+    } catch (error) {
+      console.warn('Failed to load filter metadata', error);
+    }
+  };
+
+  // Load catalogue once; search/filters run instantly on the client (no API per keystroke).
+  const loadDesigns = async () => {
+    if (!user) return;
+
+    setLoading(true);
+    try {
+      const { designs: fetchedDesigns } = await designsApi.getAll({
+        sortBy: 'newest',
+        page: 1,
+        limit: 2000
+      });
+      setDesigns(fetchedDesigns.map(mapDesign));
+      await loadFilterMetadata();
     } catch (error: any) {
       console.error('Failed to load designs:', error);
       alert('Failed to load designs: ' + (error.message || 'Unknown error'));
@@ -185,32 +185,33 @@ const App: React.FC = () => {
     }
   };
 
-  // Reload designs when filters change
-  useEffect(() => {
-    if (user && isReady) {
-      const timeoutId = setTimeout(() => {
-        loadDesigns();
-      }, 300); // Debounce
-      return () => clearTimeout(timeoutId);
-    }
-  }, [filters, user]);
-
   const maxPrice = useMemo(() => {
     if (designs.length === 0) return 100000;
     return Math.max(...designs.map(d => d.retailPrice), 100000);
   }, [designs]);
 
   const filteredDesigns = useMemo(() => {
-    return designs.filter(d => {
-      const matchesSearch = (d.description?.toLowerCase() || '').includes(filters.search.toLowerCase()) || 
-                           (d.fabric?.toLowerCase() || '').includes(filters.search.toLowerCase()) ||
-                           (d.name?.toLowerCase() || '').includes(filters.search.toLowerCase()) ||
-                           (d.designCode?.toLowerCase() || '').includes(filters.search.toLowerCase());
+    const q = filters.search.trim().toLowerCase();
+    const list = designs.filter(d => {
+      const matchesSearch = !q
+        || (d.description?.toLowerCase() || '').includes(q)
+        || (d.fabric?.toLowerCase() || '').includes(q)
+        || (d.name?.toLowerCase() || '').includes(q)
+        || (d.designCode?.toLowerCase() || '').includes(q)
+        || (d.catalogueName?.toLowerCase() || '').includes(q);
       const matchesFabric = filters.fabric === 'All' || d.fabric === filters.fabric;
       const matchesCatalogue = filters.catalogue === 'All' || d.catalogueId === filters.catalogue;
       const matchesPrice = d.retailPrice >= filters.minPrice && d.retailPrice <= filters.maxPrice;
       return matchesSearch && matchesFabric && matchesCatalogue && matchesPrice;
     });
+
+    if (filters.sortBy === 'price-low') {
+      return [...list].sort((a, b) => a.retailPrice - b.retailPrice);
+    }
+    if (filters.sortBy === 'price-high') {
+      return [...list].sort((a, b) => b.retailPrice - a.retailPrice);
+    }
+    return [...list].sort((a, b) => b.createdAt - a.createdAt);
   }, [designs, filters]);
 
   const hasActiveFilters = useMemo(() => {
@@ -305,29 +306,7 @@ const App: React.FC = () => {
         costingDetails: design.costingDetails
       });
       
-      setDesigns(prev => [{
-        id: created.id,
-        name: created.name || 'Untitled Design',
-        catalogueId: created.catalogueId,
-        catalogueName: created.catalogue?.name,
-        image: created.image,
-        designCode: created.designCode,
-        color: created.color,
-        stockQuantity: created.stockQuantity,
-        stockUnit: created.stockUnit,
-        pcsPerParcel: created.pcsPerParcel,
-        moq: created.moq,
-        basePrice: created.basePrice || created.retailPrice || 0,
-        additionalPrices: created.additionalPrices,
-        wholesalePrice: created.wholesalePrice || created.basePrice || 0,
-        retailPrice: created.retailPrice || created.basePrice || 0,
-        fabric: created.fabric,
-        description: created.description || '',
-        firmName: created.user?.firmName,
-        createdAt: new Date(created.createdAt).getTime(),
-        aiModels: created.aiModels as string[] | undefined,
-        costingDetails: created.costingDetails || undefined
-      }, ...prev]);
+      setDesigns(prev => [mapDesign(created), ...prev]);
       setIsUploadOpen(false);
       // Reload catalogues in case new one was created
       const { catalogues: cats } = await designsApi.getCatalogues();
@@ -645,6 +624,11 @@ const App: React.FC = () => {
                 value={filters.search}
                 onChange={e => setFilters(f => ({ ...f, search: e.target.value }))}
               />
+              {filters.search.trim() && designs.length > 0 && (
+                <p className="mt-1.5 text-xs font-semibold text-indigo-600 px-1">
+                  {filteredDesigns.length} design{filteredDesigns.length === 1 ? '' : 's'} found
+                </p>
+              )}
             </div>
           </div>
 
@@ -660,15 +644,22 @@ const App: React.FC = () => {
               </div>
             </div>
 
-            <div className="flex-1 max-w-md relative group">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4 group-focus-within:text-indigo-500 transition-colors" />
-              <input
-                type="search"
-                placeholder="Search catalogue…"
-                className="w-full pl-9 pr-4 py-2.5 bg-gray-100 border-transparent focus:bg-white border focus:border-indigo-500 rounded-2xl text-sm outline-none transition-all placeholder:text-gray-400"
-                value={filters.search}
-                onChange={e => setFilters(f => ({ ...f, search: e.target.value }))}
-              />
+            <div className="flex-1 max-w-md">
+              <div className="relative group">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4 group-focus-within:text-indigo-500 transition-colors" />
+                <input
+                  type="search"
+                  placeholder="Search catalogue…"
+                  className="w-full pl-9 pr-4 py-2.5 bg-gray-100 border-transparent focus:bg-white border focus:border-indigo-500 rounded-2xl text-sm outline-none transition-all placeholder:text-gray-400"
+                  value={filters.search}
+                  onChange={e => setFilters(f => ({ ...f, search: e.target.value }))}
+                />
+              </div>
+              {filters.search.trim() && designs.length > 0 && (
+                <p className="mt-1 text-xs font-semibold text-indigo-600 px-1">
+                  {filteredDesigns.length} design{filteredDesigns.length === 1 ? '' : 's'} found
+                </p>
+              )}
             </div>
 
             <div className="flex items-center gap-2">
@@ -1032,16 +1023,14 @@ const App: React.FC = () => {
 
 
       <main className="max-w-7xl mx-auto px-4 pb-8">
-        {loading && (
+        {loading && designs.length === 0 ? (
           <div className="flex items-center justify-center py-24">
             <div className="text-center">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto mb-4"></div>
               <p className="text-gray-500">Loading designs...</p>
             </div>
           </div>
-        )}
-
-        {!loading && (
+        ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4 md:gap-6">
             {filteredDesigns.map(design => (
               <DesignCard
@@ -1063,7 +1052,7 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {!loading && filteredDesigns.length === 0 && isReady && (
+        {!loading && filteredDesigns.length === 0 && isReady && designs.length > 0 && (
           <div className="flex flex-col items-center justify-center py-24 text-center">
             <div className="bg-gray-100 p-8 rounded-[3rem] mb-6 shadow-inner">
               <Package className="w-12 h-12 text-gray-300" />

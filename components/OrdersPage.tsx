@@ -27,16 +27,16 @@ export const OrdersPage: React.FC<Props> = ({ onBack, firmName }) => {
   const [designSearch, setDesignSearch] = useState('');
   const [editingOrder, setEditingOrder] = useState<Order | null>(null);
 
-  const loadOrders = useCallback(async () => {
+  const loadOrders = useCallback(async (options?: { background?: boolean }) => {
     try {
-      setLoading(true);
+      if (!options?.background) setLoading(true);
       const { orders: fetchedOrders } = await ordersApi.getAll();
       setOrders(fetchedOrders);
       setLastRefreshedAt(new Date());
     } catch (error) {
       console.error('Failed to load orders:', error);
     } finally {
-      setLoading(false);
+      if (!options?.background) setLoading(false);
     }
   }, []);
 
@@ -58,7 +58,7 @@ export const OrdersPage: React.FC<Props> = ({ onBack, firmName }) => {
   }, [orders]);
 
   useEffect(() => {
-    const refresh = () => void loadOrders();
+    const refresh = () => void loadOrders({ background: true });
     const intervalId = window.setInterval(refresh, ORDERS_AUTO_REFRESH_MS);
     window.addEventListener('focus', refresh);
     window.addEventListener('threadx-orders-updated', refresh);
@@ -210,6 +210,66 @@ export const OrdersPage: React.FC<Props> = ({ onBack, firmName }) => {
               </span>
             )}
           </div>
+        </div>
+
+        <div className="sticky top-[52px] z-20 -mx-4 px-4 pt-2 pb-3 mb-4 bg-[#FDFDFF]/95 backdrop-blur border-b border-gray-100">
+          <label className="text-[10px] font-black uppercase tracking-widest text-indigo-600 block mb-2">
+            Find design in orders
+          </label>
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input
+              type="search"
+              value={designSearch}
+              onChange={e => setDesignSearch(e.target.value)}
+              placeholder="Design number or name..."
+              className="w-full pl-10 pr-10 py-3 bg-white border-2 border-indigo-100 rounded-2xl text-sm font-semibold outline-none focus:ring-2 focus:ring-indigo-500 shadow-sm"
+            />
+            {designSearch && (
+              <button
+                type="button"
+                onClick={() => setDesignSearch('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-full hover:bg-gray-100 text-gray-500"
+                aria-label="Clear design search"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+          {designSearch.trim() && (
+            <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
+              {designSearchMatches.length === 0 ? (
+                <p className="text-sm font-semibold text-amber-900">
+                  No orders contain &ldquo;{designSearch.trim()}&rdquo; in this tab
+                </p>
+              ) : (
+                <>
+                  <p className="text-sm font-black text-amber-950">
+                    &ldquo;{designSearch.trim()}&rdquo; in {designSearchMatches.length} line{designSearchMatches.length === 1 ? '' : 's'}
+                    {' · '}Total qty: {totalDesignSearchQty}
+                  </p>
+                  <div className="mt-2 space-y-1.5 max-h-40 overflow-y-auto">
+                    {designSearchMatches.map((match, idx) => (
+                      <div
+                        key={`${match.order.id}-${match.designId || idx}`}
+                        className="flex items-center justify-between gap-2 rounded-lg bg-white px-2.5 py-1.5 text-xs border border-amber-100"
+                      >
+                        <div className="min-w-0">
+                          <p className="font-bold text-gray-900 truncate">
+                            {match.designLabel} · Qty {match.quantity}
+                          </p>
+                          <p className="text-gray-600 truncate">
+                            {match.order.buyerName}
+                            {match.order.orderNumber ? ` · #${match.order.orderNumber}` : ''}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="mb-5 flex gap-2 overflow-x-auto pb-1">
