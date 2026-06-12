@@ -388,6 +388,8 @@ export const ordersApi = {
     shippingCharge?: number | null;
     orderDate?: string;
     expectedDate?: string;
+    haste?: string;
+    station?: string;
     parcelQuantity?: number;
     lines?: Array<{ designId: string; quantity: number; remarks?: string }>;
   }) => {
@@ -400,6 +402,39 @@ export const ordersApi = {
     return request<{ order: any }>(`/orders/${id}/status`, {
       method: 'PUT',
       body: JSON.stringify({ status }),
+    });
+  },
+  update: async (id: string, body: {
+    buyerName?: string;
+    customerId?: string;
+    customer?: {
+      organizationName: string;
+      gstNumber?: string;
+      contactPersonName?: string;
+      mobileNumber?: string;
+      agentName?: string;
+      category?: string;
+      state?: string;
+      city?: string;
+      pincode?: string;
+      discountRate?: number | null;
+    };
+    remarks?: string;
+    priceCategory?: string;
+    orderNumber?: string;
+    agentName?: string;
+    transportName?: string;
+    haste?: string;
+    station?: string;
+    discountRate?: number | null;
+    shippingCharge?: number | null;
+    orderDate?: string;
+    expectedDate?: string;
+    lines?: Array<{ designId: string; quantity: number; remarks?: string }>;
+  }) => {
+    return request<{ order: any }>(`/orders/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(body)
     });
   },
   createPublic: async (data: {

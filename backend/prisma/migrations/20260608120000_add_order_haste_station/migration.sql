@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS "haste" TEXT;
+ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS "station" TEXT;

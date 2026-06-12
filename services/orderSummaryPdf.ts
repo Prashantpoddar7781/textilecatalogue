@@ -1,10 +1,13 @@
 import { jsPDF } from 'jspdf';
+import { Order } from '../types';
+import { downloadBlob, openWhatsAppWithText } from './nativeApp';
 
 export interface OrderSummaryLine {
   designCode?: string | null;
   designName?: string | null;
   fabric?: string | null;
   catalogueName?: string | null;
+  image?: string | null;
   quantity: number;
   basePrice?: number | null;
   remarks?: string | null;
@@ -14,133 +17,198 @@ export interface OrderSummaryPdfInput {
   customerName: string;
   orderNumber?: string | null;
   createdAt?: string | null;
+  orderDate?: string | null;
+  expectedDate?: string | null;
   firmName?: string | null;
+  agentName?: string | null;
+  transportName?: string | null;
+  haste?: string | null;
+  station?: string | null;
+  priceCategory?: string | null;
+  discountRate?: number | null;
+  shippingCharge?: number | null;
+  remarks?: string | null;
   orderLines: OrderSummaryLine[];
 }
 
 const formatMoney = (value: number) =>
   `₹${value.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
 
-const formatDate = (value?: string | null) => {
-  if (!value) return new Date().toLocaleString('en-IN');
+const formatDateOnly = (value?: string | null) => {
+  if (!value) return '—';
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? new Date().toLocaleString('en-IN') : date.toLocaleString('en-IN');
+  if (Number.isNaN(date.getTime())) return '—';
+  return date.toLocaleDateString('en-IN');
 };
 
 const safeFilePart = (value: string) =>
   value.replace(/[^a-z0-9-_]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase() || 'order';
 
-export function downloadOrderSummaryPdf(input: OrderSummaryPdfInput) {
+const getPdfFileName = (input: OrderSummaryPdfInput) =>
+  `threadx-order-${safeFilePart(input.orderNumber || new Date().toISOString().slice(0, 10))}.pdf`;
+
+function tryAddImage(doc: jsPDF, dataUrl: string | null | undefined, x: number, y: number, w: number, h: number) {
+  if (!dataUrl?.startsWith('data:image')) return false;
+  const format = dataUrl.includes('image/png') ? 'PNG' : 'JPEG';
+  try {
+    doc.addImage(dataUrl, format, x, y, w, h, undefined, 'FAST');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function buildOrderSummaryPdf(input: OrderSummaryPdfInput): jsPDF {
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
-  const margin = 14;
+  const margin = 12;
   const pageWidth = doc.internal.pageSize.getWidth();
   const contentWidth = pageWidth - margin * 2;
-  let y = 18;
+  let y = 14;
 
-  const addPageIfNeeded = (height = 8) => {
-    if (y + height > 285) {
+  const addPageIfNeeded = (height = 10) => {
+    if (y + height > 282) {
       doc.addPage();
-      y = 18;
+      y = 14;
     }
   };
 
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(18);
-  doc.setTextColor(79, 70, 229);
-  doc.text('ThreadX', margin, y);
+  doc.setDrawColor(79, 70, 229);
+  doc.setLineWidth(0.6);
+  doc.rect(margin, y, contentWidth, 42);
 
-  doc.setFontSize(10);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(16);
+  doc.setTextColor(79, 70, 229);
+  doc.text('ThreadX', margin + 4, y + 10);
+  doc.setFontSize(9);
   doc.setTextColor(100, 116, 139);
-  doc.text('Order summary', pageWidth - margin, y, { align: 'right' });
-  y += 10;
+  doc.text('ORDER FORM', pageWidth - margin - 4, y + 10, { align: 'right' });
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(13);
   doc.setTextColor(15, 23, 42);
-  doc.text('Sales order receipt', margin, y);
-  y += 8;
+  doc.text('Sales Order', margin + 4, y + 20);
 
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(10);
+  doc.setFontSize(9);
   doc.setTextColor(51, 65, 85);
+  if (input.firmName) {
+    doc.text(`Firm: ${input.firmName}`, margin + 4, y + 28);
+  }
+  doc.text(`Customer: ${input.customerName}`, margin + 4, y + 34);
+  doc.text(`Order no.: ${input.orderNumber || '—'}`, pageWidth - margin - 4, y + 28, { align: 'right' });
+  doc.text(`Date: ${formatDateOnly(input.orderDate || input.createdAt)}`, pageWidth - margin - 4, y + 34, { align: 'right' });
 
-  const metaRows = [
-    ['Customer', input.customerName],
-    ['Order no.', input.orderNumber || '—'],
-    ['Date', formatDate(input.createdAt)],
-    ...(input.firmName ? [['Firm', input.firmName] as [string, string]] : [])
+  y += 48;
+
+  const metaRows: Array<[string, string]> = [
+    ['Agent / Aadhat', input.agentName || '—'],
+    ['Transport', input.transportName || '—'],
+    ['Station', input.station || '—'],
+    ['Haste', input.haste || '—'],
+    ['Expected date', formatDateOnly(input.expectedDate)],
+    ['Price category', input.priceCategory || '—'],
+    ['Discount', input.discountRate != null ? `${input.discountRate}%` : '—'],
+    ['Shipping', input.shippingCharge != null ? formatMoney(input.shippingCharge) : '—']
   ];
 
-  for (const [label, value] of metaRows) {
-    addPageIfNeeded();
+  doc.setFontSize(9);
+  for (let i = 0; i < metaRows.length; i += 2) {
+    addPageIfNeeded(8);
+    const left = metaRows[i];
+    const right = metaRows[i + 1];
     doc.setFont('helvetica', 'bold');
-    doc.text(`${label}:`, margin, y);
+    doc.setTextColor(71, 85, 105);
+    doc.text(`${left[0]}:`, margin, y);
     doc.setFont('helvetica', 'normal');
-    doc.text(String(value), margin + 28, y);
+    doc.setTextColor(15, 23, 42);
+    doc.text(left[1], margin + 30, y);
+    if (right) {
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(71, 85, 105);
+      doc.text(`${right[0]}:`, margin + contentWidth / 2, y);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(15, 23, 42);
+      doc.text(right[1], margin + contentWidth / 2 + 30, y);
+    }
     y += 6;
   }
 
+  if (input.remarks?.trim()) {
+    addPageIfNeeded(8);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Remarks:', margin, y);
+    doc.setFont('helvetica', 'normal');
+    const wrapped = doc.splitTextToSize(input.remarks.trim(), contentWidth - 20);
+    doc.text(wrapped, margin + 20, y);
+    y += wrapped.length * 4 + 2;
+  }
+
   y += 4;
+  addPageIfNeeded(12);
   doc.setDrawColor(226, 232, 240);
   doc.line(margin, y, pageWidth - margin, y);
-  y += 8;
+  y += 6;
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
   doc.setTextColor(15, 23, 42);
-  doc.text('Design', margin, y);
-  doc.text('Qty', margin + 98, y);
-  doc.text('Rate', margin + 118, y);
+  doc.text('Design', margin + 22, y);
+  doc.text('Qty', margin + 108, y);
+  doc.text('Rate', margin + 124, y);
   doc.text('Amount', pageWidth - margin, y, { align: 'right' });
-  y += 5;
+  y += 4;
   doc.line(margin, y, pageWidth - margin, y);
-  y += 6;
+  y += 5;
 
   let grandTotal = 0;
   let totalQty = 0;
+  const thumb = 16;
 
   for (const line of input.orderLines) {
-    addPageIfNeeded(18);
+    addPageIfNeeded(24);
     const label = line.designCode || line.designName || 'Design';
-    const subtitle = [line.catalogueName, line.fabric].filter(Boolean).join(' · ');
+    const subtitle = [line.designName && line.designCode ? line.designName : null, line.catalogueName, line.fabric]
+      .filter(Boolean)
+      .join(' · ');
     const rate = Number(line.basePrice) || 0;
     const amount = rate * line.quantity;
     grandTotal += amount;
     totalQty += line.quantity;
 
+    const imageAdded = tryAddImage(doc, line.image, margin, y - 1, thumb, thumb);
+    const textX = imageAdded ? margin + thumb + 4 : margin;
+
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(10);
     doc.setTextColor(15, 23, 42);
-    doc.text(label, margin, y);
+    doc.text(label, textX, y + 4);
 
     doc.setFont('helvetica', 'normal');
-    doc.text(String(line.quantity), margin + 98, y);
-    doc.text(formatMoney(rate), margin + 118, y);
-    doc.text(formatMoney(amount), pageWidth - margin, y, { align: 'right' });
-    y += 5;
+    doc.text(String(line.quantity), margin + 108, y + 4);
+    doc.text(formatMoney(rate), margin + 124, y + 4);
+    doc.text(formatMoney(amount), pageWidth - margin, y + 4, { align: 'right' });
+    y += 7;
 
     if (subtitle) {
-      doc.setFontSize(9);
+      doc.setFontSize(8);
       doc.setTextColor(100, 116, 139);
-      doc.text(subtitle, margin, y);
+      doc.text(subtitle, textX, y);
       y += 4;
     }
 
     if (line.remarks?.trim()) {
-      doc.setFontSize(9);
-      doc.setTextColor(100, 116, 139);
-      doc.text(`Remarks: ${line.remarks.trim()}`, margin, y);
+      doc.setFontSize(8);
+      doc.text(`Remarks: ${line.remarks.trim()}`, textX, y);
       y += 4;
     }
 
     y += 3;
   }
 
-  addPageIfNeeded(20);
-  y += 2;
+  addPageIfNeeded(16);
   doc.line(margin, y, pageWidth - margin, y);
   y += 7;
-
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(11);
   doc.setTextColor(15, 23, 42);
@@ -149,12 +217,86 @@ export function downloadOrderSummaryPdf(input: OrderSummaryPdfInput) {
   y += 10;
 
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9);
+  doc.setFontSize(8);
   doc.setTextColor(100, 116, 139);
-  const footer = 'Generated by ThreadX. This is a computer-generated order summary.';
-  const wrapped = doc.splitTextToSize(footer, contentWidth);
-  doc.text(wrapped, margin, y);
+  doc.text('Computer-generated order form by ThreadX.', margin, y);
 
-  const fileToken = input.orderNumber || new Date().toISOString().slice(0, 10);
-  doc.save(`threadx-order-${safeFilePart(fileToken)}.pdf`);
+  return doc;
+}
+
+export function buildOrderSummaryPdfBlob(input: OrderSummaryPdfInput): Blob {
+  return buildOrderSummaryPdf(input).output('blob');
+}
+
+export function downloadOrderSummaryPdf(input: OrderSummaryPdfInput) {
+  buildOrderSummaryPdf(input).save(getPdfFileName(input));
+}
+
+export async function downloadOrderSummaryPdfBlob(input: OrderSummaryPdfInput) {
+  const blob = buildOrderSummaryPdfBlob(input);
+  await downloadBlob(blob, getPdfFileName(input));
+}
+
+export async function shareOrderSummaryPdf(input: OrderSummaryPdfInput) {
+  const blob = buildOrderSummaryPdfBlob(input);
+  const fileName = getPdfFileName(input);
+  const file = new File([blob], fileName, { type: 'application/pdf' });
+
+  if (typeof navigator !== 'undefined' && navigator.share) {
+    try {
+      if (!navigator.canShare || navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: 'Order form', text: `Order form — ${input.customerName}` });
+        return;
+      }
+    } catch (error: any) {
+      if (error?.name === 'AbortError') return;
+    }
+  }
+
+  await downloadBlob(blob, fileName);
+  await openWhatsAppWithText(`Order form for ${input.customerName}. PDF saved — please attach from Downloads.`);
+}
+
+export function orderToPdfInput(order: Order, firmName?: string | null): OrderSummaryPdfInput {
+  const lines = (order.orderLines || []).map(line => ({
+    designCode: line.designCode,
+    designName: line.designName,
+    fabric: line.fabric,
+    catalogueName: null,
+    image: line.image,
+    quantity: Number(line.quantity) || 0,
+    basePrice: line.basePrice || line.retailPrice || 0,
+    remarks: line.remarks
+  }));
+
+  if (lines.length === 0 && order.design) {
+    lines.push({
+      designCode: null,
+      designName: order.design.name,
+      fabric: order.design.fabric,
+      catalogueName: null,
+      image: order.design.image,
+      quantity: order.quantity,
+      basePrice: order.design.basePrice || order.design.retailPrice || 0,
+      remarks: order.remarks
+    });
+  }
+
+  return {
+    customerName: order.buyerName,
+    orderNumber: order.orderNumber,
+    createdAt: order.createdAt,
+    orderDate: order.orderDate,
+    expectedDate: order.expectedDate,
+    firmName: firmName || null,
+    agentName: order.agentName,
+    transportName: order.transportName,
+    haste: order.haste,
+    station: order.station,
+    priceCategory: order.priceCategory,
+    discountRate: order.discountRate,
+    shippingCharge: order.shippingCharge,
+    remarks: order.remarks,
+    orderLines: lines
+  };
 }

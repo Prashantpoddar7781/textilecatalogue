@@ -162,6 +162,8 @@ export interface Order {
   shippingCharge?: number | null;
   orderDate?: string | null;
   expectedDate?: string | null;
+  haste?: string | null;
+  station?: string | null;
   createdAt: string;
   customer?: Customer | null;
   design?: TextileDesign;

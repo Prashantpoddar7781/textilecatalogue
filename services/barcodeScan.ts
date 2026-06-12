@@ -1,3 +1,32 @@
+import type { Html5QrcodeCameraScanConfig } from 'html5-qrcode';
+
+/**
+ * Scan the full camera frame so small sticker barcodes work (not only large codes
+ * that fill a fixed center square).
+ */
+export const cameraBarcodeScanConfig: Html5QrcodeCameraScanConfig = {
+  fps: 15,
+  qrbox: (viewfinderWidth, viewfinderHeight) => ({
+    width: viewfinderWidth,
+    height: viewfinderHeight
+  }),
+  disableFlip: false,
+  videoConstraints: {
+    facingMode: 'environment',
+    width: { ideal: 1920 },
+    height: { ideal: 1080 }
+  },
+  experimentalFeatures: {
+    useBarCodeDetectorIfSupported: true
+  }
+};
+
+export const cameraBarcodeConstraints = {
+  facingMode: 'environment' as const,
+  width: { ideal: 1920 },
+  height: { ideal: 1080 }
+};
+
 /** Parse design id from ThreadX barcode QR text or raw scanner input. */
 export function extractDesignIdFromScan(value: string): string {
   const trimmed = value.trim();

@@ -218,6 +218,8 @@ model Order {
   shippingCharge Float?
   orderDate DateTime?
   expectedDate DateTime?
+  haste String?
+  station String?
   createdAt   DateTime @default(now())
 
   @@index([userId])

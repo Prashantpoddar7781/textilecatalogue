@@ -51,6 +51,8 @@ const getOrderMeta = (body) => ({
   orderNumber: optionalString(body.orderNumber),
   agentName: optionalString(body.agentName),
   transportName: optionalString(body.transportName),
+  haste: optionalString(body.haste),
+  station: optionalString(body.station),
   discountRate: optionalNumber(body.discountRate),
   shippingCharge: optionalNumber(body.shippingCharge),
   orderDate: optionalDate(body.orderDate),
@@ -78,9 +80,12 @@ async function resolveManualCustomer(userId, body) {
   if (body.customer) {
     const organizationName = optionalString(body.customer.organizationName);
     if (!organizationName) {
-      const error = new Error('Customer organization name is required');
-      error.status = 400;
-      throw error;
+      return {
+        customerId: null,
+        buyerName: optionalString(body.buyerName) || 'Walk-in customer',
+        buyerPhone: optionalString(body.buyerPhone) || '-',
+        customer: null
+      };
     }
     const customer = await prisma.customer.create({
       data: {
@@ -105,15 +110,9 @@ async function resolveManualCustomer(userId, body) {
     };
   }
 
-  const buyerName = optionalString(body.buyerName);
-  if (!buyerName) {
-    const error = new Error('Customer name is required');
-    error.status = 400;
-    throw error;
-  }
   return {
     customerId: null,
-    buyerName,
+    buyerName: optionalString(body.buyerName) || 'Walk-in customer',
     buyerPhone: optionalString(body.buyerPhone) || '-',
     customer: null
   };
@@ -348,6 +347,89 @@ router.get('/drafts', authenticateToken, requireActiveSubscription, async (req, 
     });
     res.json({ drafts });
   } catch (error) {
+    next(error);
+  }
+});
+
+// Auth: update order details (manual / scanned orders)
+router.put('/:id', authenticateToken, requireActiveSubscription, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.userId;
+
+    const existing = await prisma.order.findUnique({ where: { id } });
+    if (!existing) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+    if (existing.userId !== userId) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const orderMeta = getOrderMeta(req.body);
+    const updateData = { ...orderMeta };
+
+    if (req.body.remarks !== undefined) {
+      updateData.remarks = optionalString(req.body.remarks);
+    }
+
+    if (req.body.customerId || req.body.customer || req.body.buyerName) {
+      const customerRef = await resolveManualCustomer(userId, req.body);
+      updateData.customerId = customerRef.customerId;
+      updateData.buyerName = customerRef.buyerName;
+      updateData.buyerPhone = customerRef.buyerPhone;
+    }
+
+    if (Array.isArray(req.body.lines) && req.body.lines.length > 0) {
+      const orderLines = [];
+      let primaryDesignId = null;
+      let totalQuantity = 0;
+
+      for (const line of req.body.lines) {
+        const designId = line?.designId;
+        const quantity = parseInt(line?.quantity, 10);
+        if (!designId || !Number.isFinite(quantity) || quantity < 1) {
+          return res.status(400).json({ error: 'Each line needs designId and quantity (min 1)' });
+        }
+
+        const design = await prisma.design.findFirst({
+          where: { id: designId, userId }
+        });
+        if (!design) {
+          return res.status(400).json({ error: `Design not found or not yours: ${designId}` });
+        }
+
+        if (!primaryDesignId) primaryDesignId = designId;
+        totalQuantity += quantity;
+        orderLines.push({
+          designId,
+          designName: design.name || 'Untitled Design',
+          designCode: design.designCode || null,
+          image: design.image,
+          fabric: design.fabric,
+          basePrice: design.basePrice || design.retailPrice || 0,
+          retailPrice: design.retailPrice || design.basePrice || 0,
+          quantity,
+          remarks: optionalString(line?.remarks)
+        });
+      }
+
+      updateData.orderLines = orderLines;
+      updateData.designId = primaryDesignId;
+      updateData.quantity = totalQuantity;
+      updateData.manualType = 'design';
+    }
+
+    const order = await prisma.order.update({
+      where: { id },
+      data: updateData,
+      include: orderInclude
+    });
+
+    res.json({ order });
+  } catch (error) {
+    if (error.status) {
+      return res.status(error.status).json({ error: error.message });
+    }
     next(error);
   }
 });

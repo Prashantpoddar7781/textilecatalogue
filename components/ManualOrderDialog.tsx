@@ -168,6 +168,8 @@ export const ManualOrderDialog: React.FC<Props> = ({ onClose, onCreated }) => {
   const [orderNumber, setOrderNumber] = useState('');
   const [agentName, setAgentName] = useState('');
   const [transportName, setTransportName] = useState('');
+  const [haste, setHaste] = useState('');
+  const [station, setStation] = useState('');
   const [discountRate, setDiscountRate] = useState('');
   const [shippingCharge, setShippingCharge] = useState('');
   const [orderDate, setOrderDate] = useState(() => new Date().toISOString().slice(0, 10));
@@ -249,6 +251,8 @@ export const ManualOrderDialog: React.FC<Props> = ({ onClose, onCreated }) => {
     orderNumber: orderNumber.trim() || undefined,
     agentName: agentName.trim() || undefined,
     transportName: transportName.trim() || undefined,
+    haste: haste.trim() || undefined,
+    station: station.trim() || undefined,
     discountRate: numberOrUndefined(discountRate),
     shippingCharge: numberOrUndefined(shippingCharge),
     orderDate: orderDate || undefined,
@@ -259,33 +263,28 @@ export const ManualOrderDialog: React.FC<Props> = ({ onClose, onCreated }) => {
     if (customerMode === 'existing' && selectedCustomerId) {
       return { customerId: selectedCustomerId };
     }
-    return {
-      customer: {
-        organizationName: customerForm.organizationName.trim(),
-        gstNumber: customerForm.gstNumber.trim() || undefined,
-        contactPersonName: customerForm.contactPersonName.trim() || undefined,
-        mobileNumber: customerForm.mobileNumber.trim() || undefined,
-        agentName: customerForm.agentName.trim() || undefined,
-        category: customerForm.category.trim() || undefined,
-        state: customerForm.state.trim() || undefined,
-        city: customerForm.city.trim() || undefined,
-        pincode: customerForm.pincode.trim() || undefined,
-        discountRate: numberOrUndefined(customerForm.discountRate)
-      }
-    };
+    if (customerMode === 'new' && customerForm.organizationName.trim()) {
+      return {
+        customer: {
+          organizationName: customerForm.organizationName.trim(),
+          gstNumber: customerForm.gstNumber.trim() || undefined,
+          contactPersonName: customerForm.contactPersonName.trim() || undefined,
+          mobileNumber: customerForm.mobileNumber.trim() || undefined,
+          agentName: customerForm.agentName.trim() || undefined,
+          category: customerForm.category.trim() || undefined,
+          state: customerForm.state.trim() || undefined,
+          city: customerForm.city.trim() || undefined,
+          pincode: customerForm.pincode.trim() || undefined,
+          discountRate: numberOrUndefined(customerForm.discountRate)
+        }
+      };
+    }
+    return {};
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!kind) return;
-    if (customerMode === 'existing' && !selectedCustomerId) {
-      alert('Please select a customer or add a new customer.');
-      return;
-    }
-    if (customerMode === 'new' && !customerForm.organizationName.trim()) {
-      alert('Please enter customer organization name.');
-      return;
-    }
     const customerPayload = getCustomerPayload();
     const orderMetaPayload = getOrderMetaPayload();
 
@@ -404,10 +403,9 @@ export const ManualOrderDialog: React.FC<Props> = ({ onClose, onCreated }) => {
               </button>
 
               <div className="space-y-2">
-                <label className="text-sm font-semibold text-gray-700">Customer *</label>
+                <label className="text-sm font-semibold text-gray-700">Customer (optional)</label>
                 {customerMode === 'existing' ? (
                   <select
-                    required
                     className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
                     value={selectedCustomerId}
                     onChange={e => {
@@ -442,9 +440,8 @@ export const ManualOrderDialog: React.FC<Props> = ({ onClose, onCreated }) => {
                       </button>
                     </div>
                     <input
-                      required
                       className="col-span-2 px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm"
-                      placeholder="Customer organization name *"
+                      placeholder="Customer organization name (optional)"
                       value={customerForm.organizationName}
                       onChange={e => setCustomerField('organizationName', e.target.value)}
                     />
@@ -549,6 +546,24 @@ export const ManualOrderDialog: React.FC<Props> = ({ onClose, onCreated }) => {
                     value={transportName}
                     onChange={e => setTransportName(e.target.value)}
                     placeholder="Transport name"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-sm font-semibold text-gray-700">Haste</label>
+                  <input
+                    className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                    value={haste}
+                    onChange={e => setHaste(e.target.value)}
+                    placeholder="Optional"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-sm font-semibold text-gray-700">Station</label>
+                  <input
+                    className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                    value={station}
+                    onChange={e => setStation(e.target.value)}
+                    placeholder="Optional"
                   />
                 </div>
                 <div className="space-y-1">

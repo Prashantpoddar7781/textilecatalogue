@@ -1,12 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, Camera, CheckCircle, IndianRupee, Loader2, Monitor, ScanLine, Trash2, X } from 'lucide-react';
+import { ArrowLeft, Camera, CheckCircle, Download, Edit3, IndianRupee, Loader2, MessageCircle, Monitor, ScanLine, Trash2, X } from 'lucide-react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { customersApi, designsApi, ordersApi } from '../services/api';
-import { extractDesignIdFromScan, prefersHardwareScanner } from '../services/barcodeScan';
+import { cameraBarcodeConstraints, cameraBarcodeScanConfig, extractDesignIdFromScan, prefersHardwareScanner } from '../services/barcodeScan';
 import { playScanBeep, playScanErrorBeep } from '../services/scanBeep';
-import { downloadOrderSummaryPdf } from '../services/orderSummaryPdf';
-import { Customer, TextileDesign } from '../types';
+import { downloadOrderSummaryPdfBlob, orderToPdfInput, shareOrderSummaryPdf } from '../services/orderSummaryPdf';
+import { Customer, Order, TextileDesign } from '../types';
 import { HardwareScannerInput } from './HardwareScannerInput';
+import { OrderFormCheckout, OrderFormMeta } from './OrderFormCheckout';
 
 interface ScannedOrderLine {
   design: TextileDesign;
@@ -57,8 +58,8 @@ function BarcodeScanner({
       handledRef.current = false;
 
       scanner.start(
-        { facingMode: 'environment' },
-        { fps: 10, qrbox: { width: 240, height: 240 } },
+        cameraBarcodeConstraints,
+        cameraBarcodeScanConfig,
         decodedText => {
           if (handledRef.current) return;
           handledRef.current = true;
@@ -112,7 +113,14 @@ function BarcodeScanner({
     };
   }, [elementId, onError, onScan]);
 
-  return <div id={elementId} className="min-h-[320px] overflow-hidden rounded-2xl border border-gray-200 bg-black" />;
+  return (
+    <div className="space-y-2">
+      <div id={elementId} className="min-h-[320px] overflow-hidden rounded-2xl border border-gray-200 bg-black" />
+      <p className="text-xs text-gray-500 text-center px-2">
+        Small sticker barcodes work — hold the phone closer and keep the code anywhere in the frame.
+      </p>
+    </div>
+  );
 }
 
 export const BarcodeOrderBuilder: React.FC<Props> = ({
@@ -136,13 +144,21 @@ export const BarcodeOrderBuilder: React.FC<Props> = ({
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
   const [customerName, setCustomerName] = useState('');
-  const [orderNumber, setOrderNumber] = useState('');
+  const [orderMeta, setOrderMeta] = useState<OrderFormMeta>(() => ({
+    orderNumber: '',
+    orderDate: new Date().toISOString().slice(0, 10),
+    expectedDate: '',
+    haste: '',
+    agentName: '',
+    transportName: '',
+    station: '',
+    priceCategory: '',
+    discountRate: '',
+    shippingCharge: '',
+    remarks: ''
+  }));
   const [submitting, setSubmitting] = useState(false);
-  const [savedOrderSuccess, setSavedOrderSuccess] = useState<{
-    customerName: string;
-    orderNumber?: string | null;
-    designCount: number;
-  } | null>(null);
+  const [savedOrder, setSavedOrder] = useState<Order | null>(null);
 
   const resetOrderForm = useCallback(() => {
     setLines([]);
@@ -153,10 +169,33 @@ export const BarcodeOrderBuilder: React.FC<Props> = ({
     setScannerOpen(scanMethod === 'camera');
     setSelectedCustomerId('');
     setCustomerName('');
-    setOrderNumber('');
+    setOrderMeta({
+      orderNumber: '',
+      orderDate: new Date().toISOString().slice(0, 10),
+      expectedDate: '',
+      haste: '',
+      agentName: '',
+      transportName: '',
+      station: '',
+      priceCategory: '',
+      discountRate: '',
+      shippingCharge: '',
+      remarks: ''
+    });
+    setSavedOrder(null);
     setLastScannedLabel(null);
     setError(null);
   }, [scanMethod]);
+
+  const patchOrderMeta = useCallback((patch: Partial<OrderFormMeta>) => {
+    setOrderMeta(prev => ({ ...prev, ...patch }));
+  }, []);
+
+  const numberOrUndefined = (value: string) => {
+    if (value.trim() === '') return undefined;
+    const num = Number(value);
+    return Number.isFinite(num) ? num : undefined;
+  };
 
   const loadCustomers = useCallback(async () => {
     try {
@@ -263,19 +302,28 @@ export const BarcodeOrderBuilder: React.FC<Props> = ({
       alert('Scan at least one design first.');
       return;
     }
-    if (!selectedCustomerId && !customerName.trim()) {
-      alert('Please enter customer name or select a customer.');
-      return;
-    }
-
     setSubmitting(true);
     try {
+      const customerPayload = selectedCustomerId
+        ? { customerId: selectedCustomerId }
+        : customerName.trim()
+          ? { customer: { organizationName: customerName.trim() } }
+          : {};
+
       const response = await ordersApi.createManual({
         kind: 'design',
-        ...(selectedCustomerId
-          ? { customerId: selectedCustomerId }
-          : { customer: { organizationName: customerName.trim() } }),
-        orderNumber: orderNumber.trim() || undefined,
+        ...customerPayload,
+        orderNumber: orderMeta.orderNumber.trim() || undefined,
+        agentName: orderMeta.agentName.trim() || undefined,
+        transportName: orderMeta.transportName.trim() || undefined,
+        haste: orderMeta.haste.trim() || undefined,
+        station: orderMeta.station.trim() || undefined,
+        priceCategory: orderMeta.priceCategory.trim() || undefined,
+        discountRate: numberOrUndefined(orderMeta.discountRate),
+        shippingCharge: numberOrUndefined(orderMeta.shippingCharge),
+        orderDate: orderMeta.orderDate || undefined,
+        expectedDate: orderMeta.expectedDate || undefined,
+        remarks: orderMeta.remarks.trim() || undefined,
         lines: lines.map(line => ({
           designId: line.design.id,
           quantity: parseInt(line.quantity, 10),
@@ -283,53 +331,15 @@ export const BarcodeOrderBuilder: React.FC<Props> = ({
         }))
       });
 
-      const savedOrder = response.order;
-      const customerLabel = savedOrder?.buyerName
-        || customers.find(customer => customer.id === selectedCustomerId)?.organizationName
-        || customerName.trim();
-
-      downloadOrderSummaryPdf({
-        customerName: customerLabel,
-        orderNumber: savedOrder?.orderNumber || orderNumber.trim() || null,
-        createdAt: savedOrder?.createdAt || new Date().toISOString(),
-        firmName: firmName || null,
-        orderLines: (savedOrder?.orderLines || lines.map(line => ({
-          designCode: line.design.designCode || null,
-          designName: line.design.name || null,
-          fabric: line.design.fabric || null,
-          catalogueName: line.design.catalogueName || null,
-          quantity: parseInt(line.quantity, 10),
-          basePrice: line.design.basePrice || line.design.retailPrice || 0,
-          remarks: line.remarks || null
-        }))).map((line: any) => ({
-          designCode: line.designCode,
-          designName: line.designName,
-          fabric: line.fabric,
-          catalogueName: line.catalogueName || null,
-          quantity: Number(line.quantity) || 0,
-          basePrice: line.basePrice || line.retailPrice || 0,
-          remarks: line.remarks || null
-        }))
-      });
+      const createdOrder = response.order as Order;
 
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('threadx-orders-updated'));
       }
 
-      if (stationMode) {
-        setSavedOrderSuccess({
-          customerName: customerLabel,
-          orderNumber: savedOrder?.orderNumber || orderNumber.trim() || null,
-          designCount: lines.length
-        });
-        resetOrderForm();
-        onCreated?.();
-        return;
-      }
-
+      setSavedOrder(createdOrder);
+      setCheckoutOpen(false);
       onCreated?.();
-      if (onClose) onClose();
-      else window.location.href = '/orders';
     } catch (err: any) {
       alert(err.message || 'Could not create scanned order.');
     } finally {
@@ -376,9 +386,10 @@ export const BarcodeOrderBuilder: React.FC<Props> = ({
             <img src={line.design.image} alt={line.design.name} className="w-14 h-14 object-cover rounded-lg" />
             <div className="min-w-0">
               <p className="text-sm font-bold text-gray-900 truncate">{line.design.designCode || line.design.name}</p>
-              <p className="text-[11px] text-gray-500 truncate">{line.design.catalogueName || line.design.fabric}</p>
+              <p className="text-[11px] text-gray-500 truncate">{line.design.name}</p>
+              <p className="text-xs font-semibold text-indigo-700">₹{(line.design.basePrice || line.design.retailPrice || 0).toLocaleString('en-IN')}</p>
             </div>
-            <div className="hidden sm:block text-xs font-semibold text-gray-700 truncate">{line.design.name}</div>
+            <div className="hidden sm:block text-xs font-semibold text-gray-700 truncate">{line.design.catalogueName || line.design.fabric}</div>
             <input
               type="number"
               min={1}
@@ -434,26 +445,52 @@ export const BarcodeOrderBuilder: React.FC<Props> = ({
         <div className="flex-1 overflow-y-auto p-5 space-y-4">
           {error && <div className="rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
 
-          {savedOrderSuccess && stationMode && (
-            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+          {savedOrder && (
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 space-y-3">
               <p className="font-black text-emerald-900">
-                Order saved for {savedOrderSuccess.customerName}
+                Order form saved for {savedOrder.buyerName}
               </p>
-              <p className="text-sm text-emerald-800 mt-1">
-                PDF receipt downloaded. This station is ready for the next client — keep scanning or open another tab for a parallel order.
+              <p className="text-sm text-emerald-800">
+                Download or share the PDF order form, edit details, or start the next order.
               </p>
-              <div className="mt-3 flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
-                  onClick={() => setSavedOrderSuccess(null)}
-                  className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-bold text-white"
+                  onClick={() => void downloadOrderSummaryPdfBlob(orderToPdfInput(savedOrder, firmName))}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-bold text-white"
                 >
-                  Start next order here
+                  <Download className="w-4 h-4" />
+                  Download PDF
                 </button>
-                <a
-                  href="/orders"
-                  className="rounded-xl border border-emerald-300 bg-white px-4 py-2 text-sm font-bold text-emerald-800"
+                <button
+                  type="button"
+                  onClick={() => void shareOrderSummaryPdf(orderToPdfInput(savedOrder, firmName))}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-400 bg-white px-4 py-2 text-sm font-bold text-emerald-800"
                 >
+                  <MessageCircle className="w-4 h-4" />
+                  Share PDF
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { window.location.href = `/orders?edit=${savedOrder.id}`; }}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-300 bg-white px-4 py-2 text-sm font-bold text-emerald-800"
+                >
+                  <Edit3 className="w-4 h-4" />
+                  Edit order
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSavedOrder(null);
+                    resetOrderForm();
+                  }}
+                  className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-bold text-white"
+                >
+                  {stationMode ? 'Start next order here' : 'Create another order'}
+                </button>
+                <a href="/orders" className="rounded-xl border border-emerald-300 bg-white px-4 py-2 text-sm font-bold text-emerald-800">
                   View all orders
                 </a>
               </div>
@@ -506,7 +543,7 @@ export const BarcodeOrderBuilder: React.FC<Props> = ({
             </div>
           )}
 
-          {orderLinesTable}
+          {!checkoutOpen && orderLinesTable}
 
           {loadingDesign && !stationMode ? (
             <div className="py-12 text-center text-gray-500">
@@ -514,45 +551,29 @@ export const BarcodeOrderBuilder: React.FC<Props> = ({
               Loading design...
             </div>
           ) : checkoutOpen ? (
-            <div className="space-y-4">
-              {!stationMode && orderLinesTable}
-
-              <div className="space-y-2">
-                <label className="text-sm font-semibold text-gray-700">Customer name *</label>
-                <select
-                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
-                  value={selectedCustomerId}
-                  onChange={e => {
-                    setSelectedCustomerId(e.target.value);
-                    if (e.target.value) setCustomerName('');
-                  }}
-                >
-                  <option value="">Add new customer / enter name below</option>
-                  {customers.map(customer => (
-                    <option key={customer.id} value={customer.id}>{customer.organizationName}</option>
-                  ))}
-                </select>
-                {!selectedCustomerId && (
-                  <input
-                    required
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
-                    value={customerName}
-                    onChange={e => setCustomerName(e.target.value)}
-                    placeholder="Customer name"
-                  />
-                )}
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-sm font-semibold text-gray-700">Manual order number</label>
-                <input
-                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
-                  value={orderNumber}
-                  onChange={e => setOrderNumber(e.target.value)}
-                  placeholder="Optional"
-                />
-              </div>
-            </div>
+            <OrderFormCheckout
+              customerName={customerName}
+              selectedCustomerId={selectedCustomerId}
+              customers={customers}
+              onCustomerIdChange={setSelectedCustomerId}
+              onCustomerNameChange={setCustomerName}
+              meta={orderMeta}
+              onMetaChange={patchOrderMeta}
+              lines={lines.map((line, idx) => ({
+                key: `${line.design.id}-${idx}`,
+                image: line.design.image,
+                designCode: line.design.designCode,
+                designName: line.design.name,
+                fabric: line.design.fabric,
+                catalogueName: line.design.catalogueName,
+                quantity: line.quantity,
+                price: line.design.basePrice || line.design.retailPrice || 0,
+                remarks: line.remarks,
+                onQuantityChange: value => updateLineQuantity(idx, value),
+                onRemarksChange: value => updateLineRemarks(idx, value),
+                onRemove: () => setLines(prev => prev.filter((_, i) => i !== idx))
+              }))}
+            />
           ) : currentDesign && !useStationFlow ? (
             <div className="space-y-4">
               <div className="rounded-2xl border border-gray-100 overflow-hidden bg-white shadow-sm">
@@ -657,8 +678,8 @@ export const BarcodeOrderBuilder: React.FC<Props> = ({
               >
                 Scan more
               </button>
-              <button type="button" onClick={submitOrder} disabled={submitting} className="flex-1 rounded-xl bg-green-600 py-3 font-bold text-white disabled:opacity-50">
-                {submitting ? 'Saving...' : 'Save & complete order'}
+              <button type="button" onClick={() => void submitOrder()} disabled={submitting} className="flex-1 rounded-xl bg-green-600 py-3 font-bold text-white disabled:opacity-50 active:scale-[0.98]">
+                {submitting ? 'Creating order form...' : 'Save order form'}
               </button>
             </>
           ) : stationMode ? (
@@ -677,7 +698,7 @@ export const BarcodeOrderBuilder: React.FC<Props> = ({
                 disabled={lines.length === 0}
                 className="flex-1 rounded-xl bg-green-600 py-3 font-bold text-white disabled:opacity-40"
               >
-                Complete order ({lines.length})
+                Complete order form ({lines.length})
               </button>
             </>
           ) : currentDesign ? (

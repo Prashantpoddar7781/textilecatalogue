@@ -1,9 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, CheckCircle, Clock, Plus, Package, RefreshCw, ScanLine, Search, ThumbsUp, X } from 'lucide-react';
+import { ArrowLeft, CheckCircle, Clock, Download, Edit3, MessageCircle, Plus, Package, RefreshCw, ScanLine, Search, ThumbsUp, X } from 'lucide-react';
 import { ordersApi } from '../services/api';
 import { findOrdersByDesignQuery } from '../services/orderDesignSearch';
+import { downloadOrderSummaryPdfBlob, orderToPdfInput, shareOrderSummaryPdf } from '../services/orderSummaryPdf';
 import { Order } from '../types';
 import { BarcodeOrderBuilder } from './BarcodeOrderBuilder';
+import { EditOrderDialog } from './EditOrderDialog';
 import { ManualOrderDialog } from './ManualOrderDialog';
 
 /** How often the orders list polls for new orders from other staff/devices (ms). */
@@ -23,6 +25,7 @@ export const OrdersPage: React.FC<Props> = ({ onBack, firmName }) => {
   const [activeTab, setActiveTab] = useState<'waiting_approval' | 'pending' | 'completed' | 'all'>('waiting_approval');
   const [lastRefreshedAt, setLastRefreshedAt] = useState<Date | null>(null);
   const [designSearch, setDesignSearch] = useState('');
+  const [editingOrder, setEditingOrder] = useState<Order | null>(null);
 
   const loadOrders = useCallback(async () => {
     try {
@@ -40,6 +43,19 @@ export const OrdersPage: React.FC<Props> = ({ onBack, firmName }) => {
   useEffect(() => {
     void loadOrders();
   }, [loadOrders]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const editId = params.get('edit');
+    if (!editId || orders.length === 0) return;
+    const match = orders.find(order => order.id === editId);
+    if (match) {
+      setEditingOrder(match);
+      params.delete('edit');
+      const next = `${window.location.pathname}${params.toString() ? `?${params}` : ''}`;
+      window.history.replaceState({}, '', next);
+    }
+  }, [orders]);
 
   useEffect(() => {
     const refresh = () => void loadOrders();
@@ -370,6 +386,12 @@ export const OrdersPage: React.FC<Props> = ({ onBack, firmName }) => {
                       {order.transportName && (
                         <p><span className="font-semibold">Transport:</span> {order.transportName}</p>
                       )}
+                      {order.haste && (
+                        <p><span className="font-semibold">Haste:</span> {order.haste}</p>
+                      )}
+                      {order.station && (
+                        <p><span className="font-semibold">Station:</span> {order.station}</p>
+                      )}
                       {order.discountRate !== undefined && order.discountRate !== null && (
                         <p><span className="font-semibold">Discount:</span> {order.discountRate}%</p>
                       )}
@@ -396,6 +418,34 @@ export const OrdersPage: React.FC<Props> = ({ onBack, firmName }) => {
                     </p>
                   </div>
                   <div className="mt-4 space-y-2">
+                    {!isOpen && (
+                      <div className="grid grid-cols-3 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => void downloadOrderSummaryPdfBlob(orderToPdfInput(order, firmName))}
+                          className="rounded-lg border border-gray-200 bg-white py-2 text-[11px] font-bold text-gray-700 hover:bg-gray-50 flex flex-col items-center justify-center gap-1"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          PDF
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void shareOrderSummaryPdf(orderToPdfInput(order, firmName))}
+                          className="rounded-lg border border-green-200 bg-green-50 py-2 text-[11px] font-bold text-green-800 hover:bg-green-100 flex flex-col items-center justify-center gap-1"
+                        >
+                          <MessageCircle className="w-3.5 h-3.5" />
+                          Share
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEditingOrder(order)}
+                          className="rounded-lg border border-indigo-200 bg-indigo-50 py-2 text-[11px] font-bold text-indigo-800 hover:bg-indigo-100 flex flex-col items-center justify-center gap-1"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                          Edit
+                        </button>
+                      </div>
+                    )}
                     {order.status === 'waiting_approval' && (
                       <button
                         onClick={() => approveOrder(order.id)}
@@ -449,6 +499,17 @@ export const OrdersPage: React.FC<Props> = ({ onBack, firmName }) => {
           onCreated={() => {
             void loadOrders();
             setShowScanner(false);
+          }}
+        />
+      )}
+      {editingOrder && (
+        <EditOrderDialog
+          order={editingOrder}
+          firmName={firmName}
+          onClose={() => setEditingOrder(null)}
+          onSaved={updated => {
+            setOrders(prev => prev.map(o => (o.id === updated.id ? { ...o, ...updated } : o)));
+            setEditingOrder(null);
           }}
         />
       )}
