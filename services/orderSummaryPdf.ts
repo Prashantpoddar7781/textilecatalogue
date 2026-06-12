@@ -1,6 +1,6 @@
 import { jsPDF } from 'jspdf';
 import { Order } from '../types';
-import { downloadBlob, openWhatsAppWithText } from './nativeApp';
+import { downloadBlob, isNativeAndroid, shareFileNative } from './nativeApp';
 
 export interface OrderSummaryLine {
   designCode?: string | null;
@@ -237,10 +237,24 @@ export async function downloadOrderSummaryPdfBlob(input: OrderSummaryPdfInput) {
   await downloadBlob(blob, getPdfFileName(input));
 }
 
+const blobToDataUrl = (blob: Blob): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result as string);
+    reader.onerror = () => reject(new Error('Could not prepare PDF for sharing'));
+    reader.readAsDataURL(blob);
+  });
+
 export async function shareOrderSummaryPdf(input: OrderSummaryPdfInput) {
   const blob = buildOrderSummaryPdfBlob(input);
   const fileName = getPdfFileName(input);
   const file = new File([blob], fileName, { type: 'application/pdf' });
+
+  if (isNativeAndroid()) {
+    const dataUrl = await blobToDataUrl(blob);
+    await shareFileNative(dataUrl, fileName, 'application/pdf');
+    return;
+  }
 
   if (typeof navigator !== 'undefined' && navigator.share) {
     try {
@@ -254,7 +268,6 @@ export async function shareOrderSummaryPdf(input: OrderSummaryPdfInput) {
   }
 
   await downloadBlob(blob, fileName);
-  await openWhatsAppWithText(`Order form for ${input.customerName}. PDF saved — please attach from Downloads.`);
 }
 
 export function orderToPdfInput(order: Order, firmName?: string | null): OrderSummaryPdfInput {

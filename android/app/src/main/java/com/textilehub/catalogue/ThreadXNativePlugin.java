@@ -142,9 +142,55 @@ public class ThreadXNativePlugin extends Plugin {
     }
 
     @PluginMethod
+    public void shareFile(PluginCall call) {
+        String dataUrl = call.getString("dataUrl");
+        String fileName = call.getString("fileName", "file.pdf");
+        String mimeType = call.getString("mimeType");
+        if (dataUrl == null || dataUrl.isEmpty()) {
+            call.reject("File data is required");
+            return;
+        }
+
+        try {
+            byte[] bytes = decodeDataUrl(dataUrl);
+            if (bytes == null) {
+                call.reject("Invalid file data");
+                return;
+            }
+
+            if (mimeType == null || mimeType.isEmpty()) {
+                mimeType = getMimeType(dataUrl, fileName);
+            }
+
+            File file = new File(getContext().getCacheDir(), sanitizeFileName(fileName));
+            try (FileOutputStream output = new FileOutputStream(file)) {
+                output.write(bytes);
+            }
+
+            Uri uri = FileProvider.getUriForFile(
+                getContext(),
+                getContext().getPackageName() + ".fileprovider",
+                file
+            );
+
+            Intent intent = new Intent(Intent.ACTION_SEND);
+            intent.setType(mimeType);
+            intent.putExtra(Intent.EXTRA_STREAM, uri);
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+
+            Intent chooser = Intent.createChooser(intent, "Share file");
+            getActivity().startActivity(chooser);
+            call.resolve();
+        } catch (Exception error) {
+            call.reject("Could not share file", error);
+        }
+    }
+
+    @PluginMethod
     public void saveImageToDownloads(PluginCall call) {
         String dataUrl = call.getString("dataUrl");
         String fileName = call.getString("fileName", "image.png");
+        String mimeTypeOverride = call.getString("mimeType");
         if (dataUrl == null || dataUrl.isEmpty()) {
             call.reject("Image data is required");
             return;
@@ -157,9 +203,17 @@ public class ThreadXNativePlugin extends Plugin {
                 return;
             }
 
-            String mimeType = getMimeType(dataUrl);
+            String mimeType = (mimeTypeOverride != null && !mimeTypeOverride.isEmpty())
+                ? mimeTypeOverride
+                : getMimeType(dataUrl, fileName);
             if (!fileName.contains(".")) {
-                fileName += mimeType.equals("image/png") ? ".png" : ".jpg";
+                if (mimeType.equals("image/png")) {
+                    fileName += ".png";
+                } else if (mimeType.equals("application/pdf")) {
+                    fileName += ".pdf";
+                } else {
+                    fileName += ".jpg";
+                }
             }
 
             ContentValues values = new ContentValues();
@@ -211,10 +265,26 @@ public class ThreadXNativePlugin extends Plugin {
         return Base64.decode(base64, Base64.DEFAULT);
     }
 
-    private String getMimeType(String dataUrl) {
-        if (dataUrl != null && dataUrl.startsWith("data:image/png")) {
-            return "image/png";
+    private String getMimeType(String dataUrl, String fileName) {
+        if (dataUrl != null && dataUrl.startsWith("data:")) {
+            int semi = dataUrl.indexOf(';');
+            if (semi > 5) {
+                return dataUrl.substring(5, semi);
+            }
+        }
+        if (fileName != null) {
+            String lower = fileName.toLowerCase();
+            if (lower.endsWith(".pdf")) return "application/pdf";
+            if (lower.endsWith(".png")) return "image/png";
+            if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
         }
         return "image/jpeg";
+    }
+
+    private String sanitizeFileName(String fileName) {
+        if (fileName == null || fileName.isEmpty()) {
+            return "file_" + System.currentTimeMillis();
+        }
+        return fileName.replaceAll("[^a-zA-Z0-9._-]", "_");
     }
 }

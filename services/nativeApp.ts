@@ -4,7 +4,12 @@ interface ThreadXNativePlugin {
   takePhoto(): Promise<{ dataUrl?: string; mimeType?: string; cancelled?: boolean }>;
   openWhatsAppWithText(options: { text: string }): Promise<void>;
   shareImages(options: { dataUrls: string[] }): Promise<void>;
-  saveImageToDownloads(options: { dataUrl: string; fileName: string }): Promise<{ saved: boolean; fileName?: string }>;
+  shareFile(options: { dataUrl: string; fileName: string; mimeType?: string }): Promise<void>;
+  saveImageToDownloads(options: {
+    dataUrl: string;
+    fileName: string;
+    mimeType?: string;
+  }): Promise<{ saved: boolean; fileName?: string }>;
 }
 
 const ThreadXNative = registerPlugin<ThreadXNativePlugin>('ThreadXNative');
@@ -25,9 +30,29 @@ export const shareImagesNative = async (dataUrls: string[]): Promise<void> => {
   await ThreadXNative.shareImages({ dataUrls });
 };
 
-export const saveImageToDownloadsNative = async (dataUrl: string, fileName: string): Promise<void> => {
-  await ThreadXNative.saveImageToDownloads({ dataUrl, fileName });
+export const saveImageToDownloadsNative = async (
+  dataUrl: string,
+  fileName: string,
+  mimeType?: string
+): Promise<void> => {
+  await ThreadXNative.saveImageToDownloads({ dataUrl, fileName, mimeType });
 };
+
+export const shareFileNative = async (
+  dataUrl: string,
+  fileName: string,
+  mimeType: string
+): Promise<void> => {
+  await ThreadXNative.shareFile({ dataUrl, fileName, mimeType });
+};
+
+const blobToDataUrl = (blob: Blob): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result as string);
+    reader.onerror = () => reject(new Error('Could not prepare file for sharing'));
+    reader.readAsDataURL(blob);
+  });
 
 export const openWhatsAppWithText = async (text: string): Promise<void> => {
   if (isNativeAndroid()) {
@@ -42,9 +67,13 @@ export const openWhatsAppWithText = async (text: string): Promise<void> => {
   }
 };
 
-export const downloadDataUrl = async (dataUrl: string, fileName: string): Promise<void> => {
+export const downloadDataUrl = async (
+  dataUrl: string,
+  fileName: string,
+  mimeType?: string
+): Promise<void> => {
   if (isNativeAndroid()) {
-    await saveImageToDownloadsNative(dataUrl, fileName);
+    await saveImageToDownloadsNative(dataUrl, fileName, mimeType);
     return;
   }
 
@@ -58,13 +87,8 @@ export const downloadDataUrl = async (dataUrl: string, fileName: string): Promis
 
 export const downloadBlob = async (blob: Blob, fileName: string): Promise<void> => {
   if (isNativeAndroid()) {
-    const dataUrl = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result as string);
-      reader.onerror = () => reject(new Error('Could not prepare file for download'));
-      reader.readAsDataURL(blob);
-    });
-    await saveImageToDownloadsNative(dataUrl, fileName);
+    const dataUrl = await blobToDataUrl(blob);
+    await saveImageToDownloadsNative(dataUrl, fileName, blob.type || undefined);
     return;
   }
 

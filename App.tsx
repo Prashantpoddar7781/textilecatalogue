@@ -78,7 +78,6 @@ const App: React.FC = () => {
       authApi.getCurrentUser()
         .then(({ user }) => {
           setUser(user);
-          loadDesigns();
         })
         .catch(() => {
           localStorage.removeItem('auth_token');
@@ -90,6 +89,14 @@ const App: React.FC = () => {
       setIsLoginOpen(true);
     }
   }, []);
+
+  useEffect(() => {
+    if (user) {
+      loadDesigns();
+    } else {
+      setDesigns([]);
+    }
+  }, [user]);
 
   useEffect(() => {
     const handler = (event: Event) => {
@@ -166,7 +173,7 @@ const App: React.FC = () => {
 
   // Load catalogue once; search/filters run instantly on the client (no API per keystroke).
   const loadDesigns = async () => {
-    if (!user) return;
+    if (!localStorage.getItem('auth_token')) return;
 
     setLoading(true);
     try {
@@ -1030,7 +1037,7 @@ const App: React.FC = () => {
               <p className="text-gray-500">Loading designs...</p>
             </div>
           </div>
-        ) : (
+        ) : filteredDesigns.length > 0 ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4 md:gap-6">
             {filteredDesigns.map(design => (
               <DesignCard
@@ -1050,15 +1057,33 @@ const App: React.FC = () => {
               />
             ))}
           </div>
-        )}
+        ) : null}
 
         {!loading && filteredDesigns.length === 0 && isReady && designs.length > 0 && (
           <div className="flex flex-col items-center justify-center py-24 text-center">
             <div className="bg-gray-100 p-8 rounded-[3rem] mb-6 shadow-inner">
               <Package className="w-12 h-12 text-gray-300" />
             </div>
-            <h3 className="text-gray-900 font-black text-xl">No designs found</h3>
-            <p className="text-gray-400 text-sm max-w-xs mt-2 font-medium">Add a design to begin your professional textile collection.</p>
+            <h3 className="text-gray-900 font-black text-xl">No designs match your filters</h3>
+            <p className="text-gray-400 text-sm max-w-xs mt-2 font-medium">Try clearing search or price filters to see your catalogue.</p>
+          </div>
+        )}
+
+        {!loading && designs.length === 0 && isReady && user && (
+          <div className="flex flex-col items-center justify-center py-24 text-center">
+            <div className="bg-gray-100 p-8 rounded-[3rem] mb-6 shadow-inner">
+              <Package className="w-12 h-12 text-gray-300" />
+            </div>
+            <h3 className="text-gray-900 font-black text-xl">No designs yet</h3>
+            <p className="text-gray-400 text-sm max-w-xs mt-2 font-medium">Tap + to add your first design to the catalogue.</p>
+            <button
+              type="button"
+              onClick={handleOpenUpload}
+              className="mt-6 inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-3 text-sm font-black text-white hover:bg-indigo-700"
+            >
+              <Plus className="w-4 h-4" />
+              Add design
+            </button>
           </div>
         )}
       </main>
