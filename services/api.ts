@@ -404,6 +404,12 @@ export const ordersApi = {
       body: JSON.stringify({ status }),
     });
   },
+  updateLineCompletion: async (id: string, lineIndex: number, completed: boolean) => {
+    return request<{ order: any }>(`/orders/${id}/lines/${lineIndex}/completion`, {
+      method: 'PUT',
+      body: JSON.stringify({ completed }),
+    });
+  },
   update: async (id: string, body: {
     buyerName?: string;
     customerId?: string;

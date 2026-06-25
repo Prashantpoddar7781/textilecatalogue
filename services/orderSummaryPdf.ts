@@ -32,7 +32,7 @@ export interface OrderSummaryPdfInput {
 }
 
 const formatMoney = (value: number) =>
-  `₹${value.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+  `Rs. ${value.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
 
 const formatDateOnly = (value?: string | null) => {
   if (!value) return '—';
@@ -156,7 +156,8 @@ export function buildOrderSummaryPdf(input: OrderSummaryPdfInput): jsPDF {
   doc.text('Design', margin + 22, y);
   doc.text('Qty', margin + 108, y);
   doc.text('Rate', margin + 124, y);
-  doc.text('Amount', pageWidth - margin, y, { align: 'right' });
+  const amountRightX = pageWidth - margin - 6;
+  doc.text('Amount', amountRightX, y, { align: 'right' });
   y += 4;
   doc.line(margin, y, pageWidth - margin, y);
   y += 5;
@@ -187,7 +188,7 @@ export function buildOrderSummaryPdf(input: OrderSummaryPdfInput): jsPDF {
     doc.setFont('helvetica', 'normal');
     doc.text(String(line.quantity), margin + 108, y + 4);
     doc.text(formatMoney(rate), margin + 124, y + 4);
-    doc.text(formatMoney(amount), pageWidth - margin, y + 4, { align: 'right' });
+    doc.text(formatMoney(amount), amountRightX, y + 4, { align: 'right' });
     y += 7;
 
     if (subtitle) {
@@ -213,7 +214,8 @@ export function buildOrderSummaryPdf(input: OrderSummaryPdfInput): jsPDF {
   doc.setFontSize(11);
   doc.setTextColor(15, 23, 42);
   doc.text(`Total quantity: ${totalQty}`, margin, y);
-  doc.text(`Grand total: ${formatMoney(grandTotal)}`, pageWidth - margin, y, { align: 'right' });
+  doc.text('Grand total:', amountRightX - 42, y);
+  doc.text(formatMoney(grandTotal), amountRightX, y, { align: 'right' });
   y += 10;
 
   doc.setFont('helvetica', 'normal');

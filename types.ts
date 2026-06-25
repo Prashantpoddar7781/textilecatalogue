@@ -149,6 +149,8 @@ export interface Order {
     retailPrice?: number | null;
     quantity: number;
     remarks?: string | null;
+    completed?: boolean;
+    completedAt?: string | null;
   }> | null;
   status: 'waiting_approval' | 'pending' | 'completed' | string;
   remarks?: string | null;

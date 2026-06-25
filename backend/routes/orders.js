@@ -46,6 +46,31 @@ const optionalDate = (value) => {
   return Number.isNaN(date.getTime()) ? null : date;
 };
 
+const normalizeOrderLines = (orderLines) => {
+  if (!Array.isArray(orderLines)) return [];
+  return orderLines.map((line) => ({
+    ...line,
+    completed: Boolean(line?.completed),
+    completedAt: line?.completedAt || null
+  }));
+};
+
+async function decrementCompletedLineStock(tx, line) {
+  if (!line?.designId) return;
+  const design = await tx.design.findUnique({
+    where: { id: line.designId }
+  });
+  if (!design) return;
+
+  const currentStock = design.stockQuantity ?? 0;
+  const quantity = parseInt(line.quantity, 10);
+  const newStock = Math.max(currentStock - (Number.isFinite(quantity) ? quantity : 0), 0);
+  await tx.design.update({
+    where: { id: line.designId },
+    data: { stockQuantity: newStock }
+  });
+}
+
 const getOrderMeta = (body) => ({
   priceCategory: optionalString(body.priceCategory),
   orderNumber: optionalString(body.orderNumber),
@@ -263,7 +288,9 @@ router.post('/manual', authenticateToken, requireActiveSubscription, [
         basePrice: design.basePrice || design.retailPrice || 0,
         retailPrice: design.retailPrice || design.basePrice || 0,
         quantity,
-        remarks: optionalString(line?.remarks)
+        remarks: optionalString(line?.remarks),
+        completed: false,
+        completedAt: null
       });
     }
 
@@ -409,7 +436,9 @@ router.put('/:id', authenticateToken, requireActiveSubscription, async (req, res
           basePrice: design.basePrice || design.retailPrice || 0,
           retailPrice: design.retailPrice || design.basePrice || 0,
           quantity,
-          remarks: optionalString(line?.remarks)
+        remarks: optionalString(line?.remarks),
+        completed: Boolean(line?.completed),
+        completedAt: line?.completedAt || null
         });
       }
 
@@ -469,12 +498,33 @@ router.put('/:id/status', authenticateToken, requireActiveSubscription, [
     }
 
     const updated = await prisma.$transaction(async (tx) => {
+      const updateData = { status };
+      const orderLines = normalizeOrderLines(existing.orderLines);
+
+      if (status === 'completed' && orderLines.length > 0) {
+        const completedAt = new Date().toISOString();
+        const nextLines = [];
+
+        for (const line of orderLines) {
+          if (!line.completed) {
+            await decrementCompletedLineStock(tx, line);
+          }
+          nextLines.push({
+            ...line,
+            completed: true,
+            completedAt: line.completedAt || completedAt
+          });
+        }
+
+        updateData.orderLines = nextLines;
+      }
+
       const order = await tx.order.update({
         where: { id },
-        data: { status }
+        data: updateData
       });
 
-      if (status === 'completed' && order.designId) {
+      if (status === 'completed' && orderLines.length === 0 && order.designId) {
         const design = await tx.design.findUnique({
           where: { id: order.designId }
         });
@@ -490,6 +540,75 @@ router.put('/:id/status', authenticateToken, requireActiveSubscription, [
       }
 
       return order;
+    });
+
+    const orderWithDetails = await prisma.order.findUnique({
+      where: { id: updated.id },
+      include: orderInclude
+    });
+
+    res.json({ order: orderWithDetails });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Auth: update one line item completion in a grouped order
+router.put('/:id/lines/:lineIndex/completion', authenticateToken, requireActiveSubscription, [
+  body('completed').isBoolean()
+], async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { id, lineIndex } = req.params;
+    const index = parseInt(lineIndex, 10);
+    const completed = Boolean(req.body.completed);
+    const userId = req.user.userId;
+
+    const existing = await prisma.order.findUnique({
+      where: { id }
+    });
+
+    if (!existing) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+    if (existing.userId !== userId) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    if (existing.status !== 'pending') {
+      return res.status(400).json({ error: 'Line items can only be completed while the order is pending' });
+    }
+
+    const orderLines = normalizeOrderLines(existing.orderLines);
+    if (!Number.isInteger(index) || index < 0 || index >= orderLines.length) {
+      return res.status(400).json({ error: 'Invalid line item' });
+    }
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const nextLines = orderLines.map((line, idx) => {
+        if (idx !== index) return line;
+        return {
+          ...line,
+          completed,
+          completedAt: completed ? (line.completedAt || new Date().toISOString()) : null
+        };
+      });
+
+      if (completed && !orderLines[index].completed) {
+        await decrementCompletedLineStock(tx, orderLines[index]);
+      }
+
+      const allComplete = nextLines.length > 0 && nextLines.every(line => line.completed);
+      return tx.order.update({
+        where: { id },
+        data: {
+          orderLines: nextLines,
+          status: allComplete ? 'completed' : 'pending'
+        }
+      });
     });
 
     const orderWithDetails = await prisma.order.findUnique({

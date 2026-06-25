@@ -74,9 +74,22 @@ export const OrdersPage: React.FC<Props> = ({ onBack, firmName }) => {
     try {
       setUpdatingId(orderId);
       const { order } = await ordersApi.updateStatus(orderId, 'completed');
-      setOrders(prev => prev.map(o => (o.id === order.id ? { ...o, status: order.status } : o)));
+      setOrders(prev => prev.map(o => (o.id === order.id ? { ...o, ...order } : o)));
     } catch (error) {
       alert('Failed to update order status.');
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
+  const markLineCompleted = async (orderId: string, lineIndex: number) => {
+    const updateKey = `${orderId}:${lineIndex}`;
+    try {
+      setUpdatingId(updateKey);
+      const { order } = await ordersApi.updateLineCompletion(orderId, lineIndex, true);
+      setOrders(prev => prev.map(o => (o.id === order.id ? { ...o, ...order } : o)));
+    } catch (error) {
+      alert('Failed to complete this item.');
     } finally {
       setUpdatingId(null);
     }
@@ -331,6 +344,8 @@ export const OrdersPage: React.FC<Props> = ({ onBack, firmName }) => {
               const isOpen = order.manualType === 'open';
               const orderLines = order.orderLines || [];
               const hasGroupedLines = orderLines.length > 0;
+              const completedLineCount = orderLines.filter(line => line.completed).length;
+              const hasIncompleteLines = orderLines.some(line => !line.completed);
               const statusLabel = order.status === 'waiting_approval'
                 ? 'Waiting for approval'
                 : order.status === 'pending'
@@ -421,7 +436,7 @@ export const OrdersPage: React.FC<Props> = ({ onBack, firmName }) => {
                               <img src={line.image} alt={line.designName || 'Design'} className="h-9 w-9 rounded-md object-cover" />
                             )}
                             <div className="min-w-0 flex-1">
-                              <p className="truncate font-semibold text-gray-800">
+                              <p className={`truncate font-semibold ${line.completed ? 'text-green-700 line-through decoration-green-500' : 'text-gray-800'}`}>
                                 {line.designCode || line.designName || line.designId}
                               </p>
                               <p className="text-[10px] text-gray-500">
@@ -429,8 +444,30 @@ export const OrdersPage: React.FC<Props> = ({ onBack, firmName }) => {
                                 {line.remarks ? ` • ${line.remarks}` : ''}
                               </p>
                             </div>
+                            {order.status === 'pending' && (
+                              line.completed ? (
+                                <span className="shrink-0 inline-flex items-center gap-1 rounded-full bg-green-50 px-2 py-1 text-[10px] font-black text-green-700">
+                                  <CheckCircle className="h-3 w-3" />
+                                  Done
+                                </span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => void markLineCompleted(order.id, idx)}
+                                  disabled={updatingId === `${order.id}:${idx}` || updatingId === order.id}
+                                  className="shrink-0 rounded-lg border border-green-200 bg-green-50 px-2 py-1 text-[10px] font-black text-green-800 hover:bg-green-100 disabled:opacity-50"
+                                >
+                                  {updatingId === `${order.id}:${idx}` ? '...' : 'Complete'}
+                                </button>
+                              )
+                            )}
                           </div>
                         ))}
+                        {order.status === 'pending' && orderLines.length > 0 && (
+                          <p className="text-[10px] font-bold text-gray-500">
+                            Completed {completedLineCount}/{orderLines.length} items
+                          </p>
+                        )}
                       </div>
                     )}
                     <div className="grid grid-cols-2 gap-x-3 gap-y-1 pt-1">
@@ -516,7 +553,17 @@ export const OrdersPage: React.FC<Props> = ({ onBack, firmName }) => {
                         {updatingId === order.id ? 'Approving...' : 'Approve'}
                       </button>
                     )}
-                    {order.status === 'pending' && (
+                    {order.status === 'pending' && hasGroupedLines && (
+                      <button
+                        onClick={() => markCompleted(order.id)}
+                        disabled={updatingId === order.id || !hasIncompleteLines}
+                        className="w-full bg-green-600 hover:bg-green-700 text-white py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 disabled:opacity-50"
+                      >
+                        <CheckCircle className="w-4 h-4" />
+                        {updatingId === order.id ? 'Updating...' : 'Complete all items'}
+                      </button>
+                    )}
+                    {order.status === 'pending' && !hasGroupedLines && (
                       <button
                         onClick={() => markCompleted(order.id)}
                         disabled={updatingId === order.id}
