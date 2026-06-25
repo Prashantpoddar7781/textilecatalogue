@@ -7,38 +7,49 @@ interface Props {
 
 /** Captures USB / wireless barcode scanners that act as a keyboard (type value + Enter). */
 export const HardwareScannerInput: React.FC<Props> = ({ onScan, disabled = false }) => {
-  const inputRef = useRef<HTMLInputElement>(null);
+  const bufferRef = useRef('');
+  const lastKeyTimeRef = useRef(0);
 
   useEffect(() => {
     if (disabled) return;
-    inputRef.current?.focus();
-  }, [disabled]);
 
-  const refocus = () => {
-    if (!disabled) {
-      window.setTimeout(() => inputRef.current?.focus(), 50);
-    }
-  };
+    const isEditableTarget = (target: EventTarget | null) => {
+      const element = target as HTMLElement | null;
+      if (!element) return false;
+      return element.isContentEditable
+        || element.tagName === 'INPUT'
+        || element.tagName === 'TEXTAREA'
+        || element.tagName === 'SELECT';
+    };
 
-  return (
-    <input
-      ref={inputRef}
-      type="text"
-      autoComplete="off"
-      autoCorrect="off"
-      spellCheck={false}
-      disabled={disabled}
-      aria-label="Barcode scanner input"
-      className="absolute opacity-0 pointer-events-none h-0 w-0"
-      onKeyDown={event => {
-        if (event.key !== 'Enter') return;
-        event.preventDefault();
-        const value = event.currentTarget.value.trim();
-        event.currentTarget.value = '';
-        if (value) onScan(value);
-        refocus();
-      }}
-      onBlur={refocus}
-    />
-  );
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (isEditableTarget(event.target)) return;
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
+
+      const now = Date.now();
+      if (now - lastKeyTimeRef.current > 150) {
+        bufferRef.current = '';
+      }
+      lastKeyTimeRef.current = now;
+
+      if (event.key === 'Enter' || event.key === 'Tab') {
+        const value = bufferRef.current.trim();
+        bufferRef.current = '';
+        if (value) {
+          event.preventDefault();
+          onScan(value);
+        }
+        return;
+      }
+
+      if (event.key.length === 1) {
+        bufferRef.current += event.key;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, [disabled, onScan]);
+
+  return null;
 };
