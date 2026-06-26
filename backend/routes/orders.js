@@ -262,6 +262,7 @@ router.post('/manual', authenticateToken, requireActiveSubscription, [
     const orderLines = [];
     let primaryDesignId = null;
     let totalQuantity = 0;
+    const parsedLines = [];
 
     for (const line of lines) {
       const designId = line?.designId;
@@ -269,26 +270,48 @@ router.post('/manual', authenticateToken, requireActiveSubscription, [
       if (!designId || !Number.isFinite(quantity) || quantity < 1) {
         return res.status(400).json({ error: 'Each line needs designId and quantity (min 1)' });
       }
-
-      const design = await prisma.design.findFirst({
-        where: { id: designId, userId }
+      parsedLines.push({
+        designId,
+        quantity,
+        remarks: optionalString(line?.remarks)
       });
+    }
+
+    const designs = await prisma.design.findMany({
+      where: {
+        userId,
+        id: { in: [...new Set(parsedLines.map(line => line.designId))] }
+      },
+      select: {
+        id: true,
+        name: true,
+        designCode: true,
+        image: true,
+        fabric: true,
+        basePrice: true,
+        retailPrice: true
+      }
+    });
+    const designById = new Map(designs.map(design => [design.id, design]));
+
+    for (const line of parsedLines) {
+      const design = designById.get(line.designId);
       if (!design) {
-        return res.status(400).json({ error: `Design not found or not yours: ${designId}` });
+        return res.status(400).json({ error: `Design not found or not yours: ${line.designId}` });
       }
 
-      if (!primaryDesignId) primaryDesignId = designId;
-      totalQuantity += quantity;
+      if (!primaryDesignId) primaryDesignId = line.designId;
+      totalQuantity += line.quantity;
       orderLines.push({
-        designId,
+        designId: line.designId,
         designName: design.name || 'Untitled Design',
         designCode: design.designCode || null,
         image: design.image,
         fabric: design.fabric,
         basePrice: design.basePrice || design.retailPrice || 0,
         retailPrice: design.retailPrice || design.basePrice || 0,
-        quantity,
-        remarks: optionalString(line?.remarks),
+        quantity: line.quantity,
+        remarks: line.remarks,
         completed: false,
         completedAt: null
       });

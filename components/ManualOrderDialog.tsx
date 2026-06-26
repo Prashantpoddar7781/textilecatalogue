@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { X, Package, LayoutGrid, Plus, Trash2, Loader2, Search } from 'lucide-react';
 import { customersApi, designsApi, ordersApi } from '../services/api';
+import { notifyOrdersUpdated } from '../services/ordersRealtime';
 import { Customer } from '../types';
 
 interface Props {
@@ -328,7 +329,7 @@ export const ManualOrderDialog: React.FC<Props> = ({ onClose, onCreated }) => {
         });
       }
       if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('threadx-orders-updated'));
+        notifyOrdersUpdated();
       }
       onCreated();
       onClose();

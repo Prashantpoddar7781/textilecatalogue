@@ -1,8 +1,9 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, CheckCircle, Clock, Download, Edit3, MessageCircle, Plus, Package, RefreshCw, ScanLine, Search, ThumbsUp, X } from 'lucide-react';
 import { ordersApi } from '../services/api';
 import { findOrdersByDesignQuery } from '../services/orderDesignSearch';
 import { downloadOrderSummaryPdfBlob, orderToPdfInput, shareOrderSummaryPdf } from '../services/orderSummaryPdf';
+import { notifyOrdersUpdated, subscribeToOrdersUpdated } from '../services/ordersRealtime';
 import { Order } from '../types';
 import { BarcodeOrderBuilder } from './BarcodeOrderBuilder';
 import { EditOrderDialog } from './EditOrderDialog';
@@ -26,8 +27,11 @@ export const OrdersPage: React.FC<Props> = ({ onBack, firmName }) => {
   const [lastRefreshedAt, setLastRefreshedAt] = useState<Date | null>(null);
   const [designSearch, setDesignSearch] = useState('');
   const [editingOrder, setEditingOrder] = useState<Order | null>(null);
+  const loadingOrdersRef = useRef(false);
 
   const loadOrders = useCallback(async (options?: { background?: boolean }) => {
+    if (loadingOrdersRef.current) return;
+    loadingOrdersRef.current = true;
     try {
       if (!options?.background) setLoading(true);
       const { orders: fetchedOrders } = await ordersApi.getAll();
@@ -36,6 +40,7 @@ export const OrdersPage: React.FC<Props> = ({ onBack, firmName }) => {
     } catch (error) {
       console.error('Failed to load orders:', error);
     } finally {
+      loadingOrdersRef.current = false;
       if (!options?.background) setLoading(false);
     }
   }, []);
@@ -60,22 +65,40 @@ export const OrdersPage: React.FC<Props> = ({ onBack, firmName }) => {
   useEffect(() => {
     const refresh = () => void loadOrders({ background: true });
     const intervalId = window.setInterval(refresh, ORDERS_AUTO_REFRESH_MS);
+    const unsubscribeOrdersUpdated = subscribeToOrdersUpdated(refresh);
     window.addEventListener('focus', refresh);
-    window.addEventListener('threadx-orders-updated', refresh);
 
     return () => {
       window.clearInterval(intervalId);
+      unsubscribeOrdersUpdated();
       window.removeEventListener('focus', refresh);
-      window.removeEventListener('threadx-orders-updated', refresh);
     };
   }, [loadOrders]);
 
   const markCompleted = async (orderId: string) => {
+    let previousOrders: Order[] = [];
     try {
       setUpdatingId(orderId);
+      setOrders(prev => {
+        previousOrders = prev;
+        return prev.map(order => {
+          if (order.id !== orderId) return order;
+          return {
+            ...order,
+            status: 'completed',
+            orderLines: order.orderLines?.map(line => ({
+              ...line,
+              completed: true,
+              completedAt: line.completedAt || new Date().toISOString()
+            })) || order.orderLines
+          };
+        });
+      });
       const { order } = await ordersApi.updateStatus(orderId, 'completed');
       setOrders(prev => prev.map(o => (o.id === order.id ? { ...o, ...order } : o)));
+      notifyOrdersUpdated();
     } catch (error) {
+      setOrders(previousOrders);
       alert('Failed to update order status.');
     } finally {
       setUpdatingId(null);
@@ -84,11 +107,30 @@ export const OrdersPage: React.FC<Props> = ({ onBack, firmName }) => {
 
   const markLineCompleted = async (orderId: string, lineIndex: number) => {
     const updateKey = `${orderId}:${lineIndex}`;
+    let previousOrders: Order[] = [];
     try {
       setUpdatingId(updateKey);
+      setOrders(prev => {
+        previousOrders = prev;
+        return prev.map(order => {
+          if (order.id !== orderId || !order.orderLines) return order;
+          const nextLines = order.orderLines.map((line, idx) => idx === lineIndex
+            ? { ...line, completed: true, completedAt: line.completedAt || new Date().toISOString() }
+            : line
+          );
+          const allComplete = nextLines.length > 0 && nextLines.every(line => line.completed);
+          return {
+            ...order,
+            orderLines: nextLines,
+            status: allComplete ? 'completed' : order.status
+          };
+        });
+      });
       const { order } = await ordersApi.updateLineCompletion(orderId, lineIndex, true);
       setOrders(prev => prev.map(o => (o.id === order.id ? { ...o, ...order } : o)));
+      notifyOrdersUpdated();
     } catch (error) {
+      setOrders(previousOrders);
       alert('Failed to complete this item.');
     } finally {
       setUpdatingId(null);
@@ -96,11 +138,18 @@ export const OrdersPage: React.FC<Props> = ({ onBack, firmName }) => {
   };
 
   const approveOrder = async (orderId: string) => {
+    let previousOrders: Order[] = [];
     try {
       setUpdatingId(orderId);
+      setOrders(prev => {
+        previousOrders = prev;
+        return prev.map(o => (o.id === orderId ? { ...o, status: 'pending' } : o));
+      });
       const { order } = await ordersApi.updateStatus(orderId, 'pending');
       setOrders(prev => prev.map(o => (o.id === order.id ? { ...o, ...order } : o)));
+      notifyOrdersUpdated();
     } catch (error) {
+      setOrders(previousOrders);
       alert('Failed to approve order.');
     } finally {
       setUpdatingId(null);

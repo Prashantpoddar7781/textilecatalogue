@@ -5,6 +5,7 @@ import { customersApi, designsApi, ordersApi } from '../services/api';
 import { cameraBarcodeConstraints, cameraBarcodeScanConfig, extractDesignIdFromScan, prefersHardwareScanner } from '../services/barcodeScan';
 import { playScanBeep, playScanErrorBeep } from '../services/scanBeep';
 import { downloadOrderSummaryPdfBlob, orderToPdfInput, shareOrderSummaryPdf } from '../services/orderSummaryPdf';
+import { notifyOrdersUpdated } from '../services/ordersRealtime';
 import { Customer, Order, TextileDesign } from '../types';
 import { HardwareScannerInput } from './HardwareScannerInput';
 import { OrderFormCheckout, OrderFormMeta } from './OrderFormCheckout';
@@ -333,9 +334,7 @@ export const BarcodeOrderBuilder: React.FC<Props> = ({
 
       const createdOrder = response.order as Order;
 
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('threadx-orders-updated'));
-      }
+      notifyOrdersUpdated();
 
       setSavedOrder(createdOrder);
       setCheckoutOpen(false);
