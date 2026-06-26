@@ -55,7 +55,10 @@ async function sendViaResend(email, otp) {
 
   if (!response.ok) {
     const body = await response.text().catch(() => '');
-    throw new Error(`Resend failed (${response.status}): ${body.slice(0, 160)}`);
+    const error = new Error(`RESEND_SEND_FAILED (${response.status}): ${body.slice(0, 160)}`);
+    error.provider = 'resend';
+    error.status = response.status;
+    throw error;
   }
 }
 

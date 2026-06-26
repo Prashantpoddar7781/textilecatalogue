@@ -206,9 +206,12 @@ router.post('/otp/request', [
     if (
       error?.message?.includes('SMTP_') ||
       error?.message?.includes('RESEND_') ||
+      error?.message?.includes('Resend failed') ||
       error?.message?.includes('EMAIL_PROVIDER')
     ) {
-      return res.status(503).json({ error: 'Email OTP is not configured yet. Please contact support.' });
+      return res.status(503).json({
+        error: 'Email OTP is temporarily unavailable. Please contact support or use password login.'
+      });
     }
     if (error?.message?.includes('timed out')) {
       return res.status(504).json({ error: 'Email provider timed out. Please try again.' });
