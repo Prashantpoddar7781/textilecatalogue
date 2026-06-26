@@ -7,6 +7,7 @@ import { generateAIModelling, ensureModelImageDataUrl, resizeProductImageForGemi
 import { pickImageFromGoogleDrive } from '../services/googleDrivePicker';
 import { isNativeDrivePickerAvailable, pickImageFromNativeDrive } from '../services/nativeDriveFilePicker';
 import { isNativeAndroid, takePhotoFromNativeCamera } from '../services/nativeApp';
+import { enhancePhotoForCatalogue } from '../services/photoEnhance';
 import { DEFAULT_AI_MODEL_IMAGE } from '../constants';
 import { ImageLightbox } from './ImageLightbox';
 import { ImageCropDialog } from './ImageCropDialog';
@@ -78,6 +79,8 @@ export const UploadForm: React.FC<Props> = ({
   const modelInputRef = useRef<HTMLInputElement>(null);
   /** When set, full-screen crop UI is shown for this image (data URL). */
   const [cropSource, setCropSource] = useState<string | null>(null);
+  const [enhancingPhoto, setEnhancingPhoto] = useState(false);
+  const [photoEnhancement, setPhotoEnhancement] = useState<{ original: string; enhanced: string } | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Load catalogues on mount
@@ -122,6 +125,7 @@ export const UploadForm: React.FC<Props> = ({
       );
       setGeneratingSlots(null);
       setCropSource(null);
+      setPhotoEnhancement(null);
     } else {
       // Reset form when not editing
       setFormData({
@@ -148,6 +152,7 @@ export const UploadForm: React.FC<Props> = ({
       setCustomModelImage(null);
       setCurrentColor('#ff0000');
       setCropSource(null);
+      setPhotoEnhancement(null);
       setCostingEnabled(false);
       setCostingDetails(emptyCostingDetails);
     }
@@ -272,6 +277,33 @@ export const UploadForm: React.FC<Props> = ({
     } finally {
       setDriveImporting(false);
     }
+  };
+
+  const handleEnhancePhoto = async () => {
+    if (!preview || enhancingPhoto) return;
+    setEnhancingPhoto(true);
+    try {
+      const enhanced = await enhancePhotoForCatalogue(preview);
+      setPhotoEnhancement({ original: preview, enhanced });
+    } catch (error) {
+      console.error(error);
+      alert('Could not enhance this photo. Please try another image.');
+    } finally {
+      setEnhancingPhoto(false);
+    }
+  };
+
+  const useEnhancedPhoto = () => {
+    if (!photoEnhancement) return;
+    setPreview(photoEnhancement.enhanced);
+    setPhotoEnhancement(null);
+  };
+
+  const keepOriginalPhoto = () => {
+    if (photoEnhancement?.original) {
+      setPreview(photoEnhancement.original);
+    }
+    setPhotoEnhancement(null);
   };
 
   const handleVariantChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -498,7 +530,7 @@ export const UploadForm: React.FC<Props> = ({
               />
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
@@ -540,7 +572,58 @@ export const UploadForm: React.FC<Props> = ({
                 <Crop className="w-4 h-4 shrink-0" />
                 <span className="text-center leading-tight">Crop</span>
               </button>
+              <button
+                type="button"
+                disabled={!preview || enhancingPhoto}
+                onClick={() => void handleEnhancePhoto()}
+                className="flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 px-2 sm:px-3 py-2.5 bg-violet-50 hover:bg-violet-100 text-violet-900 border border-violet-200 rounded-xl font-medium text-xs sm:text-sm transition-colors touch-target disabled:opacity-40 disabled:cursor-not-allowed"
+                title={preview ? 'Improve brightness, contrast, colour, and sharpness' : 'Add an image first'}
+              >
+                {enhancingPhoto ? (
+                  <Loader2 className="w-4 h-4 shrink-0 animate-spin" />
+                ) : (
+                  <Sparkles className="w-4 h-4 shrink-0" />
+                )}
+                <span className="text-center leading-tight">{enhancingPhoto ? 'Enhancing' : 'Enhance'}</span>
+              </button>
             </div>
+
+            {photoEnhancement && (
+              <div className="rounded-2xl border border-violet-100 bg-violet-50/70 p-3 space-y-3">
+                <div>
+                  <p className="text-sm font-black text-gray-900">Photo enhancement ready</p>
+                  <p className="text-xs text-violet-800 mt-0.5">
+                    Compare both versions and choose what should be saved in the catalogue.
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-xl bg-white border border-gray-100 p-2">
+                    <p className="mb-1 text-[10px] font-black uppercase tracking-wide text-gray-500">Original</p>
+                    <img src={photoEnhancement.original} alt="Original product" className="aspect-video w-full rounded-lg object-cover" />
+                  </div>
+                  <div className="rounded-xl bg-white border border-violet-200 p-2">
+                    <p className="mb-1 text-[10px] font-black uppercase tracking-wide text-violet-700">Enhanced</p>
+                    <img src={photoEnhancement.enhanced} alt="Enhanced product" className="aspect-video w-full rounded-lg object-cover" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={keepOriginalPhoto}
+                    className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-bold text-gray-700 hover:bg-gray-50"
+                  >
+                    Keep Original
+                  </button>
+                  <button
+                    type="button"
+                    onClick={useEnhancedPhoto}
+                    className="rounded-xl bg-violet-600 px-3 py-2 text-sm font-bold text-white hover:bg-violet-700"
+                  >
+                    Use Enhanced
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="space-y-4 border-2 border-indigo-50 p-6 rounded-2xl bg-indigo-50/30">
@@ -1152,6 +1235,7 @@ export const UploadForm: React.FC<Props> = ({
           onCancel={() => setCropSource(null)}
           onComplete={dataUrl => {
             setPreview(dataUrl);
+            setPhotoEnhancement(null);
             setCropSource(null);
           }}
         />
