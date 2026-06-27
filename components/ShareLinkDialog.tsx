@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Link2, Copy, Check, Trash2, Eye, EyeOff, Calendar, Clock } from 'lucide-react';
+import { X, Link2, Copy, Check, Trash2, Eye, EyeOff, Calendar, Clock, Globe2, ShieldCheck } from 'lucide-react';
 import { TextileDesign, ShareLink } from '../types';
 import { shareLinksApi } from '../services/api';
 import { getShareUrl } from '../services/appUrl';
@@ -19,6 +19,7 @@ export const ShareLinkDialog: React.FC<Props> = ({ design, designs, onClose }) =
   const [expiresIn, setExpiresIn] = useState<string>('7'); // days
   const [expiresInUnit, setExpiresInUnit] = useState<'days' | 'hours'>('days');
   const [selectedPriceType, setSelectedPriceType] = useState<string>('base');
+  const [securityMode, setSecurityMode] = useState<'normal' | 'device_locked'>('normal');
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
 
   // Support both single design and multiple designs
@@ -71,7 +72,8 @@ export const ShareLinkDialog: React.FC<Props> = ({ design, designs, onClose }) =
       const shareLink = await shareLinksApi.create({
         designIds: designList.map(d => d.id),
         expiresAt: expiresAt || undefined,
-        selectedPriceType: selectedPriceType === 'base' ? undefined : selectedPriceType
+        selectedPriceType: selectedPriceType === 'base' ? undefined : selectedPriceType,
+        securityMode
       });
 
       if (shareLink) {
@@ -79,6 +81,7 @@ export const ShareLinkDialog: React.FC<Props> = ({ design, designs, onClose }) =
         setExpiresIn('7');
         setExpiresInUnit('days');
         setSelectedPriceType('base');
+        setSecurityMode('normal');
 
         // Auto-copy and open WhatsApp with the link
         const shareUrl = getShareUrl(shareLink.token);
@@ -228,6 +231,57 @@ export const ShareLinkDialog: React.FC<Props> = ({ design, designs, onClose }) =
                 </div>
               </div>
 
+              <div>
+                <label className="text-sm font-medium text-gray-700 mb-2 block">Link Security</label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setSecurityMode('normal')}
+                    className={`rounded-2xl border-2 bg-white p-4 text-left transition-all ${
+                      securityMode === 'normal'
+                        ? 'border-indigo-500 ring-4 ring-indigo-100'
+                        : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <div className="rounded-xl bg-gray-100 p-2">
+                        <Globe2 className="h-5 w-5 text-gray-700" />
+                      </div>
+                      <div>
+                        <p className="font-black text-gray-900">Normal link</p>
+                        <p className="text-[11px] font-semibold text-gray-500">Anyone with link can open</p>
+                      </div>
+                    </div>
+                    <p className="mt-3 text-xs text-gray-600">
+                      Best for general catalogues where forwarding is okay.
+                    </p>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setSecurityMode('device_locked')}
+                    className={`rounded-2xl border-2 bg-white p-4 text-left transition-all ${
+                      securityMode === 'device_locked'
+                        ? 'border-emerald-500 ring-4 ring-emerald-100'
+                        : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <div className="rounded-xl bg-emerald-50 p-2">
+                        <ShieldCheck className="h-5 w-5 text-emerald-700" />
+                      </div>
+                      <div>
+                        <p className="font-black text-gray-900">Secured link</p>
+                        <p className="text-[11px] font-semibold text-emerald-700">Locks to first device</p>
+                      </div>
+                    </div>
+                    <p className="mt-3 text-xs text-gray-600">
+                      If forwarded, it will not open on another phone/browser.
+                    </p>
+                  </button>
+                </div>
+              </div>
+
               <button
                 onClick={handleCreateLink}
                 disabled={creating || designList.length === 0}
@@ -287,6 +341,12 @@ export const ShareLinkDialog: React.FC<Props> = ({ design, designs, onClose }) =
                           {isExpired && (
                             <span className="px-2 py-0.5 bg-orange-100 text-orange-700 text-xs font-medium rounded">
                               Expired
+                            </span>
+                          )}
+                          {link.securityMode === 'device_locked' && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-700 text-xs font-medium rounded">
+                              <ShieldCheck className="w-3 h-3" />
+                              Secured
                             </span>
                           )}
                         </div>

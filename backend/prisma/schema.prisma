@@ -158,6 +158,9 @@ model ShareLink {
   expiresAt   DateTime? // Optional expiration date
   isActive    Boolean  @default(true) // Can be disabled by user
   selectedPriceType String? // Which price type to show (base, or name of additional price)
+  securityMode String @default("normal") // normal | device_locked
+  lockedDeviceToken String? // first viewer device token for secured links
+  lockedAt DateTime?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -165,6 +168,7 @@ model ShareLink {
   @@index([designId])
   @@index([token])
   @@index([isActive])
+  @@index([securityMode])
 }
 
 model ShareLinkOpen {

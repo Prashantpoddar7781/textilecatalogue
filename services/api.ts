@@ -289,6 +289,7 @@ export const shareLinksApi = {
     designIds?: string[];
     expiresAt?: string;
     selectedPriceType?: string;
+    securityMode?: 'normal' | 'device_locked';
   }) => {
     return request<any>('/share-links', {
       method: 'POST',
@@ -298,6 +299,7 @@ export const shareLinksApi = {
   createCollection: async (data?: {
     expiresAt?: string;
     selectedPriceType?: string;
+    securityMode?: 'normal' | 'device_locked';
   }) => {
     return request<any>('/share-links/collection', {
       method: 'POST',
@@ -309,8 +311,9 @@ export const shareLinksApi = {
     return request<{ shareLinks: any[] }>('/share-links');
   },
 
-  getByToken: async (token: string) => {
-    return request<any>(`/share-links/${token}`);
+  getByToken: async (token: string, deviceToken?: string) => {
+    const query = deviceToken ? `?deviceToken=${encodeURIComponent(deviceToken)}` : '';
+    return request<any>(`/share-links/${token}${query}`);
   },
 
   /** Record that someone opened the shared page (public, no auth). Call once per session. */

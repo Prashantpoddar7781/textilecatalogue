@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Loader2, AlertCircle, IndianRupee, ShoppingCart, X, Maximize2, Package } from 'lucide-react';
 import { shareLinksApi, ordersApi } from '../services/api';
+import { getShareDeviceToken } from '../services/shareDeviceToken';
 import { ShareLink, TextileDesign } from '../types';
 
 const SESSION_KEY = 'threadx_share_session';
@@ -282,7 +283,8 @@ export const ShareView: React.FC<{ token: string }> = ({ token }) => {
     try {
       setLoading(true);
       setError(null);
-      const link = await shareLinksApi.getByToken(token);
+      const deviceToken = getShareDeviceToken();
+      const link = await shareLinksApi.getByToken(token, deviceToken);
       setShareLink(link);
       // Record open once per session (so admin sees "how many people opened")
       const openKey = `share_open_${token}`;

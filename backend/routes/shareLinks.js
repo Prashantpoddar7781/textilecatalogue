@@ -7,10 +7,62 @@ import crypto from 'crypto';
 
 const router = express.Router();
 const prisma = new PrismaClient();
+const SHARE_LINK_SECURITY_MODES = ['normal', 'device_locked'];
 
 // Generate unique token
 function generateToken() {
   return crypto.randomBytes(32).toString('hex');
+}
+
+function getViewerDeviceToken(req) {
+  const token = req.query.deviceToken || req.headers['x-threadx-device-token'];
+  if (!token) return null;
+  const text = String(token).trim();
+  return text.length >= 12 && text.length <= 160 ? text : null;
+}
+
+async function enforceShareLinkDeviceLock(shareLink, deviceToken) {
+  if (shareLink.securityMode !== 'device_locked') return shareLink;
+
+  if (!deviceToken) {
+    const error = new Error('This secured link needs to be opened in a browser that supports device locking.');
+    error.status = 403;
+    throw error;
+  }
+
+  if (!shareLink.lockedDeviceToken) {
+    const updated = await prisma.shareLink.updateMany({
+      where: {
+        id: shareLink.id,
+        lockedDeviceToken: null
+      },
+      data: {
+        lockedDeviceToken: deviceToken,
+        lockedAt: new Date()
+      }
+    });
+
+    if (updated.count > 0) {
+      return {
+        ...shareLink,
+        lockedDeviceToken: deviceToken,
+        lockedAt: new Date()
+      };
+    }
+
+    const latest = await prisma.shareLink.findUnique({
+      where: { id: shareLink.id }
+    });
+    if (latest?.lockedDeviceToken === deviceToken) return shareLink;
+  }
+
+  if (shareLink.lockedDeviceToken !== deviceToken) {
+    const error = new Error('This secured catalogue link is locked to another device. Please ask the seller for a new link.');
+    error.status = 423;
+    throw error;
+  }
+
+  return shareLink;
 }
 
 // Create shareable link (requires auth)
@@ -18,7 +70,8 @@ router.post('/', authenticateToken, requireActiveSubscription, [
   body('designId').optional().notEmpty(),
   body('designIds').optional().isArray({ min: 1 }),
   body('expiresAt').optional().isISO8601(),
-  body('selectedPriceType').optional().trim()
+  body('selectedPriceType').optional().trim(),
+  body('securityMode').optional().isIn(SHARE_LINK_SECURITY_MODES)
 ], async (req, res, next) => {
   try {
     const errors = validationResult(req);
@@ -27,6 +80,9 @@ router.post('/', authenticateToken, requireActiveSubscription, [
     }
 
     const { designId, designIds, expiresAt, selectedPriceType } = req.body;
+    const securityMode = SHARE_LINK_SECURITY_MODES.includes(req.body.securityMode)
+      ? req.body.securityMode
+      : 'normal';
     const userId = req.user.userId;
 
     const idsToShare = designIds && designIds.length > 0 ? designIds : (designId ? [designId] : []);
@@ -59,6 +115,7 @@ router.post('/', authenticateToken, requireActiveSubscription, [
         expiresAt: expiresAt ? new Date(expiresAt) : null,
         isActive: true,
         selectedPriceType: selectedPriceType || null,
+        securityMode,
         designs: {
           createMany: {
             data: idsToShare.map(id => ({ designId: id }))
@@ -100,7 +157,8 @@ router.post('/', authenticateToken, requireActiveSubscription, [
 // Create shareable link for entire collection (requires auth)
 router.post('/collection', authenticateToken, requireActiveSubscription, [
   body('expiresAt').optional().isISO8601(),
-  body('selectedPriceType').optional().trim()
+  body('selectedPriceType').optional().trim(),
+  body('securityMode').optional().isIn(SHARE_LINK_SECURITY_MODES)
 ], async (req, res, next) => {
   try {
     const errors = validationResult(req);
@@ -109,6 +167,9 @@ router.post('/collection', authenticateToken, requireActiveSubscription, [
     }
 
     const { expiresAt, selectedPriceType } = req.body;
+    const securityMode = SHARE_LINK_SECURITY_MODES.includes(req.body.securityMode)
+      ? req.body.securityMode
+      : 'normal';
     const userId = req.user.userId;
 
     const designs = await prisma.design.findMany({
@@ -136,6 +197,7 @@ router.post('/collection', authenticateToken, requireActiveSubscription, [
         expiresAt: expiresAt ? new Date(expiresAt) : null,
         isActive: true,
         selectedPriceType: selectedPriceType || null,
+        securityMode,
         designs: {
           createMany: {
             data: idsToShare.map(id => ({ designId: id }))
@@ -346,7 +408,7 @@ router.post('/:token/view', [
 router.get('/:token', optionalAuth, requireActiveSubscriptionIfAuthenticated, async (req, res, next) => {
   try {
     const { token } = req.params;
-    const shareLink = await prisma.shareLink.findUnique({
+    let shareLink = await prisma.shareLink.findUnique({
       where: { token },
       include: {
         design: {
@@ -402,6 +464,12 @@ router.get('/:token', optionalAuth, requireActiveSubscriptionIfAuthenticated, as
     // Check if link has expired
     if (shareLink.expiresAt && new Date() > new Date(shareLink.expiresAt)) {
       return res.status(403).json({ error: 'This share link has expired' });
+    }
+
+    try {
+      shareLink = await enforceShareLinkDeviceLock(shareLink, getViewerDeviceToken(req));
+    } catch (error) {
+      return res.status(error.status || 403).json({ error: error.message });
     }
 
     // Filter out out-of-stock designs from response

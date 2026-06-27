@@ -108,6 +108,8 @@ export interface ShareLink {
   expiresAt?: string;
   isActive: boolean;
   selectedPriceType?: string;
+  securityMode?: 'normal' | 'device_locked';
+  lockedAt?: string | null;
   createdAt: string;
   updatedAt: string;
   design?: TextileDesign;
