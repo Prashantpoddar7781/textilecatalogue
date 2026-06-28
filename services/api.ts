@@ -451,6 +451,7 @@ export const ordersApi = {
     designId: string;
     buyerName: string;
     buyerPhone?: string;
+    orderSessionId?: string;
     quantity: number;
   }) => {
     return request<{ order: any }>('/orders/public', {

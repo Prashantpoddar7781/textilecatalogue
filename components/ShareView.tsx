@@ -255,7 +255,7 @@ const DesignViewCard: React.FC<{
           }`}
         >
           <ShoppingCart className="w-4 h-4" />
-          {(design.stockQuantity ?? 0) <= 0 ? 'Out of stock' : 'Buy Now'}
+          {(design.stockQuantity ?? 0) <= 0 ? 'Out of stock' : 'Add to Order'}
         </button>
       </div>
     </div>
@@ -389,6 +389,7 @@ export const ShareView: React.FC<{ token: string }> = ({ token }) => {
         token,
         designId: orderDesign.id,
         buyerName,
+        orderSessionId: getOrCreateSessionId(),
         quantity: Number(orderForm.quantity)
       });
       if (result.order?.id) {
@@ -396,7 +397,7 @@ export const ShareView: React.FC<{ token: string }> = ({ token }) => {
           sessionStorage.setItem(`${BUYER_NAME_KEY_PREFIX}${token}`, buyerName);
           setSavedBuyerName(buyerName);
         }
-        setOrderSuccess('Order placed successfully!');
+        setOrderSuccess('Added to one order form. You can add more designs from this link.');
       }
     } catch (err: any) {
       alert(err.message || 'Failed to place order. Please try again.');
@@ -471,7 +472,7 @@ export const ShareView: React.FC<{ token: string }> = ({ token }) => {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl p-6 space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold text-gray-900">Place Order</h3>
+              <h3 className="text-lg font-bold text-gray-900">Add to Order</h3>
               <button
                 onClick={() => {
                   setOrderDesign(null);
@@ -486,7 +487,7 @@ export const ShareView: React.FC<{ token: string }> = ({ token }) => {
             <p className="text-xs text-gray-500">
               {savedBuyerName
                 ? `Ordering as ${savedBuyerName}. Enter quantity only.`
-                : 'Enter your name once and quantity. For the next designs, only quantity will be asked.'}
+                : 'Enter your name once and quantity. Add more designs and they will stay in one order form.'}
             </p>
             <div className="space-y-3">
               {orderSuccess && (
@@ -523,7 +524,7 @@ export const ShareView: React.FC<{ token: string }> = ({ token }) => {
                 disabled={placingOrder}
                 className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded-lg font-bold"
               >
-                {placingOrder ? 'Placing Order...' : orderSuccess ? 'Done' : 'Place Order'}
+                {placingOrder ? 'Adding...' : orderSuccess ? 'Done' : 'Add to Order'}
               </button>
             </div>
           </div>

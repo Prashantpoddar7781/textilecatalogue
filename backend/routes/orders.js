@@ -149,6 +149,7 @@ router.post('/public', [
   body('designId').notEmpty(),
   body('buyerName').notEmpty().trim(),
   body('buyerPhone').optional().trim(),
+  body('orderSessionId').optional().trim(),
   body('quantity').isInt({ min: 1 })
 ], async (req, res, next) => {
   try {
@@ -157,9 +158,12 @@ router.post('/public', [
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { token, designId, buyerName, buyerPhone, quantity } = req.body;
+    const { token, designId, buyerName, buyerPhone, orderSessionId, quantity } = req.body;
     const normalizedBuyerName = optionalString(buyerName);
     const normalizedPhone = optionalString(buyerPhone) || '-';
+    const normalizedSessionId = optionalString(orderSessionId);
+    const publicBatchId = normalizedSessionId ? `share_${token}_${normalizedSessionId}` : null;
+    const parsedQuantity = parseInt(quantity, 10);
 
     const shareLink = await prisma.shareLink.findUnique({
       where: { token },
@@ -189,6 +193,78 @@ router.post('/public', [
       return res.status(400).json({ error: 'Design is not part of this link' });
     }
 
+    const design = await prisma.design.findFirst({
+      where: {
+        id: designId,
+        userId: shareLink.userId
+      },
+      select: {
+        id: true,
+        name: true,
+        designCode: true,
+        image: true,
+        fabric: true,
+        basePrice: true,
+        retailPrice: true
+      }
+    });
+
+    if (!design) {
+      return res.status(400).json({ error: 'Design not found' });
+    }
+
+    const newLine = {
+      designId,
+      designName: design.name || 'Untitled Design',
+      designCode: design.designCode || null,
+      image: design.image,
+      fabric: design.fabric,
+      basePrice: design.basePrice || design.retailPrice || 0,
+      retailPrice: design.retailPrice || design.basePrice || 0,
+      quantity: parsedQuantity,
+      remarks: null,
+      completed: false,
+      completedAt: null
+    };
+
+    let existingOrder = null;
+    if (publicBatchId) {
+      existingOrder = await prisma.order.findFirst({
+        where: {
+          userId: shareLink.userId,
+          shareLinkId: shareLink.id,
+          manualBatchId: publicBatchId,
+          status: 'waiting_approval'
+        },
+        orderBy: { createdAt: 'desc' }
+      });
+    }
+
+    if (existingOrder) {
+      const existingLines = normalizeOrderLines(existingOrder.orderLines);
+      const lineIndex = existingLines.findIndex(line => line.designId === designId);
+      const nextLines = lineIndex >= 0
+        ? existingLines.map((line, index) => index === lineIndex
+          ? { ...line, quantity: parseInt(line.quantity, 10) + parsedQuantity }
+          : line
+        )
+        : [...existingLines, newLine];
+      const totalQuantity = nextLines.reduce((sum, line) => sum + parseInt(line.quantity, 10), 0);
+
+      const order = await prisma.order.update({
+        where: { id: existingOrder.id },
+        data: {
+          buyerName: normalizedBuyerName,
+          buyerPhone: normalizedPhone,
+          quantity: totalQuantity,
+          orderLines: nextLines
+        },
+        include: orderInclude
+      });
+
+      return res.status(200).json({ order });
+    }
+
     const order = await prisma.order.create({
       data: {
         userId: shareLink.userId,
@@ -196,7 +272,9 @@ router.post('/public', [
         designId,
         buyerName: normalizedBuyerName,
         buyerPhone: normalizedPhone,
-        quantity: parseInt(quantity, 10),
+        quantity: parsedQuantity,
+        orderLines: [newLine],
+        manualBatchId: publicBatchId,
         status: 'waiting_approval'
       },
       include: orderInclude
