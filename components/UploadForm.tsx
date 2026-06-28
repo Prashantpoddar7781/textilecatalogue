@@ -72,7 +72,7 @@ export const UploadForm: React.FC<Props> = ({
   const [generatedModels, setGeneratedModels] = useState<string[]>([]);
   /** While generating: ordered slots (null = still loading). Null = not in generation UI. */
   const [generatingSlots, setGeneratingSlots] = useState<(string | null)[] | null>(null);
-  const [lightbox, setLightbox] = useState<{ images: string[]; index: number } | null>(null);
+  const [lightbox, setLightbox] = useState<{ images: string[]; index: number; title?: string } | null>(null);
   const [customModelImage, setCustomModelImage] = useState<string | null>(null);
   const [currentColor, setCurrentColor] = useState('#ff0000');
   const variantInputRef = useRef<HTMLInputElement>(null);
@@ -326,7 +326,16 @@ export const UploadForm: React.FC<Props> = ({
     if (typeof clicked !== 'string') return;
     const images = slots.filter((x): x is string => x != null);
     const index = images.indexOf(clicked);
-    setLightbox({ images, index: Math.max(0, index) });
+    setLightbox({ images, index: Math.max(0, index), title: 'AI generated' });
+  };
+
+  const openEnhancementLightbox = (index: number) => {
+    if (!photoEnhancement) return;
+    setLightbox({
+      images: [photoEnhancement.original, photoEnhancement.enhanced],
+      index,
+      title: 'Compare photo enhancement'
+    });
   };
 
   const handleRunModelling = async () => {
@@ -597,14 +606,38 @@ export const UploadForm: React.FC<Props> = ({
                   </p>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="rounded-xl bg-white border border-gray-100 p-2">
+                  <button
+                    type="button"
+                    onClick={() => openEnhancementLightbox(0)}
+                    className="group rounded-xl bg-white border border-gray-100 p-2 text-left transition-all hover:border-gray-300 hover:shadow-sm"
+                  >
                     <p className="mb-1 text-[10px] font-black uppercase tracking-wide text-gray-500">Original</p>
-                    <img src={photoEnhancement.original} alt="Original product" className="aspect-video w-full rounded-lg object-cover" />
-                  </div>
-                  <div className="rounded-xl bg-white border border-violet-200 p-2">
+                    <div className="relative overflow-hidden rounded-lg">
+                      <img src={photoEnhancement.original} alt="Original product" className="aspect-video w-full object-cover" />
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/0 transition-colors group-hover:bg-black/25">
+                        <span className="inline-flex items-center gap-1 rounded-full bg-white/90 px-2.5 py-1 text-[10px] font-black text-gray-900 opacity-0 transition-opacity group-hover:opacity-100">
+                          <Maximize2 className="h-3 w-3" />
+                          Full screen
+                        </span>
+                      </div>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openEnhancementLightbox(1)}
+                    className="group rounded-xl bg-white border border-violet-200 p-2 text-left transition-all hover:border-violet-300 hover:shadow-sm"
+                  >
                     <p className="mb-1 text-[10px] font-black uppercase tracking-wide text-violet-700">Enhanced</p>
-                    <img src={photoEnhancement.enhanced} alt="Enhanced product" className="aspect-video w-full rounded-lg object-cover" />
-                  </div>
+                    <div className="relative overflow-hidden rounded-lg">
+                      <img src={photoEnhancement.enhanced} alt="Enhanced product" className="aspect-video w-full object-cover" />
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/0 transition-colors group-hover:bg-black/25">
+                        <span className="inline-flex items-center gap-1 rounded-full bg-white/90 px-2.5 py-1 text-[10px] font-black text-gray-900 opacity-0 transition-opacity group-hover:opacity-100">
+                          <Maximize2 className="h-3 w-3" />
+                          Full screen
+                        </span>
+                      </div>
+                    </div>
+                  </button>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <button
@@ -1224,7 +1257,7 @@ export const UploadForm: React.FC<Props> = ({
           images={lightbox.images}
           initialIndex={lightbox.index}
           onClose={() => setLightbox(null)}
-          title="AI generated"
+          title={lightbox.title || 'Preview'}
         />
       )}
 
