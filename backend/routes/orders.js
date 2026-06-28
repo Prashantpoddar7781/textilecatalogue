@@ -148,7 +148,7 @@ router.post('/public', [
   body('token').notEmpty(),
   body('designId').notEmpty(),
   body('buyerName').notEmpty().trim(),
-  body('buyerPhone').notEmpty().trim(),
+  body('buyerPhone').optional().trim(),
   body('quantity').isInt({ min: 1 })
 ], async (req, res, next) => {
   try {
@@ -158,6 +158,8 @@ router.post('/public', [
     }
 
     const { token, designId, buyerName, buyerPhone, quantity } = req.body;
+    const normalizedBuyerName = optionalString(buyerName);
+    const normalizedPhone = optionalString(buyerPhone) || '-';
 
     const shareLink = await prisma.shareLink.findUnique({
       where: { token },
@@ -192,8 +194,8 @@ router.post('/public', [
         userId: shareLink.userId,
         shareLinkId: shareLink.id,
         designId,
-        buyerName: buyerName.trim(),
-        buyerPhone: buyerPhone.trim(),
+        buyerName: normalizedBuyerName,
+        buyerPhone: normalizedPhone,
         quantity: parseInt(quantity, 10),
         status: 'waiting_approval'
       },

@@ -5,6 +5,7 @@ import { getShareDeviceToken } from '../services/shareDeviceToken';
 import { ShareLink, TextileDesign } from '../types';
 
 const SESSION_KEY = 'threadx_share_session';
+const BUYER_NAME_KEY_PREFIX = 'threadx_share_buyer_name_';
 
 function getOrCreateSessionId(): string {
   let id = sessionStorage.getItem(SESSION_KEY);
@@ -267,15 +268,21 @@ export const ShareView: React.FC<{ token: string }> = ({ token }) => {
   const [shareLink, setShareLink] = useState<ShareLink | null>(null);
   const [orderDesign, setOrderDesign] = useState<TextileDesign | null>(null);
   const [fullScreenDesign, setFullScreenDesign] = useState<TextileDesign | null>(null);
+  const [savedBuyerName, setSavedBuyerName] = useState(() => {
+    if (typeof window === 'undefined') return '';
+    return sessionStorage.getItem(`${BUYER_NAME_KEY_PREFIX}${token}`) || '';
+  });
   const [orderForm, setOrderForm] = useState({
-    buyerName: '',
-    buyerPhone: '',
+    buyerName: savedBuyerName,
     quantity: 1
   });
   const [placingOrder, setPlacingOrder] = useState(false);
   const [orderSuccess, setOrderSuccess] = useState<string | null>(null);
 
   useEffect(() => {
+    const storedName = sessionStorage.getItem(`${BUYER_NAME_KEY_PREFIX}${token}`) || '';
+    setSavedBuyerName(storedName);
+    setOrderForm(prev => ({ ...prev, buyerName: storedName }));
     loadShareLink();
   }, [token]);
 
@@ -362,8 +369,7 @@ export const ShareView: React.FC<{ token: string }> = ({ token }) => {
   const handleBuyNow = (design: TextileDesign) => {
     setOrderDesign(design);
     setOrderForm({
-      buyerName: '',
-      buyerPhone: '',
+      buyerName: savedBuyerName,
       quantity: 1
     });
     setOrderSuccess(null);
@@ -371,8 +377,9 @@ export const ShareView: React.FC<{ token: string }> = ({ token }) => {
 
   const submitOrder = async () => {
     if (!orderDesign) return;
-    if (!orderForm.buyerName.trim() || !orderForm.buyerPhone.trim() || orderForm.quantity < 1) {
-      alert('Please enter name, phone number, and quantity.');
+    const buyerName = savedBuyerName.trim() || orderForm.buyerName.trim();
+    if (!buyerName || orderForm.quantity < 1) {
+      alert('Please enter name and quantity.');
       return;
     }
 
@@ -381,11 +388,14 @@ export const ShareView: React.FC<{ token: string }> = ({ token }) => {
       const result = await ordersApi.createPublic({
         token,
         designId: orderDesign.id,
-        buyerName: orderForm.buyerName.trim(),
-        buyerPhone: orderForm.buyerPhone.trim(),
+        buyerName,
         quantity: Number(orderForm.quantity)
       });
       if (result.order?.id) {
+        if (!savedBuyerName.trim()) {
+          sessionStorage.setItem(`${BUYER_NAME_KEY_PREFIX}${token}`, buyerName);
+          setSavedBuyerName(buyerName);
+        }
         setOrderSuccess('Order placed successfully!');
       }
     } catch (err: any) {
@@ -473,29 +483,30 @@ export const ShareView: React.FC<{ token: string }> = ({ token }) => {
               </button>
             </div>
             <p className="text-sm text-gray-600">{orderDesign.name || 'Design'}</p>
+            <p className="text-xs text-gray-500">
+              {savedBuyerName
+                ? `Ordering as ${savedBuyerName}. Enter quantity only.`
+                : 'Enter your name once and quantity. For the next designs, only quantity will be asked.'}
+            </p>
             <div className="space-y-3">
               {orderSuccess && (
                 <div className="bg-green-50 border border-green-200 text-green-700 text-sm font-semibold p-3 rounded-lg">
                   {orderSuccess}
                 </div>
               )}
-              <input
-                type="text"
-                placeholder="Your Name"
-                className="w-full px-4 py-2 border rounded-lg"
-                value={orderForm.buyerName}
-                onChange={e => setOrderForm({ ...orderForm, buyerName: e.target.value })}
-              />
-              <input
-                type="text"
-                placeholder="Phone Number"
-                className="w-full px-4 py-2 border rounded-lg"
-                value={orderForm.buyerPhone}
-                onChange={e => setOrderForm({ ...orderForm, buyerPhone: e.target.value })}
-              />
+              {!savedBuyerName && (
+                <input
+                  type="text"
+                  placeholder="Your Name"
+                  className="w-full px-4 py-2 border rounded-lg"
+                  value={orderForm.buyerName}
+                  onChange={e => setOrderForm({ ...orderForm, buyerName: e.target.value })}
+                />
+              )}
               <input
                 type="number"
                 min={1}
+                placeholder="Quantity"
                 className="w-full px-4 py-2 border rounded-lg"
                 value={orderForm.quantity}
                 onChange={e => setOrderForm({ ...orderForm, quantity: Number(e.target.value) })}

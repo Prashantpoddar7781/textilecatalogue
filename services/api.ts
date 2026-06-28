@@ -450,7 +450,7 @@ export const ordersApi = {
     token: string;
     designId: string;
     buyerName: string;
-    buyerPhone: string;
+    buyerPhone?: string;
     quantity: number;
   }) => {
     return request<{ order: any }>('/orders/public', {
