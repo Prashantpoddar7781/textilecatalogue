@@ -42,9 +42,7 @@ export const DesignFullscreenModal: React.FC<Props> = ({ design, onClose }) => {
 
   const label = index === 0 ? 'Product' : `AI variant ${index}`;
   const displayPrice = design.basePrice || design.retailPrice || 0;
-  const stockLabel = (design.stockQuantity ?? 0) <= 0
-    ? 'Out of stock'
-    : `${design.stockQuantity} ${design.stockUnit || 'pcs'}`;
+  const stockLabel = `${design.stockQuantity ?? 0} ${design.stockUnit || 'pcs'}`;
   const materialTotal = (design.costingDetails?.materials || []).reduce((sum, m) => sum + (Number(m.rate) || 0) * (Number(m.avgPerPcs) || 0), 0);
   const jobTotal = (design.costingDetails?.jobs || []).reduce((sum, j) => sum + (Number(j.rate) || 0), 0);
   const otherTotal = (design.costingDetails?.otherCosts || []).reduce((sum, c) => sum + (Number(c.rate) || 0), 0);

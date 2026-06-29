@@ -209,7 +209,7 @@ router.post('/', authenticateToken, requireDesignCreationAllowance, [
   body('retailPrice').optional().isFloat({ min: 0 }),
   body('designCode').optional().trim(),
   body('color').optional().trim(),
-  body('stockQuantity').optional().isInt({ min: 0 }),
+  body('stockQuantity').optional().isInt(),
   body('stockUnit').optional().isIn(['pcs', 'mtrs']),
   body('pcsPerParcel').optional().isInt({ min: 1 }),
   body('moq').optional().isInt({ min: 0 }),

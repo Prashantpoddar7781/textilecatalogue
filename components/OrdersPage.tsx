@@ -276,7 +276,7 @@ export const OrdersPage: React.FC<Props> = ({ onBack, firmName }) => {
 
         <div className="sticky top-[52px] z-20 -mx-4 px-4 pt-2 pb-3 mb-4 bg-[#FDFDFF]/95 backdrop-blur border-b border-gray-100">
           <label className="text-[10px] font-black uppercase tracking-widest text-indigo-600 block mb-2">
-            Find design in orders
+            Search orders
           </label>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -284,7 +284,7 @@ export const OrdersPage: React.FC<Props> = ({ onBack, firmName }) => {
               type="search"
               value={designSearch}
               onChange={e => setDesignSearch(e.target.value)}
-              placeholder="Design number or name..."
+              placeholder="Order number, client, design, phone, or keyword..."
               className="w-full pl-10 pr-10 py-3 bg-white border-2 border-indigo-100 rounded-2xl text-sm font-semibold outline-none focus:ring-2 focus:ring-indigo-500 shadow-sm"
             />
             {designSearch && (
@@ -307,7 +307,7 @@ export const OrdersPage: React.FC<Props> = ({ onBack, firmName }) => {
               ) : (
                 <>
                   <p className="text-sm font-black text-amber-950">
-                    &ldquo;{designSearch.trim()}&rdquo; in {designSearchMatches.length} line{designSearchMatches.length === 1 ? '' : 's'}
+                    &ldquo;{designSearch.trim()}&rdquo; found in {designSearchMatches.length} result{designSearchMatches.length === 1 ? '' : 's'}
                     {' · '}Total qty: {totalDesignSearchQty}
                   </p>
                   <div className="mt-2 space-y-1.5 max-h-40 overflow-y-auto">

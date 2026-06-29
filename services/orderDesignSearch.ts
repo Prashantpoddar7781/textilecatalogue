@@ -14,13 +14,43 @@ export function findOrdersByDesignQuery(orders: Order[], query: string): DesignO
   const results: DesignOrderMatch[] = [];
 
   for (const order of orders) {
+    const orderFields = [
+      order.id,
+      order.orderNumber,
+      order.buyerName,
+      order.buyerPhone,
+      order.status,
+      order.remarks,
+      order.agentName,
+      order.transportName,
+      order.haste,
+      order.station,
+      order.priceCategory,
+      order.customer?.organizationName,
+      order.customer?.contactPersonName,
+      order.customer?.mobileNumber,
+      order.customer?.city,
+      order.customer?.state
+    ];
+    const orderMatches = orderFields
+      .filter(Boolean)
+      .some(value => String(value).toLowerCase().includes(q));
     const lines = order.orderLines || [];
     if (lines.length > 0) {
+      let matchedLine = false;
       for (const line of lines) {
-        const code = (line.designCode || '').toLowerCase();
-        const name = (line.designName || '').toLowerCase();
-        const id = (line.designId || '').toLowerCase();
-        if (code.includes(q) || name.includes(q) || id.includes(q)) {
+        const lineFields = [
+          line.designCode,
+          line.designName,
+          line.designId,
+          line.fabric,
+          line.remarks
+        ];
+        const lineMatches = lineFields
+          .filter(Boolean)
+          .some(value => String(value).toLowerCase().includes(q));
+        if (lineMatches) {
+          matchedLine = true;
           results.push({
             order,
             quantity: line.quantity,
@@ -29,16 +59,34 @@ export function findOrdersByDesignQuery(orders: Order[], query: string): DesignO
           });
         }
       }
+      if (!matchedLine && orderMatches) {
+        results.push({
+          order,
+          quantity: order.quantity,
+          designLabel: order.orderNumber ? `Order #${order.orderNumber}` : order.buyerName || 'Order',
+          designId: order.designId || order.id
+        });
+      }
       continue;
     }
 
-    const name = (order.design?.name || '').toLowerCase();
-    const id = (order.designId || order.design?.id || '').toLowerCase();
-    if (name.includes(q) || id.includes(q)) {
+    const designFields = [
+      order.design?.name,
+      order.design?.designCode,
+      order.design?.fabric,
+      order.designId,
+      order.design?.id
+    ];
+    const designMatches = designFields
+      .filter(Boolean)
+      .some(value => String(value).toLowerCase().includes(q));
+    if (orderMatches || designMatches) {
       results.push({
         order,
         quantity: order.quantity,
-        designLabel: order.design?.name || order.designId || 'Design',
+        designLabel: designMatches
+          ? (order.design?.designCode || order.design?.name || order.designId || 'Design')
+          : (order.orderNumber ? `Order #${order.orderNumber}` : order.buyerName || 'Order'),
         designId: order.designId || order.design?.id
       });
     }

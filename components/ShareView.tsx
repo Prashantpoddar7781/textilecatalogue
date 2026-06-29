@@ -240,7 +240,7 @@ const DesignViewCard: React.FC<{
         </div>
         <div className={`flex items-center gap-1.5 text-sm font-semibold ${(design.stockQuantity ?? 0) <= 0 ? 'text-red-600' : 'text-gray-600'}`}>
           <Package className="w-4 h-4" />
-          {(design.stockQuantity ?? 0) <= 0 ? 'Out of stock' : `${design.stockQuantity} ${design.stockUnit || 'pcs'}`}
+          {`${design.stockQuantity ?? 0} ${design.stockUnit || 'pcs'}`}
         </div>
         {design.description && (
           <p className="text-xs text-gray-600 line-clamp-2">{design.description}</p>
@@ -255,7 +255,7 @@ const DesignViewCard: React.FC<{
           }`}
         >
           <ShoppingCart className="w-4 h-4" />
-          {(design.stockQuantity ?? 0) <= 0 ? 'Out of stock' : 'Add to Order'}
+          {(design.stockQuantity ?? 0) <= 0 ? 'Not Available' : 'Add to Order'}
         </button>
       </div>
     </div>

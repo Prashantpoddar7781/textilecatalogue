@@ -1030,7 +1030,6 @@ export const UploadForm: React.FC<Props> = ({
                 <label className="text-xs font-medium text-gray-500 mb-1 block">Quantity</label>
                 <input
                   type="number"
-                  min="0"
                   className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
                   placeholder="e.g. 120"
                   value={formData.stockQuantity}

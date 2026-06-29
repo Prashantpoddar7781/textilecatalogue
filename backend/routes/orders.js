@@ -64,7 +64,7 @@ async function decrementCompletedLineStock(tx, line) {
 
   const currentStock = design.stockQuantity ?? 0;
   const quantity = parseInt(line.quantity, 10);
-  const newStock = Math.max(currentStock - (Number.isFinite(quantity) ? quantity : 0), 0);
+  const newStock = currentStock - (Number.isFinite(quantity) ? quantity : 0);
   await tx.design.update({
     where: { id: line.designId },
     data: { stockQuantity: newStock }
@@ -634,7 +634,7 @@ router.put('/:id/status', authenticateToken, requireActiveSubscription, [
 
         if (design) {
           const currentStock = design.stockQuantity ?? 0;
-          const newStock = Math.max(currentStock - order.quantity, 0);
+          const newStock = currentStock - order.quantity;
           await tx.design.update({
             where: { id: order.designId },
             data: { stockQuantity: newStock }

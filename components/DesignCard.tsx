@@ -6,7 +6,6 @@ import { DesignBarcode } from './DesignBarcode';
 
 function formatInventory(design: TextileDesign): string {
   const qty = design.stockQuantity ?? 0;
-  if (qty <= 0) return 'Out of stock';
   const unit = design.stockUnit || 'pcs';
   return `${qty} ${unit}`;
 }
@@ -110,7 +109,7 @@ export const DesignCard: React.FC<Props> = ({
           </span>
           {(design.stockQuantity ?? 0) <= 0 && (
             <span className="bg-red-500/95 text-white text-[10px] font-bold px-2 py-0.5 rounded-lg uppercase">
-              Out of stock
+              {formatInventory(design)}
             </span>
           )}
         </div>
@@ -181,7 +180,7 @@ export const DesignCard: React.FC<Props> = ({
               onShareLink?.();
             }}
             className="flex flex-col items-center gap-1 py-2 rounded-xl bg-gray-50 hover:bg-green-50 text-gray-700 hover:text-green-700 transition-colors disabled:opacity-40 disabled:hover:bg-gray-50 disabled:cursor-not-allowed"
-            title={(design.stockQuantity ?? 0) <= 0 ? 'Out of stock' : 'Share link for this design only'}
+            title={(design.stockQuantity ?? 0) <= 0 ? 'Inventory is not available' : 'Share link for this design only'}
           >
             <Link2 className="w-4 h-4" />
             <span className="text-[9px] font-bold uppercase tracking-tight leading-tight text-center">Get link</span>

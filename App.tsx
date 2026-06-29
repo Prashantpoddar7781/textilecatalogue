@@ -68,6 +68,7 @@ const App: React.FC = () => {
     catalogue: 'All',
     minPrice: 0,
     maxPrice: 100000,
+    inventory: 'all',
     sortBy: 'newest'
   });
 
@@ -209,7 +210,8 @@ const App: React.FC = () => {
       const matchesFabric = filters.fabric === 'All' || d.fabric === filters.fabric;
       const matchesCatalogue = filters.catalogue === 'All' || d.catalogueId === filters.catalogue;
       const matchesPrice = d.retailPrice >= filters.minPrice && d.retailPrice <= filters.maxPrice;
-      return matchesSearch && matchesFabric && matchesCatalogue && matchesPrice;
+      const matchesInventory = filters.inventory === 'all' || (d.stockQuantity ?? 0) > 0;
+      return matchesSearch && matchesFabric && matchesCatalogue && matchesPrice && matchesInventory;
     });
 
     if (filters.sortBy === 'price-low') {
@@ -225,6 +227,7 @@ const App: React.FC = () => {
     const defaultMax = designs.length > 0 ? Math.max(...designs.map(d => d.retailPrice), 100000) : 100000;
     return filters.catalogue !== 'All'
       || filters.fabric !== 'All'
+      || filters.inventory !== 'all'
       || filters.minPrice > 0
       || filters.search.trim() !== ''
       || filters.maxPrice < defaultMax;
@@ -951,6 +954,15 @@ const App: React.FC = () => {
             <option value="newest">Latest Uploads</option>
             <option value="price-low">Price: Low to High</option>
             <option value="price-high">Price: High to Low</option>
+          </select>
+
+          <select
+            className="bg-white border-2 border-gray-100 px-4 py-2.5 rounded-2xl text-xs font-bold outline-none appearance-none pr-10 relative bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2024%2024%22%20stroke%3D%22%236b7280%22%3E%3Cpath%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%222%22%20d%3D%22m19%209-7%207-7-7%22%2F%3E%3C%2Fsvg%3E')] bg-[length:1rem_1rem] bg-[right_0.75rem_center] bg-no-repeat shadow-sm touch-manipulation"
+            value={filters.inventory}
+            onChange={e => setFilters(f => ({ ...f, inventory: e.target.value as CatalogueFilters['inventory'] }))}
+          >
+            <option value="all">All Designs</option>
+            <option value="available">Only Available Designs</option>
           </select>
         </div>
         

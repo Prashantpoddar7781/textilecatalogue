@@ -54,6 +54,7 @@ export interface TextileDesign {
   retailPrice: number; // For backward compatibility
   fabric: string;
   description: string;
+  firmName?: string;
   createdAt: number;
   /** Base64 images from AI modelling (model wearing the design) */
   aiModels?: string[];
@@ -74,6 +75,7 @@ export interface CatalogueFilters {
   catalogue: string;
   minPrice: number;
   maxPrice: number;
+  inventory: 'all' | 'available';
   sortBy: 'newest' | 'price-low' | 'price-high';
 }
 
