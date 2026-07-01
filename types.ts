@@ -176,6 +176,94 @@ export interface Order {
   shareLink?: ShareLink;
 }
 
+export interface BusinessProfile {
+  id: string;
+  userId: string;
+  legalName?: string | null;
+  tradeName?: string | null;
+  gstNumber?: string | null;
+  panNumber?: string | null;
+  addressLine1?: string | null;
+  addressLine2?: string | null;
+  city?: string | null;
+  state?: string | null;
+  pincode?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  bankName?: string | null;
+  bankAccount?: string | null;
+  bankIfsc?: string | null;
+  invoicePrefix: string;
+  defaultHsnCode?: string | null;
+  defaultGstRate: number;
+  terms?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SalesInvoiceLine {
+  sourceDesignId?: string | null;
+  description: string;
+  designName?: string | null;
+  designCode?: string | null;
+  fabric?: string | null;
+  image?: string | null;
+  hsnCode?: string | null;
+  quantity: number;
+  unit: string;
+  rate: number;
+  gstRate: number;
+  grossAmount: number;
+  discountAmount: number;
+  taxableAmount: number;
+  cgstRate: number;
+  sgstRate: number;
+  igstRate: number;
+  cgstAmount: number;
+  sgstAmount: number;
+  igstAmount: number;
+  taxAmount: number;
+  totalAmount: number;
+  remarks?: string | null;
+}
+
+export interface SalesInvoice {
+  id: string;
+  userId: string;
+  orderId: string;
+  customerId?: string | null;
+  invoiceNumber: string;
+  invoiceDate: string;
+  status: 'unpaid' | 'partial' | 'paid' | string;
+  sellerSnapshot: Partial<BusinessProfile>;
+  buyerSnapshot: {
+    name?: string | null;
+    gstNumber?: string | null;
+    contactPersonName?: string | null;
+    mobileNumber?: string | null;
+    state?: string | null;
+    city?: string | null;
+    pincode?: string | null;
+  };
+  lineItems: SalesInvoiceLine[];
+  placeOfSupply?: string | null;
+  taxableAmount: number;
+  discountAmount: number;
+  shippingCharge: number;
+  cgstAmount: number;
+  sgstAmount: number;
+  igstAmount: number;
+  totalTaxAmount: number;
+  grandTotal: number;
+  amountPaid: number;
+  amountDue: number;
+  notes?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  order?: Pick<Order, 'id' | 'orderNumber' | 'status' | 'createdAt'>;
+  customer?: Customer | null;
+}
+
 export interface SubscriptionStatus {
   status: string | null;
   plan: string | null;

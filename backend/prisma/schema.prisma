@@ -38,6 +38,8 @@ model User {
   orderDrafts OrderDraft[]
   otpCodes OtpCode[]
   subscriptionInvoices SubscriptionInvoice[]
+  businessProfile BusinessProfile?
+  salesInvoices SalesInvoice[]
 }
 
 model OtpCode {
@@ -136,6 +138,7 @@ model Customer {
   pincode           String?
   discountRate      Float?
   orders            Order[]
+  salesInvoices     SalesInvoice[]
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
@@ -224,6 +227,7 @@ model Order {
   expectedDate DateTime?
   haste String?
   station String?
+  salesInvoices SalesInvoice[]
   createdAt   DateTime @default(now())
 
   @@index([userId])
@@ -260,6 +264,71 @@ model ShareLinkDesign {
   @@index([shareLinkId])
   @@index([designId])
   @@unique([shareLinkId, designId])
+}
+
+model BusinessProfile {
+  id            String   @id @default(cuid())
+  userId        String   @unique
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  legalName     String?
+  tradeName     String?
+  gstNumber     String?
+  panNumber     String?
+  addressLine1  String?
+  addressLine2  String?
+  city          String?
+  state         String?
+  pincode       String?
+  phone         String?
+  email         String?
+  bankName      String?
+  bankAccount   String?
+  bankIfsc      String?
+  invoicePrefix String  @default("TX")
+  defaultHsnCode String?
+  defaultGstRate Float   @default(5)
+  terms         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([userId])
+}
+
+model SalesInvoice {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orderId         String
+  order           Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  customerId      String?
+  customer        Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  invoiceNumber   String
+  invoiceDate     DateTime @default(now())
+  status          String   @default("unpaid")
+  sellerSnapshot  Json
+  buyerSnapshot   Json
+  lineItems       Json
+  placeOfSupply   String?
+  taxableAmount   Float    @default(0)
+  discountAmount  Float    @default(0)
+  shippingCharge  Float    @default(0)
+  cgstAmount      Float    @default(0)
+  sgstAmount      Float    @default(0)
+  igstAmount      Float    @default(0)
+  totalTaxAmount  Float    @default(0)
+  grandTotal      Float    @default(0)
+  amountPaid      Float    @default(0)
+  amountDue       Float    @default(0)
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([userId, invoiceNumber])
+  @@unique([orderId])
+  @@index([userId])
+  @@index([customerId])
+  @@index([invoiceDate])
+  @@index([status])
 }
 
 model SubscriptionInvoice {

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, CheckCircle, Clock, Download, Edit3, MessageCircle, Plus, Package, RefreshCw, ScanLine, Search, ThumbsUp, X } from 'lucide-react';
+import { ArrowLeft, CheckCircle, Clock, Download, Edit3, FileText, MessageCircle, Plus, Package, RefreshCw, ScanLine, Search, ThumbsUp, X } from 'lucide-react';
 import { ordersApi } from '../services/api';
 import { findOrdersByDesignQuery } from '../services/orderDesignSearch';
 import { downloadOrderSummaryPdfBlob, orderToPdfInput, shareOrderSummaryPdf } from '../services/orderSummaryPdf';
@@ -7,6 +7,7 @@ import { notifyOrdersUpdated, subscribeToOrdersUpdated } from '../services/order
 import { Order } from '../types';
 import { BarcodeOrderBuilder } from './BarcodeOrderBuilder';
 import { EditOrderDialog } from './EditOrderDialog';
+import { GenerateInvoiceDialog } from './GenerateInvoiceDialog';
 import { ManualOrderDialog } from './ManualOrderDialog';
 
 /** How often the orders list polls for new orders from other staff/devices (ms). */
@@ -27,6 +28,7 @@ export const OrdersPage: React.FC<Props> = ({ onBack, firmName }) => {
   const [lastRefreshedAt, setLastRefreshedAt] = useState<Date | null>(null);
   const [designSearch, setDesignSearch] = useState('');
   const [editingOrder, setEditingOrder] = useState<Order | null>(null);
+  const [invoiceOrder, setInvoiceOrder] = useState<Order | null>(null);
   const loadingOrdersRef = useRef(false);
 
   const loadOrders = useCallback(async (options?: { background?: boolean }) => {
@@ -565,7 +567,7 @@ export const OrdersPage: React.FC<Props> = ({ onBack, firmName }) => {
                   </div>
                   <div className="mt-4 space-y-2">
                     {!isOpen && (
-                      <div className="grid grid-cols-3 gap-2">
+                      <div className="grid grid-cols-4 gap-2">
                         <button
                           type="button"
                           onClick={() => void downloadOrderSummaryPdfBlob(orderToPdfInput(order, firmName))}
@@ -589,6 +591,16 @@ export const OrdersPage: React.FC<Props> = ({ onBack, firmName }) => {
                         >
                           <Edit3 className="w-3.5 h-3.5" />
                           Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setInvoiceOrder(order)}
+                          disabled={order.status === 'waiting_approval'}
+                          className="rounded-lg border border-purple-200 bg-purple-50 py-2 text-[11px] font-bold text-purple-800 hover:bg-purple-100 disabled:cursor-not-allowed disabled:opacity-50 flex flex-col items-center justify-center gap-1"
+                          title={order.status === 'waiting_approval' ? 'Approve order before generating GST bill' : 'Generate GST invoice'}
+                        >
+                          <FileText className="w-3.5 h-3.5" />
+                          GST Bill
                         </button>
                       </div>
                     )}
@@ -667,6 +679,12 @@ export const OrdersPage: React.FC<Props> = ({ onBack, firmName }) => {
             setOrders(prev => prev.map(o => (o.id === updated.id ? { ...o, ...updated } : o)));
             setEditingOrder(null);
           }}
+        />
+      )}
+      {invoiceOrder && (
+        <GenerateInvoiceDialog
+          order={invoiceOrder}
+          onClose={() => setInvoiceOrder(null)}
         />
       )}
     </div>

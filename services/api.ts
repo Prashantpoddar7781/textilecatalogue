@@ -1,4 +1,4 @@
-import { Contact, Customer } from '../types';
+import { BusinessProfile, Contact, Customer, SalesInvoice } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://textilecatalogue-production.up.railway.app/api';
 
@@ -457,6 +457,37 @@ export const ordersApi = {
     return request<{ order: any }>('/orders/public', {
       method: 'POST',
       body: JSON.stringify(data),
+    });
+  },
+};
+
+// Sales Invoices API
+export const invoicesApi = {
+  getProfile: async () => {
+    return request<{ profile: BusinessProfile }>('/invoices/profile');
+  },
+  updateProfile: async (profile: Partial<BusinessProfile>) => {
+    return request<{ profile: BusinessProfile }>('/invoices/profile', {
+      method: 'PUT',
+      body: JSON.stringify(profile)
+    });
+  },
+  getAll: async () => {
+    return request<{ invoices: SalesInvoice[] }>('/invoices');
+  },
+  getById: async (id: string) => {
+    return request<{ invoice: SalesInvoice }>(`/invoices/${id}`);
+  },
+  createFromOrder: async (orderId: string, body?: {
+    invoiceDate?: string;
+    defaultHsnCode?: string;
+    defaultGstRate?: number;
+    placeOfSupply?: string;
+    notes?: string;
+  }) => {
+    return request<{ invoice: SalesInvoice; existing: boolean }>(`/invoices/from-order/${orderId}`, {
+      method: 'POST',
+      body: JSON.stringify(body || {})
     });
   },
 };
