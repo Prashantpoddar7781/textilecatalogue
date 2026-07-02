@@ -1,0 +1,394 @@
+import express from 'express';
+import { PrismaClient } from '@prisma/client';
+import { body, validationResult } from 'express-validator';
+import { authenticateToken } from '../middleware/auth.js';
+import { requireActiveSubscription } from '../middleware/subscription.js';
+
+const router = express.Router();
+const prisma = new PrismaClient();
+
+const GEMINI_MODEL = process.env.GEMINI_PURCHASE_MODEL || 'gemini-2.5-flash';
+
+const optionalString = (value) => {
+  if (value === undefined || value === null) return null;
+  const text = String(value).trim();
+  return text || null;
+};
+
+const optionalNumber = (value) => {
+  if (value === undefined || value === null || value === '') return 0;
+  const num = Number(value);
+  return Number.isFinite(num) ? num : 0;
+};
+
+const optionalDate = (value) => {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
+function parseDataUrl(dataUrl) {
+  const match = String(dataUrl || '').match(/^data:([^;]+);base64,(.+)$/);
+  if (match) return { mimeType: match[1], base64: match[2] };
+  return { mimeType: 'image/jpeg', base64: String(dataUrl || '').split(',')[1] || String(dataUrl || '') };
+}
+
+function stripJsonFence(text) {
+  return String(text || '')
+    .replace(/^```json\s*/i, '')
+    .replace(/^```\s*/i, '')
+    .replace(/```$/i, '')
+    .trim();
+}
+
+function emptyExtraction() {
+  return {
+    supplier: {
+      name: '',
+      gstNumber: '',
+      mobileNumber: '',
+      address: '',
+      city: '',
+      state: '',
+      pincode: ''
+    },
+    billNumber: '',
+    billDate: '',
+    voucherNumber: '',
+    lineItems: [],
+    taxableAmount: 0,
+    discountAmount: 0,
+    cgstAmount: 0,
+    sgstAmount: 0,
+    igstAmount: 0,
+    totalTaxAmount: 0,
+    grandTotal: 0,
+    extractedText: '',
+    confidence: 'low',
+    notes: ''
+  };
+}
+
+function normalizeExtraction(raw) {
+  const base = emptyExtraction();
+  const lineItems = Array.isArray(raw?.lineItems) ? raw.lineItems : [];
+  const normalizedLines = lineItems.map((line) => ({
+    description: optionalString(line.description) || 'Item',
+    hsnCode: optionalString(line.hsnCode),
+    quantity: optionalNumber(line.quantity),
+    cut: optionalNumber(line.cut),
+    pcs: optionalNumber(line.pcs),
+    unit: optionalString(line.unit) || 'pcs',
+    rate: optionalNumber(line.rate),
+    amount: optionalNumber(line.amount),
+    remarks: optionalString(line.remarks)
+  }));
+
+  const taxableAmount = optionalNumber(raw?.taxableAmount) || normalizedLines.reduce((sum, line) => sum + optionalNumber(line.amount), 0);
+  const cgstAmount = optionalNumber(raw?.cgstAmount);
+  const sgstAmount = optionalNumber(raw?.sgstAmount);
+  const igstAmount = optionalNumber(raw?.igstAmount);
+  const totalTaxAmount = optionalNumber(raw?.totalTaxAmount) || cgstAmount + sgstAmount + igstAmount;
+
+  return {
+    ...base,
+    supplier: {
+      name: optionalString(raw?.supplier?.name) || '',
+      gstNumber: optionalString(raw?.supplier?.gstNumber) || '',
+      mobileNumber: optionalString(raw?.supplier?.mobileNumber) || '',
+      address: optionalString(raw?.supplier?.address) || '',
+      city: optionalString(raw?.supplier?.city) || '',
+      state: optionalString(raw?.supplier?.state) || '',
+      pincode: optionalString(raw?.supplier?.pincode) || ''
+    },
+    billNumber: optionalString(raw?.billNumber) || '',
+    billDate: optionalString(raw?.billDate) || '',
+    voucherNumber: optionalString(raw?.voucherNumber) || '',
+    lineItems: normalizedLines,
+    taxableAmount,
+    discountAmount: optionalNumber(raw?.discountAmount),
+    cgstAmount,
+    sgstAmount,
+    igstAmount,
+    totalTaxAmount,
+    grandTotal: optionalNumber(raw?.grandTotal) || taxableAmount + totalTaxAmount,
+    extractedText: optionalString(raw?.extractedText) || '',
+    confidence: optionalString(raw?.confidence) || 'medium',
+    notes: optionalString(raw?.notes) || ''
+  };
+}
+
+async function extractWithGemini(imageDataUrl) {
+  const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || process.env.VITE_GEMINI_API_KEY;
+  if (!apiKey) {
+    const error = new Error('Gemini API key is not configured on backend. Set GEMINI_API_KEY to use bill extraction.');
+    error.status = 400;
+    throw error;
+  }
+
+  const { mimeType, base64 } = parseDataUrl(imageDataUrl);
+  const prompt = `Extract structured purchase bill data from this Indian textile invoice image.
+Return only valid JSON. Do not wrap in markdown.
+Schema:
+{
+  "supplier": {
+    "name": "supplier firm name",
+    "gstNumber": "GSTIN",
+    "mobileNumber": "mobile/phone if visible",
+    "address": "address if visible",
+    "city": "city",
+    "state": "state",
+    "pincode": "pincode"
+  },
+  "billNumber": "bill/invoice number",
+  "billDate": "YYYY-MM-DD if possible",
+  "voucherNumber": "voucher/accounting number if visible",
+  "lineItems": [
+    {
+      "description": "item/product/design",
+      "hsnCode": "HSN",
+      "quantity": number,
+      "cut": number,
+      "pcs": number,
+      "unit": "pcs/mtrs/cut",
+      "rate": number,
+      "amount": number,
+      "remarks": "extra visible line details"
+    }
+  ],
+  "taxableAmount": number,
+  "discountAmount": number,
+  "cgstAmount": number,
+  "sgstAmount": number,
+  "igstAmount": number,
+  "totalTaxAmount": number,
+  "grandTotal": number,
+  "extractedText": "important raw text",
+  "confidence": "high|medium|low",
+  "notes": "uncertainties"
+}
+Focus on supplier name, GST number, mobile, invoice/bill number, items, HSN, quantity, cut, pcs, rate, amount, and final total.`;
+
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{
+        parts: [
+          { inlineData: { mimeType, data: base64 } },
+          { text: prompt }
+        ]
+      }],
+      generationConfig: {
+        temperature: 0.1,
+        responseMimeType: 'application/json'
+      }
+    })
+  });
+
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    const error = new Error(payload?.error?.message || `Gemini extraction failed (${response.status})`);
+    error.status = 502;
+    throw error;
+  }
+
+  const payload = await response.json();
+  const text = payload?.candidates?.[0]?.content?.parts?.map(part => part.text || '').join('\n') || '';
+  if (!text.trim()) {
+    const error = new Error('No extraction text returned from Gemini');
+    error.status = 502;
+    throw error;
+  }
+
+  return normalizeExtraction(JSON.parse(stripJsonFence(text)));
+}
+
+async function findOrCreateSupplier(userId, supplierPayload) {
+  const gstNumber = optionalString(supplierPayload.gstNumber);
+  const name = optionalString(supplierPayload.name) || 'Unknown Supplier';
+
+  const existing = gstNumber
+    ? await prisma.supplier.findFirst({ where: { userId, gstNumber } })
+    : await prisma.supplier.findFirst({ where: { userId, name: { equals: name, mode: 'insensitive' } } });
+
+  const data = {
+    name,
+    gstNumber,
+    mobileNumber: optionalString(supplierPayload.mobileNumber),
+    address: optionalString(supplierPayload.address),
+    city: optionalString(supplierPayload.city),
+    state: optionalString(supplierPayload.state),
+    pincode: optionalString(supplierPayload.pincode)
+  };
+
+  if (existing) {
+    return prisma.supplier.update({
+      where: { id: existing.id },
+      data: {
+        ...data,
+        name: data.name || existing.name,
+        gstNumber: data.gstNumber || existing.gstNumber
+      }
+    });
+  }
+
+  return prisma.supplier.create({
+    data: {
+      userId,
+      ...data
+    }
+  });
+}
+
+router.post('/extract', authenticateToken, requireActiveSubscription, [
+  body('imageDataUrl').notEmpty()
+], async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const extraction = await extractWithGemini(req.body.imageDataUrl);
+    res.json({ extraction });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/bills', authenticateToken, requireActiveSubscription, [
+  body('extraction').isObject()
+], async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const userId = req.user.userId;
+    const extraction = normalizeExtraction(req.body.extraction);
+    const supplier = await findOrCreateSupplier(userId, extraction.supplier);
+    const bill = await prisma.purchaseBill.create({
+      data: {
+        userId,
+        supplierId: supplier.id,
+        billNumber: optionalString(extraction.billNumber),
+        billDate: optionalDate(extraction.billDate),
+        voucherNumber: optionalString(extraction.voucherNumber),
+        image: optionalString(req.body.imageDataUrl),
+        extractedText: optionalString(extraction.extractedText),
+        extractionJson: extraction,
+        lineItems: extraction.lineItems,
+        taxableAmount: extraction.taxableAmount,
+        discountAmount: extraction.discountAmount,
+        cgstAmount: extraction.cgstAmount,
+        sgstAmount: extraction.sgstAmount,
+        igstAmount: extraction.igstAmount,
+        totalTaxAmount: extraction.totalTaxAmount,
+        grandTotal: extraction.grandTotal,
+        status: 'posted'
+      },
+      include: { supplier: true }
+    });
+
+    res.status(201).json({ supplier, bill });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/suppliers', authenticateToken, requireActiveSubscription, async (req, res, next) => {
+  try {
+    const suppliers = await prisma.supplier.findMany({
+      where: { userId: req.user.userId },
+      include: {
+        purchaseBills: {
+          select: {
+            id: true,
+            grandTotal: true,
+            billDate: true,
+            createdAt: true
+          }
+        }
+      },
+      orderBy: { name: 'asc' }
+    });
+
+    res.json({
+      suppliers: suppliers.map(supplier => ({
+        ...supplier,
+        billCount: supplier.purchaseBills.length,
+        runningBalance: supplier.purchaseBills.reduce((sum, bill) => sum + bill.grandTotal, 0)
+      }))
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/suppliers/:id/ledger', authenticateToken, requireActiveSubscription, async (req, res, next) => {
+  try {
+    const supplier = await prisma.supplier.findFirst({
+      where: {
+        id: req.params.id,
+        userId: req.user.userId
+      },
+      include: {
+        purchaseBills: {
+          orderBy: [
+            { billDate: 'asc' },
+            { createdAt: 'asc' }
+          ]
+        }
+      }
+    });
+
+    if (!supplier) {
+      return res.status(404).json({ error: 'Supplier not found' });
+    }
+
+    let runningBalance = 0;
+    const ledger = supplier.purchaseBills.map((bill) => {
+      runningBalance += bill.grandTotal;
+      return {
+        id: bill.id,
+        date: bill.billDate || bill.createdAt,
+        billNumber: bill.billNumber,
+        voucherNumber: bill.voucherNumber,
+        account: 'FINISH PURCHASE',
+        creditAmount: bill.grandTotal,
+        debitAmount: 0,
+        runningBalance,
+        status: bill.status,
+        lineCount: Array.isArray(bill.lineItems) ? bill.lineItems.length : 0
+      };
+    });
+
+    res.json({ supplier, ledger, runningBalance });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/bills/:id', authenticateToken, requireActiveSubscription, async (req, res, next) => {
+  try {
+    const bill = await prisma.purchaseBill.findFirst({
+      where: {
+        id: req.params.id,
+        userId: req.user.userId
+      },
+      include: { supplier: true }
+    });
+
+    if (!bill) {
+      return res.status(404).json({ error: 'Purchase bill not found' });
+    }
+
+    res.json({ bill });
+  } catch (error) {
+    next(error);
+  }
+});
+
+export default router;

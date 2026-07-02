@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Plus, Search, Package, CheckCircle, SlidersHorizontal, LogOut, User, Crown, BarChart3, Menu, MessageCircle, Link2, LineChart, FileText } from 'lucide-react';
+import { Plus, Search, Package, CheckCircle, SlidersHorizontal, LogOut, User, Crown, BarChart3, Menu, MessageCircle, Link2, LineChart, FileText, ScanLine } from 'lucide-react';
 import { TextileDesign, CatalogueFilters, SubscriptionStatus } from './types';
 import { UploadForm } from './components/UploadForm';
 import { DesignCard } from './components/DesignCard';
@@ -13,6 +13,8 @@ import { ScanStationPage } from './components/ScanStationPage';
 import { ShareStatsPage } from './components/ShareStatsPage';
 import { ReportsPage } from './components/ReportsPage';
 import { InvoicesPage } from './components/InvoicesPage';
+import { ScanPurchaseBillPage } from './components/ScanPurchaseBillPage';
+import { SupplierLedgerPage } from './components/SupplierLedgerPage';
 import { LoginDialog } from './components/LoginDialog';
 import { PricingDialog } from './components/PricingDialog';
 import { BillingPage } from './components/BillingPage';
@@ -32,6 +34,8 @@ const App: React.FC = () => {
   const ordersScanMatch = pathname.match(/^\/orders\/scan\/?$/);
   const billingMatch = pathname.match(/^\/billing\/?$/);
   const invoicesMatch = pathname.match(/^\/invoices\/?$/);
+  const scanPurchaseMatch = pathname.match(/^\/purchases\/scan\/?$/);
+  const supplierLedgerMatch = pathname.match(/^\/suppliers\/ledger\/?$/);
   const shareStatsMatch = pathname.match(/^\/share-stats\/?$/);
   const reportsMatch = pathname.match(/^\/reports\/?$/);
   
@@ -586,6 +590,14 @@ const App: React.FC = () => {
     return <InvoicesPage onBack={() => { window.location.href = '/'; }} />;
   }
 
+  if (scanPurchaseMatch) {
+    return <ScanPurchaseBillPage onBack={() => { window.location.href = '/'; }} />;
+  }
+
+  if (supplierLedgerMatch) {
+    return <SupplierLedgerPage onBack={() => { window.location.href = '/'; }} />;
+  }
+
   if (shareStatsMatch) {
     return <ShareStatsPage onBack={() => { window.location.href = '/'; }} />;
   }
@@ -716,6 +728,20 @@ const App: React.FC = () => {
                 </button>
                 <button
                   type="button"
+                  onClick={() => { window.location.href = '/purchases/scan'; }}
+                  className="px-3 py-2 rounded-2xl text-xs font-bold border border-gray-200 bg-white text-gray-700 shadow-sm hover:bg-gray-50"
+                >
+                  Scan Bill
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { window.location.href = '/suppliers/ledger'; }}
+                  className="px-3 py-2 rounded-2xl text-xs font-bold border border-gray-200 bg-white text-gray-700 shadow-sm hover:bg-gray-50"
+                >
+                  Ledger
+                </button>
+                <button
+                  type="button"
                   onClick={() => { window.location.href = '/share-stats'; }}
                   className="px-3 py-2 rounded-2xl text-xs font-bold border border-gray-200 bg-white text-gray-700 shadow-sm hover:bg-gray-50"
                 >
@@ -805,6 +831,28 @@ const App: React.FC = () => {
                 >
                   <FileText className="w-5 h-5 text-indigo-600 shrink-0" />
                   GST invoices
+                </button>
+                <button
+                  type="button"
+                  className="touch-target flex w-full items-center gap-3 rounded-2xl border border-gray-100 bg-gray-50 px-4 text-left font-bold text-gray-900 active:bg-gray-100"
+                  onClick={() => {
+                    setMobileMenuOpen(false);
+                    window.location.href = '/purchases/scan';
+                  }}
+                >
+                  <ScanLine className="w-5 h-5 text-indigo-600 shrink-0" />
+                  Scan purchase bill
+                </button>
+                <button
+                  type="button"
+                  className="touch-target flex w-full items-center gap-3 rounded-2xl border border-gray-100 bg-gray-50 px-4 text-left font-bold text-gray-900 active:bg-gray-100"
+                  onClick={() => {
+                    setMobileMenuOpen(false);
+                    window.location.href = '/suppliers/ledger';
+                  }}
+                >
+                  <FileText className="w-5 h-5 text-indigo-600 shrink-0" />
+                  Supplier ledger
                 </button>
                 <button
                   type="button"

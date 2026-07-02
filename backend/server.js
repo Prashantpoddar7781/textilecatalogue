@@ -13,6 +13,7 @@ import shareLinkRoutes from './routes/shareLinks.js';
 import orderRoutes from './routes/orders.js';
 import billingRoutes from './routes/billing.js';
 import invoiceRoutes from './routes/invoices.js';
+import purchaseRoutes from './routes/purchases.js';
 
 dotenv.config();
 
@@ -162,7 +163,8 @@ try {
   app.use('/api/share-links', shareLinkRoutes);
   app.use('/api/orders', orderRoutes);
   app.use('/api/invoices', invoiceRoutes);
-  console.log('Routes configured: /api/auth, /api/billing, /api/designs, /api/users, /api/catalogues, /api/contacts, /api/customers, /api/share-links, /api/orders, /api/invoices');
+  app.use('/api/purchases', purchaseRoutes);
+  console.log('Routes configured: /api/auth, /api/billing, /api/designs, /api/users, /api/catalogues, /api/contacts, /api/customers, /api/share-links, /api/orders, /api/invoices, /api/purchases');
 } catch (error) {
   console.error('Error setting up routes:', error);
   // Server will still start, but routes may not work

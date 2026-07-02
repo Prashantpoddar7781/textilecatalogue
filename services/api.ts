@@ -1,4 +1,4 @@
-import { BusinessProfile, Contact, Customer, SalesInvoice } from '../types';
+import { BusinessProfile, Contact, Customer, PurchaseBill, PurchaseBillExtraction, SalesInvoice, Supplier, SupplierLedgerEntry } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://textilecatalogue-production.up.railway.app/api';
 
@@ -489,6 +489,31 @@ export const invoicesApi = {
       method: 'POST',
       body: JSON.stringify(body || {})
     });
+  },
+};
+
+// Purchase OCR / Supplier Ledger API
+export const purchasesApi = {
+  extractBill: async (imageDataUrl: string) => {
+    return request<{ extraction: PurchaseBillExtraction }>('/purchases/extract', {
+      method: 'POST',
+      body: JSON.stringify({ imageDataUrl })
+    });
+  },
+  saveBill: async (extraction: PurchaseBillExtraction, imageDataUrl?: string | null) => {
+    return request<{ supplier: Supplier; bill: PurchaseBill }>('/purchases/bills', {
+      method: 'POST',
+      body: JSON.stringify({ extraction, imageDataUrl })
+    });
+  },
+  getSuppliers: async () => {
+    return request<{ suppliers: Supplier[] }>('/purchases/suppliers');
+  },
+  getSupplierLedger: async (supplierId: string) => {
+    return request<{ supplier: Supplier; ledger: SupplierLedgerEntry[]; runningBalance: number }>(`/purchases/suppliers/${supplierId}/ledger`);
+  },
+  getBill: async (billId: string) => {
+    return request<{ bill: PurchaseBill }>(`/purchases/bills/${billId}`);
   },
 };
 

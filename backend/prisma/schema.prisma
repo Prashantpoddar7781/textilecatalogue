@@ -40,6 +40,8 @@ model User {
   subscriptionInvoices SubscriptionInvoice[]
   businessProfile BusinessProfile?
   salesInvoices SalesInvoice[]
+  suppliers Supplier[]
+  purchaseBills PurchaseBill[]
 }
 
 model OtpCode {
@@ -329,6 +331,56 @@ model SalesInvoice {
   @@index([customerId])
   @@index([invoiceDate])
   @@index([status])
+}
+
+model Supplier {
+  id               String   @id @default(cuid())
+  userId           String
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name             String
+  gstNumber        String?
+  mobileNumber     String?
+  address          String?
+  city             String?
+  state            String?
+  pincode          String?
+  purchaseBills    PurchaseBill[]
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([userId])
+  @@index([name])
+  @@index([gstNumber])
+}
+
+model PurchaseBill {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  supplierId      String
+  supplier        Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  billNumber      String?
+  billDate        DateTime?
+  voucherNumber   String?
+  image           String?
+  extractedText   String?
+  extractionJson  Json?
+  lineItems       Json
+  taxableAmount   Float    @default(0)
+  discountAmount  Float    @default(0)
+  cgstAmount      Float    @default(0)
+  sgstAmount      Float    @default(0)
+  igstAmount      Float    @default(0)
+  totalTaxAmount  Float    @default(0)
+  grandTotal      Float    @default(0)
+  status          String   @default("posted")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([userId])
+  @@index([supplierId])
+  @@index([billDate])
+  @@index([createdAt])
 }
 
 model SubscriptionInvoice {

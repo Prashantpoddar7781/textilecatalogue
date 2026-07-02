@@ -264,6 +264,97 @@ export interface SalesInvoice {
   customer?: Customer | null;
 }
 
+export interface PurchaseBillLine {
+  description: string;
+  hsnCode?: string | null;
+  quantity: number;
+  cut?: number | null;
+  pcs?: number | null;
+  unit?: string | null;
+  rate?: number | null;
+  amount: number;
+  remarks?: string | null;
+}
+
+export interface Supplier {
+  id: string;
+  userId: string;
+  name: string;
+  gstNumber?: string | null;
+  mobileNumber?: string | null;
+  address?: string | null;
+  city?: string | null;
+  state?: string | null;
+  pincode?: string | null;
+  billCount?: number;
+  runningBalance?: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PurchaseBill {
+  id: string;
+  userId: string;
+  supplierId: string;
+  supplier?: Supplier;
+  billNumber?: string | null;
+  billDate?: string | null;
+  voucherNumber?: string | null;
+  image?: string | null;
+  extractedText?: string | null;
+  extractionJson?: any;
+  lineItems: PurchaseBillLine[];
+  taxableAmount: number;
+  discountAmount: number;
+  cgstAmount: number;
+  sgstAmount: number;
+  igstAmount: number;
+  totalTaxAmount: number;
+  grandTotal: number;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PurchaseBillExtraction {
+  supplier: {
+    name: string;
+    gstNumber?: string | null;
+    mobileNumber?: string | null;
+    address?: string | null;
+    city?: string | null;
+    state?: string | null;
+    pincode?: string | null;
+  };
+  billNumber?: string | null;
+  billDate?: string | null;
+  voucherNumber?: string | null;
+  lineItems: PurchaseBillLine[];
+  taxableAmount: number;
+  discountAmount: number;
+  cgstAmount: number;
+  sgstAmount: number;
+  igstAmount: number;
+  totalTaxAmount: number;
+  grandTotal: number;
+  extractedText?: string | null;
+  confidence?: string | null;
+  notes?: string | null;
+}
+
+export interface SupplierLedgerEntry {
+  id: string;
+  date: string;
+  billNumber?: string | null;
+  voucherNumber?: string | null;
+  account: string;
+  creditAmount: number;
+  debitAmount: number;
+  runningBalance: number;
+  status: string;
+  lineCount: number;
+}
+
 export interface SubscriptionStatus {
   status: string | null;
   plan: string | null;
