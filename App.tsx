@@ -16,6 +16,8 @@ import { InvoicesPage } from './components/InvoicesPage';
 import { ScanPurchaseBillPage } from './components/ScanPurchaseBillPage';
 import { SupplierLedgerPage } from './components/SupplierLedgerPage';
 import { ErpHomePage } from './components/ErpHomePage';
+import { ErpSalesPage } from './components/ErpSalesPage';
+import { ErpPurchasePage } from './components/ErpPurchasePage';
 import { BankEntriesPage } from './components/BankEntriesPage';
 import { LoginDialog } from './components/LoginDialog';
 import { PricingDialog } from './components/PricingDialog';
@@ -40,6 +42,8 @@ const App: React.FC = () => {
   const supplierLedgerMatch = pathname.match(/^\/suppliers\/ledger\/?$/);
   const erpMatch = pathname.match(/^\/erp\/?$/);
   const erpBankMatch = pathname.match(/^\/erp\/bank\/?$/);
+  const erpSalesMatch = pathname.match(/^\/erp\/sales\/?$/);
+  const erpPurchaseMatch = pathname.match(/^\/erp\/purchase\/?$/);
   const shareStatsMatch = pathname.match(/^\/share-stats\/?$/);
   const reportsMatch = pathname.match(/^\/reports\/?$/);
   
@@ -604,6 +608,14 @@ const App: React.FC = () => {
 
   if (erpMatch) {
     return <ErpHomePage user={user} onBack={() => { window.location.href = '/'; }} />;
+  }
+
+  if (erpSalesMatch) {
+    return <ErpSalesPage onBack={() => { window.location.href = '/erp'; }} />;
+  }
+
+  if (erpPurchaseMatch) {
+    return <ErpPurchasePage onBack={() => { window.location.href = '/erp'; }} />;
   }
 
   if (erpBankMatch) {

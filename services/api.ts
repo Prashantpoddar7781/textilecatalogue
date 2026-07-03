@@ -1,4 +1,4 @@
-import { BankEntry, BankPendingBill, BusinessProfile, CompletedOrderParty, Contact, Customer, PurchaseBill, PurchaseBillExtraction, PurchaseBillParty, SalesInvoice, Supplier, SupplierLedgerEntry } from '../types';
+import { BankEntry, BankPendingBill, BusinessProfile, CompletedOrderParty, Contact, Customer, Order, PurchaseBill, PurchaseBillExtraction, PurchaseBillParty, SalesInvoice, Supplier, SupplierLedgerEntry } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://textilecatalogue-production.up.railway.app/api';
 
@@ -519,6 +519,30 @@ export const purchasesApi = {
   getBill: async (billId: string) => {
     return request<{ bill: PurchaseBill }>(`/purchases/bills/${billId}`);
   },
+};
+
+// ERP Sales / Purchase entries
+export const erpApi = {
+  createSalesEntry: async (body: {
+    transactionType?: string;
+    customerId?: string;
+    buyerName?: string;
+    orderDate?: string;
+    orderNumber?: string;
+    agentName?: string;
+    transportName?: string;
+    state?: string;
+    remarks?: string;
+    taxableAmount?: number;
+    totalTaxAmount?: number;
+    grandTotal: number;
+    lineItems?: Array<{ description?: string; quantity?: number; rate?: number; amount?: number }>;
+  }) => {
+    return request<{ order: Order }>('/orders/erp-sales', {
+      method: 'POST',
+      body: JSON.stringify(body)
+    });
+  }
 };
 
 // Bank Payment / Receipts API

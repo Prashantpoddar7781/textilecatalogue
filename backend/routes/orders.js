@@ -447,6 +447,94 @@ router.post('/manual', authenticateToken, requireActiveSubscription, [
   }
 });
 
+router.post('/erp-sales', authenticateToken, requireActiveSubscription, [
+  body('transactionType').optional().trim(),
+  body('grandTotal').isFloat({ min: 0.01 }),
+  body('taxableAmount').optional().isFloat({ min: 0 }),
+  body('totalTaxAmount').optional().isFloat({ min: 0 }),
+  body('orderDate').optional(),
+  body('orderNumber').optional().trim(),
+  body('agentName').optional().trim(),
+  body('transportName').optional().trim(),
+  body('state').optional().trim(),
+  body('remarks').optional().trim(),
+  body('buyerName').optional().trim(),
+  body('lineItems').optional().isArray()
+], async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const userId = req.user.userId;
+    const customerRef = await resolveManualCustomer(userId, req.body);
+    const transactionType = normalizeTransactionType(req.body.transactionType, DEFAULT_SALES_TRANSACTION_TYPE);
+    const grandTotal = Number(req.body.grandTotal);
+    const taxableAmount = Number(req.body.taxableAmount ?? grandTotal);
+    const totalTaxAmount = Number(req.body.totalTaxAmount ?? 0);
+    const lineItemsInput = Array.isArray(req.body.lineItems) ? req.body.lineItems : [];
+    const completedAt = new Date().toISOString();
+
+    const orderLines = lineItemsInput.length > 0
+      ? lineItemsInput.map((line) => {
+        const qty = parseInt(line.quantity, 10) || 1;
+        const amount = Number(line.amount) || Number(line.rate) * qty || 0;
+        return {
+          designName: optionalString(line.description) || 'Sales item',
+          description: optionalString(line.description) || 'Sales item',
+          quantity: qty,
+          retailPrice: amount / qty,
+          basePrice: amount / qty,
+          completed: true,
+          completedAt
+        };
+      })
+      : [{
+        designName: 'Sales entry',
+        description: 'Sales entry',
+        quantity: 1,
+        retailPrice: taxableAmount,
+        basePrice: taxableAmount,
+        completed: true,
+        completedAt
+      }];
+
+    const totalQuantity = orderLines.reduce((sum, line) => sum + (parseInt(line.quantity, 10) || 0), 0);
+
+    const order = await prisma.$transaction(async (tx) => {
+      const billing = await allocateOrderNumbers(tx, userId, transactionType);
+      return tx.order.create({
+        data: {
+          userId,
+          shareLinkId: null,
+          designId: null,
+          customerId: customerRef.customerId,
+          buyerName: customerRef.buyerName,
+          buyerPhone: customerRef.buyerPhone,
+          quantity: totalQuantity || 1,
+          orderLines,
+          remarks: optionalString(req.body.remarks),
+          manualType: 'erp_sales',
+          orderNumber: optionalString(req.body.orderNumber),
+          agentName: optionalString(req.body.agentName),
+          transportName: optionalString(req.body.transportName),
+          orderDate: optionalDate(req.body.orderDate) || new Date(),
+          discountRate: 0,
+          shippingCharge: totalTaxAmount,
+          status: 'completed',
+          ...billing
+        },
+        include: orderInclude
+      });
+    });
+
+    res.status(201).json({ order });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Auth: get orders for current user
 router.get('/next-invoice-number', authenticateToken, requireActiveSubscription, async (req, res, next) => {
   try {

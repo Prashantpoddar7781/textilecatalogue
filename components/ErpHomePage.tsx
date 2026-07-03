@@ -9,16 +9,16 @@ interface Props {
 const sections = [
   {
     title: 'Sales',
-    description: 'Sales invoices, order billing, customer outstanding.',
+    description: 'Sales entries with type heads, customer billing, and outstanding.',
     icon: ReceiptText,
-    href: '/invoices',
-    status: 'Started'
+    href: '/erp/sales',
+    status: 'Demo ready'
   },
   {
     title: 'Purchase',
-    description: 'Scan purchase bills, supplier entries, supplier ledger.',
+    description: 'Purchase entries with type heads, supplier bills, and ledger.',
     icon: FileText,
-    href: '/purchases/scan',
+    href: '/erp/purchase',
     status: 'Demo ready'
   },
   {

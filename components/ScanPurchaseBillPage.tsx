@@ -6,6 +6,8 @@ import { DEFAULT_PURCHASE_TRANSACTION_TYPE, ERP_TRANSACTION_TYPES } from '../con
 
 interface Props {
   onBack: () => void;
+  moduleTitle?: string;
+  erpMode?: boolean;
 }
 
 const emptyExtraction = (): PurchaseBillExtraction => ({
@@ -43,7 +45,7 @@ const fileToDataUrl = (file: File): Promise<string> =>
 
 const toNumber = (value: string) => Number(value || 0) || 0;
 
-export const ScanPurchaseBillPage: React.FC<Props> = ({ onBack }) => {
+export const ScanPurchaseBillPage: React.FC<Props> = ({ onBack, moduleTitle = 'Scan Purchase Bill', erpMode = false }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const [imageDataUrl, setImageDataUrl] = useState<string | null>(null);
@@ -143,14 +145,14 @@ export const ScanPurchaseBillPage: React.FC<Props> = ({ onBack }) => {
   };
 
   return (
-    <div className="min-h-screen bg-[#FDFDFF]">
+    <div className="min-h-screen bg-[#F6F7FB]">
       <header className="sticky top-0 z-30 border-b bg-white/95 px-4 py-3 shadow-sm backdrop-blur-xl">
         <div className="mx-auto flex max-w-7xl items-center justify-between">
-          <button onClick={onBack} className="flex items-center gap-2 text-sm font-bold text-gray-600">
+          <button onClick={onBack} className="flex items-center gap-2 text-sm font-bold text-gray-600 hover:text-gray-900">
             <ArrowLeft className="h-4 w-4" />
-            Back
+            {erpMode ? 'ERP' : 'Back'}
           </button>
-          <h1 className="text-lg font-black text-gray-900">Scan Purchase Bill</h1>
+          <h1 className="text-lg font-black text-gray-900">{moduleTitle}</h1>
           <div className="w-12" />
         </div>
       </header>
@@ -208,7 +210,8 @@ export const ScanPurchaseBillPage: React.FC<Props> = ({ onBack }) => {
                 </div>
 
                 <div>
-                  <h2 className="text-sm font-black uppercase tracking-wide text-gray-900">Entry Type</h2>
+                  <h2 className="text-lg font-black text-fuchsia-700">{erpMode ? 'Finish Purchase' : 'Entry Type'}</h2>
+                  {erpMode && <p className="mt-1 text-xs text-gray-500">Select type head and supplier details like Empire ERP.</p>}
                   <div className="mt-3 grid gap-3 sm:grid-cols-2">
                     <div>
                       <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-gray-500">Type</label>
