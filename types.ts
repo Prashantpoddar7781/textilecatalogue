@@ -355,12 +355,28 @@ export interface SupplierLedgerEntry {
   lineCount: number;
 }
 
+export interface BankBillAllocation {
+  billId: string;
+  billType: 'sales_invoice' | 'purchase_bill' | string;
+  billNumber: string;
+  voucherNumber?: string | null;
+  billDate?: string | null;
+  days: number;
+  grace?: number;
+  adatDisc?: number;
+  billAmount: number;
+  pendingAmount: number;
+  taxableAmount?: number;
+  adjustAmount: number;
+}
+
 export interface BankEntry {
   id: string;
   userId: string;
   entryType: 'payment' | 'receipt';
   entryDate: string;
   voucherNumber?: string | null;
+  companyName?: string | null;
   bankName?: string | null;
   accountName?: string | null;
   partyType?: 'customer' | 'supplier' | 'other' | string | null;
@@ -370,9 +386,34 @@ export interface BankEntry {
   amount: number;
   paymentMode?: string | null;
   referenceNumber?: string | null;
+  chequeNumber?: string | null;
+  chequeDate?: string | null;
+  slipNumber?: string | null;
+  billNumber?: string | null;
+  billAllocations?: BankBillAllocation[] | null;
+  grossAmount?: number;
+  adjustPending?: number;
+  netBillAmount?: number;
+  adjustAdd?: number;
+  taxableValuePaidBills?: number;
   remarks?: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface BankPendingBill {
+  billId: string;
+  billType: 'sales_invoice' | 'purchase_bill' | string;
+  billNumber: string;
+  voucherNumber?: string | null;
+  billDate?: string | null;
+  days: number;
+  grace?: number;
+  adatDisc?: number;
+  billAmount: number;
+  pendingAmount: number;
+  taxableAmount?: number;
+  adjustAmount: number;
 }
 
 export interface SubscriptionStatus {

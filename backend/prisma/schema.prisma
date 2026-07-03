@@ -391,6 +391,7 @@ model BankEntry {
   entryType       String   // payment | receipt
   entryDate       DateTime @default(now())
   voucherNumber   String?
+  companyName     String?
   bankName        String?
   accountName     String?
   partyType       String?  // customer | supplier | other
@@ -400,6 +401,16 @@ model BankEntry {
   amount          Float
   paymentMode     String?
   referenceNumber String?
+  chequeNumber    String?
+  chequeDate      DateTime?
+  slipNumber      String?
+  billNumber      String?
+  billAllocations Json?
+  grossAmount     Float    @default(0)
+  adjustPending   Float    @default(0)
+  netBillAmount   Float    @default(0)
+  adjustAdd       Float    @default(0)
+  taxableValuePaidBills Float @default(0)
   remarks         String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt

@@ -1,4 +1,4 @@
-import { BankEntry, BusinessProfile, Contact, Customer, PurchaseBill, PurchaseBillExtraction, SalesInvoice, Supplier, SupplierLedgerEntry } from '../types';
+import { BankEntry, BankPendingBill, BusinessProfile, Contact, Customer, PurchaseBill, PurchaseBillExtraction, SalesInvoice, Supplier, SupplierLedgerEntry } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://textilecatalogue-production.up.railway.app/api';
 
@@ -519,6 +519,26 @@ export const purchasesApi = {
 
 // Bank Payment / Receipts API
 export const bankEntriesApi = {
+  getNextVoucher: async () => {
+    return request<{ voucherNumber: string; companyName: string }>('/bank-entries/next-voucher');
+  },
+  getBalances: async (params: { bankName?: string; partyName?: string; partyType?: 'customer' | 'supplier' | 'other' }) => {
+    const queryParams = new URLSearchParams();
+    if (params.bankName) queryParams.set('bankName', params.bankName);
+    if (params.partyName) queryParams.set('partyName', params.partyName);
+    if (params.partyType) queryParams.set('partyType', params.partyType);
+    const query = queryParams.toString();
+    return request<{ bankBalance: number; partyBalance: number }>(`/bank-entries/balances${query ? `?${query}` : ''}`);
+  },
+  getPendingBills: async (params: { partyName: string; partyType?: 'customer' | 'supplier' | 'other' }) => {
+    const queryParams = new URLSearchParams();
+    queryParams.set('partyName', params.partyName);
+    if (params.partyType) queryParams.set('partyType', params.partyType);
+    return request<{ bills: BankPendingBill[] }>(`/bank-entries/pending-bills?${queryParams.toString()}`);
+  },
+  getBankAccounts: async () => {
+    return request<{ accounts: Array<{ name: string; balance: number }> }>('/bank-entries/bank-accounts');
+  },
   getAll: async (params?: { search?: string; entryType?: 'all' | 'payment' | 'receipt' }) => {
     const queryParams = new URLSearchParams();
     if (params?.search) queryParams.set('search', params.search);
