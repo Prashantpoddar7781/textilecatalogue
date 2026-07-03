@@ -408,6 +408,12 @@ export interface CompletedOrderParty {
   pendingAmount: number;
 }
 
+export interface PurchaseBillParty {
+  name: string;
+  billCount: number;
+  pendingAmount: number;
+}
+
 export interface BankPendingBill {
   billId: string;
   billType: 'order' | 'sales_invoice' | 'purchase_bill' | string;

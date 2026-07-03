@@ -66,24 +66,55 @@ export function normalizeBillAllocations(value) {
   return value.filter(item => item && item.billId);
 }
 
-export async function getPaidAmountsByOrderId(prismaClient, userId) {
+export async function getPaidAmountsByBillType(prismaClient, userId, billType) {
+  const entryType = billType === 'purchase_bill' ? 'payment' : 'receipt';
   const entries = await prismaClient.bankEntry.findMany({
-    where: {
-      userId,
-      entryType: 'receipt'
-    },
+    where: { userId, entryType },
     select: { billAllocations: true }
   });
 
-  const paidByOrderId = new Map();
+  const paidByBillId = new Map();
   for (const entry of entries) {
     for (const allocation of normalizeBillAllocations(entry.billAllocations)) {
-      if (allocation.billType !== 'order') continue;
-      const current = paidByOrderId.get(allocation.billId) || 0;
-      paidByOrderId.set(allocation.billId, current + roundMoney(allocation.adjustAmount));
+      if (allocation.billType !== billType) continue;
+      const current = paidByBillId.get(allocation.billId) || 0;
+      paidByBillId.set(allocation.billId, current + roundMoney(allocation.adjustAmount));
     }
   }
-  return paidByOrderId;
+  return paidByBillId;
+}
+
+export async function getPaidAmountsByOrderId(prismaClient, userId) {
+  return getPaidAmountsByBillType(prismaClient, userId, 'order');
+}
+
+export function matchesSupplierName(supplierName, partyName) {
+  if (!partyName || !supplierName) return false;
+  const target = partyName.trim().toLowerCase();
+  const source = String(supplierName).trim().toLowerCase();
+  return source === target || source.includes(target) || target.includes(source);
+}
+
+export function mapPurchaseBillToPendingBill(bill, paidByBillId) {
+  const billAmount = roundMoney(bill.grandTotal);
+  const paidAmount = paidByBillId.get(bill.id) || 0;
+  const pendingAmount = roundMoney(Math.max(billAmount - paidAmount, 0));
+  const billDate = bill.billDate || bill.createdAt;
+
+  return {
+    billId: bill.id,
+    billType: 'purchase_bill',
+    billNumber: bill.billNumber || bill.voucherNumber || bill.id.slice(-6).toUpperCase(),
+    voucherNumber: bill.voucherNumber || bill.billNumber || '-',
+    billDate,
+    days: daysSince(billDate),
+    grace: 0,
+    adatDisc: roundMoney(bill.discountAmount),
+    billAmount,
+    pendingAmount,
+    taxableAmount: roundMoney(bill.taxableAmount),
+    adjustAmount: 0
+  };
 }
 
 export function mapOrderToPendingBill(order, paidByOrderId) {
