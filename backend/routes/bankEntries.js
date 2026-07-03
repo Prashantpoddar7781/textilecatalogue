@@ -3,13 +3,22 @@ import { PrismaClient } from '@prisma/client';
 import { body, validationResult } from 'express-validator';
 import { authenticateToken } from '../middleware/auth.js';
 import { requireActiveSubscription } from '../middleware/subscription.js';
+import {
+  OPENING_BANK_BALANCE,
+  daysSince,
+  getOrderPartyName,
+  getPaidAmountsByOrderId,
+  mapOrderToPendingBill,
+  matchesPartyName,
+  roundMoney
+} from '../utils/orderBilling.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
 
 const ENTRY_TYPES = ['payment', 'receipt'];
 const PARTY_TYPES = ['customer', 'supplier', 'other'];
-const LINKED_TYPES = ['sales_invoice', 'purchase_bill', 'none'];
+const LINKED_TYPES = ['sales_invoice', 'purchase_bill', 'order', 'none'];
 
 const optionalString = (value) => {
   if (value === undefined || value === null) return null;
@@ -27,16 +36,6 @@ const optionalEntryDate = (value) => {
   if (!value) return new Date();
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? new Date() : date;
-};
-
-const roundMoney = (value) => Math.round((Number(value) || 0) * 100) / 100;
-
-const daysSince = (dateValue) => {
-  if (!dateValue) return 0;
-  const date = new Date(dateValue);
-  if (Number.isNaN(date.getTime())) return 0;
-  const diff = Date.now() - date.getTime();
-  return Math.max(0, Math.floor(diff / (1000 * 60 * 60 * 24)));
 };
 
 function normalizePayload(body) {
@@ -78,62 +77,73 @@ async function getCompanyName(userId) {
   return profile?.tradeName || profile?.legalName || user?.firmName || user?.name || 'Company';
 }
 
+const roundMoneyLocal = roundMoney;
+
 async function getBankBalance(userId, bankName) {
-  if (!bankName) return 0;
+  const where = { userId };
+  if (bankName) {
+    where.bankName = { equals: bankName, mode: 'insensitive' };
+  }
   const entries = await prisma.bankEntry.findMany({
-    where: {
-      userId,
-      bankName: { equals: bankName, mode: 'insensitive' }
-    },
+    where,
     select: { entryType: true, amount: true }
   });
-  return entries.reduce((balance, entry) => {
+  const movement = entries.reduce((balance, entry) => {
     if (entry.entryType === 'receipt') return balance + entry.amount;
     if (entry.entryType === 'payment') return balance - entry.amount;
     return balance;
   }, 0);
+  return roundMoneyLocal(OPENING_BANK_BALANCE + movement);
 }
 
-async function getPendingSalesBills(userId, partyName) {
-  const invoices = await prisma.salesInvoice.findMany({
-    where: {
-      userId,
-      amountDue: { gt: 0 }
-    },
-    include: {
-      customer: true,
-      order: { select: { orderNumber: true } }
-    },
-    orderBy: [{ invoiceDate: 'asc' }, { createdAt: 'asc' }]
+async function getCompletedOrders(userId) {
+  return prisma.order.findMany({
+    where: { userId, status: 'completed' },
+    include: { customer: true },
+    orderBy: [{ invoiceNumber: 'asc' }, { createdAt: 'asc' }]
   });
+}
 
-  const normalizedParty = partyName.trim().toLowerCase();
-  return invoices
-    .filter(invoice => {
-      const customerName = invoice.customer?.organizationName?.toLowerCase() || '';
-      const buyerSnapshot = invoice.buyerSnapshot && typeof invoice.buyerSnapshot === 'object'
-        ? invoice.buyerSnapshot
-        : {};
-      const buyerName = String(buyerSnapshot.name || '').toLowerCase();
-      return customerName.includes(normalizedParty)
-        || buyerName.includes(normalizedParty)
-        || normalizedParty.includes(customerName)
-        || normalizedParty.includes(buyerName);
-    })
-    .map(invoice => ({
-      billId: invoice.id,
-      billType: 'sales_invoice',
-      billNumber: invoice.invoiceNumber,
-      voucherNumber: invoice.order?.orderNumber || invoice.invoiceNumber,
-      billDate: invoice.invoiceDate,
-      days: daysSince(invoice.invoiceDate),
-      grace: 0,
-      adatDisc: roundMoney(invoice.discountAmount),
-      billAmount: roundMoney(invoice.grandTotal),
-      pendingAmount: roundMoney(invoice.amountDue),
-      taxableAmount: roundMoney(invoice.taxableAmount),
-      adjustAmount: 0
-    }));
+async function getCompletedOrderParties(userId) {
+  const orders = await getCompletedOrders(userId);
+  const partyMap = new Map();
+
+  for (const order of orders) {
+    const name = getOrderPartyName(order);
+    if (!name) continue;
+    const current = partyMap.get(name.toLowerCase()) || {
+      name,
+      orderCount: 0,
+      pendingAmount: 0
+    };
+    current.orderCount += 1;
+    partyMap.set(name.toLowerCase(), current);
+  }
+
+  const paidByOrderId = await getPaidAmountsByOrderId(prisma, userId);
+  for (const order of orders) {
+    const name = getOrderPartyName(order);
+    if (!name) continue;
+    const bill = mapOrderToPendingBill(order, paidByOrderId);
+    const current = partyMap.get(name.toLowerCase());
+    if (current) current.pendingAmount = roundMoneyLocal(current.pendingAmount + bill.pendingAmount);
+  }
+
+  return Array.from(partyMap.values())
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+async function getPendingOrderBills(userId, partyName) {
+  const [orders, paidByOrderId] = await Promise.all([
+    getCompletedOrders(userId),
+    getPaidAmountsByOrderId(prisma, userId)
+  ]);
+
+  return orders
+    .filter(order => matchesPartyName(order, partyName))
+    .map(order => mapOrderToPendingBill(order, paidByOrderId))
+    .filter(bill => bill.pendingAmount > 0)
+    .sort((a, b) => Number(a.billNumber) - Number(b.billNumber));
 }
 
 async function getPendingPurchaseBills(userId, partyName) {
@@ -180,12 +190,21 @@ async function getPartyBalance(userId, partyName, partyType) {
       select: { amount: true }
     });
     const paid = payments.reduce((sum, entry) => sum + entry.amount, 0);
-    return roundMoney(billTotal - paid);
+    return roundMoneyLocal(billTotal - paid);
   }
 
-  const bills = await getPendingSalesBills(userId, partyName);
-  return roundMoney(bills.reduce((sum, bill) => sum + bill.pendingAmount, 0));
+  const bills = await getPendingOrderBills(userId, partyName);
+  return roundMoneyLocal(bills.reduce((sum, bill) => sum + bill.pendingAmount, 0));
 }
+
+router.get('/completed-order-parties', authenticateToken, requireActiveSubscription, async (req, res, next) => {
+  try {
+    const parties = await getCompletedOrderParties(req.user.userId);
+    res.json({ parties });
+  } catch (error) {
+    next(error);
+  }
+});
 
 router.get('/next-voucher', authenticateToken, requireActiveSubscription, async (req, res, next) => {
   try {
@@ -237,7 +256,7 @@ router.get('/pending-bills', authenticateToken, requireActiveSubscription, async
 
     const bills = partyType === 'supplier'
       ? await getPendingPurchaseBills(userId, partyName)
-      : await getPendingSalesBills(userId, partyName);
+      : await getPendingOrderBills(userId, partyName);
 
     res.json({ bills });
   } catch (error) {
@@ -254,21 +273,22 @@ router.get('/bank-accounts', authenticateToken, requireActiveSubscription, async
     });
     const profile = await prisma.businessProfile.findUnique({ where: { userId } });
     const map = new Map();
+    map.set('Default Bank', OPENING_BANK_BALANCE);
 
     if (profile?.bankName) {
-      map.set(profile.bankName, 0);
+      map.set(profile.bankName, OPENING_BANK_BALANCE);
     }
 
     for (const entry of entries) {
       if (!entry.bankName) continue;
-      const current = map.get(entry.bankName) || 0;
+      const current = map.get(entry.bankName) ?? OPENING_BANK_BALANCE;
       const next = entry.entryType === 'receipt' ? current + entry.amount : current - entry.amount;
       map.set(entry.bankName, next);
     }
 
     const accounts = Array.from(map.entries()).map(([name, balance]) => ({
       name,
-      balance: roundMoney(balance)
+      balance: roundMoneyLocal(balance)
     }));
 
     res.json({ accounts });

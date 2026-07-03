@@ -4,6 +4,7 @@ import { PrismaClient } from '@prisma/client';
 import { body, validationResult } from 'express-validator';
 import { authenticateToken } from '../middleware/auth.js';
 import { requireActiveSubscription } from '../middleware/subscription.js';
+import { allocateNextInvoiceNumber } from '../utils/orderBilling.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -265,19 +266,23 @@ router.post('/public', [
       return res.status(200).json({ order });
     }
 
-    const order = await prisma.order.create({
-      data: {
-        userId: shareLink.userId,
-        shareLinkId: shareLink.id,
-        designId,
-        buyerName: normalizedBuyerName,
-        buyerPhone: normalizedPhone,
-        quantity: parsedQuantity,
-        orderLines: [newLine],
-        manualBatchId: publicBatchId,
-        status: 'waiting_approval'
-      },
-      include: orderInclude
+    const order = await prisma.$transaction(async (tx) => {
+      const invoiceNumber = await allocateNextInvoiceNumber(tx, shareLink.userId);
+      return tx.order.create({
+        data: {
+          userId: shareLink.userId,
+          shareLinkId: shareLink.id,
+          designId,
+          buyerName: normalizedBuyerName,
+          buyerPhone: normalizedPhone,
+          quantity: parsedQuantity,
+          orderLines: [newLine],
+          manualBatchId: publicBatchId,
+          invoiceNumber,
+          status: 'waiting_approval'
+        },
+        include: orderInclude
+      });
     });
 
     res.status(201).json({ order });
@@ -313,21 +318,25 @@ router.post('/manual', authenticateToken, requireActiveSubscription, [
         return res.status(400).json({ error: 'parcelQuantity is required and must be at least 1' });
       }
 
-      const order = await prisma.order.create({
-        data: {
-          userId,
-          shareLinkId: null,
-          designId: null,
-          customerId: customerRef.customerId,
-          buyerName: customerRef.buyerName,
-          buyerPhone: customerRef.buyerPhone,
-          quantity: qty,
-          remarks: remarks?.trim() || null,
-          manualType: 'open',
-          status: 'waiting_approval',
-          ...orderMeta
-        },
-        include: orderInclude
+      const order = await prisma.$transaction(async (tx) => {
+        const invoiceNumber = await allocateNextInvoiceNumber(tx, userId);
+        return tx.order.create({
+          data: {
+            userId,
+            shareLinkId: null,
+            designId: null,
+            customerId: customerRef.customerId,
+            buyerName: customerRef.buyerName,
+            buyerPhone: customerRef.buyerPhone,
+            quantity: qty,
+            remarks: remarks?.trim() || null,
+            manualType: 'open',
+            invoiceNumber,
+            status: 'waiting_approval',
+            ...orderMeta
+          },
+          include: orderInclude
+        });
       });
 
       return res.status(201).json({ order });
@@ -397,26 +406,41 @@ router.post('/manual', authenticateToken, requireActiveSubscription, [
       });
     }
 
-    const order = await prisma.order.create({
-      data: {
-        userId,
-        shareLinkId: null,
-        designId: primaryDesignId,
-        customerId: customerRef.customerId,
-        buyerName: customerRef.buyerName,
-        buyerPhone: customerRef.buyerPhone,
-        quantity: totalQuantity,
-        orderLines,
-        remarks: remarks?.trim() || null,
-        manualType: 'design',
-        manualBatchId: batchId,
-        status: 'waiting_approval',
-        ...orderMeta
-      },
-      include: orderInclude
+    const order = await prisma.$transaction(async (tx) => {
+      const invoiceNumber = await allocateNextInvoiceNumber(tx, userId);
+      return tx.order.create({
+        data: {
+          userId,
+          shareLinkId: null,
+          designId: primaryDesignId,
+          customerId: customerRef.customerId,
+          buyerName: customerRef.buyerName,
+          buyerPhone: customerRef.buyerPhone,
+          quantity: totalQuantity,
+          orderLines,
+          remarks: remarks?.trim() || null,
+          manualType: 'design',
+          manualBatchId: batchId,
+          invoiceNumber,
+          status: 'waiting_approval',
+          ...orderMeta
+        },
+        include: orderInclude
+      });
     });
 
     return res.status(201).json({ order, orders: [order], manualBatchId: batchId });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Auth: get orders for current user
+router.get('/next-invoice-number', authenticateToken, requireActiveSubscription, async (req, res, next) => {
+  try {
+    const userId = req.user.userId;
+    const invoiceNumber = await prisma.$transaction(async (tx) => allocateNextInvoiceNumber(tx, userId));
+    res.json({ invoiceNumber: String(invoiceNumber) });
   } catch (error) {
     next(error);
   }

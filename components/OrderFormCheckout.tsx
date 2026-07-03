@@ -2,6 +2,7 @@ import React from 'react';
 import { Customer } from '../types';
 
 export interface OrderFormMeta {
+  invoiceNumber: string;
   orderNumber: string;
   orderDate: string;
   expectedDate: string;
@@ -101,6 +102,7 @@ export const OrderFormCheckout: React.FC<Props> = ({
 
         <div className="grid grid-cols-2 gap-3">
           {[
+            { key: 'invoiceNumber' as const, label: 'Invoice no.', type: 'text', locked: true },
             { key: 'orderDate' as const, label: 'Date', type: 'date' },
             { key: 'orderNumber' as const, label: 'Order form no.', type: 'text' },
             { key: 'haste' as const, label: 'Haste', type: 'text' },
@@ -114,11 +116,11 @@ export const OrderFormCheckout: React.FC<Props> = ({
               <label className="text-xs font-semibold text-gray-600">{field.label}</label>
               <input
                 type={field.type}
-                readOnly={readOnly}
+                readOnly={readOnly || field.locked}
                 className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500 read-only:bg-gray-100"
                 value={meta[field.key]}
                 onChange={e => onMetaChange({ [field.key]: e.target.value })}
-                placeholder={field.type === 'text' ? 'Optional' : undefined}
+                placeholder={field.type === 'text' && !field.locked ? 'Optional' : undefined}
               />
             </div>
           ))}

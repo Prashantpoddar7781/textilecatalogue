@@ -166,6 +166,7 @@ export const ManualOrderDialog: React.FC<Props> = ({ onClose, onCreated }) => {
     discountRate: ''
   });
   const [priceCategory, setPriceCategory] = useState('');
+  const [invoiceNumber, setInvoiceNumber] = useState('');
   const [orderNumber, setOrderNumber] = useState('');
   const [agentName, setAgentName] = useState('');
   const [transportName, setTransportName] = useState('');
@@ -216,6 +217,9 @@ export const ManualOrderDialog: React.FC<Props> = ({ onClose, onCreated }) => {
   useEffect(() => {
     if (step === 'form') {
       void loadCustomers();
+      void ordersApi.getNextInvoiceNumber()
+        .then(({ invoiceNumber: nextInvoiceNumber }) => setInvoiceNumber(nextInvoiceNumber))
+        .catch(() => setInvoiceNumber(''));
     }
   }, [step, loadCustomers]);
 
@@ -513,6 +517,15 @@ export const ManualOrderDialog: React.FC<Props> = ({ onClose, onCreated }) => {
               </div>
 
               <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-sm font-semibold text-gray-700">Invoice no.</label>
+                  <input
+                    readOnly
+                    className="w-full px-3 py-2.5 bg-gray-100 border border-gray-200 rounded-xl text-sm font-bold outline-none"
+                    value={invoiceNumber}
+                    placeholder="Auto"
+                  />
+                </div>
                 <div className="space-y-1">
                   <label className="text-sm font-semibold text-gray-700">Order number</label>
                   <input

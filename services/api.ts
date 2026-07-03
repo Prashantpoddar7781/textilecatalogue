@@ -1,4 +1,4 @@
-import { BankEntry, BankPendingBill, BusinessProfile, Contact, Customer, PurchaseBill, PurchaseBillExtraction, SalesInvoice, Supplier, SupplierLedgerEntry } from '../types';
+import { BankEntry, BankPendingBill, BusinessProfile, CompletedOrderParty, Contact, Customer, PurchaseBill, PurchaseBillExtraction, SalesInvoice, Supplier, SupplierLedgerEntry } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://textilecatalogue-production.up.railway.app/api';
 
@@ -365,6 +365,9 @@ export const ordersApi = {
   getAll: async () => {
     return request<{ orders: any[] }>('/orders');
   },
+  getNextInvoiceNumber: async () => {
+    return request<{ invoiceNumber: string }>('/orders/next-invoice-number');
+  },
   createManual: async (body: {
     kind: 'open' | 'design';
     buyerName?: string;
@@ -538,6 +541,9 @@ export const bankEntriesApi = {
   },
   getBankAccounts: async () => {
     return request<{ accounts: Array<{ name: string; balance: number }> }>('/bank-entries/bank-accounts');
+  },
+  getCompletedOrderParties: async () => {
+    return request<{ parties: CompletedOrderParty[] }>('/bank-entries/completed-order-parties');
   },
   getAll: async (params?: { search?: string; entryType?: 'all' | 'payment' | 'receipt' }) => {
     const queryParams = new URLSearchParams();

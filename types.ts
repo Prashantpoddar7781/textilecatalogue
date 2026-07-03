@@ -162,6 +162,7 @@ export interface Order {
   manualBatchId?: string | null;
   priceCategory?: string | null;
   orderNumber?: string | null;
+  invoiceNumber?: number | null;
   agentName?: string | null;
   transportName?: string | null;
   discountRate?: number | null;
@@ -357,7 +358,7 @@ export interface SupplierLedgerEntry {
 
 export interface BankBillAllocation {
   billId: string;
-  billType: 'sales_invoice' | 'purchase_bill' | string;
+  billType: 'order' | 'sales_invoice' | 'purchase_bill' | string;
   billNumber: string;
   voucherNumber?: string | null;
   billDate?: string | null;
@@ -381,7 +382,7 @@ export interface BankEntry {
   accountName?: string | null;
   partyType?: 'customer' | 'supplier' | 'other' | string | null;
   partyName: string;
-  linkedType?: 'sales_invoice' | 'purchase_bill' | 'none' | string | null;
+  linkedType?: 'sales_invoice' | 'purchase_bill' | 'order' | 'none' | string | null;
   linkedId?: string | null;
   amount: number;
   paymentMode?: string | null;
@@ -401,9 +402,15 @@ export interface BankEntry {
   updatedAt: string;
 }
 
+export interface CompletedOrderParty {
+  name: string;
+  orderCount: number;
+  pendingAmount: number;
+}
+
 export interface BankPendingBill {
   billId: string;
-  billType: 'sales_invoice' | 'purchase_bill' | string;
+  billType: 'order' | 'sales_invoice' | 'purchase_bill' | string;
   billNumber: string;
   voucherNumber?: string | null;
   billDate?: string | null;

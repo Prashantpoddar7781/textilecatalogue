@@ -146,6 +146,7 @@ export const BarcodeOrderBuilder: React.FC<Props> = ({
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
   const [customerName, setCustomerName] = useState('');
   const [orderMeta, setOrderMeta] = useState<OrderFormMeta>(() => ({
+    invoiceNumber: '',
     orderNumber: '',
     orderDate: new Date().toISOString().slice(0, 10),
     expectedDate: '',
@@ -171,6 +172,7 @@ export const BarcodeOrderBuilder: React.FC<Props> = ({
     setSelectedCustomerId('');
     setCustomerName('');
     setOrderMeta({
+      invoiceNumber: '',
       orderNumber: '',
       orderDate: new Date().toISOString().slice(0, 10),
       expectedDate: '',
@@ -183,6 +185,9 @@ export const BarcodeOrderBuilder: React.FC<Props> = ({
       shippingCharge: '',
       remarks: ''
     });
+    void ordersApi.getNextInvoiceNumber()
+      .then(({ invoiceNumber }) => setOrderMeta(prev => ({ ...prev, invoiceNumber })))
+      .catch(() => {});
     setSavedOrder(null);
     setLastScannedLabel(null);
     setError(null);
@@ -258,6 +263,9 @@ export const BarcodeOrderBuilder: React.FC<Props> = ({
 
   useEffect(() => {
     void loadCustomers();
+    void ordersApi.getNextInvoiceNumber()
+      .then(({ invoiceNumber }) => setOrderMeta(prev => ({ ...prev, invoiceNumber })))
+      .catch(() => {});
   }, [loadCustomers]);
 
   useEffect(() => {

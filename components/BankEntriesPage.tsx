@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Edit3, Loader2, RefreshCw, Save, Search, Trash2 } from 'lucide-react';
-import { bankEntriesApi, customersApi, invoicesApi, purchasesApi } from '../services/api';
-import { BankEntry, BankPendingBill, Customer, Supplier } from '../types';
+import { bankEntriesApi, invoicesApi, purchasesApi } from '../services/api';
+import { BankEntry, BankPendingBill, CompletedOrderParty, Supplier } from '../types';
 
 interface Props {
   onBack: () => void;
@@ -44,10 +44,10 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
   const [viewMode, setViewMode] = useState<ViewMode>('entry');
   const [entries, setEntries] = useState<BankEntry[]>([]);
   const [pendingBills, setPendingBills] = useState<BankPendingBill[]>([]);
-  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [completedParties, setCompletedParties] = useState<CompletedOrderParty[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [bankAccounts, setBankAccounts] = useState<Array<{ name: string; balance: number }>>([]);
-  const [bankBalance, setBankBalance] = useState(0);
+  const [bankBalance, setBankBalance] = useState(1000000);
   const [partyBalance, setPartyBalance] = useState(0);
   const [loading, setLoading] = useState(false);
   const [loadingBills, setLoadingBills] = useState(false);
@@ -76,21 +76,21 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
 
   const loadMasterData = async () => {
     try {
-      const [voucherResult, customersResult, suppliersResult, accountsResult, profileResult] = await Promise.all([
+      const [voucherResult, suppliersResult, accountsResult, partiesResult, profileResult] = await Promise.all([
         bankEntriesApi.getNextVoucher(),
-        customersApi.getAll(),
         purchasesApi.getSuppliers(),
         bankEntriesApi.getBankAccounts(),
+        bankEntriesApi.getCompletedOrderParties(),
         invoicesApi.getProfile().catch(() => null)
       ]);
-      setCustomers(customersResult.customers || []);
+      setCompletedParties(partiesResult.parties || []);
       setSuppliers(suppliersResult.suppliers || []);
       setBankAccounts(accountsResult.accounts || []);
       setForm(f => ({
         ...f,
         voucherNumber: voucherResult.voucherNumber,
         companyName: voucherResult.companyName,
-        bankName: f.bankName || profileResult?.profile?.bankName || accountsResult.accounts?.[0]?.name || ''
+        bankName: f.bankName || profileResult?.profile?.bankName || accountsResult.accounts?.[0]?.name || 'Default Bank'
       }));
     } catch (err: any) {
       console.warn('Failed to load bank master data', err);
@@ -107,7 +107,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
       setBankBalance(nextBankBalance);
       setPartyBalance(nextPartyBalance);
     } catch {
-      setBankBalance(0);
+      setBankBalance(1000000);
       setPartyBalance(0);
     }
   }, []);
@@ -165,10 +165,15 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
       return suppliers.map(s => s.name);
     }
     if (form.partyType === 'customer') {
-      return customers.map(c => c.organizationName);
+      return completedParties.map(p => p.name);
     }
     return [];
-  }, [customers, suppliers, form.partyType]);
+  }, [completedParties, suppliers, form.partyType]);
+
+  const selectedPartySummary = useMemo(
+    () => completedParties.find(party => party.name === form.partyName),
+    [completedParties, form.partyName]
+  );
 
   const updateBillAdjust = (billId: string, value: string) => {
     const adjustAmount = Math.max(0, Number(value) || 0);
@@ -388,6 +393,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                   </div>
                   <p className="mt-2 rounded-xl bg-amber-50 px-3 py-2 text-sm font-black text-amber-900">
                     Party Balance: {formatBalance(partyBalance)}
+                    {selectedPartySummary ? ` · ${selectedPartySummary.orderCount} completed order${selectedPartySummary.orderCount === 1 ? '' : 's'}` : ''}
                   </p>
                 </div>
 
@@ -466,7 +472,9 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                   </div>
                 ) : pendingBills.length === 0 ? (
                   <div className="px-5 py-16 text-center text-sm text-gray-400">
-                    {form.partyName ? 'No pending bills found for this party yet.' : 'Choose a party account to load pending bills.'}
+                    {form.partyName
+                      ? 'No pending bills with balance left for this customer. Complete an order first, or all bills are already adjusted.'
+                      : 'Choose a customer from completed orders to load pending bills.'}
                   </div>
                 ) : (
                   <table className="min-w-full text-left text-sm">

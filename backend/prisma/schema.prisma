@@ -222,6 +222,7 @@ model Order {
   manualBatchId String? // groups design lines from one manual submit
   priceCategory String?
   orderNumber String?
+  invoiceNumber Int?
   agentName String?
   transportName String?
   discountRate Float?
