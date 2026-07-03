@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Plus, Search, Package, CheckCircle, SlidersHorizontal, LogOut, User, Crown, BarChart3, Menu, MessageCircle, Link2, LineChart, FileText, ScanLine } from 'lucide-react';
+import { Plus, Search, Package, CheckCircle, SlidersHorizontal, LogOut, User, Crown, BarChart3, Menu, MessageCircle, Link2, LineChart, FileText, ScanLine, MonitorSmartphone } from 'lucide-react';
 import { TextileDesign, CatalogueFilters, SubscriptionStatus } from './types';
 import { UploadForm } from './components/UploadForm';
 import { DesignCard } from './components/DesignCard';
@@ -15,6 +15,8 @@ import { ReportsPage } from './components/ReportsPage';
 import { InvoicesPage } from './components/InvoicesPage';
 import { ScanPurchaseBillPage } from './components/ScanPurchaseBillPage';
 import { SupplierLedgerPage } from './components/SupplierLedgerPage';
+import { ErpHomePage } from './components/ErpHomePage';
+import { BankEntriesPage } from './components/BankEntriesPage';
 import { LoginDialog } from './components/LoginDialog';
 import { PricingDialog } from './components/PricingDialog';
 import { BillingPage } from './components/BillingPage';
@@ -36,6 +38,8 @@ const App: React.FC = () => {
   const invoicesMatch = pathname.match(/^\/invoices\/?$/);
   const scanPurchaseMatch = pathname.match(/^\/purchases\/scan\/?$/);
   const supplierLedgerMatch = pathname.match(/^\/suppliers\/ledger\/?$/);
+  const erpMatch = pathname.match(/^\/erp\/?$/);
+  const erpBankMatch = pathname.match(/^\/erp\/bank\/?$/);
   const shareStatsMatch = pathname.match(/^\/share-stats\/?$/);
   const reportsMatch = pathname.match(/^\/reports\/?$/);
   
@@ -598,6 +602,14 @@ const App: React.FC = () => {
     return <SupplierLedgerPage onBack={() => { window.location.href = '/'; }} />;
   }
 
+  if (erpMatch) {
+    return <ErpHomePage user={user} onBack={() => { window.location.href = '/'; }} />;
+  }
+
+  if (erpBankMatch) {
+    return <BankEntriesPage onBack={() => { window.location.href = '/erp'; }} />;
+  }
+
   if (shareStatsMatch) {
     return <ShareStatsPage onBack={() => { window.location.href = '/'; }} />;
   }
@@ -721,6 +733,13 @@ const App: React.FC = () => {
                 </button>
                 <button
                   type="button"
+                  onClick={() => { window.location.href = '/erp'; }}
+                  className="px-3 py-2 rounded-2xl text-xs font-bold border border-indigo-200 bg-indigo-50 text-indigo-800 shadow-sm hover:bg-indigo-100"
+                >
+                  ERP
+                </button>
+                <button
+                  type="button"
                   onClick={() => { window.location.href = '/invoices'; }}
                   className="px-3 py-2 rounded-2xl text-xs font-bold border border-gray-200 bg-white text-gray-700 shadow-sm hover:bg-gray-50"
                 >
@@ -820,6 +839,17 @@ const App: React.FC = () => {
                 >
                   <Crown className="w-5 h-5 text-indigo-600 shrink-0" />
                   Billing &amp; plan
+                </button>
+                <button
+                  type="button"
+                  className="touch-target flex w-full items-center gap-3 rounded-2xl border border-indigo-100 bg-indigo-50 px-4 text-left font-bold text-indigo-900 active:bg-indigo-100"
+                  onClick={() => {
+                    setMobileMenuOpen(false);
+                    window.location.href = '/erp';
+                  }}
+                >
+                  <MonitorSmartphone className="w-5 h-5 text-indigo-600 shrink-0" />
+                  Computer ERP
                 </button>
                 <button
                   type="button"

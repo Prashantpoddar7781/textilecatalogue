@@ -1,4 +1,4 @@
-import { BusinessProfile, Contact, Customer, PurchaseBill, PurchaseBillExtraction, SalesInvoice, Supplier, SupplierLedgerEntry } from '../types';
+import { BankEntry, BusinessProfile, Contact, Customer, PurchaseBill, PurchaseBillExtraction, SalesInvoice, Supplier, SupplierLedgerEntry } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://textilecatalogue-production.up.railway.app/api';
 
@@ -514,6 +514,34 @@ export const purchasesApi = {
   },
   getBill: async (billId: string) => {
     return request<{ bill: PurchaseBill }>(`/purchases/bills/${billId}`);
+  },
+};
+
+// Bank Payment / Receipts API
+export const bankEntriesApi = {
+  getAll: async (params?: { search?: string; entryType?: 'all' | 'payment' | 'receipt' }) => {
+    const queryParams = new URLSearchParams();
+    if (params?.search) queryParams.set('search', params.search);
+    if (params?.entryType && params.entryType !== 'all') queryParams.set('entryType', params.entryType);
+    const query = queryParams.toString();
+    return request<{ entries: BankEntry[] }>(`/bank-entries${query ? `?${query}` : ''}`);
+  },
+  create: async (entry: Omit<BankEntry, 'id' | 'userId' | 'createdAt' | 'updatedAt'>) => {
+    return request<{ entry: BankEntry }>('/bank-entries', {
+      method: 'POST',
+      body: JSON.stringify(entry)
+    });
+  },
+  update: async (id: string, entry: Partial<BankEntry>) => {
+    return request<{ entry: BankEntry }>(`/bank-entries/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(entry)
+    });
+  },
+  delete: async (id: string) => {
+    return request<{ ok: boolean }>(`/bank-entries/${id}`, {
+      method: 'DELETE'
+    });
   },
 };
 

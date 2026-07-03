@@ -1,0 +1,24 @@
+{
+  "name": "ThreadX ERP",
+  "short_name": "ThreadX",
+  "description": "ThreadX mobile-linked textile ERP for catalogue, orders, billing, bank entries, and ledgers.",
+  "start_url": "/erp",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f6f7fb",
+  "theme_color": "#4f46e5",
+  "icons": [
+    {
+      "src": "/threadx-logo.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/threadx-logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

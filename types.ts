@@ -355,6 +355,26 @@ export interface SupplierLedgerEntry {
   lineCount: number;
 }
 
+export interface BankEntry {
+  id: string;
+  userId: string;
+  entryType: 'payment' | 'receipt';
+  entryDate: string;
+  voucherNumber?: string | null;
+  bankName?: string | null;
+  accountName?: string | null;
+  partyType?: 'customer' | 'supplier' | 'other' | string | null;
+  partyName: string;
+  linkedType?: 'sales_invoice' | 'purchase_bill' | 'none' | string | null;
+  linkedId?: string | null;
+  amount: number;
+  paymentMode?: string | null;
+  referenceNumber?: string | null;
+  remarks?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface SubscriptionStatus {
   status: string | null;
   plan: string | null;

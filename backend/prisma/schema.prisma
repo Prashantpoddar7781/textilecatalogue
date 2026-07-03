@@ -42,6 +42,7 @@ model User {
   salesInvoices SalesInvoice[]
   suppliers Supplier[]
   purchaseBills PurchaseBill[]
+  bankEntries BankEntry[]
 }
 
 model OtpCode {
@@ -381,6 +382,32 @@ model PurchaseBill {
   @@index([supplierId])
   @@index([billDate])
   @@index([createdAt])
+}
+
+model BankEntry {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  entryType       String   // payment | receipt
+  entryDate       DateTime @default(now())
+  voucherNumber   String?
+  bankName        String?
+  accountName     String?
+  partyType       String?  // customer | supplier | other
+  partyName       String
+  linkedType      String?  // sales_invoice | purchase_bill | none
+  linkedId        String?
+  amount          Float
+  paymentMode     String?
+  referenceNumber String?
+  remarks         String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([userId])
+  @@index([entryType])
+  @@index([entryDate])
+  @@index([partyName])
 }
 
 model SubscriptionInvoice {
