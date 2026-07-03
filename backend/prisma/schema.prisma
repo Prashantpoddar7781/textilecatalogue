@@ -223,6 +223,8 @@ model Order {
   priceCategory String?
   orderNumber String?
   invoiceNumber Int?
+  transactionType String?
+  typeBillNumber Int?
   agentName String?
   transportName String?
   discountRate Float?
@@ -242,6 +244,7 @@ model Order {
   @@index([orderNumber])
   @@index([createdAt])
   @@index([manualBatchId])
+  @@index([transactionType])
 }
 
 model OrderDraft {
@@ -375,6 +378,8 @@ model PurchaseBill {
   igstAmount      Float    @default(0)
   totalTaxAmount  Float    @default(0)
   grandTotal      Float    @default(0)
+  transactionType String?
+  typeBillNumber  Int?
   status          String   @default("posted")
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -383,6 +388,7 @@ model PurchaseBill {
   @@index([supplierId])
   @@index([billDate])
   @@index([createdAt])
+  @@index([transactionType])
 }
 
 model BankEntry {
@@ -390,6 +396,7 @@ model BankEntry {
   userId          String
   user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   entryType       String   // payment | receipt
+  transactionType String?
   entryDate       DateTime @default(now())
   voucherNumber   String?
   companyName     String?
@@ -420,6 +427,7 @@ model BankEntry {
   @@index([entryType])
   @@index([entryDate])
   @@index([partyName])
+  @@index([transactionType])
 }
 
 model SubscriptionInvoice {

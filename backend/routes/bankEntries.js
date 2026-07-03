@@ -15,6 +15,13 @@ import {
   matchesSupplierName,
   roundMoney
 } from '../utils/orderBilling.js';
+import {
+  ERP_TRANSACTION_TYPES,
+  normalizeTransactionType,
+  DEFAULT_SALES_TRANSACTION_TYPE,
+  DEFAULT_PURCHASE_TRANSACTION_TYPE
+} from '../constants/erpTransactionTypes.js';
+import { allocateNextTypeBillNumber } from '../utils/transactionBilling.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -62,6 +69,7 @@ function normalizePayload(body) {
     chequeDate: optionalDate(body.chequeDate),
     slipNumber: optionalString(body.slipNumber),
     billNumber: optionalString(body.billNumber),
+    transactionType: optionalString(body.transactionType),
     billAllocations,
     grossAmount: roundMoney(body.grossAmount),
     adjustPending: roundMoney(body.adjustPending),
@@ -165,15 +173,18 @@ async function getCompletedOrderParties(userId) {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-async function getPendingOrderBills(userId, partyName) {
+async function getPendingOrderBills(userId, partyName, transactionType) {
   const [orders, paidByOrderId, paidByInvoiceId] = await Promise.all([
     getCompletedOrders(userId),
     getPaidAmountsByOrderId(prisma, userId),
     getPaidAmountsByBillType(prisma, userId, 'sales_invoice')
   ]);
 
+  const normalizedType = transactionType ? normalizeTransactionType(transactionType) : null;
+
   const orderBills = orders
     .filter(order => matchesPartyName(order, partyName))
+    .filter(order => !normalizedType || normalizeTransactionType(order.transactionType, DEFAULT_SALES_TRANSACTION_TYPE) === normalizedType)
     .map(order => mapOrderToPendingBill(order, paidByOrderId))
     .filter(bill => bill.pendingAmount > 0);
 
@@ -255,14 +266,17 @@ async function getPurchaseBillParties(userId) {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-async function getPendingPurchaseBills(userId, partyName) {
+async function getPendingPurchaseBills(userId, partyName, transactionType) {
   const [bills, paidByBillId] = await Promise.all([
     getPurchaseBillRecords(userId),
     getPaidAmountsByBillType(prisma, userId, 'purchase_bill')
   ]);
 
+  const normalizedType = transactionType ? normalizeTransactionType(transactionType, DEFAULT_PURCHASE_TRANSACTION_TYPE) : null;
+
   return bills
     .filter(bill => matchesSupplierName(bill.supplier?.name, partyName))
+    .filter(bill => !normalizedType || normalizeTransactionType(bill.transactionType, DEFAULT_PURCHASE_TRANSACTION_TYPE) === normalizedType)
     .map(bill => mapPurchaseBillToPendingBill(bill, paidByBillId))
     .filter(bill => bill.pendingAmount > 0)
     .sort((a, b) => String(a.billNumber).localeCompare(String(b.billNumber), undefined, { numeric: true }));
@@ -335,19 +349,41 @@ router.get('/balances', authenticateToken, requireActiveSubscription, async (req
   }
 });
 
+router.get('/transaction-types', authenticateToken, requireActiveSubscription, async (req, res) => {
+  res.json({ types: ERP_TRANSACTION_TYPES });
+});
+
+router.get('/next-type-bill-number', authenticateToken, requireActiveSubscription, async (req, res, next) => {
+  try {
+    const userId = req.user.userId;
+    const transactionType = normalizeTransactionType(
+      req.query.transactionType,
+      req.query.source === 'purchase_bill' ? DEFAULT_PURCHASE_TRANSACTION_TYPE : DEFAULT_SALES_TRANSACTION_TYPE
+    );
+    const source = req.query.source === 'purchase_bill' ? 'purchase_bill' : 'order';
+    const nextNumber = await prisma.$transaction(async (tx) =>
+      allocateNextTypeBillNumber(tx, userId, transactionType, source)
+    );
+    res.json({ transactionType, typeBillNumber: nextNumber });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.get('/pending-bills', authenticateToken, requireActiveSubscription, async (req, res, next) => {
   try {
     const userId = req.user.userId;
     const partyName = optionalString(req.query.partyName);
     const partyType = PARTY_TYPES.includes(req.query.partyType) ? req.query.partyType : 'customer';
+    const transactionType = optionalString(req.query.transactionType);
 
     if (!partyName) {
       return res.json({ bills: [] });
     }
 
     const bills = partyType === 'supplier'
-      ? await getPendingPurchaseBills(userId, partyName)
-      : await getPendingOrderBills(userId, partyName);
+      ? await getPendingPurchaseBills(userId, partyName, transactionType)
+      : await getPendingOrderBills(userId, partyName, transactionType);
 
     res.json({ bills });
   } catch (error) {

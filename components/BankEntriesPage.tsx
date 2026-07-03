@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Edit3, Loader2, RefreshCw, Save, Search, Trash2 } from 'lucide-react';
 import { bankEntriesApi, invoicesApi } from '../services/api';
 import { BankEntry, BankPendingBill, CompletedOrderParty, PurchaseBillParty } from '../types';
+import { DEFAULT_PURCHASE_TRANSACTION_TYPE, DEFAULT_SALES_TRANSACTION_TYPE, ERP_TRANSACTION_TYPES } from '../constants/erpTransactionTypes';
 
 interface Props {
   onBack: () => void;
@@ -31,6 +32,7 @@ const emptyForm = () => ({
   bankName: '',
   partyType: 'customer' as 'customer' | 'supplier' | 'other',
   partyName: '',
+  transactionType: DEFAULT_SALES_TRANSACTION_TYPE,
   amount: '',
   paymentMode: 'bank',
   chequeNumber: '',
@@ -112,7 +114,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
     }
   }, []);
 
-  const loadPendingBills = useCallback(async (partyName: string, partyType: string) => {
+  const loadPendingBills = useCallback(async (partyName: string, partyType: string, transactionType?: string) => {
     if (!partyName.trim()) {
       setPendingBills([]);
       return;
@@ -121,7 +123,8 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
     try {
       const { bills } = await bankEntriesApi.getPendingBills({
         partyName,
-        partyType: partyType as any
+        partyType: partyType as any,
+        transactionType: transactionType || undefined
       });
       setPendingBills(bills.map(bill => ({ ...bill, adjustAmount: 0 })));
     } catch {
@@ -144,8 +147,8 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
 
   useEffect(() => {
     void refreshBalances(form.bankName, form.partyName, form.partyType);
-    void loadPendingBills(form.partyName, form.partyType);
-  }, [form.bankName, form.partyName, form.partyType, refreshBalances, loadPendingBills]);
+    void loadPendingBills(form.partyName, form.partyType, form.transactionType);
+  }, [form.bankName, form.partyName, form.partyType, form.transactionType, refreshBalances, loadPendingBills]);
 
   const summary = useMemo(() => {
     const selected = pendingBills.filter(bill => bill.adjustAmount > 0);
@@ -212,6 +215,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
       bankName: entry.bankName || '',
       partyType: (entry.partyType as any) || 'customer',
       partyName: entry.partyName || '',
+      transactionType: entry.transactionType || (entry.partyType === 'supplier' ? DEFAULT_PURCHASE_TRANSACTION_TYPE : DEFAULT_SALES_TRANSACTION_TYPE),
       amount: String(entry.amount || ''),
       paymentMode: entry.paymentMode || 'bank',
       chequeNumber: entry.chequeNumber || '',
@@ -377,7 +381,17 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                     <select
                       className={inputClass}
                       value={form.partyType}
-                      onChange={e => setForm(f => ({ ...f, partyType: e.target.value as any, partyName: '' }))}
+                      onChange={e => {
+                        const partyType = e.target.value as 'customer' | 'supplier' | 'other';
+                        setForm(f => ({
+                          ...f,
+                          partyType,
+                          partyName: '',
+                          transactionType: partyType === 'supplier'
+                            ? DEFAULT_PURCHASE_TRANSACTION_TYPE
+                            : DEFAULT_SALES_TRANSACTION_TYPE
+                        }));
+                      }}
                     >
                       <option value="customer">Customer</option>
                       <option value="supplier">Supplier</option>
@@ -442,7 +456,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
             </section>
 
             <section className="rounded-3xl border border-gray-100 bg-white p-5 shadow-sm">
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
                 <div>
                   <label className={labelClass}>Chq. No.</label>
                   <input className={inputClass} value={form.chequeNumber} onChange={e => setForm(f => ({ ...f, chequeNumber: e.target.value }))} />
@@ -456,8 +470,16 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                   <input className={inputClass} value={form.slipNumber} onChange={e => setForm(f => ({ ...f, slipNumber: e.target.value }))} />
                 </div>
                 <div>
+                  <label className={labelClass}>Type</label>
+                  <select className={inputClass} value={form.transactionType} onChange={e => setForm(f => ({ ...f, transactionType: e.target.value }))}>
+                    {ERP_TRANSACTION_TYPES.map(type => (
+                      <option key={type.value} value={type.value}>{type.value}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
                   <label className={labelClass}>Bill No.</label>
-                  <input className={inputClass} placeholder="Bill selection coming next" value={form.billNumber} onChange={e => setForm(f => ({ ...f, billNumber: e.target.value }))} />
+                  <input className={inputClass} placeholder="Manual bill ref." value={form.billNumber} onChange={e => setForm(f => ({ ...f, billNumber: e.target.value }))} />
                 </div>
                 <div>
                   <label className={labelClass}>Remark</label>
@@ -469,7 +491,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
             <section className="rounded-3xl border border-gray-100 bg-white shadow-sm">
               <div className="border-b px-5 py-4">
                 <h2 className="text-sm font-black uppercase tracking-wide text-gray-900">Pending Bills</h2>
-                <p className="text-xs text-gray-500">Select party to load pending bills. Enter adjust amount against each bill.</p>
+                <p className="text-xs text-gray-500">Select party and type to load matching pending bills. Enter adjust amount against each bill.</p>
               </div>
               <div className="overflow-x-auto">
                 {loadingBills ? (
@@ -481,8 +503,8 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                   <div className="px-5 py-16 text-center text-sm text-gray-400">
                     {form.partyName
                       ? form.partyType === 'supplier'
-                        ? 'No pending purchase bills left for this supplier. Scan a bill first, or all bills are already adjusted.'
-                        : 'No pending sales bills left for this customer. Complete an order first, or all bills are already adjusted.'
+                        ? `No pending ${form.transactionType} purchase bills left for this supplier.`
+                        : `No pending ${form.transactionType} sales bills left for this customer.`
                       : form.partyType === 'supplier'
                         ? 'Choose a supplier from scanned purchase bills to load pending bills.'
                         : 'Choose a customer from completed orders to load pending bills.'}
@@ -492,6 +514,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                     <thead className="bg-gray-50 text-[11px] uppercase tracking-wide text-gray-500">
                       <tr>
                         <th className="px-4 py-3">Bill No.</th>
+                        <th className="px-4 py-3">Type</th>
                         <th className="px-4 py-3">Voucher</th>
                         <th className="px-4 py-3">Bill Date</th>
                         <th className="px-4 py-3">Days</th>
@@ -506,6 +529,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                       {pendingBills.map(bill => (
                         <tr key={bill.billId} className="border-t">
                           <td className="px-4 py-3 font-bold text-gray-900">{bill.billNumber}</td>
+                          <td className="px-4 py-3 text-xs font-semibold text-gray-600">{bill.transactionType || '-'}</td>
                           <td className="px-4 py-3">{bill.voucherNumber || '-'}</td>
                           <td className="px-4 py-3">{formatDate(bill.billDate)}</td>
                           <td className="px-4 py-3">{bill.days}</td>

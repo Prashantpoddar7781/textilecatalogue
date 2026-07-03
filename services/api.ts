@@ -388,6 +388,7 @@ export const ordersApi = {
     remarks?: string;
     priceCategory?: string;
     orderNumber?: string;
+    transactionType?: string;
     agentName?: string;
     transportName?: string;
     discountRate?: number | null;
@@ -503,10 +504,10 @@ export const purchasesApi = {
       body: JSON.stringify({ imageDataUrl })
     });
   },
-  saveBill: async (extraction: PurchaseBillExtraction, imageDataUrl?: string | null) => {
+  saveBill: async (extraction: PurchaseBillExtraction, imageDataUrl?: string | null, transactionType?: string) => {
     return request<{ supplier: Supplier; bill: PurchaseBill }>('/purchases/bills', {
       method: 'POST',
-      body: JSON.stringify({ extraction, imageDataUrl })
+      body: JSON.stringify({ extraction, imageDataUrl, transactionType })
     });
   },
   getSuppliers: async () => {
@@ -522,6 +523,15 @@ export const purchasesApi = {
 
 // Bank Payment / Receipts API
 export const bankEntriesApi = {
+  getTransactionTypes: async () => {
+    return request<{ types: Array<{ value: string; label: string; category: string }> }>('/bank-entries/transaction-types');
+  },
+  getNextTypeBillNumber: async (params: { transactionType: string; source?: 'order' | 'purchase_bill' }) => {
+    const queryParams = new URLSearchParams();
+    queryParams.set('transactionType', params.transactionType);
+    if (params.source) queryParams.set('source', params.source);
+    return request<{ transactionType: string; typeBillNumber: number }>(`/bank-entries/next-type-bill-number?${queryParams.toString()}`);
+  },
   getNextVoucher: async () => {
     return request<{ voucherNumber: string; companyName: string }>('/bank-entries/next-voucher');
   },
@@ -533,10 +543,11 @@ export const bankEntriesApi = {
     const query = queryParams.toString();
     return request<{ bankBalance: number; partyBalance: number }>(`/bank-entries/balances${query ? `?${query}` : ''}`);
   },
-  getPendingBills: async (params: { partyName: string; partyType?: 'customer' | 'supplier' | 'other' }) => {
+  getPendingBills: async (params: { partyName: string; partyType?: 'customer' | 'supplier' | 'other'; transactionType?: string }) => {
     const queryParams = new URLSearchParams();
     queryParams.set('partyName', params.partyName);
     if (params.partyType) queryParams.set('partyType', params.partyType);
+    if (params.transactionType) queryParams.set('transactionType', params.transactionType);
     return request<{ bills: BankPendingBill[] }>(`/bank-entries/pending-bills?${queryParams.toString()}`);
   },
   getBankAccounts: async () => {

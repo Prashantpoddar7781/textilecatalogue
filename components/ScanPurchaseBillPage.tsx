@@ -1,7 +1,8 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, Camera, Loader2, Plus, Save, Trash2, Upload } from 'lucide-react';
-import { purchasesApi } from '../services/api';
+import { purchasesApi, bankEntriesApi } from '../services/api';
 import { PurchaseBillExtraction } from '../types';
+import { DEFAULT_PURCHASE_TRANSACTION_TYPE, ERP_TRANSACTION_TYPES } from '../constants/erpTransactionTypes';
 
 interface Props {
   onBack: () => void;
@@ -51,6 +52,14 @@ export const ScanPurchaseBillPage: React.FC<Props> = ({ onBack }) => {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [transactionType, setTransactionType] = useState(DEFAULT_PURCHASE_TRANSACTION_TYPE);
+  const [nextTypeBillNumber, setNextTypeBillNumber] = useState<number | null>(null);
+
+  useEffect(() => {
+    void bankEntriesApi.getNextTypeBillNumber({ transactionType, source: 'purchase_bill' })
+      .then(result => setNextTypeBillNumber(result.typeBillNumber))
+      .catch(() => setNextTypeBillNumber(null));
+  }, [transactionType]);
 
   const handleFile = async (file?: File) => {
     if (!file) return;
@@ -123,8 +132,9 @@ export const ScanPurchaseBillPage: React.FC<Props> = ({ onBack }) => {
         totalTaxAmount: totals.totalTaxAmount,
         grandTotal: extraction.grandTotal || totals.taxableAmount + totals.totalTaxAmount
       };
-      const { supplier, bill } = await purchasesApi.saveBill(payload, imageDataUrl);
-      setSuccess(`Saved ${bill.billNumber || 'purchase bill'} to ${supplier.name} ledger.`);
+      const { supplier, bill } = await purchasesApi.saveBill(payload, imageDataUrl, transactionType);
+      const billLabel = bill.typeBillNumber != null ? String(bill.typeBillNumber) : (bill.billNumber || 'purchase bill');
+      setSuccess(`Saved bill #${billLabel} (${bill.transactionType || transactionType}) to ${supplier.name} ledger.`);
     } catch (err: any) {
       setError(err.message || 'Could not save purchase bill.');
     } finally {
@@ -194,6 +204,32 @@ export const ScanPurchaseBillPage: React.FC<Props> = ({ onBack }) => {
                     <input className="rounded-xl border px-3 py-2 text-sm" placeholder="Mobile / phone" value={extraction.supplier.mobileNumber || ''} onChange={e => updateSupplier('mobileNumber', e.target.value)} />
                     <input className="rounded-xl border px-3 py-2 text-sm" placeholder="State" value={extraction.supplier.state || ''} onChange={e => updateSupplier('state', e.target.value)} />
                     <input className="rounded-xl border px-3 py-2 text-sm sm:col-span-2" placeholder="Address" value={extraction.supplier.address || ''} onChange={e => updateSupplier('address', e.target.value)} />
+                  </div>
+                </div>
+
+                <div>
+                  <h2 className="text-sm font-black uppercase tracking-wide text-gray-900">Entry Type</h2>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-gray-500">Type</label>
+                      <select
+                        className="w-full rounded-xl border px-3 py-2 text-sm font-semibold"
+                        value={transactionType}
+                        onChange={e => setTransactionType(e.target.value)}
+                      >
+                        {ERP_TRANSACTION_TYPES.map(type => (
+                          <option key={type.value} value={type.value}>{type.value}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-gray-500">Auto bill no.</label>
+                      <input
+                        readOnly
+                        className="w-full rounded-xl border bg-gray-100 px-3 py-2 text-sm font-black"
+                        value={nextTypeBillNumber ?? '—'}
+                      />
+                    </div>
                   </div>
                 </div>
 

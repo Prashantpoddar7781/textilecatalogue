@@ -100,11 +100,15 @@ export function mapPurchaseBillToPendingBill(bill, paidByBillId) {
   const paidAmount = paidByBillId.get(bill.id) || 0;
   const pendingAmount = roundMoney(Math.max(billAmount - paidAmount, 0));
   const billDate = bill.billDate || bill.createdAt;
+  const displayNumber = bill.typeBillNumber != null
+    ? String(bill.typeBillNumber)
+    : (bill.billNumber || bill.voucherNumber || bill.id.slice(-6).toUpperCase());
 
   return {
     billId: bill.id,
     billType: 'purchase_bill',
-    billNumber: bill.billNumber || bill.voucherNumber || bill.id.slice(-6).toUpperCase(),
+    billNumber: displayNumber,
+    transactionType: bill.transactionType || null,
     voucherNumber: bill.voucherNumber || bill.billNumber || '-',
     billDate,
     days: daysSince(billDate),
@@ -132,11 +136,15 @@ export function mapOrderToPendingBill(order, paidByOrderId) {
   const paidAmount = paidByOrderId.get(order.id) || 0;
   const pendingAmount = roundMoney(Math.max(billAmount - paidAmount, 0));
   const billDate = order.orderDate || order.createdAt;
+  const displayNumber = order.typeBillNumber != null
+    ? String(order.typeBillNumber)
+    : String(order.invoiceNumber || order.orderNumber || order.id.slice(-6));
 
   return {
     billId: order.id,
     billType: 'order',
-    billNumber: String(order.invoiceNumber || order.orderNumber || order.id.slice(-6)),
+    billNumber: displayNumber,
+    transactionType: order.transactionType || null,
     voucherNumber: order.orderNumber || String(order.invoiceNumber || '-'),
     billDate,
     days: daysSince(billDate),

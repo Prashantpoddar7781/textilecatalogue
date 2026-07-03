@@ -163,6 +163,8 @@ export interface Order {
   priceCategory?: string | null;
   orderNumber?: string | null;
   invoiceNumber?: number | null;
+  transactionType?: string | null;
+  typeBillNumber?: number | null;
   agentName?: string | null;
   transportName?: string | null;
   discountRate?: number | null;
@@ -312,6 +314,8 @@ export interface PurchaseBill {
   igstAmount: number;
   totalTaxAmount: number;
   grandTotal: number;
+  transactionType?: string | null;
+  typeBillNumber?: number | null;
   status: string;
   createdAt: string;
   updatedAt: string;
@@ -375,6 +379,7 @@ export interface BankEntry {
   id: string;
   userId: string;
   entryType: 'payment' | 'receipt';
+  transactionType?: string | null;
   entryDate: string;
   voucherNumber?: string | null;
   companyName?: string | null;
@@ -418,6 +423,7 @@ export interface BankPendingBill {
   billId: string;
   billType: 'order' | 'sales_invoice' | 'purchase_bill' | string;
   billNumber: string;
+  transactionType?: string | null;
   voucherNumber?: string | null;
   billDate?: string | null;
   days: number;

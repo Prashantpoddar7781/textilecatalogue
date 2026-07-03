@@ -3,6 +3,8 @@ import { PrismaClient } from '@prisma/client';
 import { body, validationResult } from 'express-validator';
 import { authenticateToken } from '../middleware/auth.js';
 import { requireActiveSubscription } from '../middleware/subscription.js';
+import { normalizeTransactionType, DEFAULT_PURCHASE_TRANSACTION_TYPE } from '../constants/erpTransactionTypes.js';
+import { allocateNextTypeBillNumber } from '../utils/transactionBilling.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -268,28 +270,37 @@ router.post('/bills', authenticateToken, requireActiveSubscription, [
 
     const userId = req.user.userId;
     const extraction = normalizeExtraction(req.body.extraction);
+    const transactionType = normalizeTransactionType(
+      req.body.transactionType || extraction.transactionType,
+      DEFAULT_PURCHASE_TRANSACTION_TYPE
+    );
     const supplier = await findOrCreateSupplier(userId, extraction.supplier);
-    const bill = await prisma.purchaseBill.create({
-      data: {
-        userId,
-        supplierId: supplier.id,
-        billNumber: optionalString(extraction.billNumber),
-        billDate: optionalDate(extraction.billDate),
-        voucherNumber: optionalString(extraction.voucherNumber),
-        image: optionalString(req.body.imageDataUrl),
-        extractedText: optionalString(extraction.extractedText),
-        extractionJson: extraction,
-        lineItems: extraction.lineItems,
-        taxableAmount: extraction.taxableAmount,
-        discountAmount: extraction.discountAmount,
-        cgstAmount: extraction.cgstAmount,
-        sgstAmount: extraction.sgstAmount,
-        igstAmount: extraction.igstAmount,
-        totalTaxAmount: extraction.totalTaxAmount,
-        grandTotal: extraction.grandTotal,
-        status: 'posted'
-      },
-      include: { supplier: true }
+    const bill = await prisma.$transaction(async (tx) => {
+      const typeBillNumber = await allocateNextTypeBillNumber(tx, userId, transactionType, 'purchase_bill');
+      return tx.purchaseBill.create({
+        data: {
+          userId,
+          supplierId: supplier.id,
+          billNumber: optionalString(extraction.billNumber),
+          billDate: optionalDate(extraction.billDate),
+          voucherNumber: optionalString(extraction.voucherNumber),
+          transactionType,
+          typeBillNumber,
+          image: optionalString(req.body.imageDataUrl),
+          extractedText: optionalString(extraction.extractedText),
+          extractionJson: extraction,
+          lineItems: extraction.lineItems,
+          taxableAmount: extraction.taxableAmount,
+          discountAmount: extraction.discountAmount,
+          cgstAmount: extraction.cgstAmount,
+          sgstAmount: extraction.sgstAmount,
+          igstAmount: extraction.igstAmount,
+          totalTaxAmount: extraction.totalTaxAmount,
+          grandTotal: extraction.grandTotal,
+          status: 'posted'
+        },
+        include: { supplier: true }
+      });
     });
 
     res.status(201).json({ supplier, bill });
@@ -356,7 +367,7 @@ router.get('/suppliers/:id/ledger', authenticateToken, requireActiveSubscription
         date: bill.billDate || bill.createdAt,
         billNumber: bill.billNumber,
         voucherNumber: bill.voucherNumber,
-        account: 'FINISH PURCHASE',
+        account: bill.transactionType || 'FINISH PURCHASE',
         creditAmount: bill.grandTotal,
         debitAmount: 0,
         runningBalance,

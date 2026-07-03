@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { X, Package, LayoutGrid, Plus, Trash2, Loader2, Search } from 'lucide-react';
-import { customersApi, designsApi, ordersApi } from '../services/api';
+import { customersApi, designsApi, ordersApi, bankEntriesApi } from '../services/api';
+import { DEFAULT_SALES_TRANSACTION_TYPE, ERP_TRANSACTION_TYPES } from '../constants/erpTransactionTypes';
 import { notifyOrdersUpdated } from '../services/ordersRealtime';
 import { Customer } from '../types';
 
@@ -167,6 +168,8 @@ export const ManualOrderDialog: React.FC<Props> = ({ onClose, onCreated }) => {
   });
   const [priceCategory, setPriceCategory] = useState('');
   const [invoiceNumber, setInvoiceNumber] = useState('');
+  const [typeBillNumber, setTypeBillNumber] = useState<number | null>(null);
+  const [transactionType, setTransactionType] = useState(DEFAULT_SALES_TRANSACTION_TYPE);
   const [orderNumber, setOrderNumber] = useState('');
   const [agentName, setAgentName] = useState('');
   const [transportName, setTransportName] = useState('');
@@ -220,8 +223,11 @@ export const ManualOrderDialog: React.FC<Props> = ({ onClose, onCreated }) => {
       void ordersApi.getNextInvoiceNumber()
         .then(({ invoiceNumber: nextInvoiceNumber }) => setInvoiceNumber(nextInvoiceNumber))
         .catch(() => setInvoiceNumber(''));
+      void bankEntriesApi.getNextTypeBillNumber({ transactionType, source: 'order' })
+        .then(result => setTypeBillNumber(result.typeBillNumber))
+        .catch(() => setTypeBillNumber(null));
     }
-  }, [step, loadCustomers]);
+  }, [step, loadCustomers, transactionType]);
 
   useEffect(() => {
     if (kind === 'design' && step === 'form') {
@@ -254,6 +260,7 @@ export const ManualOrderDialog: React.FC<Props> = ({ onClose, onCreated }) => {
   const getOrderMetaPayload = () => ({
     priceCategory: priceCategory.trim() || undefined,
     orderNumber: orderNumber.trim() || undefined,
+    transactionType,
     agentName: agentName.trim() || undefined,
     transportName: transportName.trim() || undefined,
     haste: haste.trim() || undefined,
@@ -517,12 +524,33 @@ export const ManualOrderDialog: React.FC<Props> = ({ onClose, onCreated }) => {
               </div>
 
               <div className="grid grid-cols-2 gap-3">
+                <div className="col-span-2 space-y-1">
+                  <label className="text-sm font-semibold text-gray-700">Type</label>
+                  <select
+                    className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm font-semibold outline-none focus:ring-2 focus:ring-indigo-500"
+                    value={transactionType}
+                    onChange={e => setTransactionType(e.target.value)}
+                  >
+                    {ERP_TRANSACTION_TYPES.map(type => (
+                      <option key={type.value} value={type.value}>{type.value}</option>
+                    ))}
+                  </select>
+                </div>
                 <div className="space-y-1">
                   <label className="text-sm font-semibold text-gray-700">Invoice no.</label>
                   <input
                     readOnly
                     className="w-full px-3 py-2.5 bg-gray-100 border border-gray-200 rounded-xl text-sm font-bold outline-none"
                     value={invoiceNumber}
+                    placeholder="Auto"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-sm font-semibold text-gray-700">Type bill no.</label>
+                  <input
+                    readOnly
+                    className="w-full px-3 py-2.5 bg-gray-100 border border-gray-200 rounded-xl text-sm font-bold outline-none"
+                    value={typeBillNumber ?? '—'}
                     placeholder="Auto"
                   />
                 </div>

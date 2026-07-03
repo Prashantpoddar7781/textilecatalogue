@@ -5,6 +5,8 @@ import { body, validationResult } from 'express-validator';
 import { authenticateToken } from '../middleware/auth.js';
 import { requireActiveSubscription } from '../middleware/subscription.js';
 import { allocateNextInvoiceNumber } from '../utils/orderBilling.js';
+import { normalizeTransactionType, DEFAULT_SALES_TRANSACTION_TYPE } from '../constants/erpTransactionTypes.js';
+import { allocateNextTypeBillNumber } from '../utils/transactionBilling.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -75,6 +77,7 @@ async function decrementCompletedLineStock(tx, line) {
 const getOrderMeta = (body) => ({
   priceCategory: optionalString(body.priceCategory),
   orderNumber: optionalString(body.orderNumber),
+  transactionType: normalizeTransactionType(body.transactionType, DEFAULT_SALES_TRANSACTION_TYPE),
   agentName: optionalString(body.agentName),
   transportName: optionalString(body.transportName),
   haste: optionalString(body.haste),
@@ -84,6 +87,15 @@ const getOrderMeta = (body) => ({
   orderDate: optionalDate(body.orderDate),
   expectedDate: optionalDate(body.expectedDate)
 });
+
+async function allocateOrderNumbers(tx, userId, transactionType) {
+  const type = normalizeTransactionType(transactionType, DEFAULT_SALES_TRANSACTION_TYPE);
+  const [invoiceNumber, typeBillNumber] = await Promise.all([
+    allocateNextInvoiceNumber(tx, userId),
+    allocateNextTypeBillNumber(tx, userId, type, 'order')
+  ]);
+  return { invoiceNumber, transactionType: type, typeBillNumber };
+}
 
 async function resolveManualCustomer(userId, body) {
   if (body.customerId) {
@@ -267,7 +279,7 @@ router.post('/public', [
     }
 
     const order = await prisma.$transaction(async (tx) => {
-      const invoiceNumber = await allocateNextInvoiceNumber(tx, shareLink.userId);
+      const billing = await allocateOrderNumbers(tx, shareLink.userId, DEFAULT_SALES_TRANSACTION_TYPE);
       return tx.order.create({
         data: {
           userId: shareLink.userId,
@@ -278,7 +290,7 @@ router.post('/public', [
           quantity: parsedQuantity,
           orderLines: [newLine],
           manualBatchId: publicBatchId,
-          invoiceNumber,
+          ...billing,
           status: 'waiting_approval'
         },
         include: orderInclude
@@ -319,7 +331,7 @@ router.post('/manual', authenticateToken, requireActiveSubscription, [
       }
 
       const order = await prisma.$transaction(async (tx) => {
-        const invoiceNumber = await allocateNextInvoiceNumber(tx, userId);
+        const billing = await allocateOrderNumbers(tx, userId, orderMeta.transactionType);
         return tx.order.create({
           data: {
             userId,
@@ -331,9 +343,9 @@ router.post('/manual', authenticateToken, requireActiveSubscription, [
             quantity: qty,
             remarks: remarks?.trim() || null,
             manualType: 'open',
-            invoiceNumber,
             status: 'waiting_approval',
-            ...orderMeta
+            ...orderMeta,
+            ...billing
           },
           include: orderInclude
         });
@@ -407,7 +419,7 @@ router.post('/manual', authenticateToken, requireActiveSubscription, [
     }
 
     const order = await prisma.$transaction(async (tx) => {
-      const invoiceNumber = await allocateNextInvoiceNumber(tx, userId);
+      const billing = await allocateOrderNumbers(tx, userId, orderMeta.transactionType);
       return tx.order.create({
         data: {
           userId,
@@ -421,9 +433,9 @@ router.post('/manual', authenticateToken, requireActiveSubscription, [
           remarks: remarks?.trim() || null,
           manualType: 'design',
           manualBatchId: batchId,
-          invoiceNumber,
           status: 'waiting_approval',
-          ...orderMeta
+          ...orderMeta,
+          ...billing
         },
         include: orderInclude
       });
