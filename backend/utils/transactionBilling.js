@@ -1,11 +1,9 @@
-const { DEFAULT_SALES_TRANSACTION_TYPE, DEFAULT_PURCHASE_TRANSACTION_TYPE } = require('../constants/erpTransactionTypes');
-
-function formatTypeBillNumber(typeBillNumber) {
+export function formatTypeBillNumber(typeBillNumber) {
   if (typeBillNumber == null) return null;
   return String(typeBillNumber);
 }
 
-async function allocateNextTypeBillNumber(tx, userId, transactionType, source) {
+export async function allocateNextTypeBillNumber(tx, userId, transactionType, source) {
   const type = String(transactionType || '').trim();
   if (!type) return null;
 
@@ -24,7 +22,7 @@ async function allocateNextTypeBillNumber(tx, userId, transactionType, source) {
   return (result._max.typeBillNumber ?? 0) + 1;
 }
 
-function resolveBillDisplayNumber(record) {
+export function resolveBillDisplayNumber(record) {
   if (record.typeBillNumber != null) {
     return formatTypeBillNumber(record.typeBillNumber);
   }
@@ -36,11 +34,3 @@ function resolveBillDisplayNumber(record) {
   }
   return null;
 }
-
-module.exports = {
-  DEFAULT_SALES_TRANSACTION_TYPE,
-  DEFAULT_PURCHASE_TRANSACTION_TYPE,
-  formatTypeBillNumber,
-  allocateNextTypeBillNumber,
-  resolveBillDisplayNumber
-};
