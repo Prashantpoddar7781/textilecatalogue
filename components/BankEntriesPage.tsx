@@ -110,6 +110,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState('');
+  const [pendingNoteCount, setPendingNoteCount] = useState(0);
 
   const loadEntries = async () => {
     setLoading(true);
@@ -168,18 +169,22 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
   const loadPendingBills = useCallback(async (partyName: string, partyType: string, transactionType?: string) => {
     if (!partyName.trim()) {
       setPendingBills([]);
+      setPendingNoteCount(0);
       return;
     }
     setLoadingBills(true);
     try {
-      const { bills } = await bankEntriesApi.getPendingBills({
+      const { bills, noteCount } = await bankEntriesApi.getPendingBills({
         partyName,
         partyType: partyType as any,
         transactionType: transactionType || undefined
       });
       setPendingBills(sortPendingItems(bills.map(bill => ({ ...bill, adjustAmount: 0 }))));
-    } catch {
+      setPendingNoteCount(noteCount ?? bills.filter(b => b.billType === 'credit_debit_note').length);
+    } catch (err: any) {
       setPendingBills([]);
+      setPendingNoteCount(0);
+      setError(err.message || 'Could not load pending bills and credit/debit notes.');
     } finally {
       setLoadingBills(false);
     }
@@ -241,6 +246,16 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
     return completedParties.find(party => party.name === form.partyName);
   }, [completedParties, purchaseParties, form.partyName, form.partyType]);
 
+  const pendingBillRows = useMemo(
+    () => pendingBills.filter(bill => bill.billType !== 'credit_debit_note'),
+    [pendingBills]
+  );
+
+  const pendingNoteRows = useMemo(
+    () => pendingBills.filter(bill => bill.billType === 'credit_debit_note'),
+    [pendingBills]
+  );
+
   const updateBillAdjust = (billId: string, value: string) => {
     const adjustAmount = Math.max(0, Number(value) || 0);
     setPendingBills(prev => {
@@ -298,6 +313,29 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
       }
 
       return next;
+    });
+  };
+
+  const applyAllCreditNotes = () => {
+    setPendingBills(prev => {
+      const next = prev.map(item => {
+        if (item.billType !== 'credit_debit_note' || item.adjustDirection !== 'deduct') return item;
+        return { ...item, adjustAmount: item.pendingAmount };
+      });
+      return applyLinkedNoteAdjustments(next);
+    });
+  };
+
+  const applyAllLinkedNotes = () => {
+    setPendingBills(prev => {
+      const next = prev.map(item => {
+        if (item.billType === 'credit_debit_note') return item;
+        if ((item.linkedCreditAmount || 0) > 0 || (item.linkedDebitAmount || 0) > 0) {
+          return { ...item, adjustAmount: item.pendingAmount };
+        }
+        return item;
+      });
+      return applyLinkedNoteAdjustments(next);
     });
   };
 
@@ -587,8 +625,8 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
 
             <section className="rounded-3xl border border-gray-100 bg-white shadow-sm">
               <div className="border-b px-5 py-4">
-                <h2 className="text-sm font-black uppercase tracking-wide text-gray-900">Pending Bills & Notes</h2>
-                <p className="text-xs text-gray-500">Bills, credit notes (deduct), and debit notes (add) for the selected party. Credit notes reduce net payment/receipt.</p>
+                <h2 className="text-sm font-black uppercase tracking-wide text-gray-900">Pending Bills</h2>
+                <p className="text-xs text-gray-500">Sales/purchase bills for the selected party and transaction type.</p>
               </div>
               <div className="overflow-x-auto">
                 {loadingBills ? (
@@ -596,28 +634,21 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                     <Loader2 className="mr-2 h-5 w-5 animate-spin" />
                     Loading pending bills...
                   </div>
-                ) : pendingBills.length === 0 ? (
-                  <div className="px-5 py-16 text-center text-sm text-gray-400">
-                    {form.partyName
-                      ? 'No pending bills or credit/debit notes left for this party.'
-                      : form.partyType === 'supplier'
-                        ? 'Choose a supplier to load pending bills and notes.'
-                        : 'Choose a customer to load pending bills and notes.'}
+                ) : !form.partyName ? (
+                  <div className="px-5 py-12 text-center text-sm text-gray-400">
+                    {form.partyType === 'supplier' ? 'Choose a supplier to load pending bills.' : 'Choose a customer to load pending bills.'}
                   </div>
+                ) : pendingBillRows.length === 0 ? (
+                  <div className="px-5 py-12 text-center text-sm text-gray-400">No pending bills for this party and type.</div>
                 ) : (
                   <table className="min-w-full text-left text-sm">
                     <thead className="bg-gray-50 text-[11px] uppercase tracking-wide text-gray-500">
                       <tr>
-                        <th className="px-4 py-3">Entry</th>
-                        <th className="px-4 py-3">Bill / Note No.</th>
-                        <th className="px-4 py-3">+ / −</th>
+                        <th className="px-4 py-3">Bill No.</th>
                         <th className="px-4 py-3">Type</th>
                         <th className="px-4 py-3">Voucher</th>
                         <th className="px-4 py-3">Bill Date</th>
-                        <th className="px-4 py-3">Days</th>
-                        <th className="px-4 py-3">Grace</th>
-                        <th className="px-4 py-3">Adat/Disc</th>
-                        <th className="px-4 py-3">Linked Bill</th>
+                        <th className="px-4 py-3">Linked Cr/Dr</th>
                         <th className="px-4 py-3 text-right">Bill Amount</th>
                         <th className="px-4 py-3 text-right">Pend Amt</th>
                         <th className="px-4 py-3 text-right">Net Pend</th>
@@ -625,29 +656,21 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                       </tr>
                     </thead>
                     <tbody>
-                      {pendingBills.map(bill => (
-                        <tr key={bill.billId} className={`border-t ${bill.billType === 'credit_debit_note' ? 'bg-amber-50/40' : ''}`}>
-                          <td className="px-4 py-3 text-xs font-black uppercase text-gray-600">{getEntryLabel(bill)}</td>
+                      {pendingBillRows.map(bill => (
+                        <tr key={bill.billId} className="border-t">
                           <td className="px-4 py-3 font-bold text-gray-900">{bill.billNumber}</td>
-                          <td className="px-4 py-3 font-black text-gray-700">{bill.adjustDirection === 'deduct' ? '−' : '+'}</td>
                           <td className="px-4 py-3 text-xs font-semibold text-gray-600">{bill.transactionType || '-'}</td>
                           <td className="px-4 py-3">{bill.voucherNumber || '-'}</td>
                           <td className="px-4 py-3">{formatDate(bill.billDate)}</td>
-                          <td className="px-4 py-3">{bill.days}</td>
-                          <td className="px-4 py-3">{bill.grace ?? 0}</td>
-                          <td className="px-4 py-3">{formatMoney(bill.adatDisc || 0)}</td>
-                          <td className="px-4 py-3 text-xs font-semibold text-gray-600">
-                            {bill.billType === 'credit_debit_note'
-                              ? (bill.adjustBillNumber || bill.refBillNumber || '-')
-                              : (bill.linkedCreditAmount ? `Cr ${formatMoney(bill.linkedCreditAmount)}` : '-')}
+                          <td className="px-4 py-3 text-xs font-semibold text-amber-800">
+                            {(bill.linkedCreditAmount || 0) > 0 && `Cr −${formatMoney(bill.linkedCreditAmount || 0)}`}
+                            {(bill.linkedCreditAmount || 0) > 0 && (bill.linkedDebitAmount || 0) > 0 && ' · '}
+                            {(bill.linkedDebitAmount || 0) > 0 && `Dr +${formatMoney(bill.linkedDebitAmount || 0)}`}
+                            {!bill.linkedCreditAmount && !bill.linkedDebitAmount && '-'}
                           </td>
                           <td className="px-4 py-3 text-right font-semibold">{formatMoney(bill.billAmount)}</td>
                           <td className="px-4 py-3 text-right font-semibold text-amber-700">{formatMoney(bill.pendingAmount)}</td>
-                          <td className="px-4 py-3 text-right font-semibold text-indigo-700">
-                            {bill.billType === 'credit_debit_note'
-                              ? '-'
-                              : formatMoney(bill.netPendingAmount ?? bill.pendingAmount)}
-                          </td>
+                          <td className="px-4 py-3 text-right font-semibold text-indigo-700">{formatMoney(bill.netPendingAmount ?? bill.pendingAmount)}</td>
                           <td className="px-4 py-3 text-right">
                             <input
                               className="w-28 rounded-lg border px-2 py-1.5 text-right text-sm font-bold"
@@ -657,6 +680,88 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                               max={bill.pendingAmount}
                               value={bill.adjustAmount || ''}
                               onChange={e => updateBillAdjust(bill.billId, e.target.value)}
+                            />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </section>
+
+            <section className="rounded-3xl border-2 border-amber-200 bg-amber-50/30 shadow-sm">
+              <div className="border-b border-amber-200 px-5 py-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h2 className="text-sm font-black uppercase tracking-wide text-amber-950">Credit / Debit Notes — Adjust Here</h2>
+                    <p className="mt-1 text-xs text-amber-900/80">
+                      Credit notes (−) reduce receipt/payment. Debit notes (+) increase it. Linked notes auto-fill when you adjust the bill.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button type="button" onClick={applyAllLinkedNotes} className="rounded-xl bg-white px-3 py-2 text-xs font-black text-amber-900 ring-1 ring-amber-300 hover:bg-amber-100">
+                      Apply linked notes
+                    </button>
+                    <button type="button" onClick={applyAllCreditNotes} className="rounded-xl bg-amber-600 px-3 py-2 text-xs font-black text-white hover:bg-amber-700">
+                      Apply all credit notes
+                    </button>
+                  </div>
+                </div>
+                {form.partyName && pendingNoteCount > 0 && (
+                  <p className="mt-2 rounded-xl bg-amber-100 px-3 py-2 text-xs font-bold text-amber-950">
+                    {pendingNoteCount} note{pendingNoteCount === 1 ? '' : 's'} found for {form.partyName}. Enter amount in the ADJUST column below.
+                  </p>
+                )}
+              </div>
+              <div className="overflow-x-auto bg-white">
+                {loadingBills ? (
+                  <div className="flex items-center justify-center py-12 text-sm text-gray-500">
+                    <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                    Loading notes...
+                  </div>
+                ) : !form.partyName ? (
+                  <div className="px-5 py-12 text-center text-sm text-gray-400">Select a party to load credit/debit notes.</div>
+                ) : pendingNoteRows.length === 0 ? (
+                  <div className="px-5 py-12 text-center text-sm text-gray-500">
+                    <p className="font-semibold text-gray-700">No pending credit/debit notes for this party.</p>
+                    <p className="mt-2 text-xs">Create from ERP Home → Additional Features → Credit Note (Sales) or Debit Note (Sales).</p>
+                  </div>
+                ) : (
+                  <table className="min-w-full text-left text-sm">
+                    <thead className="bg-amber-50 text-[11px] uppercase tracking-wide text-amber-900">
+                      <tr>
+                        <th className="px-4 py-3">Entry</th>
+                        <th className="px-4 py-3">Note No.</th>
+                        <th className="px-4 py-3">+ / −</th>
+                        <th className="px-4 py-3">Type</th>
+                        <th className="px-4 py-3">Note Date</th>
+                        <th className="px-4 py-3">Linked Bill</th>
+                        <th className="px-4 py-3 text-right">Note Amount</th>
+                        <th className="px-4 py-3 text-right">Pend Amt</th>
+                        <th className="px-4 py-3 text-right">Adjust</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pendingNoteRows.map(note => (
+                        <tr key={note.billId} className="border-t bg-amber-50/20">
+                          <td className="px-4 py-3 text-xs font-black uppercase text-amber-900">{getEntryLabel(note)}</td>
+                          <td className="px-4 py-3 font-bold text-gray-900">{note.billNumber}</td>
+                          <td className="px-4 py-3 text-lg font-black text-amber-900">{note.adjustDirection === 'deduct' ? '−' : '+'}</td>
+                          <td className="px-4 py-3 text-xs font-semibold text-gray-600">{note.transactionType || '-'}</td>
+                          <td className="px-4 py-3">{formatDate(note.billDate)}</td>
+                          <td className="px-4 py-3 text-xs font-semibold text-gray-600">{note.adjustBillNumber || note.refBillNumber || 'Open (any bill)'}</td>
+                          <td className="px-4 py-3 text-right font-semibold">{formatMoney(note.billAmount)}</td>
+                          <td className="px-4 py-3 text-right font-semibold text-amber-700">{formatMoney(note.pendingAmount)}</td>
+                          <td className="px-4 py-3 text-right">
+                            <input
+                              className="w-28 rounded-lg border-2 border-amber-300 bg-white px-2 py-1.5 text-right text-sm font-bold"
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              max={note.pendingAmount}
+                              value={note.adjustAmount || ''}
+                              onChange={e => updateBillAdjust(note.billId, e.target.value)}
                             />
                           </td>
                         </tr>

@@ -577,7 +577,7 @@ export const bankEntriesApi = {
     queryParams.set('partyName', params.partyName);
     if (params.partyType) queryParams.set('partyType', params.partyType);
     if (params.transactionType) queryParams.set('transactionType', params.transactionType);
-    return request<{ bills: BankPendingBill[] }>(`/bank-entries/pending-bills?${queryParams.toString()}`);
+    return request<{ bills: BankPendingBill[]; notes?: BankPendingBill[]; noteCount?: number; billCount?: number }>(`/bank-entries/pending-bills?${queryParams.toString()}`);
   },
   getBankAccounts: async () => {
     return request<{ accounts: Array<{ name: string; balance: number }> }>('/bank-entries/bank-accounts');

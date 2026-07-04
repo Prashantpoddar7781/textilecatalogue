@@ -147,7 +147,7 @@ app.get('/health', (req, res) => {
     res.json({
       status: 'ok',
       timestamp: new Date().toISOString(),
-      version: '2026-07-04-credit-debit-notes'
+      version: '2026-07-04-bank-note-adjust'
     });
   } catch (error) {
     res.status(500).json({ status: 'error', error: error.message });
