@@ -18,6 +18,8 @@ import { SupplierLedgerPage } from './components/SupplierLedgerPage';
 import { ErpHomePage } from './components/ErpHomePage';
 import { ErpSalesPage } from './components/ErpSalesPage';
 import { ErpPurchasePage } from './components/ErpPurchasePage';
+import { CreditDebitNotePage } from './components/CreditDebitNotePage';
+import { parseNoteTypeFromPath } from './constants/creditDebitNoteTypes';
 import { BankEntriesPage } from './components/BankEntriesPage';
 import { LoginDialog } from './components/LoginDialog';
 import { PricingDialog } from './components/PricingDialog';
@@ -44,6 +46,7 @@ const App: React.FC = () => {
   const erpBankMatch = pathname.match(/^\/erp\/bank\/?$/);
   const erpSalesMatch = pathname.match(/^\/erp\/sales\/?$/);
   const erpPurchaseMatch = pathname.match(/^\/erp\/purchase\/?$/);
+  const erpNotesMatch = pathname.match(/^\/erp\/notes\/([^/]+)\/?$/);
   const shareStatsMatch = pathname.match(/^\/share-stats\/?$/);
   const reportsMatch = pathname.match(/^\/reports\/?$/);
   
@@ -616,6 +619,13 @@ const App: React.FC = () => {
 
   if (erpPurchaseMatch) {
     return <ErpPurchasePage onBack={() => { window.location.href = '/erp'; }} />;
+  }
+
+  if (erpNotesMatch) {
+    const noteType = parseNoteTypeFromPath(erpNotesMatch[1]);
+    if (noteType) {
+      return <CreditDebitNotePage noteType={noteType} onBack={() => { window.location.href = '/erp'; }} />;
+    }
   }
 
   if (erpBankMatch) {

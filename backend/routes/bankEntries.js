@@ -22,6 +22,7 @@ import {
   DEFAULT_PURCHASE_TRANSACTION_TYPE
 } from '../constants/erpTransactionTypes.js';
 import { allocateNextTypeBillNumber } from '../utils/transactionBilling.js';
+import { getPendingCreditDebitNotes } from '../utils/creditDebitNotes.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -385,7 +386,9 @@ router.get('/pending-bills', authenticateToken, requireActiveSubscription, async
       ? await getPendingPurchaseBills(userId, partyName, transactionType)
       : await getPendingOrderBills(userId, partyName, transactionType);
 
-    res.json({ bills });
+    const notes = await getPendingCreditDebitNotes(prisma, userId, partyName, partyType);
+
+    res.json({ bills: [...bills, ...notes] });
   } catch (error) {
     next(error);
   }

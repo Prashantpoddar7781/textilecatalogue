@@ -373,6 +373,10 @@ export interface BankBillAllocation {
   pendingAmount: number;
   taxableAmount?: number;
   adjustAmount: number;
+  adjustDirection?: 'add' | 'deduct' | string;
+  entryKind?: string;
+  noteKind?: string;
+  noteSide?: string;
 }
 
 export interface BankEntry {
@@ -433,6 +437,64 @@ export interface BankPendingBill {
   pendingAmount: number;
   taxableAmount?: number;
   adjustAmount: number;
+  entryKind?: 'bill' | 'credit_note' | 'debit_note' | string;
+  noteKind?: 'credit' | 'debit' | string;
+  noteSide?: 'sales' | 'purchase' | string;
+  adjustDirection?: 'add' | 'deduct' | string;
+  refBillNumber?: string | null;
+}
+
+export interface CreditDebitNote {
+  id: string;
+  userId: string;
+  noteKind: 'credit' | 'debit';
+  noteSide: 'sales' | 'purchase';
+  companyName?: string | null;
+  voucherNumber?: number | null;
+  noteNumber?: string | null;
+  noteDate: string;
+  partyType: 'customer' | 'supplier';
+  partyName: string;
+  customerId?: string | null;
+  supplierId?: string | null;
+  placeOfSupply?: string | null;
+  gstType?: string | null;
+  refBillNumber?: string | null;
+  refBillDate?: string | null;
+  challanNumber?: string | null;
+  saleAccount?: string | null;
+  purchaseType?: string | null;
+  pieces: number;
+  quantity: number;
+  grossAmount: number;
+  discountPercent: number;
+  discountAmount: number;
+  otherLess: number;
+  addAmount: number;
+  returnGoods: number;
+  hsnSac?: string | null;
+  taxableAmount: number;
+  gstRate: number;
+  cgstRate: number;
+  cgstAmount: number;
+  sgstRate: number;
+  sgstAmount: number;
+  igstRate: number;
+  igstAmount: number;
+  totalTaxAmount: number;
+  tcsRate: number;
+  tcsAmount: number;
+  netAmount: number;
+  netAmountAfterTds: number;
+  paidAmount: number;
+  isPaid: boolean;
+  adjustBillNumber?: string | null;
+  adjustBillId?: string | null;
+  remarks?: string | null;
+  isTally: boolean;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface SubscriptionStatus {

@@ -1,4 +1,4 @@
-import { BankEntry, BankPendingBill, BusinessProfile, CompletedOrderParty, Contact, Customer, Order, PurchaseBill, PurchaseBillExtraction, PurchaseBillParty, SalesInvoice, Supplier, SupplierLedgerEntry } from '../types';
+import { BankEntry, BankPendingBill, BusinessProfile, CompletedOrderParty, Contact, Customer, CreditDebitNote, Order, PurchaseBill, PurchaseBillExtraction, PurchaseBillParty, SalesInvoice, Supplier, SupplierLedgerEntry } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://textilecatalogue-production.up.railway.app/api';
 
@@ -607,6 +607,34 @@ export const bankEntriesApi = {
       method: 'DELETE'
     });
   },
+};
+
+export const creditDebitNotesApi = {
+  getTypes: async () => {
+    return request<{ types: Array<{ value: string; label: string; noteKind: string; noteSide: string; partyType: string }> }>('/credit-debit-notes/types');
+  },
+  getNextVoucher: async (noteType: string) => {
+    return request<{ voucherNumber: number; companyName: string; businessState: string; noteType: any }>(`/credit-debit-notes/next-voucher?noteType=${encodeURIComponent(noteType)}`);
+  },
+  calculate: async (body: Record<string, unknown>) => {
+    return request<{ totals: Record<string, number | string>; businessState: string }>('/credit-debit-notes/calculate', {
+      method: 'POST',
+      body: JSON.stringify(body)
+    });
+  },
+  getAll: async (noteType?: string) => {
+    const query = noteType ? `?noteType=${encodeURIComponent(noteType)}` : '';
+    return request<{ notes: CreditDebitNote[] }>(`/credit-debit-notes${query}`);
+  },
+  create: async (body: Record<string, unknown>) => {
+    return request<{ note: CreditDebitNote }>('/credit-debit-notes', {
+      method: 'POST',
+      body: JSON.stringify(body)
+    });
+  },
+  delete: async (id: string) => {
+    return request<{ success: boolean }>(`/credit-debit-notes/${id}`, { method: 'DELETE' });
+  }
 };
 
 // Billing API

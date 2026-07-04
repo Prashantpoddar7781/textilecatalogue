@@ -21,6 +21,18 @@ const formatBalance = (value: number) => `${formatMoney(Math.abs(value))} ${valu
 const formatDate = (value?: string | null) =>
   value ? new Date(value).toLocaleDateString('en-IN') : '-';
 
+const getEntryLabel = (bill: BankPendingBill) => {
+  if (bill.billType === 'credit_debit_note') {
+    return bill.noteKind === 'credit' ? 'Cr Note' : 'Dr Note';
+  }
+  return 'Bill';
+};
+
+const effectiveAdjust = (bill: BankPendingBill) => {
+  const amount = bill.adjustAmount || 0;
+  return bill.adjustDirection === 'deduct' ? -amount : amount;
+};
+
 const inputClass = 'w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm font-semibold outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100';
 const labelClass = 'mb-1 block text-[10px] font-black uppercase tracking-widest text-gray-500';
 
@@ -152,15 +164,25 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
 
   const summary = useMemo(() => {
     const selected = pendingBills.filter(bill => bill.adjustAmount > 0);
-    const grossAmount = selected.reduce((sum, bill) => sum + bill.billAmount, 0);
-    const adjustPending = selected.reduce((sum, bill) => sum + bill.pendingAmount, 0);
-    const adjustAdd = selected.reduce((sum, bill) => sum + bill.adjustAmount, 0);
-    const taxableValuePaidBills = selected.reduce((sum, bill) => {
-      const ratio = bill.billAmount > 0 ? bill.adjustAmount / bill.billAmount : 0;
-      return sum + (bill.taxableAmount || 0) * ratio;
+    const grossAmount = selected
+      .filter(bill => bill.billType !== 'credit_debit_note')
+      .reduce((sum, bill) => sum + bill.billAmount, 0);
+    const adjustPending = selected.reduce((sum, bill) => {
+      const sign = bill.adjustDirection === 'deduct' ? -1 : 1;
+      return sum + sign * bill.pendingAmount;
     }, 0);
+    const adjustAdd = selected.reduce((sum, bill) => sum + effectiveAdjust(bill), 0);
+    const creditNoteAdjust = selected
+      .filter(bill => bill.adjustDirection === 'deduct')
+      .reduce((sum, bill) => sum + bill.adjustAmount, 0);
+    const taxableValuePaidBills = selected
+      .filter(bill => bill.adjustDirection !== 'deduct')
+      .reduce((sum, bill) => {
+        const ratio = bill.billAmount > 0 ? bill.adjustAmount / bill.billAmount : 0;
+        return sum + (bill.taxableAmount || 0) * ratio;
+      }, 0);
     const netBillAmount = adjustAdd;
-    return { grossAmount, adjustPending, adjustAdd, netBillAmount, taxableValuePaidBills };
+    return { grossAmount, adjustPending, adjustAdd, netBillAmount, taxableValuePaidBills, creditNoteAdjust };
   }, [pendingBills]);
 
   const partyOptions = useMemo(() => {
@@ -195,13 +217,21 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
       alert('Enter received/paid amount first.');
       return;
     }
-    let remaining = amount;
-    setPendingBills(prev => prev.map(bill => {
-      if (remaining <= 0) return { ...bill, adjustAmount: 0 };
-      const adjustAmount = Math.min(bill.pendingAmount, remaining);
-      remaining -= adjustAmount;
-      return { ...bill, adjustAmount };
-    }));
+    setPendingBills(prev => {
+      const deductTotal = prev
+        .filter(bill => bill.adjustDirection === 'deduct')
+        .reduce((sum, bill) => sum + bill.pendingAmount, 0);
+      let remaining = amount + deductTotal;
+      return prev.map(bill => {
+        if (bill.adjustDirection === 'deduct') {
+          return { ...bill, adjustAmount: bill.pendingAmount };
+        }
+        if (remaining <= 0) return { ...bill, adjustAmount: 0 };
+        const adjustAmount = Math.min(bill.pendingAmount, remaining);
+        remaining -= adjustAmount;
+        return { ...bill, adjustAmount };
+      });
+    });
   };
 
   const startEdit = async (entry: BankEntry) => {
@@ -490,8 +520,8 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
 
             <section className="rounded-3xl border border-gray-100 bg-white shadow-sm">
               <div className="border-b px-5 py-4">
-                <h2 className="text-sm font-black uppercase tracking-wide text-gray-900">Pending Bills</h2>
-                <p className="text-xs text-gray-500">Select party and type to load matching pending bills. Enter adjust amount against each bill.</p>
+                <h2 className="text-sm font-black uppercase tracking-wide text-gray-900">Pending Bills & Notes</h2>
+                <p className="text-xs text-gray-500">Bills, credit notes (deduct), and debit notes (add) for the selected party. Credit notes reduce net payment/receipt.</p>
               </div>
               <div className="overflow-x-auto">
                 {loadingBills ? (
@@ -502,18 +532,18 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                 ) : pendingBills.length === 0 ? (
                   <div className="px-5 py-16 text-center text-sm text-gray-400">
                     {form.partyName
-                      ? form.partyType === 'supplier'
-                        ? `No pending ${form.transactionType} purchase bills left for this supplier.`
-                        : `No pending ${form.transactionType} sales bills left for this customer.`
+                      ? 'No pending bills or credit/debit notes left for this party.'
                       : form.partyType === 'supplier'
-                        ? 'Choose a supplier from scanned purchase bills to load pending bills.'
-                        : 'Choose a customer from completed orders to load pending bills.'}
+                        ? 'Choose a supplier to load pending bills and notes.'
+                        : 'Choose a customer to load pending bills and notes.'}
                   </div>
                 ) : (
                   <table className="min-w-full text-left text-sm">
                     <thead className="bg-gray-50 text-[11px] uppercase tracking-wide text-gray-500">
                       <tr>
-                        <th className="px-4 py-3">Bill No.</th>
+                        <th className="px-4 py-3">Entry</th>
+                        <th className="px-4 py-3">Bill / Note No.</th>
+                        <th className="px-4 py-3">+ / −</th>
                         <th className="px-4 py-3">Type</th>
                         <th className="px-4 py-3">Voucher</th>
                         <th className="px-4 py-3">Bill Date</th>
@@ -527,8 +557,10 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                     </thead>
                     <tbody>
                       {pendingBills.map(bill => (
-                        <tr key={bill.billId} className="border-t">
+                        <tr key={bill.billId} className={`border-t ${bill.billType === 'credit_debit_note' ? 'bg-amber-50/40' : ''}`}>
+                          <td className="px-4 py-3 text-xs font-black uppercase text-gray-600">{getEntryLabel(bill)}</td>
                           <td className="px-4 py-3 font-bold text-gray-900">{bill.billNumber}</td>
+                          <td className="px-4 py-3 font-black text-gray-700">{bill.adjustDirection === 'deduct' ? '−' : '+'}</td>
                           <td className="px-4 py-3 text-xs font-semibold text-gray-600">{bill.transactionType || '-'}</td>
                           <td className="px-4 py-3">{bill.voucherNumber || '-'}</td>
                           <td className="px-4 py-3">{formatDate(bill.billDate)}</td>
@@ -571,8 +603,12 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                   <p className="text-lg font-black text-gray-900">{formatMoney(summary.netBillAmount)}</p>
                 </div>
                 <div className="rounded-2xl bg-indigo-50 px-4 py-3">
-                  <p className={labelClass}>Adjust Add</p>
+                  <p className={labelClass}>Net Adjust</p>
                   <p className="text-lg font-black text-indigo-900">{formatMoney(summary.adjustAdd)}</p>
+                </div>
+                <div className="rounded-2xl bg-amber-50 px-4 py-3">
+                  <p className={labelClass}>Cr Note Deduct</p>
+                  <p className="text-lg font-black text-amber-900">{formatMoney(summary.creditNoteAdjust || 0)}</p>
                 </div>
                 <div className="rounded-2xl bg-green-50 px-4 py-3">
                   <p className={labelClass}>Taxable Value (Paid Bills)</p>

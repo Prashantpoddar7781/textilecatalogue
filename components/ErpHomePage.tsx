@@ -1,5 +1,6 @@
-import React from 'react';
-import { ArrowLeft, Banknote, Boxes, FileText, PackageCheck, ReceiptText, Truck } from 'lucide-react';
+import React, { useState } from 'react';
+import { ArrowLeft, Banknote, Boxes, ChevronDown, FileText, PackageCheck, ReceiptText, Truck } from 'lucide-react';
+import { ADDITIONAL_ERP_FEATURES } from '../constants/creditDebitNoteTypes';
 
 interface Props {
   onBack: () => void;
@@ -23,7 +24,7 @@ const sections = [
   },
   {
     title: 'Bank Payment / Receipts',
-    description: 'Enter bank payments and receipts, then link them to bills.',
+    description: 'Enter bank payments and receipts, then link them to bills and notes.',
     icon: Banknote,
     href: '/erp/bank',
     status: 'Build today'
@@ -52,6 +53,8 @@ const sections = [
 ];
 
 export const ErpHomePage: React.FC<Props> = ({ onBack, user }) => {
+  const [featuresOpen, setFeaturesOpen] = useState(false);
+
   return (
     <div className="min-h-screen bg-[#F6F7FB]">
       <header className="sticky top-0 z-30 border-b bg-white/95 px-4 py-3 shadow-sm backdrop-blur-xl">
@@ -80,6 +83,34 @@ export const ErpHomePage: React.FC<Props> = ({ onBack, user }) => {
           <p className="mt-3 max-w-2xl text-sm font-medium text-indigo-100 md:text-base">
             Use this on computer as an installable ERP while mobile stays linked for scanning, catalogue sharing, and order creation.
           </p>
+        </section>
+
+        <section className="relative mt-6">
+          <button
+            type="button"
+            onClick={() => setFeaturesOpen(open => !open)}
+            className="flex w-full items-center justify-between rounded-2xl border border-indigo-200 bg-white px-5 py-4 text-left shadow-sm transition hover:border-indigo-300 hover:shadow-md"
+          >
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-indigo-600">Additional Features</p>
+              <p className="mt-1 text-sm font-bold text-gray-900">Credit / Debit Notes and more</p>
+            </div>
+            <ChevronDown className={`h-5 w-5 text-indigo-600 transition ${featuresOpen ? 'rotate-180' : ''}`} />
+          </button>
+          {featuresOpen && (
+            <div className="absolute z-20 mt-2 w-full rounded-2xl border border-gray-100 bg-white p-2 shadow-xl">
+              {ADDITIONAL_ERP_FEATURES.map(feature => (
+                <button
+                  key={feature.href}
+                  type="button"
+                  onClick={() => { window.location.href = feature.href; }}
+                  className="block w-full rounded-xl px-4 py-3 text-left text-sm font-semibold text-gray-800 hover:bg-indigo-50 hover:text-indigo-700"
+                >
+                  {feature.title}
+                </button>
+              ))}
+            </div>
+          )}
         </section>
 
         <section className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">

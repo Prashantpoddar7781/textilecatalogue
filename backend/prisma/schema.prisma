@@ -43,6 +43,7 @@ model User {
   suppliers Supplier[]
   purchaseBills PurchaseBill[]
   bankEntries BankEntry[]
+  creditDebitNotes CreditDebitNote[]
 }
 
 model OtpCode {
@@ -428,6 +429,66 @@ model BankEntry {
   @@index([entryDate])
   @@index([partyName])
   @@index([transactionType])
+}
+
+model CreditDebitNote {
+  id                String   @id @default(cuid())
+  userId            String
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  noteKind          String   // credit | debit
+  noteSide          String   // sales | purchase
+  companyName       String?
+  voucherNumber     Int?
+  noteNumber        String?
+  noteDate          DateTime @default(now())
+  partyType         String   // customer | supplier
+  partyName         String
+  customerId        String?
+  supplierId        String?
+  placeOfSupply     String?
+  gstType           String?
+  refBillNumber     String?
+  refBillDate       DateTime?
+  challanNumber     String?
+  saleAccount       String?
+  purchaseType      String?
+  pieces            Float    @default(0)
+  quantity          Float    @default(0)
+  grossAmount       Float    @default(0)
+  discountPercent   Float    @default(0)
+  discountAmount    Float    @default(0)
+  otherLess         Float    @default(0)
+  addAmount         Float    @default(0)
+  returnGoods       Float    @default(0)
+  hsnSac            String?
+  taxableAmount     Float    @default(0)
+  gstRate           Float    @default(0)
+  cgstRate          Float    @default(0)
+  cgstAmount        Float    @default(0)
+  sgstRate          Float    @default(0)
+  sgstAmount        Float    @default(0)
+  igstRate          Float    @default(0)
+  igstAmount        Float    @default(0)
+  totalTaxAmount    Float    @default(0)
+  tcsRate           Float    @default(0)
+  tcsAmount         Float    @default(0)
+  netAmount         Float    @default(0)
+  netAmountAfterTds Float    @default(0)
+  paidAmount        Float    @default(0)
+  isPaid            Boolean  @default(false)
+  adjustBillNumber  String?
+  adjustBillId      String?
+  remarks           String?
+  isTally           Boolean  @default(false)
+  status            String   @default("posted")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([userId])
+  @@index([noteKind, noteSide])
+  @@index([partyName])
+  @@index([noteDate])
+  @@index([status])
 }
 
 model SubscriptionInvoice {
