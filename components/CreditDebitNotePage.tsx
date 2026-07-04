@@ -184,8 +184,9 @@ export const CreditDebitNotePage: React.FC<Props> = ({ noteType, onBack }) => {
         netAmountAfterTds: toNum(netAmountAfterTds || netAmount),
         paidAmount: toNum(paidAmount),
         isPaid,
-        adjustBillNumber: adjustBillNumber || undefined,
-        adjustBillId: pendingBills.find(b => b.billNumber === adjustBillNumber)?.billId,
+        adjustBillNumber: adjustBillNumber || refBillNumber || undefined,
+        adjustBillId: pendingBills.find(b => String(b.billNumber) === String(adjustBillNumber))?.billId
+          || pendingBills.find(b => String(b.billNumber) === String(refBillNumber))?.billId,
         remarks: remarks || undefined,
         isTally
       });

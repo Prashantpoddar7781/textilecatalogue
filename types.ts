@@ -442,6 +442,12 @@ export interface BankPendingBill {
   noteSide?: 'sales' | 'purchase' | string;
   adjustDirection?: 'add' | 'deduct' | string;
   refBillNumber?: string | null;
+  adjustBillNumber?: string | null;
+  adjustBillId?: string | null;
+  linkedNoteIds?: string[];
+  linkedCreditAmount?: number;
+  linkedDebitAmount?: number;
+  netPendingAmount?: number;
 }
 
 export interface CreditDebitNote {

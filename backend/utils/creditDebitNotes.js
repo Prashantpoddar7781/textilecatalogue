@@ -42,8 +42,40 @@ export function mapCreditDebitNoteToPendingItem(note, paidByNoteId) {
     noteKind: note.noteKind,
     noteSide: note.noteSide,
     adjustDirection,
-    refBillNumber: note.refBillNumber || null
+    refBillNumber: note.refBillNumber || null,
+    adjustBillNumber: note.adjustBillNumber || null,
+    adjustBillId: note.adjustBillId || null
   };
+}
+
+function noteLinksToBill(note, bill) {
+  if (!bill || bill.billType === 'credit_debit_note') return false;
+  if (note.adjustBillId && note.adjustBillId === bill.billId) return true;
+  const billNo = String(bill.billNumber || '');
+  const linkedNumbers = [note.adjustBillNumber, note.refBillNumber].filter(Boolean).map(String);
+  return linkedNumbers.some(value => value === billNo);
+}
+
+export function mergePendingBillsWithNotes(bills, notes) {
+  const noteItems = notes.map(note => ({ ...note }));
+  const billItems = bills.map(bill => {
+    const linkedNotes = noteItems.filter(note => noteLinksToBill(note, bill));
+    const linkedCredit = linkedNotes
+      .filter(note => note.adjustDirection === 'deduct')
+      .reduce((sum, note) => sum + note.pendingAmount, 0);
+    const linkedDebit = linkedNotes
+      .filter(note => note.adjustDirection === 'add')
+      .reduce((sum, note) => sum + note.pendingAmount, 0);
+    return {
+      ...bill,
+      linkedNoteIds: linkedNotes.map(note => note.billId),
+      linkedCreditAmount: roundMoney(linkedCredit),
+      linkedDebitAmount: roundMoney(linkedDebit),
+      netPendingAmount: roundMoney(Math.max(bill.pendingAmount - linkedCredit + linkedDebit, 0))
+    };
+  });
+
+  return [...billItems, ...noteItems];
 }
 
 export function matchesNoteParty(note, partyName, partyType) {

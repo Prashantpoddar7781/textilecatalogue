@@ -16,6 +16,8 @@ const today = () => new Date().toISOString().slice(0, 10);
 const formatMoney = (value: number) =>
   (Number(value) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+const roundMoneyLocal = (value: number) => Math.round((Number(value) || 0) * 100) / 100;
+
 const formatBalance = (value: number) => `${formatMoney(Math.abs(value))} ${value >= 0 ? 'DR' : 'CR'}`;
 
 const formatDate = (value?: string | null) =>
@@ -31,6 +33,43 @@ const getEntryLabel = (bill: BankPendingBill) => {
 const effectiveAdjust = (bill: BankPendingBill) => {
   const amount = bill.adjustAmount || 0;
   return bill.adjustDirection === 'deduct' ? -amount : amount;
+};
+
+const noteLinksToBill = (note: BankPendingBill, bill: BankPendingBill) => {
+  if (note.billType !== 'credit_debit_note' || bill.billType === 'credit_debit_note') return false;
+  if (note.adjustBillId && note.adjustBillId === bill.billId) return true;
+  const billNo = String(bill.billNumber || '');
+  return [note.adjustBillNumber, note.refBillNumber].filter(Boolean).map(String).includes(billNo);
+};
+
+const applyLinkedNoteAdjustments = (items: BankPendingBill[]) => {
+  const bills = items.filter(item => item.billType !== 'credit_debit_note');
+  return items.map(item => {
+    if (item.billType !== 'credit_debit_note') return item;
+    const linkedBill = bills.find(bill => noteLinksToBill(item, bill));
+    if (!linkedBill || linkedBill.adjustAmount <= 0) {
+      return linkedBill ? { ...item, adjustAmount: 0 } : item;
+    }
+    return { ...item, adjustAmount: item.pendingAmount };
+  });
+};
+
+const sortPendingItems = (items: BankPendingBill[]) => {
+  const bills = items.filter(item => item.billType !== 'credit_debit_note');
+  const notes = items.filter(item => item.billType === 'credit_debit_note');
+  const usedNoteIds = new Set<string>();
+  const ordered: BankPendingBill[] = [];
+  for (const bill of bills) {
+    ordered.push(bill);
+    for (const note of notes) {
+      if (noteLinksToBill(note, bill)) {
+        ordered.push(note);
+        usedNoteIds.add(note.billId);
+      }
+    }
+  }
+  ordered.push(...notes.filter(note => !usedNoteIds.has(note.billId)));
+  return ordered;
 };
 
 const inputClass = 'w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm font-semibold outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100';
@@ -138,7 +177,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
         partyType: partyType as any,
         transactionType: transactionType || undefined
       });
-      setPendingBills(bills.map(bill => ({ ...bill, adjustAmount: 0 })));
+      setPendingBills(sortPendingItems(bills.map(bill => ({ ...bill, adjustAmount: 0 }))));
     } catch {
       setPendingBills([]);
     } finally {
@@ -204,11 +243,14 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
 
   const updateBillAdjust = (billId: string, value: string) => {
     const adjustAmount = Math.max(0, Number(value) || 0);
-    setPendingBills(prev => prev.map(bill => {
-      if (bill.billId !== billId) return bill;
-      const capped = Math.min(adjustAmount, bill.pendingAmount);
-      return { ...bill, adjustAmount: capped };
-    }));
+    setPendingBills(prev => {
+      const updated = prev.map(bill => {
+        if (bill.billId !== billId) return bill;
+        const capped = Math.min(adjustAmount, bill.pendingAmount);
+        return { ...bill, adjustAmount: capped };
+      });
+      return applyLinkedNoteAdjustments(updated);
+    });
   };
 
   const applyReceivedAmount = () => {
@@ -218,19 +260,44 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
       return;
     }
     setPendingBills(prev => {
-      const deductTotal = prev
-        .filter(bill => bill.adjustDirection === 'deduct')
-        .reduce((sum, bill) => sum + bill.pendingAmount, 0);
-      let remaining = amount + deductTotal;
-      return prev.map(bill => {
-        if (bill.adjustDirection === 'deduct') {
-          return { ...bill, adjustAmount: bill.pendingAmount };
+      let remaining = amount;
+      let next = prev.map(item => ({ ...item, adjustAmount: 0 }));
+      const billRows = next.filter(item => item.billType !== 'credit_debit_note');
+
+      for (const bill of billRows) {
+        const linkedCredit = bill.linkedCreditAmount || 0;
+        const linkedDebit = bill.linkedDebitAmount || 0;
+        const netCashNeeded = Math.max(bill.pendingAmount - linkedCredit + linkedDebit, 0);
+        if (remaining <= 0) break;
+        if (remaining >= netCashNeeded) {
+          next = next.map(item => item.billId === bill.billId
+            ? { ...item, adjustAmount: bill.pendingAmount }
+            : item);
+          remaining = roundMoneyLocal(remaining - netCashNeeded);
+        } else {
+          const billAdjust = roundMoneyLocal(remaining + linkedCredit - linkedDebit);
+          next = next.map(item => item.billId === bill.billId
+            ? { ...item, adjustAmount: Math.min(Math.max(billAdjust, 0), bill.pendingAmount) }
+            : item);
+          remaining = 0;
         }
-        if (remaining <= 0) return { ...bill, adjustAmount: 0 };
-        const adjustAmount = Math.min(bill.pendingAmount, remaining);
-        remaining -= adjustAmount;
-        return { ...bill, adjustAmount };
-      });
+      }
+
+      next = applyLinkedNoteAdjustments(next);
+
+      const unlinkedCredits = next.filter(item =>
+        item.billType === 'credit_debit_note'
+        && item.adjustDirection === 'deduct'
+        && item.adjustAmount === 0
+      );
+      for (const note of unlinkedCredits) {
+        if (remaining <= 0) break;
+        const applyAmount = Math.min(note.pendingAmount, remaining);
+        next = next.map(item => item.billId === note.billId ? { ...item, adjustAmount: applyAmount } : item);
+        remaining = roundMoneyLocal(remaining - applyAmount);
+      }
+
+      return next;
     });
   };
 
@@ -550,8 +617,10 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                         <th className="px-4 py-3">Days</th>
                         <th className="px-4 py-3">Grace</th>
                         <th className="px-4 py-3">Adat/Disc</th>
+                        <th className="px-4 py-3">Linked Bill</th>
                         <th className="px-4 py-3 text-right">Bill Amount</th>
                         <th className="px-4 py-3 text-right">Pend Amt</th>
+                        <th className="px-4 py-3 text-right">Net Pend</th>
                         <th className="px-4 py-3 text-right">Adjust</th>
                       </tr>
                     </thead>
@@ -567,8 +636,18 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                           <td className="px-4 py-3">{bill.days}</td>
                           <td className="px-4 py-3">{bill.grace ?? 0}</td>
                           <td className="px-4 py-3">{formatMoney(bill.adatDisc || 0)}</td>
+                          <td className="px-4 py-3 text-xs font-semibold text-gray-600">
+                            {bill.billType === 'credit_debit_note'
+                              ? (bill.adjustBillNumber || bill.refBillNumber || '-')
+                              : (bill.linkedCreditAmount ? `Cr ${formatMoney(bill.linkedCreditAmount)}` : '-')}
+                          </td>
                           <td className="px-4 py-3 text-right font-semibold">{formatMoney(bill.billAmount)}</td>
                           <td className="px-4 py-3 text-right font-semibold text-amber-700">{formatMoney(bill.pendingAmount)}</td>
+                          <td className="px-4 py-3 text-right font-semibold text-indigo-700">
+                            {bill.billType === 'credit_debit_note'
+                              ? '-'
+                              : formatMoney(bill.netPendingAmount ?? bill.pendingAmount)}
+                          </td>
                           <td className="px-4 py-3 text-right">
                             <input
                               className="w-28 rounded-lg border px-2 py-1.5 text-right text-sm font-bold"

@@ -208,6 +208,49 @@ router.get('/', authenticateToken, requireActiveSubscription, async (req, res, n
   }
 });
 
+async function resolveAdjustBillLink(userId, noteSide, body) {
+  const adjustBillNumber = optionalString(body.adjustBillNumber) || optionalString(body.refBillNumber);
+  let adjustBillId = optionalString(body.adjustBillId);
+  if (adjustBillId) {
+    return { adjustBillId, adjustBillNumber };
+  }
+  if (!adjustBillNumber) {
+    return { adjustBillId: null, adjustBillNumber: null };
+  }
+
+  const numeric = parseInt(adjustBillNumber, 10);
+  if (noteSide === 'sales' && Number.isFinite(numeric)) {
+    const order = await prisma.order.findFirst({
+      where: {
+        userId,
+        OR: [{ typeBillNumber: numeric }, { invoiceNumber: numeric }]
+      },
+      select: { id: true }
+    });
+    if (order) {
+      return { adjustBillId: order.id, adjustBillNumber };
+    }
+  }
+
+  if (noteSide === 'purchase') {
+    const purchaseBill = await prisma.purchaseBill.findFirst({
+      where: {
+        userId,
+        OR: [
+          { billNumber: adjustBillNumber },
+          ...(Number.isFinite(numeric) ? [{ typeBillNumber: numeric }] : [])
+        ]
+      },
+      select: { id: true }
+    });
+    if (purchaseBill) {
+      return { adjustBillId: purchaseBill.id, adjustBillNumber };
+    }
+  }
+
+  return { adjustBillId: null, adjustBillNumber };
+}
+
 router.post('/', authenticateToken, requireActiveSubscription, [
   body('noteType').notEmpty(),
   body('partyName').optional().trim()
@@ -224,10 +267,11 @@ router.post('/', authenticateToken, requireActiveSubscription, [
       return res.status(400).json({ error: 'Invalid note type' });
     }
 
-    const [party, businessState, companyName] = await Promise.all([
+    const [party, businessState, companyName, billLink] = await Promise.all([
       resolveParty(userId, noteType, req.body),
       getBusinessState(userId),
-      getCompanyName(userId)
+      getCompanyName(userId),
+      resolveAdjustBillLink(userId, noteType.noteSide, req.body)
     ]);
 
     const payload = normalizePayload({
@@ -245,7 +289,8 @@ router.post('/', authenticateToken, requireActiveSubscription, [
           voucherNumber,
           noteNumber: optionalString(req.body.noteNumber) || String(voucherNumber),
           ...party,
-          ...payload
+          ...payload,
+          ...billLink
         }
       });
     });
