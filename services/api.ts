@@ -34,7 +34,12 @@ async function request<T>(
     if (response.status === 402 && typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('subscription-required', { detail: error }));
     }
-    throw new ApiError(response.status, error.error || error.message || 'Request failed');
+    throw new ApiError(
+      response.status,
+      response.status === 404 && (error.error === 'Route not found' || error.message === 'Route not found')
+        ? 'Backend API route missing. Redeploy the Railway backend service, wait 1–2 minutes, then refresh.'
+        : (error.error || error.message || 'Request failed')
+    );
   }
 
   return response.json();

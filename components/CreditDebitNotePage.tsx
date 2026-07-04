@@ -73,6 +73,7 @@ export const CreditDebitNotePage: React.FC<Props> = ({ noteType, onBack }) => {
       setPlaceOfSupply(result.businessState || '');
     } catch {
       setVoucherNumber(1);
+      setError('Could not load note voucher. If this says "Route not found", redeploy the Railway backend and refresh.');
     }
   }, [noteType.value]);
 

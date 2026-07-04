@@ -144,7 +144,11 @@ console.log('Middleware configured');
 // Health check - must be before routes to ensure it's always available
 app.get('/health', (req, res) => {
   try {
-    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+    res.json({
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+      version: '2026-07-04-credit-debit-notes'
+    });
   } catch (error) {
     res.status(500).json({ status: 'error', error: error.message });
   }
