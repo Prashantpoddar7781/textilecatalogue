@@ -188,11 +188,11 @@ const FullScreenDesignView: React.FC<{
 const DesignViewCard: React.FC<{
   design: TextileDesign;
   token: string;
-  getDisplayPrice: (d: TextileDesign) => { displayPrice: number; priceLabel: string };
+  getDisplayPrice: (d: TextileDesign) => { displayPrice: number; priceLabel: string } | null;
   onBuyNow: (d: TextileDesign) => void;
   onViewFullScreen: (d: TextileDesign) => void;
 }> = ({ design, token, getDisplayPrice, onBuyNow, onViewFullScreen }) => {
-  const { displayPrice, priceLabel } = getDisplayPrice(design);
+  const priceInfo = getDisplayPrice(design);
   return (
     <div className="bg-gray-50 rounded-xl overflow-hidden">
       <button
@@ -224,15 +224,19 @@ const DesignViewCard: React.FC<{
           )}
         </div>
         <div className="flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-              {priceLabel}
-            </p>
-            <div className="flex items-center text-xl font-black text-gray-900">
-              <IndianRupee className="w-4 h-4" />
-              <span>{displayPrice.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+          {priceInfo ? (
+            <div>
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                {priceInfo.priceLabel}
+              </p>
+              <div className="flex items-center text-xl font-black text-gray-900">
+                <IndianRupee className="w-4 h-4" />
+                <span>{priceInfo.displayPrice.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+              </div>
             </div>
-          </div>
+          ) : (
+            <div />
+          )}
           <div className="text-right">
             <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Fabric</p>
             <p className="text-sm font-bold text-gray-900">{design.fabric}</p>
@@ -352,10 +356,14 @@ export const ShareView: React.FC<{ token: string }> = ({ token }) => {
   }
 
   const getDisplayPrice = (design: TextileDesign) => {
+    if (!shareLink.selectedPriceType || shareLink.selectedPriceType === 'none') {
+      return null;
+    }
+
     let displayPrice = design.basePrice || design.retailPrice || 0;
     let priceLabel = 'Price';
 
-    if (shareLink.selectedPriceType && shareLink.selectedPriceType !== 'base') {
+    if (shareLink.selectedPriceType !== 'base') {
       const selectedPrice = design.additionalPrices?.find(ap => ap.name === shareLink.selectedPriceType);
       if (selectedPrice && selectedPrice.calculatedPrice) {
         displayPrice = selectedPrice.calculatedPrice;

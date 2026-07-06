@@ -18,7 +18,7 @@ export const ShareLinkDialog: React.FC<Props> = ({ design, designs, onClose }) =
   const [creating, setCreating] = useState(false);
   const [expiresIn, setExpiresIn] = useState<string>('7'); // days
   const [expiresInUnit, setExpiresInUnit] = useState<'days' | 'hours'>('days');
-  const [selectedPriceType, setSelectedPriceType] = useState<string>('base');
+  const [selectedPriceType, setSelectedPriceType] = useState<string>('none');
   const [securityMode, setSecurityMode] = useState<'normal' | 'device_locked'>('normal');
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
 
@@ -72,7 +72,11 @@ export const ShareLinkDialog: React.FC<Props> = ({ design, designs, onClose }) =
       const shareLink = await shareLinksApi.create({
         designIds: designList.map(d => d.id),
         expiresAt: expiresAt || undefined,
-        selectedPriceType: selectedPriceType === 'base' ? undefined : selectedPriceType,
+        selectedPriceType: selectedPriceType === 'none'
+          ? 'none'
+          : selectedPriceType === 'base'
+            ? undefined
+            : selectedPriceType,
         securityMode
       });
 
@@ -80,7 +84,7 @@ export const ShareLinkDialog: React.FC<Props> = ({ design, designs, onClose }) =
         setShareLinks(prev => [shareLink, ...prev]);
         setExpiresIn('7');
         setExpiresInUnit('days');
-        setSelectedPriceType('base');
+        setSelectedPriceType('none');
         setSecurityMode('normal');
 
         // Auto-copy and open WhatsApp with the link
@@ -157,7 +161,7 @@ export const ShareLinkDialog: React.FC<Props> = ({ design, designs, onClose }) =
   };
 
   const getPriceOptions = () => {
-    const options = [{ value: 'base', label: 'Base Price' }];
+    const options = [{ value: 'none', label: 'No price' }, { value: 'base', label: 'Base Price' }];
     if (primaryDesign?.additionalPrices) {
       primaryDesign.additionalPrices.forEach(ap => {
         options.push({ value: ap.name, label: ap.name });
@@ -331,7 +335,9 @@ export const ShareLinkDialog: React.FC<Props> = ({ design, designs, onClose }) =
                       <div className="flex-1">
                         <div className="flex items-center gap-2 mb-2">
                           <span className="font-semibold text-sm text-gray-900">
-                            {link.selectedPriceType || 'Base Price'}
+                            {link.selectedPriceType === 'none'
+                              ? 'No price'
+                              : link.selectedPriceType || 'Base Price'}
                           </span>
                           {!link.isActive && (
                             <span className="px-2 py-0.5 bg-red-100 text-red-700 text-xs font-medium rounded">

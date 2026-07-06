@@ -541,7 +541,12 @@ const App: React.FC = () => {
   const freeDesignsRemaining = subscription?.freeDesignsRemaining ?? Math.max(freeDesignLimit - designCountForPlan, 0);
   const hasPaidPlan = Boolean(subscription?.isActive && !subscription?.isTrialActive && !subscription?.isFree && !subscription?.isFreeDesignAllowanceActive);
   const showFreeDesignStatus = Boolean(subscription && !subscription.isFree && !hasPaidPlan);
-  const canAddDesign = Boolean(!subscription || subscription.isFree || hasPaidPlan || designCountForPlan < freeDesignLimit);
+  const canAddDesign = Boolean(
+    !subscription
+    || subscription.isFree
+    || hasPaidPlan
+    || (subscription.isActive && designCountForPlan < freeDesignLimit)
+  );
   const handleOpenUpload = () => {
     if (!canAddDesign) {
       setIsPricingOpen(true);

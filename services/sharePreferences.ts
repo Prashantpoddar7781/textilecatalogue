@@ -5,7 +5,7 @@ const STORAGE_KEY = 'textilehub_share_preferences';
 /** Defaults for share dialog; merged with stored partials on load. */
 export const DEFAULT_SHARE_OPTIONS: ShareOptions = {
   includeWholesale: false,
-  includeRetail: true,
+  includeRetail: false,
   includeFabric: true,
   includeDescription: false,
   includeFirmName: false,

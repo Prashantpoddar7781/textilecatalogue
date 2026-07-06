@@ -102,17 +102,8 @@ router.post('/register', [
       }
     });
 
-    // Generate token
-    const token = jwt.sign(
-      { userId: user.id, email: user.email },
-      process.env.JWT_SECRET || 'your-secret-key',
-      { expiresIn: '7d' }
-    );
-
-    res.status(201).json({
-      user,
-      token
-    });
+    const auth = await buildAuthResponse(user.id);
+    res.status(201).json(auth);
   } catch (error) {
     next(error);
   }

@@ -328,10 +328,12 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
           } else {
             // Fallback: share without files (some browsers don't support file sharing)
             const textWithInfo = selectedDesigns
-              .map(
-                (d, i) =>
-                  `${i + 1}. ${d.fabric} — ₹${(d.basePrice || d.retailPrice || 0).toLocaleString()}`
-              )
+              .map((d, i) => {
+                const pricePart = options.includeRetail
+                  ? ` — ₹${(d.basePrice || d.retailPrice || 0).toLocaleString()}`
+                  : '';
+                return `${i + 1}. ${d.fabric}${pricePart}`;
+              })
               .join('\n');
 
             if (navigator.canShare({ text: textWithInfo })) {
@@ -472,53 +474,68 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
 
           {!readyToLink && shareMode !== 'link' ? (
             <div className="space-y-4">
-              {/* Price Type Selection */}
+              {/* Price toggle + type selection */}
               <div className="space-y-2">
-                <label className="text-sm font-semibold text-gray-700">Select Price to Display</label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    disabled={processing}
-                    onClick={() => {
-                      setSelectedPriceType('base');
-                      setOptions({ ...options, includeRetail: true, includeWholesale: false });
-                    }}
-                    className={`flex items-center gap-2 p-3 rounded-xl border-2 transition-all text-left ${
-                      selectedPriceType === 'base' && options.includeRetail
-                        ? 'border-indigo-600 bg-indigo-50 text-indigo-900 shadow-sm' 
-                        : 'border-gray-200 bg-white text-gray-600'
-                    }`}
-                  >
-                    <span className="font-bold text-xs">Base Price</span>
-                    {selectedPriceType === 'base' && options.includeRetail && (
-                      <CheckSquare className="w-4 h-4 text-indigo-600 ml-auto" />
+                <button
+                  disabled={processing}
+                  onClick={() => setOptions({ ...options, includeRetail: !options.includeRetail })}
+                  className={`flex w-full items-center gap-3 p-4 rounded-2xl border-2 transition-all text-left ${
+                    options.includeRetail
+                      ? 'border-indigo-600 bg-indigo-50 text-indigo-900 shadow-sm'
+                      : 'border-gray-50 bg-gray-50 text-gray-400'
+                  }`}
+                >
+                  {options.includeRetail ? (
+                    <CheckSquare className="w-5 h-5 text-indigo-600" />
+                  ) : (
+                    <Square className="w-5 h-5" />
+                  )}
+                  <span className="font-bold text-xs uppercase tracking-tight">Price on image</span>
+                </button>
+
+                {options.includeRetail && (
+                  <>
+                    <label className="text-sm font-semibold text-gray-700">Select Price to Display</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        disabled={processing}
+                        onClick={() => setSelectedPriceType('base')}
+                        className={`flex items-center gap-2 p-3 rounded-xl border-2 transition-all text-left ${
+                          selectedPriceType === 'base'
+                            ? 'border-indigo-600 bg-indigo-50 text-indigo-900 shadow-sm'
+                            : 'border-gray-200 bg-white text-gray-600'
+                        }`}
+                      >
+                        <span className="font-bold text-xs">Base Price</span>
+                        {selectedPriceType === 'base' && (
+                          <CheckSquare className="w-4 h-4 text-indigo-600 ml-auto" />
+                        )}
+                      </button>
+
+                      {selectedDesigns[0]?.additionalPrices?.map((ap) => (
+                        <button
+                          key={ap.name}
+                          disabled={processing}
+                          onClick={() => setSelectedPriceType(ap.name)}
+                          className={`flex items-center gap-2 p-3 rounded-xl border-2 transition-all text-left ${
+                            selectedPriceType === ap.name
+                              ? 'border-indigo-600 bg-indigo-50 text-indigo-900 shadow-sm'
+                              : 'border-gray-200 bg-white text-gray-600'
+                          }`}
+                        >
+                          <span className="font-bold text-xs">{ap.name}</span>
+                          {selectedPriceType === ap.name && (
+                            <CheckSquare className="w-4 h-4 text-indigo-600 ml-auto" />
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                    {selectedDesigns[0]?.additionalPrices && selectedDesigns[0].additionalPrices.length === 0 && (
+                      <p className="text-xs text-gray-400 text-center py-2">
+                        No additional prices available. Add them when creating/editing the design.
+                      </p>
                     )}
-                  </button>
-                  
-                  {selectedDesigns[0]?.additionalPrices?.map((ap) => (
-                    <button
-                      key={ap.name}
-                      disabled={processing}
-                      onClick={() => {
-                        setSelectedPriceType(ap.name);
-                        setOptions({ ...options, includeRetail: true, includeWholesale: false });
-                      }}
-                      className={`flex items-center gap-2 p-3 rounded-xl border-2 transition-all text-left ${
-                        selectedPriceType === ap.name && options.includeRetail
-                          ? 'border-indigo-600 bg-indigo-50 text-indigo-900 shadow-sm' 
-                          : 'border-gray-200 bg-white text-gray-600'
-                      }`}
-                    >
-                      <span className="font-bold text-xs">{ap.name}</span>
-                      {selectedPriceType === ap.name && options.includeRetail && (
-                        <CheckSquare className="w-4 h-4 text-indigo-600 ml-auto" />
-                      )}
-                    </button>
-                  ))}
-                </div>
-                {selectedDesigns[0]?.additionalPrices && selectedDesigns[0].additionalPrices.length === 0 && (
-                  <p className="text-xs text-gray-400 text-center py-2">
-                    No additional prices available. Add them when creating/editing the design.
-                  </p>
+                  </>
                 )}
               </div>
 
