@@ -420,7 +420,9 @@ export const AccountLedgerPage: React.FC<Props> = ({ onBack, initialPartyType = 
                                       const value = column.key === 'billType' && typeof raw === 'string'
                                         ? (billTypeLabel[raw] || raw)
                                         : column.isMoney
-                                          ? formatMoney(Number(raw))
+                                          ? (raw === '-' || raw == null || raw === '')
+                                            ? '-'
+                                            : formatMoney(Number(raw))
                                           : (raw ?? '-');
                                       return (
                                         <td

@@ -567,14 +567,22 @@ export async function getLedgerEntryDetail(prisma, userId, sourceType, sourceId)
       ]),
       lineColumns: [
         { key: 'description', label: 'Item' },
+        { key: 'hsnCode', label: 'HSN' },
         { key: 'quantity', label: 'Qty', align: 'right' },
+        { key: 'cut', label: 'Cut', align: 'right' },
+        { key: 'pcs', label: 'Pcs', align: 'right' },
+        { key: 'unit', label: 'Unit' },
         { key: 'rate', label: 'Rate', align: 'right', isMoney: true },
         { key: 'amount', label: 'Amount', align: 'right', isMoney: true }
       ],
       lineItems: lineItems.map(line => ({
         description: line.description || 'Item',
-        quantity: line.quantity,
-        rate: roundMoney(line.rate ?? 0),
+        hsnCode: line.hsnCode || '-',
+        quantity: line.quantity ?? '-',
+        cut: line.cut ?? '-',
+        pcs: line.pcs ?? '-',
+        unit: line.unit || '-',
+        rate: line.rate != null ? roundMoney(line.rate) : '-',
         amount: roundMoney(line.amount ?? 0)
       }))
     };
