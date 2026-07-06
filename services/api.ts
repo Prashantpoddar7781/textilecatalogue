@@ -1,4 +1,4 @@
-import { BankEntry, BankPendingBill, BusinessProfile, CompletedOrderParty, Contact, Customer, CreditDebitNote, Order, PurchaseBill, PurchaseBillExtraction, PurchaseBillParty, SalesInvoice, Supplier, SupplierLedgerEntry } from '../types';
+import { AccountLedgerEntry, AccountLedgerParty, BankEntry, BankPendingBill, BusinessProfile, CompletedOrderParty, Contact, Customer, CreditDebitNote, Order, PurchaseBill, PurchaseBillExtraction, PurchaseBillParty, SalesInvoice, Supplier, SupplierLedgerEntry } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://textilecatalogue-production.up.railway.app/api';
 
@@ -547,6 +547,36 @@ export const erpApi = {
       method: 'POST',
       body: JSON.stringify(body)
     });
+  }
+};
+
+// Account Ledger API
+export const ledgerApi = {
+  getParties: async (partyType: 'customer' | 'supplier') => {
+    return request<{ partyType: string; parties: AccountLedgerParty[] }>(`/ledger/parties?partyType=${partyType}`);
+  },
+  getCustomerLedger: async (partyName: string) => {
+    return request<{
+      partyType: string;
+      partyName: string;
+      ledger: AccountLedgerEntry[];
+      runningBalance: number;
+      balanceType: 'DR' | 'CR';
+      totalDebit: number;
+      totalCredit: number;
+    }>(`/ledger/customer?partyName=${encodeURIComponent(partyName)}`);
+  },
+  getSupplierLedger: async (supplierId: string) => {
+    return request<{
+      partyType: string;
+      partyName: string;
+      supplierId: string;
+      ledger: AccountLedgerEntry[];
+      runningBalance: number;
+      balanceType: 'DR' | 'CR';
+      totalDebit: number;
+      totalCredit: number;
+    }>(`/ledger/supplier/${supplierId}`);
   }
 };
 

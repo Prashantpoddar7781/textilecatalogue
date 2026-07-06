@@ -14,7 +14,7 @@ import { ShareStatsPage } from './components/ShareStatsPage';
 import { ReportsPage } from './components/ReportsPage';
 import { InvoicesPage } from './components/InvoicesPage';
 import { ScanPurchaseBillPage } from './components/ScanPurchaseBillPage';
-import { SupplierLedgerPage } from './components/SupplierLedgerPage';
+import { AccountLedgerPage } from './components/AccountLedgerPage';
 import { ErpHomePage } from './components/ErpHomePage';
 import { ErpSalesPage } from './components/ErpSalesPage';
 import { ErpPurchasePage } from './components/ErpPurchasePage';
@@ -46,6 +46,7 @@ const App: React.FC = () => {
   const erpBankMatch = pathname.match(/^\/erp\/bank\/?$/);
   const erpSalesMatch = pathname.match(/^\/erp\/sales\/?$/);
   const erpPurchaseMatch = pathname.match(/^\/erp\/purchase\/?$/);
+  const erpLedgerMatch = pathname.match(/^\/erp\/ledger\/?$/);
   const erpNotesMatch = pathname.match(/^\/erp\/notes\/([^/]+)\/?$/);
   const shareStatsMatch = pathname.match(/^\/share-stats\/?$/);
   const reportsMatch = pathname.match(/^\/reports\/?$/);
@@ -611,7 +612,11 @@ const App: React.FC = () => {
   }
 
   if (supplierLedgerMatch) {
-    return <SupplierLedgerPage onBack={() => { window.location.href = '/'; }} />;
+    return <AccountLedgerPage initialPartyType="supplier" onBack={() => { window.location.href = '/erp'; }} />;
+  }
+
+  if (erpLedgerMatch) {
+    return <AccountLedgerPage onBack={() => { window.location.href = '/erp'; }} />;
   }
 
   if (erpMatch) {
@@ -781,10 +786,10 @@ const App: React.FC = () => {
                 </button>
                 <button
                   type="button"
-                  onClick={() => { window.location.href = '/suppliers/ledger'; }}
+                  onClick={() => { window.location.href = '/erp/ledger'; }}
                   className="px-3 py-2 rounded-2xl text-xs font-bold border border-gray-200 bg-white text-gray-700 shadow-sm hover:bg-gray-50"
                 >
-                  Ledger
+                  Ledgers
                 </button>
                 <button
                   type="button"
@@ -905,11 +910,11 @@ const App: React.FC = () => {
                   className="touch-target flex w-full items-center gap-3 rounded-2xl border border-gray-100 bg-gray-50 px-4 text-left font-bold text-gray-900 active:bg-gray-100"
                   onClick={() => {
                     setMobileMenuOpen(false);
-                    window.location.href = '/suppliers/ledger';
+                    window.location.href = '/erp/ledger';
                   }}
                 >
                   <FileText className="w-5 h-5 text-indigo-600 shrink-0" />
-                  Supplier ledger
+                  Account ledgers
                 </button>
                 <button
                   type="button"

@@ -360,6 +360,33 @@ export interface SupplierLedgerEntry {
   lineCount: number;
 }
 
+export interface AccountLedgerEntry {
+  id: string;
+  sourceType: 'order' | 'sales_invoice' | 'purchase_bill' | 'bank_entry' | 'credit_debit_note' | string;
+  sourceId: string;
+  date: string;
+  voucherNumber?: string | null;
+  billNumber?: string | null;
+  account: string;
+  particulars: string;
+  debitAmount: number;
+  creditAmount: number;
+  runningBalance: number;
+  balanceType: 'DR' | 'CR';
+  lineCount?: number;
+}
+
+export interface AccountLedgerParty {
+  partyType: 'customer' | 'supplier';
+  partyName: string;
+  customerId?: string | null;
+  supplierId?: string | null;
+  gstNumber?: string | null;
+  mobileNumber?: string | null;
+  entryCount?: number;
+  runningBalance?: number;
+}
+
 export interface BankBillAllocation {
   billId: string;
   billType: 'order' | 'sales_invoice' | 'purchase_bill' | string;

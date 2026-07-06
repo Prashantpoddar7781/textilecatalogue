@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ArrowLeft, Banknote, Boxes, ChevronDown, FileText, PackageCheck, ReceiptText, Truck } from 'lucide-react';
+import { ArrowLeft, Banknote, BookOpen, Boxes, ChevronDown, FileText, PackageCheck, ReceiptText, Truck } from 'lucide-react';
 import { ADDITIONAL_ERP_FEATURES } from '../constants/creditDebitNoteTypes';
 
 interface Props {
@@ -28,6 +28,13 @@ const sections = [
     icon: Banknote,
     href: '/erp/bank',
     status: 'Build today'
+  },
+  {
+    title: 'Account Ledgers',
+    description: 'Customer and supplier ledgers synced from sales, purchases, bank, and notes.',
+    icon: BookOpen,
+    href: '/erp/ledger',
+    status: 'Demo ready'
   },
   {
     title: 'Grey Dispatch',

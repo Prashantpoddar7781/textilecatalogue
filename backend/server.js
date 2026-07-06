@@ -15,7 +15,7 @@ import billingRoutes from './routes/billing.js';
 import invoiceRoutes from './routes/invoices.js';
 import purchaseRoutes from './routes/purchases.js';
 import bankEntryRoutes from './routes/bankEntries.js';
-import creditDebitNoteRoutes from './routes/creditDebitNotes.js';
+import ledgerRoutes from './routes/ledger.js';
 
 dotenv.config();
 
@@ -147,7 +147,7 @@ app.get('/health', (req, res) => {
     res.json({
       status: 'ok',
       timestamp: new Date().toISOString(),
-      version: '2026-07-04-bank-note-adjust'
+      version: '2026-07-06-account-ledgers'
     });
   } catch (error) {
     res.status(500).json({ status: 'error', error: error.message });
@@ -172,7 +172,8 @@ try {
   app.use('/api/purchases', purchaseRoutes);
   app.use('/api/bank-entries', bankEntryRoutes);
   app.use('/api/credit-debit-notes', creditDebitNoteRoutes);
-  console.log('Routes configured: /api/auth, /api/billing, /api/designs, /api/users, /api/catalogues, /api/contacts, /api/customers, /api/share-links, /api/orders, /api/invoices, /api/purchases, /api/bank-entries, /api/credit-debit-notes');
+  app.use('/api/ledger', ledgerRoutes);
+  console.log('Routes configured: /api/auth, /api/billing, /api/designs, /api/users, /api/catalogues, /api/contacts, /api/customers, /api/share-links, /api/orders, /api/invoices, /api/purchases, /api/bank-entries, /api/credit-debit-notes, /api/ledger');
 } catch (error) {
   console.error('Error setting up routes:', error);
   // Server will still start, but routes may not work
