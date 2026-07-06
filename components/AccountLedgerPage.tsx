@@ -5,6 +5,7 @@ import { AccountLedgerEntry, AccountLedgerParty, PurchaseBill } from '../types';
 
 interface Props {
   onBack: () => void;
+  initialPartyType?: 'customer' | 'supplier';
 }
 
 const formatMoney = (value: number) =>
@@ -21,8 +22,8 @@ const sourceLabel: Record<string, string> = {
   credit_debit_note: 'Cr/Dr Note'
 };
 
-export const AccountLedgerPage: React.FC<Props> = ({ onBack }) => {
-  const [partyType, setPartyType] = useState<'customer' | 'supplier'>('customer');
+export const AccountLedgerPage: React.FC<Props> = ({ onBack, initialPartyType = 'customer' }) => {
+  const [partyType, setPartyType] = useState<'customer' | 'supplier'>(initialPartyType);
   const [parties, setParties] = useState<AccountLedgerParty[]>([]);
   const [selectedCustomerName, setSelectedCustomerName] = useState('');
   const [selectedSupplierId, setSelectedSupplierId] = useState('');
