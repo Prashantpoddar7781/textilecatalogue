@@ -15,6 +15,7 @@ import billingRoutes from './routes/billing.js';
 import invoiceRoutes from './routes/invoices.js';
 import purchaseRoutes from './routes/purchases.js';
 import bankEntryRoutes from './routes/bankEntries.js';
+import creditDebitNoteRoutes from './routes/creditDebitNotes.js';
 import ledgerRoutes from './routes/ledger.js';
 
 dotenv.config();
@@ -147,7 +148,7 @@ app.get('/health', (req, res) => {
     res.json({
       status: 'ok',
       timestamp: new Date().toISOString(),
-      version: '2026-07-06-account-ledgers'
+      version: '2026-07-06-ledger-routes-fix'
     });
   } catch (error) {
     res.status(500).json({ status: 'error', error: error.message });
