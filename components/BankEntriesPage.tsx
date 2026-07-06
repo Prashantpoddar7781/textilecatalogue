@@ -72,6 +72,59 @@ const sortPendingItems = (items: BankPendingBill[]) => {
   return ordered;
 };
 
+const getLinkedNoteIds = (items: BankPendingBill[], billId: string) =>
+  items
+    .filter(item => item.billType === 'credit_debit_note')
+    .filter(note => {
+      const bill = items.find(row => row.billId === billId && row.billType !== 'credit_debit_note');
+      return bill ? noteLinksToBill(note, bill) : false;
+    })
+    .map(note => note.billId);
+
+const computeAdjustmentBreakdown = (
+  items: BankPendingBill[],
+  selectedIds: Set<string>,
+  receivedAmount: number
+) => {
+  const isSelected = (id: string) => selectedIds.has(id);
+  const billRows = items.filter(item => item.billType !== 'credit_debit_note' && isSelected(item.billId));
+  const noteRows = items.filter(item => item.billType === 'credit_debit_note' && isSelected(item.billId));
+
+  const totalBillPending = roundMoneyLocal(billRows.reduce((sum, bill) => sum + bill.pendingAmount, 0));
+  const totalBillAmount = roundMoneyLocal(billRows.reduce((sum, bill) => sum + bill.billAmount, 0));
+  const billAdjustTotal = roundMoneyLocal(billRows.reduce((sum, bill) => sum + (bill.adjustAmount || 0), 0));
+  const creditDeduct = roundMoneyLocal(
+    noteRows.filter(note => note.adjustDirection === 'deduct').reduce((sum, note) => sum + (note.adjustAmount || 0), 0)
+  );
+  const debitAdd = roundMoneyLocal(
+    noteRows.filter(note => note.adjustDirection === 'add').reduce((sum, note) => sum + (note.adjustAmount || 0), 0)
+  );
+  const netCashRequired = roundMoneyLocal(billAdjustTotal - creditDeduct + debitAdd);
+  const balanceLeftOnBills = roundMoneyLocal(
+    billRows.reduce((sum, bill) => sum + Math.max(bill.pendingAmount - (bill.adjustAmount || 0), 0), 0)
+  );
+  const received = roundMoneyLocal(receivedAmount);
+  const unallocated = roundMoneyLocal(received - netCashRequired);
+  const shortfall = unallocated < 0 ? Math.abs(unallocated) : 0;
+  const excess = unallocated > 0 ? unallocated : 0;
+
+  return {
+    selectedBillCount: billRows.length,
+    selectedNoteCount: noteRows.filter(note => (note.adjustAmount || 0) > 0).length,
+    totalBillPending,
+    totalBillAmount,
+    billAdjustTotal,
+    creditDeduct,
+    debitAdd,
+    netCashRequired,
+    balanceLeftOnBills,
+    received,
+    applied: netCashRequired,
+    shortfall,
+    excess
+  };
+};
+
 const inputClass = 'w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm font-semibold outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100';
 const labelClass = 'mb-1 block text-[10px] font-black uppercase tracking-widest text-gray-500';
 
@@ -111,6 +164,8 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState('');
   const [pendingNoteCount, setPendingNoteCount] = useState(0);
+  const [selectedAdjustIds, setSelectedAdjustIds] = useState<Set<string>>(new Set());
+  const [quickBillPick, setQuickBillPick] = useState('');
 
   const loadEntries = async () => {
     setLoading(true);
@@ -170,6 +225,8 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
     if (!partyName.trim()) {
       setPendingBills([]);
       setPendingNoteCount(0);
+      setSelectedAdjustIds(new Set());
+      setQuickBillPick('');
       return;
     }
     setLoadingBills(true);
@@ -181,9 +238,13 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
       });
       setPendingBills(sortPendingItems(bills.map(bill => ({ ...bill, adjustAmount: 0 }))));
       setPendingNoteCount(noteCount ?? bills.filter(b => b.billType === 'credit_debit_note').length);
+      setSelectedAdjustIds(new Set());
+      setQuickBillPick('');
     } catch (err: any) {
       setPendingBills([]);
       setPendingNoteCount(0);
+      setSelectedAdjustIds(new Set());
+      setQuickBillPick('');
       setError(err.message || 'Could not load pending bills and credit/debit notes.');
     } finally {
       setLoadingBills(false);
@@ -207,7 +268,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
   }, [form.bankName, form.partyName, form.partyType, form.transactionType, refreshBalances, loadPendingBills]);
 
   const summary = useMemo(() => {
-    const selected = pendingBills.filter(bill => bill.adjustAmount > 0);
+    const selected = pendingBills.filter(bill => selectedAdjustIds.has(bill.billId) && bill.adjustAmount > 0);
     const grossAmount = selected
       .filter(bill => bill.billType !== 'credit_debit_note')
       .reduce((sum, bill) => sum + bill.billAmount, 0);
@@ -219,6 +280,9 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
     const creditNoteAdjust = selected
       .filter(bill => bill.adjustDirection === 'deduct')
       .reduce((sum, bill) => sum + bill.adjustAmount, 0);
+    const debitNoteAdjust = selected
+      .filter(bill => bill.adjustDirection === 'add')
+      .reduce((sum, bill) => sum + bill.adjustAmount, 0);
     const taxableValuePaidBills = selected
       .filter(bill => bill.adjustDirection !== 'deduct')
       .reduce((sum, bill) => {
@@ -226,8 +290,22 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
         return sum + (bill.taxableAmount || 0) * ratio;
       }, 0);
     const netBillAmount = adjustAdd;
-    return { grossAmount, adjustPending, adjustAdd, netBillAmount, taxableValuePaidBills, creditNoteAdjust };
-  }, [pendingBills]);
+    const breakdown = computeAdjustmentBreakdown(
+      pendingBills,
+      selectedAdjustIds,
+      Number(form.amount) || 0
+    );
+    return {
+      grossAmount,
+      adjustPending,
+      adjustAdd,
+      netBillAmount,
+      taxableValuePaidBills,
+      creditNoteAdjust,
+      debitNoteAdjust,
+      breakdown
+    };
+  }, [pendingBills, selectedAdjustIds, form.amount]);
 
   const partyOptions = useMemo(() => {
     if (form.partyType === 'supplier') {
@@ -256,7 +334,64 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
     [pendingBills]
   );
 
+  const isAdjustSelected = (billId: string) => selectedAdjustIds.has(billId);
+
+  const toggleBillSelection = (billId: string, includeLinkedNotes = true) => {
+    setSelectedAdjustIds(prev => {
+      const next = new Set(prev);
+      if (next.has(billId)) {
+        next.delete(billId);
+        if (includeLinkedNotes) {
+          getLinkedNoteIds(pendingBills, billId).forEach(id => next.delete(id));
+        }
+        setPendingBills(items => items.map(item => {
+          if (item.billId !== billId && !getLinkedNoteIds(items, billId).includes(item.billId)) return item;
+          return { ...item, adjustAmount: 0 };
+        }));
+      } else {
+        next.add(billId);
+        if (includeLinkedNotes) {
+          getLinkedNoteIds(pendingBills, billId).forEach(id => next.add(id));
+        }
+      }
+      return next;
+    });
+  };
+
+  const toggleNoteSelection = (noteId: string) => {
+    setSelectedAdjustIds(prev => {
+      const next = new Set(prev);
+      if (next.has(noteId)) {
+        next.delete(noteId);
+        setPendingBills(items => items.map(item =>
+          item.billId === noteId ? { ...item, adjustAmount: 0 } : item
+        ));
+      } else {
+        next.add(noteId);
+      }
+      return next;
+    });
+  };
+
+  const selectBillByNumber = (billNumber: string) => {
+    const bill = pendingBillRows.find(row => String(row.billNumber) === String(billNumber));
+    if (!bill || selectedAdjustIds.has(bill.billId)) return;
+    setSelectedAdjustIds(prev => {
+      const next = new Set(prev);
+      next.add(bill.billId);
+      getLinkedNoteIds(pendingBills, bill.billId).forEach(id => next.add(id));
+      return next;
+    });
+  };
+
+  const clearBillSelection = () => {
+    setSelectedAdjustIds(new Set());
+    setPendingBills(prev => prev.map(item => ({ ...item, adjustAmount: 0 })));
+    setQuickBillPick('');
+  };
+
   const updateBillAdjust = (billId: string, value: string) => {
+    if (!selectedAdjustIds.has(billId)) return;
     const adjustAmount = Math.max(0, Number(value) || 0);
     setPendingBills(prev => {
       const updated = prev.map(bill => {
@@ -274,10 +409,17 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
       alert('Enter received/paid amount first.');
       return;
     }
+    const selectedBillRows = pendingBillRows.filter(bill => selectedAdjustIds.has(bill.billId));
+    if (selectedBillRows.length === 0) {
+      alert('Select at least one bill to adjust using the checkboxes.');
+      return;
+    }
     setPendingBills(prev => {
       let remaining = amount;
       let next = prev.map(item => ({ ...item, adjustAmount: 0 }));
-      const billRows = next.filter(item => item.billType !== 'credit_debit_note');
+      const billRows = next.filter(item =>
+        item.billType !== 'credit_debit_note' && selectedAdjustIds.has(item.billId)
+      );
 
       for (const bill of billRows) {
         const linkedCredit = bill.linkedCreditAmount || 0;
@@ -302,6 +444,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
 
       const unlinkedCredits = next.filter(item =>
         item.billType === 'credit_debit_note'
+        && selectedAdjustIds.has(item.billId)
         && item.adjustDirection === 'deduct'
         && item.adjustAmount === 0
       );
@@ -320,6 +463,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
     setPendingBills(prev => {
       const next = prev.map(item => {
         if (item.billType !== 'credit_debit_note' || item.adjustDirection !== 'deduct') return item;
+        if (!selectedAdjustIds.has(item.billId)) return item;
         return { ...item, adjustAmount: item.pendingAmount };
       });
       return applyLinkedNoteAdjustments(next);
@@ -330,6 +474,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
     setPendingBills(prev => {
       const next = prev.map(item => {
         if (item.billType === 'credit_debit_note') return item;
+        if (!selectedAdjustIds.has(item.billId)) return item;
         if ((item.linkedCreditAmount || 0) > 0 || (item.linkedDebitAmount || 0) > 0) {
           return { ...item, adjustAmount: item.pendingAmount };
         }
@@ -360,7 +505,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
       remarks: entry.remarks || ''
     });
     if (Array.isArray(entry.billAllocations) && entry.billAllocations.length > 0) {
-      setPendingBills(entry.billAllocations.map(item => ({
+      const restored = entry.billAllocations.map(item => ({
         billId: item.billId,
         billType: item.billType,
         billNumber: item.billNumber,
@@ -373,13 +518,17 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
         pendingAmount: item.pendingAmount,
         taxableAmount: item.taxableAmount,
         adjustAmount: item.adjustAmount
-      })));
+      }));
+      setPendingBills(restored);
+      setSelectedAdjustIds(new Set(restored.filter(item => item.adjustAmount > 0).map(item => item.billId)));
     }
   };
 
   const resetForm = async () => {
     setEditingId(null);
     setPendingBills([]);
+    setSelectedAdjustIds(new Set());
+    setQuickBillPick('');
     setForm(emptyForm());
     await loadMasterData();
   };
@@ -400,8 +549,13 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
     }
 
     const billAllocations = pendingBills
-      .filter(bill => bill.adjustAmount > 0)
+      .filter(bill => selectedAdjustIds.has(bill.billId) && bill.adjustAmount > 0)
       .map(bill => ({ ...bill }));
+
+    if (billAllocations.length === 0) {
+      alert('Select at least one bill or note and enter an adjustment amount.');
+      return;
+    }
 
     setSaving(true);
     setError('');
@@ -583,9 +737,37 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                 <div>
                   <label className={labelClass}>{form.entryType === 'receipt' ? 'Rec. Amt.' : 'Pay. Amt.'}</label>
                   <input className={inputClass} type="number" min="0" step="0.01" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} />
+                  {summary.breakdown.received > 0 && (
+                    <div className="mt-2 rounded-xl border border-indigo-100 bg-indigo-50/60 px-3 py-2 text-xs font-semibold text-indigo-950">
+                      <div className="flex justify-between gap-3">
+                        <span>Net adjustment needed</span>
+                        <span className="font-black">{formatMoney(summary.breakdown.netCashRequired)}</span>
+                      </div>
+                      {summary.breakdown.shortfall > 0 ? (
+                        <div className="mt-1 flex justify-between gap-3 text-red-700">
+                          <span>Short by</span>
+                          <span className="font-black">{formatMoney(summary.breakdown.shortfall)}</span>
+                        </div>
+                      ) : summary.breakdown.excess > 0 ? (
+                        <div className="mt-1 flex justify-between gap-3 text-emerald-700">
+                          <span>Unallocated (extra)</span>
+                          <span className="font-black">{formatMoney(summary.breakdown.excess)}</span>
+                        </div>
+                      ) : summary.breakdown.netCashRequired > 0 ? (
+                        <div className="mt-1 flex justify-between gap-3 text-emerald-700">
+                          <span>Fully applied</span>
+                          <span className="font-black">₹0.00 left</span>
+                        </div>
+                      ) : null}
+                    </div>
+                  )}
                 </div>
-                <button type="button" onClick={applyReceivedAmount} className="rounded-xl bg-indigo-50 px-4 py-2.5 text-sm font-black text-indigo-700 hover:bg-indigo-100">
-                  Auto-adjust bills
+                <button
+                  type="button"
+                  onClick={applyReceivedAmount}
+                  className="rounded-xl bg-indigo-50 px-4 py-2.5 text-sm font-black text-indigo-700 hover:bg-indigo-100"
+                >
+                  Auto-adjust selected bills
                 </button>
               </div>
             </section>
@@ -625,8 +807,41 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
 
             <section className="rounded-3xl border border-gray-100 bg-white shadow-sm">
               <div className="border-b px-5 py-4">
-                <h2 className="text-sm font-black uppercase tracking-wide text-gray-900">Pending Bills</h2>
-                <p className="text-xs text-gray-500">Sales/purchase bills for the selected party and transaction type.</p>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h2 className="text-sm font-black uppercase tracking-wide text-gray-900">Select Bills to Adjust</h2>
+                    <p className="text-xs text-gray-500">
+                      Choose TYPE to filter the list, then tick the bill(s) you want to adjust. Only selected bills are included in auto-adjust.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <select
+                      className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-semibold"
+                      value={quickBillPick}
+                      onChange={e => {
+                        const value = e.target.value;
+                        setQuickBillPick(value);
+                        if (value) selectBillByNumber(value);
+                      }}
+                    >
+                      <option value="">Pick bill no.</option>
+                      {pendingBillRows.map(bill => (
+                        <option key={bill.billId} value={bill.billNumber}>
+                          Bill {bill.billNumber} · {formatMoney(bill.pendingAmount)} pending
+                        </option>
+                      ))}
+                    </select>
+                    <button type="button" onClick={clearBillSelection} className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-black text-gray-700">
+                      Clear selection
+                    </button>
+                  </div>
+                </div>
+                {selectedAdjustIds.size > 0 && (
+                  <p className="mt-2 rounded-xl bg-indigo-50 px-3 py-2 text-xs font-bold text-indigo-900">
+                    {summary.breakdown.selectedBillCount} bill{summary.breakdown.selectedBillCount === 1 ? '' : 's'} selected
+                    {summary.breakdown.selectedNoteCount > 0 ? ` · ${summary.breakdown.selectedNoteCount} note adjustment(s)` : ''}
+                  </p>
+                )}
               </div>
               <div className="overflow-x-auto">
                 {loadingBills ? (
@@ -644,23 +859,34 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                   <table className="min-w-full text-left text-sm">
                     <thead className="bg-gray-50 text-[11px] uppercase tracking-wide text-gray-500">
                       <tr>
+                        <th className="px-4 py-3">Select</th>
                         <th className="px-4 py-3">Bill No.</th>
                         <th className="px-4 py-3">Type</th>
-                        <th className="px-4 py-3">Voucher</th>
                         <th className="px-4 py-3">Bill Date</th>
                         <th className="px-4 py-3">Linked Cr/Dr</th>
                         <th className="px-4 py-3 text-right">Bill Amount</th>
                         <th className="px-4 py-3 text-right">Pend Amt</th>
                         <th className="px-4 py-3 text-right">Net Pend</th>
                         <th className="px-4 py-3 text-right">Adjust</th>
+                        <th className="px-4 py-3 text-right">Balance Left</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {pendingBillRows.map(bill => (
-                        <tr key={bill.billId} className="border-t">
+                      {pendingBillRows.map(bill => {
+                        const selected = isAdjustSelected(bill.billId);
+                        const balanceLeft = Math.max(bill.pendingAmount - (bill.adjustAmount || 0), 0);
+                        return (
+                        <tr key={bill.billId} className={`border-t ${selected ? 'bg-indigo-50/40' : 'opacity-80'}`}>
+                          <td className="px-4 py-3">
+                            <input
+                              type="checkbox"
+                              checked={selected}
+                              onChange={() => toggleBillSelection(bill.billId)}
+                              className="h-4 w-4 rounded border-gray-300 text-indigo-600"
+                            />
+                          </td>
                           <td className="px-4 py-3 font-bold text-gray-900">{bill.billNumber}</td>
                           <td className="px-4 py-3 text-xs font-semibold text-gray-600">{bill.transactionType || '-'}</td>
-                          <td className="px-4 py-3">{bill.voucherNumber || '-'}</td>
                           <td className="px-4 py-3">{formatDate(bill.billDate)}</td>
                           <td className="px-4 py-3 text-xs font-semibold text-amber-800">
                             {(bill.linkedCreditAmount || 0) > 0 && `Cr −${formatMoney(bill.linkedCreditAmount || 0)}`}
@@ -673,17 +899,21 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                           <td className="px-4 py-3 text-right font-semibold text-indigo-700">{formatMoney(bill.netPendingAmount ?? bill.pendingAmount)}</td>
                           <td className="px-4 py-3 text-right">
                             <input
-                              className="w-28 rounded-lg border px-2 py-1.5 text-right text-sm font-bold"
+                              className={`w-28 rounded-lg border px-2 py-1.5 text-right text-sm font-bold ${selected ? 'bg-white' : 'bg-gray-100 cursor-not-allowed'}`}
                               type="number"
                               min="0"
                               step="0.01"
                               max={bill.pendingAmount}
+                              disabled={!selected}
                               value={bill.adjustAmount || ''}
                               onChange={e => updateBillAdjust(bill.billId, e.target.value)}
                             />
                           </td>
+                          <td className={`px-4 py-3 text-right font-bold ${balanceLeft > 0 ? 'text-red-700' : 'text-emerald-700'}`}>
+                            {formatMoney(balanceLeft)}
+                          </td>
                         </tr>
-                      ))}
+                      )})}
                     </tbody>
                   </table>
                 )}
@@ -731,69 +961,119 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                   <table className="min-w-full text-left text-sm">
                     <thead className="bg-amber-50 text-[11px] uppercase tracking-wide text-amber-900">
                       <tr>
+                        <th className="px-4 py-3">Select</th>
                         <th className="px-4 py-3">Entry</th>
                         <th className="px-4 py-3">Note No.</th>
                         <th className="px-4 py-3">+ / −</th>
-                        <th className="px-4 py-3">Type</th>
-                        <th className="px-4 py-3">Note Date</th>
                         <th className="px-4 py-3">Linked Bill</th>
                         <th className="px-4 py-3 text-right">Note Amount</th>
-                        <th className="px-4 py-3 text-right">Pend Amt</th>
                         <th className="px-4 py-3 text-right">Adjust</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {pendingNoteRows.map(note => (
-                        <tr key={note.billId} className="border-t bg-amber-50/20">
+                      {pendingNoteRows.map(note => {
+                        const selected = isAdjustSelected(note.billId);
+                        return (
+                        <tr key={note.billId} className={`border-t ${selected ? 'bg-amber-50/50' : 'bg-white opacity-80'}`}>
+                          <td className="px-4 py-3">
+                            <input
+                              type="checkbox"
+                              checked={selected}
+                              onChange={() => toggleNoteSelection(note.billId)}
+                              className="h-4 w-4 rounded border-gray-300 text-amber-600"
+                            />
+                          </td>
                           <td className="px-4 py-3 text-xs font-black uppercase text-amber-900">{getEntryLabel(note)}</td>
                           <td className="px-4 py-3 font-bold text-gray-900">{note.billNumber}</td>
                           <td className="px-4 py-3 text-lg font-black text-amber-900">{note.adjustDirection === 'deduct' ? '−' : '+'}</td>
-                          <td className="px-4 py-3 text-xs font-semibold text-gray-600">{note.transactionType || '-'}</td>
-                          <td className="px-4 py-3">{formatDate(note.billDate)}</td>
                           <td className="px-4 py-3 text-xs font-semibold text-gray-600">{note.adjustBillNumber || note.refBillNumber || 'Open (any bill)'}</td>
-                          <td className="px-4 py-3 text-right font-semibold">{formatMoney(note.billAmount)}</td>
-                          <td className="px-4 py-3 text-right font-semibold text-amber-700">{formatMoney(note.pendingAmount)}</td>
+                          <td className="px-4 py-3 text-right font-semibold">{formatMoney(note.pendingAmount)}</td>
                           <td className="px-4 py-3 text-right">
                             <input
-                              className="w-28 rounded-lg border-2 border-amber-300 bg-white px-2 py-1.5 text-right text-sm font-bold"
+                              className={`w-28 rounded-lg border-2 px-2 py-1.5 text-right text-sm font-bold ${selected ? 'border-amber-300 bg-white' : 'border-gray-200 bg-gray-100 cursor-not-allowed'}`}
                               type="number"
                               min="0"
                               step="0.01"
                               max={note.pendingAmount}
+                              disabled={!selected}
                               value={note.adjustAmount || ''}
                               onChange={e => updateBillAdjust(note.billId, e.target.value)}
                             />
                           </td>
                         </tr>
-                      ))}
+                      )})}
                     </tbody>
                   </table>
                 )}
               </div>
             </section>
 
-            <section className="rounded-3xl border border-gray-100 bg-white p-5 shadow-sm">
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-                <div className="rounded-2xl bg-gray-50 px-4 py-3">
-                  <p className={labelClass}>Gross Amt</p>
-                  <p className="text-lg font-black text-gray-900">{formatMoney(summary.grossAmount)}</p>
+            <section className="rounded-3xl border-2 border-indigo-200 bg-white p-5 shadow-sm">
+              <h2 className="text-sm font-black uppercase tracking-wide text-indigo-950">Adjustment Summary</h2>
+              <p className="mt-1 text-xs text-gray-500">Clear breakdown of bill total, note adjustments, received amount, and balance left.</p>
+
+              <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                <div className="rounded-2xl border border-gray-100 bg-gray-50 p-4">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">Bill & Note Breakdown</p>
+                  <div className="mt-3 space-y-2 text-sm">
+                    <div className="flex justify-between gap-4">
+                      <span className="text-gray-600">Selected bills — pending total</span>
+                      <span className="font-bold text-gray-900">{formatMoney(summary.breakdown.totalBillPending)}</span>
+                    </div>
+                    <div className="flex justify-between gap-4">
+                      <span className="text-gray-600">Bill amount adjusting</span>
+                      <span className="font-bold text-gray-900">{formatMoney(summary.breakdown.billAdjustTotal)}</span>
+                    </div>
+                    <div className="flex justify-between gap-4 text-amber-800">
+                      <span>Less: credit notes</span>
+                      <span className="font-black">− {formatMoney(summary.breakdown.creditDeduct)}</span>
+                    </div>
+                    <div className="flex justify-between gap-4 text-emerald-800">
+                      <span>Add: debit notes</span>
+                      <span className="font-black">+ {formatMoney(summary.breakdown.debitAdd)}</span>
+                    </div>
+                    <div className="border-t border-gray-200 pt-2 flex justify-between gap-4">
+                      <span className="font-black text-indigo-950">Net cash for this entry</span>
+                      <span className="text-lg font-black text-indigo-900">{formatMoney(summary.breakdown.netCashRequired)}</span>
+                    </div>
+                    <div className="flex justify-between gap-4 text-red-700">
+                      <span>Balance still on selected bills</span>
+                      <span className="font-black">{formatMoney(summary.breakdown.balanceLeftOnBills)}</span>
+                    </div>
+                  </div>
                 </div>
-                <div className="rounded-2xl bg-gray-50 px-4 py-3">
-                  <p className={labelClass}>Adjust Pend.</p>
-                  <p className="text-lg font-black text-gray-900">{formatMoney(summary.adjustPending)}</p>
+
+                <div className="rounded-2xl border border-indigo-100 bg-indigo-50/50 p-4">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-indigo-700">Received / Paid Amount</p>
+                  <div className="mt-3 space-y-2 text-sm">
+                    <div className="flex justify-between gap-4">
+                      <span className="text-gray-600">{form.entryType === 'receipt' ? 'Amount received' : 'Amount paid'}</span>
+                      <span className="font-bold text-gray-900">{formatMoney(summary.breakdown.received)}</span>
+                    </div>
+                    <div className="flex justify-between gap-4">
+                      <span className="text-gray-600">Applied to bills & notes</span>
+                      <span className="font-bold text-indigo-900">{formatMoney(summary.breakdown.applied)}</span>
+                    </div>
+                    {summary.breakdown.shortfall > 0 ? (
+                      <div className="flex justify-between gap-4 rounded-xl bg-red-100 px-3 py-2 text-red-800">
+                        <span className="font-bold">Shortfall (need more)</span>
+                        <span className="font-black">{formatMoney(summary.breakdown.shortfall)}</span>
+                      </div>
+                    ) : (
+                      <div className="flex justify-between gap-4 rounded-xl bg-emerald-100 px-3 py-2 text-emerald-800">
+                        <span className="font-bold">Unallocated amount left</span>
+                        <span className="font-black">{formatMoney(summary.breakdown.excess)}</span>
+                      </div>
+                    )}
+                    <div className="border-t border-indigo-200 pt-2 flex justify-between gap-4">
+                      <span className="font-black text-indigo-950">Still pending on selected bills</span>
+                      <span className="text-lg font-black text-red-700">{formatMoney(summary.breakdown.balanceLeftOnBills)}</span>
+                    </div>
+                  </div>
                 </div>
-                <div className="rounded-2xl bg-gray-50 px-4 py-3">
-                  <p className={labelClass}>Net Bill Amt.</p>
-                  <p className="text-lg font-black text-gray-900">{formatMoney(summary.netBillAmount)}</p>
-                </div>
-                <div className="rounded-2xl bg-indigo-50 px-4 py-3">
-                  <p className={labelClass}>Net Adjust</p>
-                  <p className="text-lg font-black text-indigo-900">{formatMoney(summary.adjustAdd)}</p>
-                </div>
-                <div className="rounded-2xl bg-amber-50 px-4 py-3">
-                  <p className={labelClass}>Cr Note Deduct</p>
-                  <p className="text-lg font-black text-amber-900">{formatMoney(summary.creditNoteAdjust || 0)}</p>
-                </div>
+              </div>
+
+              <div className="mt-4 grid gap-3 md:grid-cols-3">
                 <div className="rounded-2xl bg-green-50 px-4 py-3">
                   <p className={labelClass}>Taxable Value (Paid Bills)</p>
                   <p className="text-lg font-black text-green-900">{formatMoney(summary.taxableValuePaidBills)}</p>
