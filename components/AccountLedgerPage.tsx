@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, BookOpen, Loader2, RefreshCw, Search } from 'lucide-react';
-import { ledgerApi, purchasesApi } from '../services/api';
-import { AccountLedgerEntry, AccountLedgerParty, PurchaseBill } from '../types';
+import { ArrowLeft, BookOpen, Loader2, RefreshCw, Search, X } from 'lucide-react';
+import { ledgerApi } from '../services/api';
+import { AccountLedgerEntry, AccountLedgerParty, LedgerEntryDetail } from '../types';
 
 interface Props {
   onBack: () => void;
@@ -14,11 +14,24 @@ const formatMoney = (value: number) =>
 const formatDate = (value?: string | null) =>
   value ? new Date(value).toLocaleDateString('en-IN') : '-';
 
+const formatFieldValue = (field: { value: string | number; isMoney?: boolean }) => {
+  if (field.isMoney) return formatMoney(Number(field.value));
+  const text = String(field.value);
+  if (/^\d{4}-\d{2}-\d{2}T/.test(text)) return formatDate(text);
+  return text;
+};
+
 const sourceLabel: Record<string, string> = {
   order: 'Sales Bill',
   sales_invoice: 'Sales Invoice',
   purchase_bill: 'Purchase Bill',
   bank_entry: 'Bank Entry',
+  credit_debit_note: 'Cr/Dr Note'
+};
+
+const billTypeLabel: Record<string, string> = {
+  order: 'Sales Bill',
+  purchase_bill: 'Purchase Bill',
   credit_debit_note: 'Cr/Dr Note'
 };
 
@@ -32,7 +45,9 @@ export const AccountLedgerPage: React.FC<Props> = ({ onBack, initialPartyType = 
   const [balanceType, setBalanceType] = useState<'DR' | 'CR'>('DR');
   const [totalDebit, setTotalDebit] = useState(0);
   const [totalCredit, setTotalCredit] = useState(0);
-  const [selectedBill, setSelectedBill] = useState<PurchaseBill | null>(null);
+  const [selectedEntry, setSelectedEntry] = useState<AccountLedgerEntry | null>(null);
+  const [entryDetail, setEntryDetail] = useState<LedgerEntryDetail | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [ledgerLoading, setLedgerLoading] = useState(false);
   const [query, setQuery] = useState('');
@@ -62,9 +77,14 @@ export const AccountLedgerPage: React.FC<Props> = ({ onBack, initialPartyType = 
     }
   };
 
+  const clearEntryDetail = () => {
+    setSelectedEntry(null);
+    setEntryDetail(null);
+  };
+
   const loadLedger = async () => {
     setLedgerLoading(true);
-    setSelectedBill(null);
+    clearEntryDetail();
     setError('');
     try {
       if (partyType === 'customer') {
@@ -118,14 +138,19 @@ export const AccountLedgerPage: React.FC<Props> = ({ onBack, initialPartyType = 
     );
   }, [parties, query]);
 
-  const openPurchaseBill = async (entry: AccountLedgerEntry) => {
-    if (entry.sourceType !== 'purchase_bill') return;
+  const openEntryDetail = async (entry: AccountLedgerEntry) => {
+    setSelectedEntry(entry);
+    setEntryDetail(null);
+    setDetailLoading(true);
     setError('');
     try {
-      const { bill } = await purchasesApi.getBill(entry.sourceId);
-      setSelectedBill(bill);
+      const { detail } = await ledgerApi.getEntryDetail(entry.sourceType, entry.sourceId);
+      setEntryDetail(detail);
     } catch (err: any) {
-      setError(err.message || 'Could not load bill detail.');
+      setError(err.message || 'Could not load entry details.');
+      setSelectedEntry(null);
+    } finally {
+      setDetailLoading(false);
     }
   };
 
@@ -281,40 +306,139 @@ export const AccountLedgerPage: React.FC<Props> = ({ onBack, initialPartyType = 
                         </tr>
                       </thead>
                       <tbody>
-                        {ledger.map(entry => (
-                          <tr
-                            key={entry.id}
-                            className={`border-b ${entry.sourceType === 'purchase_bill' ? 'cursor-pointer hover:bg-indigo-50' : ''}`}
-                            onClick={() => void openPurchaseBill(entry)}
-                          >
-                            <td className="py-3">{formatDate(entry.date)}</td>
-                            <td className="text-xs font-bold text-gray-600">{sourceLabel[entry.sourceType] || entry.sourceType}</td>
-                            <td className="font-semibold">{entry.billNumber || entry.voucherNumber || '-'}</td>
-                            <td className="text-xs">{entry.account}</td>
-                            <td className="max-w-[220px] truncate text-xs text-gray-600" title={entry.particulars}>{entry.particulars}</td>
-                            <td className="text-right text-red-700">{entry.debitAmount ? formatMoney(entry.debitAmount) : '-'}</td>
-                            <td className="text-right text-emerald-700">{entry.creditAmount ? formatMoney(entry.creditAmount) : '-'}</td>
-                            <td className="text-right font-bold">
-                              {formatMoney(Math.abs(entry.runningBalance))} {entry.balanceType}
-                            </td>
-                          </tr>
-                        ))}
+                        {ledger.map(entry => {
+                          const isSelected = selectedEntry?.id === entry.id;
+                          return (
+                            <tr
+                              key={entry.id}
+                              className={`cursor-pointer border-b transition-colors hover:bg-indigo-50 ${isSelected ? 'bg-indigo-50' : ''}`}
+                              onClick={() => void openEntryDetail(entry)}
+                            >
+                              <td className="py-3">{formatDate(entry.date)}</td>
+                              <td className="text-xs font-bold text-gray-600">{sourceLabel[entry.sourceType] || entry.sourceType}</td>
+                              <td className="font-semibold">{entry.billNumber || entry.voucherNumber || '-'}</td>
+                              <td className="text-xs">{entry.account}</td>
+                              <td className="max-w-[220px] truncate text-xs text-gray-600" title={entry.particulars}>{entry.particulars}</td>
+                              <td className="text-right text-red-700">{entry.debitAmount ? formatMoney(entry.debitAmount) : '-'}</td>
+                              <td className="text-right text-emerald-700">{entry.creditAmount ? formatMoney(entry.creditAmount) : '-'}</td>
+                              <td className="text-right font-bold">
+                                {formatMoney(Math.abs(entry.runningBalance))} {entry.balanceType}
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
                 )}
 
-                {selectedBill && (
+                {(selectedEntry || detailLoading) && (
                   <div className="mt-6 rounded-3xl border border-indigo-100 bg-indigo-50/60 p-4">
-                    <h3 className="text-sm font-black uppercase tracking-wide text-indigo-950">
-                      Purchase Bill: {selectedBill.billNumber || selectedBill.id}
-                    </h3>
-                    <div className="mt-3 grid gap-2 text-sm sm:grid-cols-4">
-                      <p><span className="font-bold">Taxable:</span> {formatMoney(selectedBill.taxableAmount)}</p>
-                      <p><span className="font-bold">CGST:</span> {formatMoney(selectedBill.cgstAmount)}</p>
-                      <p><span className="font-bold">SGST:</span> {formatMoney(selectedBill.sgstAmount)}</p>
-                      <p><span className="font-bold">Total:</span> {formatMoney(selectedBill.grandTotal)}</p>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        {detailLoading ? (
+                          <>
+                            <h3 className="text-sm font-black uppercase tracking-wide text-indigo-950">Loading entry...</h3>
+                            <p className="mt-1 text-xs text-indigo-700">
+                              {sourceLabel[selectedEntry?.sourceType || ''] || selectedEntry?.sourceType}
+                            </p>
+                          </>
+                        ) : entryDetail ? (
+                          <>
+                            <h3 className="text-sm font-black uppercase tracking-wide text-indigo-950">{entryDetail.title}</h3>
+                            {entryDetail.subtitle && (
+                              <p className="mt-1 text-xs font-semibold text-indigo-700">{entryDetail.subtitle}</p>
+                            )}
+                            <p className="mt-1 text-[10px] font-bold uppercase text-indigo-500">
+                              {sourceLabel[entryDetail.sourceType] || entryDetail.sourceType}
+                            </p>
+                          </>
+                        ) : null}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={clearEntryDetail}
+                        className="rounded-lg border border-indigo-200 bg-white p-1.5 text-indigo-700 hover:bg-indigo-100"
+                        aria-label="Close entry details"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
                     </div>
+
+                    {detailLoading ? (
+                      <div className="mt-4 flex items-center text-sm text-indigo-700">
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Fetching complete details...
+                      </div>
+                    ) : entryDetail ? (
+                      <>
+                        {selectedEntry && (
+                          <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                            <span className="rounded-full bg-white px-2.5 py-1 font-bold text-red-700">
+                              Debit: {selectedEntry.debitAmount ? formatMoney(selectedEntry.debitAmount) : '-'}
+                            </span>
+                            <span className="rounded-full bg-white px-2.5 py-1 font-bold text-emerald-700">
+                              Credit: {selectedEntry.creditAmount ? formatMoney(selectedEntry.creditAmount) : '-'}
+                            </span>
+                            <span className="rounded-full bg-white px-2.5 py-1 font-bold text-indigo-900">
+                              Balance: {formatMoney(Math.abs(selectedEntry.runningBalance))} {selectedEntry.balanceType}
+                            </span>
+                          </div>
+                        )}
+
+                        {entryDetail.fields.length > 0 && (
+                          <div className="mt-4 grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-3">
+                            {entryDetail.fields.map(field => (
+                              <p key={field.label} className="rounded-xl bg-white/80 px-3 py-2">
+                                <span className="font-bold text-gray-700">{field.label}:</span>{' '}
+                                <span className="text-gray-900">{formatFieldValue(field)}</span>
+                              </p>
+                            ))}
+                          </div>
+                        )}
+
+                        {entryDetail.lineItems && entryDetail.lineItems.length > 0 && entryDetail.lineColumns && (
+                          <div className="mt-4 overflow-x-auto rounded-2xl border border-indigo-100 bg-white">
+                            <table className="min-w-full text-left text-xs">
+                              <thead className="border-b bg-gray-50 text-[10px] uppercase text-gray-500">
+                                <tr>
+                                  {entryDetail.lineColumns.map(column => (
+                                    <th
+                                      key={column.key}
+                                      className={`px-3 py-2 ${column.align === 'right' ? 'text-right' : ''}`}
+                                    >
+                                      {column.label}
+                                    </th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {entryDetail.lineItems.map((line, index) => (
+                                  <tr key={index} className="border-b last:border-0">
+                                    {entryDetail.lineColumns!.map(column => {
+                                      const raw = line[column.key];
+                                      const value = column.key === 'billType' && typeof raw === 'string'
+                                        ? (billTypeLabel[raw] || raw)
+                                        : column.isMoney
+                                          ? formatMoney(Number(raw))
+                                          : (raw ?? '-');
+                                      return (
+                                        <td
+                                          key={column.key}
+                                          className={`px-3 py-2 ${column.align === 'right' ? 'text-right' : ''}`}
+                                        >
+                                          {value}
+                                        </td>
+                                      );
+                                    })}
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </>
+                    ) : null}
                   </div>
                 )}
               </div>

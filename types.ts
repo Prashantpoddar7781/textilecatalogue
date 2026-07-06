@@ -387,6 +387,29 @@ export interface AccountLedgerParty {
   runningBalance?: number;
 }
 
+export interface LedgerEntryDetailField {
+  label: string;
+  value: string | number;
+  isMoney?: boolean;
+}
+
+export interface LedgerEntryDetailColumn {
+  key: string;
+  label: string;
+  align?: 'left' | 'right';
+  isMoney?: boolean;
+}
+
+export interface LedgerEntryDetail {
+  title: string;
+  subtitle?: string;
+  sourceType: string;
+  sourceId: string;
+  fields: LedgerEntryDetailField[];
+  lineColumns?: LedgerEntryDetailColumn[];
+  lineItems?: Array<Record<string, string | number | null>>;
+}
+
 export interface BankBillAllocation {
   billId: string;
   billType: 'order' | 'sales_invoice' | 'purchase_bill' | string;

@@ -1,4 +1,4 @@
-import { AccountLedgerEntry, AccountLedgerParty, BankEntry, BankPendingBill, BusinessProfile, CompletedOrderParty, Contact, Customer, CreditDebitNote, Order, PurchaseBill, PurchaseBillExtraction, PurchaseBillParty, SalesInvoice, Supplier, SupplierLedgerEntry } from '../types';
+import { AccountLedgerEntry, AccountLedgerParty, BankEntry, BankPendingBill, BusinessProfile, CompletedOrderParty, Contact, Customer, CreditDebitNote, LedgerEntryDetail, Order, PurchaseBill, PurchaseBillExtraction, PurchaseBillParty, SalesInvoice, Supplier, SupplierLedgerEntry } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://textilecatalogue-production.up.railway.app/api';
 
@@ -577,6 +577,9 @@ export const ledgerApi = {
       totalDebit: number;
       totalCredit: number;
     }>(`/ledger/supplier/${supplierId}`);
+  },
+  getEntryDetail: async (sourceType: string, sourceId: string) => {
+    return request<{ detail: LedgerEntryDetail }>(`/ledger/entry/${sourceType}/${sourceId}`);
   }
 };
 

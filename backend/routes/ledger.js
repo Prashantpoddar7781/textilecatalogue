@@ -6,6 +6,7 @@ import {
   buildCustomerLedger,
   buildSupplierLedger,
   getCustomerLedgerParties,
+  getLedgerEntryDetail,
   getSupplierLedgerParties
 } from '../utils/accountLedger.js';
 
@@ -38,6 +39,23 @@ router.get('/customer', authenticateToken, requireActiveSubscription, async (req
 
     const result = await buildCustomerLedger(prisma, req.user.userId, partyName);
     res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/entry/:sourceType/:sourceId', authenticateToken, requireActiveSubscription, async (req, res, next) => {
+  try {
+    const detail = await getLedgerEntryDetail(
+      prisma,
+      req.user.userId,
+      req.params.sourceType,
+      req.params.sourceId
+    );
+    if (!detail) {
+      return res.status(404).json({ error: 'Ledger entry not found' });
+    }
+    res.json({ detail });
   } catch (error) {
     next(error);
   }

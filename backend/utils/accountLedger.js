@@ -3,6 +3,8 @@ import {
   getOrderPartyName,
   matchesPartyName,
   matchesSupplierName,
+  normalizeBillAllocations,
+  normalizeOrderLines,
   roundMoney
 } from './orderBilling.js';
 import { matchesNoteParty } from './creditDebitNotes.js';
@@ -356,4 +358,305 @@ export async function buildSupplierLedger(prisma, userId, supplierId) {
     totalDebit: roundMoney(ledger.reduce((sum, row) => sum + row.debitAmount, 0)),
     totalCredit: roundMoney(ledger.reduce((sum, row) => sum + row.creditAmount, 0))
   };
+}
+
+const VALID_SOURCE_TYPES = new Set([
+  'order',
+  'sales_invoice',
+  'purchase_bill',
+  'bank_entry',
+  'credit_debit_note'
+]);
+
+function buildDetailFields(items) {
+  return items.filter(item => item && item.value !== undefined && item.value !== null && item.value !== '');
+}
+
+function toIsoDate(value) {
+  if (!value) return '';
+  return new Date(value).toISOString();
+}
+
+async function resolveBillNumbers(prisma, userId, allocations) {
+  const orderIds = allocations.filter(item => item.billType === 'order').map(item => item.billId);
+  const purchaseIds = allocations.filter(item => item.billType === 'purchase_bill').map(item => item.billId);
+  const noteIds = allocations.filter(item => item.billType === 'credit_debit_note').map(item => item.billId);
+
+  const [orders, bills, notes] = await Promise.all([
+    orderIds.length
+      ? prisma.order.findMany({
+        where: { userId, id: { in: orderIds } },
+        select: { id: true, typeBillNumber: true, orderNumber: true, invoiceNumber: true }
+      })
+      : [],
+    purchaseIds.length
+      ? prisma.purchaseBill.findMany({
+        where: { userId, id: { in: purchaseIds } },
+        select: { id: true, typeBillNumber: true, billNumber: true, voucherNumber: true }
+      })
+      : [],
+    noteIds.length
+      ? prisma.creditDebitNote.findMany({
+        where: { userId, id: { in: noteIds } },
+        select: { id: true, noteNumber: true, voucherNumber: true }
+      })
+      : []
+  ]);
+
+  const orderMap = new Map(orders.map(order => [
+    order.id,
+    order.typeBillNumber != null
+      ? String(order.typeBillNumber)
+      : (order.orderNumber || String(order.invoiceNumber || order.id.slice(-6)))
+  ]));
+  const billMap = new Map(bills.map(bill => [
+    bill.id,
+    bill.typeBillNumber != null
+      ? String(bill.typeBillNumber)
+      : (bill.billNumber || bill.voucherNumber || bill.id.slice(-6))
+  ]));
+  const noteMap = new Map(notes.map(note => [
+    note.id,
+    note.noteNumber || String(note.voucherNumber || note.id.slice(-6))
+  ]));
+
+  return allocations.map(allocation => {
+    const billNumber = allocation.billType === 'order'
+      ? orderMap.get(allocation.billId)
+      : allocation.billType === 'purchase_bill'
+        ? billMap.get(allocation.billId)
+        : allocation.billType === 'credit_debit_note'
+          ? noteMap.get(allocation.billId)
+          : allocation.billNumber || allocation.billId?.slice(-6);
+    return {
+      billType: allocation.billType || '-',
+      billNumber: billNumber || allocation.billId?.slice(-6) || '-',
+      adjustAmount: roundMoney(allocation.adjustAmount)
+    };
+  });
+}
+
+export async function getLedgerEntryDetail(prisma, userId, sourceType, sourceId) {
+  if (!VALID_SOURCE_TYPES.has(sourceType)) return null;
+
+  if (sourceType === 'order') {
+    const order = await prisma.order.findFirst({
+      where: { id: sourceId, userId },
+      include: { customer: true, design: true }
+    });
+    if (!order) return null;
+
+    const lines = normalizeOrderLines(order.orderLines);
+    const grandTotal = calculateOrderGrandTotal(order);
+    const billNo = order.typeBillNumber != null
+      ? String(order.typeBillNumber)
+      : (order.orderNumber || order.invoiceNumber || order.id.slice(-6));
+
+    return {
+      title: `Sales Bill #${billNo}`,
+      subtitle: getOrderPartyName(order),
+      sourceType,
+      sourceId,
+      fields: buildDetailFields([
+        { label: 'Date', value: toIsoDate(order.orderDate || order.createdAt) },
+        { label: 'Order No.', value: order.orderNumber || '-' },
+        { label: 'Invoice No.', value: order.invoiceNumber != null ? String(order.invoiceNumber) : '' },
+        { label: 'Status', value: order.status },
+        { label: 'Transaction Type', value: order.transactionType },
+        { label: 'Agent', value: order.agentName },
+        { label: 'Transport', value: order.transportName },
+        { label: 'Discount %', value: order.discountRate != null ? String(order.discountRate) : '' },
+        { label: 'Shipping', value: order.shippingCharge, isMoney: true },
+        { label: 'Grand Total', value: grandTotal, isMoney: true },
+        { label: 'Remarks', value: order.remarks }
+      ]),
+      lineColumns: [
+        { key: 'description', label: 'Item' },
+        { key: 'quantity', label: 'Qty', align: 'right' },
+        { key: 'rate', label: 'Rate', align: 'right', isMoney: true },
+        { key: 'amount', label: 'Amount', align: 'right', isMoney: true }
+      ],
+      lineItems: lines.map(line => {
+        const rate = Number(line.retailPrice ?? line.basePrice ?? 0);
+        const qty = parseInt(line.quantity, 10) || 0;
+        return {
+          description: line.designName || line.title || line.designCode || line.remarks || 'Item',
+          quantity: qty,
+          rate: roundMoney(rate),
+          amount: roundMoney(rate * qty)
+        };
+      })
+    };
+  }
+
+  if (sourceType === 'sales_invoice') {
+    const invoice = await prisma.salesInvoice.findFirst({
+      where: { id: sourceId, userId },
+      include: { customer: true, order: { select: { orderNumber: true, transactionType: true } } }
+    });
+    if (!invoice) return null;
+
+    const buyerSnapshot = invoice.buyerSnapshot && typeof invoice.buyerSnapshot === 'object'
+      ? invoice.buyerSnapshot
+      : {};
+    const lineItems = Array.isArray(invoice.lineItems) ? invoice.lineItems : [];
+
+    return {
+      title: `Sales Invoice #${invoice.invoiceNumber}`,
+      subtitle: invoice.customer?.organizationName || buyerSnapshot.name || '',
+      sourceType,
+      sourceId,
+      fields: buildDetailFields([
+        { label: 'Date', value: toIsoDate(invoice.invoiceDate) },
+        { label: 'Order No.', value: invoice.order?.orderNumber || '-' },
+        { label: 'Status', value: invoice.status },
+        { label: 'Place of Supply', value: invoice.placeOfSupply },
+        { label: 'Taxable', value: invoice.taxableAmount, isMoney: true },
+        { label: 'Discount', value: invoice.discountAmount, isMoney: true },
+        { label: 'CGST', value: invoice.cgstAmount, isMoney: true },
+        { label: 'SGST', value: invoice.sgstAmount, isMoney: true },
+        { label: 'IGST', value: invoice.igstAmount, isMoney: true },
+        { label: 'Grand Total', value: invoice.grandTotal, isMoney: true },
+        { label: 'Paid', value: invoice.amountPaid, isMoney: true },
+        { label: 'Due', value: invoice.amountDue, isMoney: true },
+        { label: 'Notes', value: invoice.notes }
+      ]),
+      lineColumns: [
+        { key: 'description', label: 'Item' },
+        { key: 'quantity', label: 'Qty', align: 'right' },
+        { key: 'rate', label: 'Rate', align: 'right', isMoney: true },
+        { key: 'taxableAmount', label: 'Taxable', align: 'right', isMoney: true }
+      ],
+      lineItems: lineItems.map(line => ({
+        description: line.description || line.designName || line.designCode || 'Item',
+        quantity: line.quantity,
+        rate: roundMoney(line.rate),
+        taxableAmount: roundMoney(line.taxableAmount ?? line.grossAmount ?? 0)
+      }))
+    };
+  }
+
+  if (sourceType === 'purchase_bill') {
+    const bill = await prisma.purchaseBill.findFirst({
+      where: { id: sourceId, userId },
+      include: { supplier: true }
+    });
+    if (!bill) return null;
+
+    const billNo = bill.typeBillNumber != null
+      ? String(bill.typeBillNumber)
+      : (bill.billNumber || bill.voucherNumber || bill.id.slice(-6));
+    const lineItems = Array.isArray(bill.lineItems) ? bill.lineItems : [];
+
+    return {
+      title: `Purchase Bill #${billNo}`,
+      subtitle: bill.supplier?.name || '',
+      sourceType,
+      sourceId,
+      fields: buildDetailFields([
+        { label: 'Date', value: toIsoDate(bill.billDate || bill.createdAt) },
+        { label: 'Voucher', value: bill.voucherNumber },
+        { label: 'Transaction Type', value: bill.transactionType },
+        { label: 'Status', value: bill.status },
+        { label: 'Taxable', value: bill.taxableAmount, isMoney: true },
+        { label: 'Discount', value: bill.discountAmount, isMoney: true },
+        { label: 'CGST', value: bill.cgstAmount, isMoney: true },
+        { label: 'SGST', value: bill.sgstAmount, isMoney: true },
+        { label: 'IGST', value: bill.igstAmount, isMoney: true },
+        { label: 'Grand Total', value: bill.grandTotal, isMoney: true }
+      ]),
+      lineColumns: [
+        { key: 'description', label: 'Item' },
+        { key: 'quantity', label: 'Qty', align: 'right' },
+        { key: 'rate', label: 'Rate', align: 'right', isMoney: true },
+        { key: 'amount', label: 'Amount', align: 'right', isMoney: true }
+      ],
+      lineItems: lineItems.map(line => ({
+        description: line.description || 'Item',
+        quantity: line.quantity,
+        rate: roundMoney(line.rate ?? 0),
+        amount: roundMoney(line.amount ?? 0)
+      }))
+    };
+  }
+
+  if (sourceType === 'bank_entry') {
+    const entry = await prisma.bankEntry.findFirst({
+      where: { id: sourceId, userId }
+    });
+    if (!entry) return null;
+
+    const allocations = await resolveBillNumbers(
+      prisma,
+      userId,
+      normalizeBillAllocations(entry.billAllocations)
+    );
+    const entryLabel = entry.entryType === 'receipt' ? 'Bank Receipt' : 'Bank Payment';
+
+    return {
+      title: `${entryLabel} V.${entry.voucherNumber || '-'}`,
+      subtitle: entry.partyName,
+      sourceType,
+      sourceId,
+      fields: buildDetailFields([
+        { label: 'Date', value: toIsoDate(entry.entryDate) },
+        { label: 'Type', value: entry.entryType },
+        { label: 'Transaction Type', value: entry.transactionType },
+        { label: 'Party Type', value: entry.partyType },
+        { label: 'Bank', value: entry.bankName },
+        { label: 'Payment Mode', value: entry.paymentMode },
+        { label: 'Reference', value: entry.referenceNumber },
+        { label: 'Cheque No.', value: entry.chequeNumber },
+        { label: 'Cheque Date', value: entry.chequeDate ? toIsoDate(entry.chequeDate) : '' },
+        { label: 'Gross Amount', value: entry.grossAmount, isMoney: true },
+        { label: 'Adjust Pending', value: entry.adjustPending, isMoney: true },
+        { label: 'Net Bill Amount', value: entry.netBillAmount, isMoney: true },
+        { label: 'Applied Amount', value: entry.adjustAdd || entry.amount, isMoney: true },
+        { label: 'Remarks', value: entry.remarks }
+      ]),
+      lineColumns: allocations.length
+        ? [
+          { key: 'billType', label: 'Bill Type' },
+          { key: 'billNumber', label: 'Bill No.' },
+          { key: 'adjustAmount', label: 'Adjusted', align: 'right', isMoney: true }
+        ]
+        : undefined,
+      lineItems: allocations.length ? allocations : undefined
+    };
+  }
+
+  if (sourceType === 'credit_debit_note') {
+    const note = await prisma.creditDebitNote.findFirst({
+      where: { id: sourceId, userId }
+    });
+    if (!note) return null;
+
+    const noteLabel = `${note.noteKind === 'credit' ? 'Credit' : 'Debit'} Note (${note.noteSide})`;
+
+    return {
+      title: `${noteLabel} #${note.noteNumber || note.voucherNumber || '-'}`,
+      subtitle: note.partyName,
+      sourceType,
+      sourceId,
+      fields: buildDetailFields([
+        { label: 'Date', value: toIsoDate(note.noteDate) },
+        { label: 'Voucher', value: note.voucherNumber != null ? String(note.voucherNumber) : '' },
+        { label: 'Party Type', value: note.partyType },
+        { label: 'Place of Supply', value: note.placeOfSupply },
+        { label: 'Ref. Bill', value: note.adjustBillNumber || note.refBillNumber },
+        { label: 'Gross', value: note.grossAmount, isMoney: true },
+        { label: 'Discount', value: note.discountAmount, isMoney: true },
+        { label: 'Taxable', value: note.taxableAmount, isMoney: true },
+        { label: 'CGST', value: note.cgstAmount, isMoney: true },
+        { label: 'SGST', value: note.sgstAmount, isMoney: true },
+        { label: 'IGST', value: note.igstAmount, isMoney: true },
+        { label: 'Net Amount', value: note.netAmount, isMoney: true },
+        { label: 'Net After TDS', value: note.netAmountAfterTds, isMoney: true },
+        { label: 'Paid', value: note.paidAmount, isMoney: true },
+        { label: 'Remarks', value: note.remarks }
+      ])
+    };
+  }
+
+  return null;
 }
