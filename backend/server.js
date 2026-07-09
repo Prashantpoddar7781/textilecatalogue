@@ -150,7 +150,7 @@ app.get('/health', (req, res) => {
     res.json({
       status: 'ok',
       timestamp: new Date().toISOString(),
-      version: '2026-07-09-erp-users'
+      version: '2026-07-09-erp-company-master'
     });
   } catch (error) {
     res.status(500).json({ status: 'error', error: error.message });

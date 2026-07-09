@@ -2,10 +2,12 @@ import React, { useEffect, useState } from 'react';
 import { ArrowLeft, Loader2, Plus, Save, Trash2, Users } from 'lucide-react';
 import { erpUsersApi } from '../services/api';
 import { accessLevelLabel } from '../services/erpSession';
-import { ErpAccessLevel, ErpUserAccount } from '../types';
+import { ErpAccessLevel, ErpSession, ErpUserAccount } from '../types';
+import { ErpTopMenu } from './ErpTopMenu';
 
 interface Props {
   onBack: () => void;
+  erpSession?: ErpSession | null;
 }
 
 const emptyForm = {
@@ -14,7 +16,7 @@ const emptyForm = {
   accessLevel: 'data_entry' as ErpAccessLevel
 };
 
-export const ErpUserManagementPage: React.FC<Props> = ({ onBack }) => {
+export const ErpUserManagementPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [users, setUsers] = useState<ErpUserAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -122,18 +124,17 @@ export const ErpUserManagementPage: React.FC<Props> = ({ onBack }) => {
 
   return (
     <div className="min-h-screen bg-[#F6F7FB]">
-      <header className="sticky top-0 z-30 border-b bg-white/95 px-4 py-3 shadow-sm backdrop-blur-xl">
-        <div className="mx-auto flex max-w-5xl items-center justify-between">
-          <button type="button" onClick={onBack} className="flex items-center gap-2 text-sm font-bold text-gray-600 hover:text-gray-900">
-            <ArrowLeft className="h-4 w-4" />
-            Utilities
-          </button>
-          <h1 className="text-lg font-black text-gray-900">User Management</h1>
-          <div className="w-16" />
-        </div>
-      </header>
+      <ErpTopMenu
+        title="User Management"
+        erpSession={erpSession}
+        onBackToCatalogue={() => { window.location.href = '/'; }}
+      />
 
       <main className="mx-auto max-w-5xl px-4 py-6">
+        <button type="button" onClick={onBack} className="mb-4 flex items-center gap-2 text-sm font-bold text-gray-600 hover:text-gray-900">
+          <ArrowLeft className="h-4 w-4" />
+          Utilities
+        </button>
         {error && (
           <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
             {error}

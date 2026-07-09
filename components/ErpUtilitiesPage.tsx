@@ -1,9 +1,12 @@
 import React from 'react';
 import { ArrowLeft, Users, Wrench } from 'lucide-react';
+import { ErpSession } from '../types';
+import { ErpTopMenu } from './ErpTopMenu';
 
 interface Props {
   onBack: () => void;
   canManageUsers?: boolean;
+  erpSession?: ErpSession | null;
 }
 
 const utilities = [
@@ -16,21 +19,21 @@ const utilities = [
   }
 ];
 
-export const ErpUtilitiesPage: React.FC<Props> = ({ onBack, canManageUsers = true }) => {
+export const ErpUtilitiesPage: React.FC<Props> = ({ onBack, canManageUsers = true, erpSession }) => {
   return (
     <div className="min-h-screen bg-[#F6F7FB]">
-      <header className="sticky top-0 z-30 border-b bg-white/95 px-4 py-3 shadow-sm backdrop-blur-xl">
-        <div className="mx-auto flex max-w-5xl items-center justify-between">
-          <button type="button" onClick={onBack} className="flex items-center gap-2 text-sm font-bold text-gray-600 hover:text-gray-900">
-            <ArrowLeft className="h-4 w-4" />
-            ERP
-          </button>
-          <h1 className="text-lg font-black text-gray-900">Utilities</h1>
-          <div className="w-12" />
-        </div>
-      </header>
+      <ErpTopMenu
+        title="Utilities"
+        erpSession={erpSession}
+        onBackToCatalogue={() => { window.location.href = '/'; }}
+      />
 
       <main className="mx-auto max-w-5xl px-4 py-8">
+        <button type="button" onClick={onBack} className="mb-4 flex items-center gap-2 text-sm font-bold text-gray-600 hover:text-gray-900">
+          <ArrowLeft className="h-4 w-4" />
+          ERP
+        </button>
+
         <section className="mb-6 rounded-[2rem] bg-gradient-to-br from-gray-950 to-slate-800 p-6 text-white shadow-xl">
           <div className="flex items-center gap-3">
             <div className="rounded-2xl bg-white/10 p-3">

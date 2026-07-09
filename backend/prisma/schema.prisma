@@ -297,18 +297,29 @@ model BusinessProfile {
   user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   legalName     String?
   tradeName     String?
+  companyCode   String?
+  companyType   String?
+  companyGroup  String?
   gstNumber     String?
   panNumber     String?
+  udyamNumber   String?
+  tdsAccountNumber String?
+  msmeType      String?
   addressLine1  String?
   addressLine2  String?
   city          String?
   state         String?
   pincode       String?
   phone         String?
+  mobileNumber  String?
+  fax           String?
   email         String?
   bankName      String?
   bankAccount   String?
   bankIfsc      String?
+  rtgsAccount   String?
+  businessDescription String?
+  proprietor    String?
   invoicePrefix String  @default("TX")
   defaultHsnCode String?
   defaultGstRate Float   @default(5)

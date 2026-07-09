@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { ArrowLeft, Banknote, BookOpen, Boxes, ChevronDown, FileText, LogOut, PackageCheck, ReceiptText, Truck, Wrench } from 'lucide-react';
+import { Banknote, BookOpen, Boxes, ChevronDown, FileText, PackageCheck, ReceiptText, Truck } from 'lucide-react';
 import { ADDITIONAL_ERP_FEATURES } from '../constants/creditDebitNoteTypes';
-import { accessLevelLabel, clearErpSession, hasCompleteErpAccess } from '../services/erpSession';
+import { accessLevelLabel } from '../services/erpSession';
 import { ErpSession } from '../types';
+import { ErpTopMenu } from './ErpTopMenu';
 
 interface Props {
   onBack: () => void;
@@ -11,14 +12,6 @@ interface Props {
 }
 
 const sections = [
-  {
-    title: 'Utilities',
-    description: 'User management and company setup tools.',
-    icon: Wrench,
-    href: '/erp/utilities',
-    status: 'Ready',
-    requiresCompleteAccess: true
-  },
   {
     title: 'Sales',
     description: 'Sales entries with type heads, customer billing, and outstanding.',
@@ -72,41 +65,15 @@ const sections = [
 
 export const ErpHomePage: React.FC<Props> = ({ onBack, user, erpSession }) => {
   const [featuresOpen, setFeaturesOpen] = useState(false);
-  const canOpenUtilities = hasCompleteErpAccess(erpSession || null);
 
   return (
     <div className="min-h-screen bg-[#F6F7FB]">
-      <header className="sticky top-0 z-30 border-b bg-white/95 px-4 py-3 shadow-sm backdrop-blur-xl">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4">
-          <button onClick={onBack} className="flex items-center gap-2 text-sm font-bold text-gray-600 hover:text-gray-900">
-            <ArrowLeft className="h-4 w-4" />
-            Catalogue
-          </button>
-          <h1 className="text-lg font-black text-gray-900">ThreadX ERP</h1>
-          <div className="flex items-center gap-2">
-            {erpSession && !erpSession.bypass && (
-              <button
-                type="button"
-                onClick={() => {
-                  clearErpSession();
-                  window.location.href = '/erp';
-                }}
-                className="flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-bold text-gray-700"
-              >
-                <LogOut className="h-3.5 w-3.5" />
-                Switch User
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => { window.location.href = '/'; }}
-              className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-bold text-gray-700"
-            >
-              Home
-            </button>
-          </div>
-        </div>
-      </header>
+      <ErpTopMenu
+        title="ThreadX ERP"
+        erpSession={erpSession}
+        showSessionActions
+        onBackToCatalogue={onBack}
+      />
 
       <main className="mx-auto max-w-7xl px-4 py-8">
         <section className="rounded-[2rem] bg-gradient-to-br from-gray-950 to-indigo-950 p-6 text-white shadow-xl md:p-8">
@@ -163,8 +130,7 @@ export const ErpHomePage: React.FC<Props> = ({ onBack, user, erpSession }) => {
         <section className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {sections.map(section => {
             const Icon = section.icon;
-            const accessBlocked = Boolean(section.requiresCompleteAccess && !canOpenUtilities);
-            const disabled = section.href === '#' || accessBlocked;
+            const disabled = section.href === '#';
             return (
               <button
                 key={section.title}
@@ -195,15 +161,11 @@ export const ErpHomePage: React.FC<Props> = ({ onBack, user, erpSession }) => {
                 </div>
                 <h3 className="mt-5 text-xl font-black text-gray-950">{section.title}</h3>
                 <p className="mt-2 text-sm font-medium leading-6 text-gray-500">{section.description}</p>
-                {accessBlocked ? (
-                  <p className="mt-5 text-xs font-black uppercase tracking-wide text-amber-700">
-                    Complete Access required
-                  </p>
-                ) : !disabled ? (
+                {!disabled && (
                   <p className="mt-5 text-xs font-black uppercase tracking-wide text-indigo-600 group-hover:text-indigo-800">
                     Open module
                   </p>
-                ) : null}
+                )}
               </button>
             );
           })}
