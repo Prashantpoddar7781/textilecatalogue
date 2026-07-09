@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { AlertCircle, ArrowLeft, Building2, Loader2, Save } from 'lucide-react';
 import { invoicesApi } from '../services/api';
-import { isValidGstNumber, normalizeGstNumber } from '../services/gstValidation';
+import { isWrongGstNumber, normalizeGstNumber, normalizePanNumber } from '../services/gstValidation';
 import { BusinessProfile } from '../types';
 import { ErpTopMenu } from './ErpTopMenu';
 import { ErpSession } from '../types';
@@ -110,7 +110,7 @@ export const ErpCompanyMasterPage: React.FC<Props> = ({ onBack, erpSession }) =>
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(false);
 
-  const gstInvalid = Boolean(form.gstNumber.trim()) && !isValidGstNumber(form.gstNumber);
+  const gstInvalid = isWrongGstNumber(form.gstNumber, form.panNumber);
 
   useEffect(() => {
     let cancelled = false;
@@ -142,6 +142,7 @@ export const ErpCompanyMasterPage: React.FC<Props> = ({ onBack, erpSession }) =>
     setSaved(false);
     try {
       const gstNumber = normalizeGstNumber(form.gstNumber);
+      const panNumber = normalizePanNumber(form.panNumber);
       await invoicesApi.updateProfile({
         companyCode: form.companyCode.trim() || null,
         legalName: form.legalName.trim() || null,
@@ -163,13 +164,13 @@ export const ErpCompanyMasterPage: React.FC<Props> = ({ onBack, erpSession }) =>
         bankIfsc: form.bankIfsc.trim() || null,
         businessDescription: form.businessDescription.trim() || null,
         proprietor: form.proprietor.trim() || null,
-        panNumber: form.panNumber.trim().toUpperCase() || null,
+        panNumber: panNumber || null,
         udyamNumber: form.udyamNumber.trim() || null,
         tdsAccountNumber: form.tdsAccountNumber.trim() || null,
         msmeType: form.msmeType.trim() || null,
         gstNumber: gstNumber || null
       });
-      setForm(prev => ({ ...prev, gstNumber }));
+      setForm(prev => ({ ...prev, gstNumber, panNumber }));
       setSaved(true);
     } catch (err: any) {
       setError(err.message || 'Could not save company details.');
@@ -353,7 +354,7 @@ export const ErpCompanyMasterPage: React.FC<Props> = ({ onBack, erpSession }) =>
                 </label>
               </div>
               <p className="mt-3 text-xs text-gray-500">
-                Invalid GST numbers are still saved. A warning icon appears under the GST field when the format looks wrong.
+                Digits 3–12 of GST must match PAN. Invalid GST is still saved, with a warning under the field.
               </p>
             </section>
 
