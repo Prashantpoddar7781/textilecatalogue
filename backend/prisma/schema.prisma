@@ -44,6 +44,23 @@ model User {
   purchaseBills PurchaseBill[]
   bankEntries BankEntry[]
   creditDebitNotes CreditDebitNote[]
+  erpUsers ErpUser[]
+}
+
+model ErpUser {
+  id          String   @id @default(cuid())
+  ownerUserId String
+  owner       User     @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+  name        String
+  password    String
+  accessLevel String   @default("data_entry") // data_entry | complete_access
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([ownerUserId, name])
+  @@index([ownerUserId])
+  @@index([name])
 }
 
 model OtpCode {

@@ -17,6 +17,8 @@ import purchaseRoutes from './routes/purchases.js';
 import bankEntryRoutes from './routes/bankEntries.js';
 import creditDebitNoteRoutes from './routes/creditDebitNotes.js';
 import ledgerRoutes from './routes/ledger.js';
+import erpUserRoutes from './routes/erpUsers.js';
+import erpAuthRoutes from './routes/erpAuth.js';
 
 dotenv.config();
 
@@ -148,7 +150,7 @@ app.get('/health', (req, res) => {
     res.json({
       status: 'ok',
       timestamp: new Date().toISOString(),
-      version: '2026-07-06-ledger-purchase-columns'
+      version: '2026-07-09-erp-users'
     });
   } catch (error) {
     res.status(500).json({ status: 'error', error: error.message });
@@ -174,7 +176,9 @@ try {
   app.use('/api/bank-entries', bankEntryRoutes);
   app.use('/api/credit-debit-notes', creditDebitNoteRoutes);
   app.use('/api/ledger', ledgerRoutes);
-  console.log('Routes configured: /api/auth, /api/billing, /api/designs, /api/users, /api/catalogues, /api/contacts, /api/customers, /api/share-links, /api/orders, /api/invoices, /api/purchases, /api/bank-entries, /api/credit-debit-notes, /api/ledger');
+  app.use('/api/erp-users', erpUserRoutes);
+  app.use('/api/erp-auth', erpAuthRoutes);
+  console.log('Routes configured: /api/auth, /api/billing, /api/designs, /api/users, /api/catalogues, /api/contacts, /api/customers, /api/share-links, /api/orders, /api/invoices, /api/purchases, /api/bank-entries, /api/credit-debit-notes, /api/ledger, /api/erp-users, /api/erp-auth');
 } catch (error) {
   console.error('Error setting up routes:', error);
   // Server will still start, but routes may not work

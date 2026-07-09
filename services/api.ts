@@ -1,4 +1,4 @@
-import { AccountLedgerEntry, AccountLedgerParty, BankEntry, BankPendingBill, BusinessProfile, CompletedOrderParty, Contact, Customer, CreditDebitNote, LedgerEntryDetail, Order, PurchaseBill, PurchaseBillExtraction, PurchaseBillParty, SalesInvoice, Supplier, SupplierLedgerEntry } from '../types';
+import { AccountLedgerEntry, AccountLedgerParty, BankEntry, BankPendingBill, BusinessProfile, CompletedOrderParty, Contact, Customer, CreditDebitNote, ErpAccessLevel, ErpSession, ErpUserAccount, LedgerEntryDetail, Order, PurchaseBill, PurchaseBillExtraction, PurchaseBillParty, SalesInvoice, Supplier, SupplierLedgerEntry } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://textilecatalogue-production.up.railway.app/api';
 
@@ -580,6 +580,48 @@ export const ledgerApi = {
   },
   getEntryDetail: async (sourceType: string, sourceId: string) => {
     return request<{ detail: LedgerEntryDetail }>(`/ledger/entry/${sourceType}/${sourceId}`);
+  }
+};
+
+// ERP Users / Auth API
+export const erpUsersApi = {
+  getAll: async () => {
+    return request<{ users: ErpUserAccount[] }>('/erp-users');
+  },
+  getCount: async () => {
+    return request<{ count: number }>('/erp-users/count');
+  },
+  create: async (body: { name: string; password: string; accessLevel: ErpAccessLevel }) => {
+    return request<{ user: ErpUserAccount }>('/erp-users', {
+      method: 'POST',
+      body: JSON.stringify(body)
+    });
+  },
+  update: async (id: string, body: { name?: string; password?: string; accessLevel?: ErpAccessLevel; isActive?: boolean }) => {
+    return request<{ user: ErpUserAccount }>(`/erp-users/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(body)
+    });
+  },
+  delete: async (id: string) => {
+    return request<{ success: boolean }>(`/erp-users/${id}`, { method: 'DELETE' });
+  }
+};
+
+export const erpAuthApi = {
+  getStatus: async () => {
+    return request<{
+      requiresLogin: boolean;
+      userCount: number;
+      currentAccountingYear: string;
+      accountingYears: string[];
+    }>('/erp-auth/status');
+  },
+  login: async (body: { name: string; password: string; accountingYear?: string }) => {
+    return request<{ session: ErpSession }>('/erp-auth/login', {
+      method: 'POST',
+      body: JSON.stringify(body)
+    });
   }
 };
 

@@ -18,6 +18,9 @@ import { AccountLedgerPage } from './components/AccountLedgerPage';
 import { ErpHomePage } from './components/ErpHomePage';
 import { ErpSalesPage } from './components/ErpSalesPage';
 import { ErpPurchasePage } from './components/ErpPurchasePage';
+import { ErpLoginGate } from './components/ErpLoginGate';
+import { ErpUtilitiesPage } from './components/ErpUtilitiesPage';
+import { ErpUserManagementPage } from './components/ErpUserManagementPage';
 import { CreditDebitNotePage } from './components/CreditDebitNotePage';
 import { parseNoteTypeFromPath } from './constants/creditDebitNoteTypes';
 import { BankEntriesPage } from './components/BankEntriesPage';
@@ -27,7 +30,8 @@ import { BillingPage } from './components/BillingPage';
 import { designsApi, authApi, shareLinksApi, ordersApi, billingApi } from './services/api';
 import { getShareUrl } from './services/appUrl';
 import { openWhatsAppWithText } from './services/nativeApp';
-import { Order } from './types';
+import { hasCompleteErpAccess } from './services/erpSession';
+import { ErpSession, Order } from './types';
 
 const APP_LOGO_SRC = '/threadx-logo.png';
 
@@ -47,7 +51,13 @@ const App: React.FC = () => {
   const erpSalesMatch = pathname.match(/^\/erp\/sales\/?$/);
   const erpPurchaseMatch = pathname.match(/^\/erp\/purchase\/?$/);
   const erpLedgerMatch = pathname.match(/^\/erp\/ledger\/?$/);
+  const erpUtilitiesMatch = pathname.match(/^\/erp\/utilities\/?$/);
+  const erpUsersMatch = pathname.match(/^\/erp\/utilities\/users\/?$/);
   const erpNotesMatch = pathname.match(/^\/erp\/notes\/([^/]+)\/?$/);
+  const isErpRoute = Boolean(
+    erpMatch || erpBankMatch || erpSalesMatch || erpPurchaseMatch || erpLedgerMatch
+    || erpUtilitiesMatch || erpUsersMatch || erpNotesMatch || supplierLedgerMatch
+  );
   const shareStatsMatch = pathname.match(/^\/share-stats\/?$/);
   const reportsMatch = pathname.match(/^\/reports\/?$/);
   
@@ -73,6 +83,14 @@ const App: React.FC = () => {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [selectionMode, setSelectionMode] = useState(false);
   const [user, setUser] = useState<any>(null);
+  const [erpSession, setErpSessionState] = useState<ErpSession | null>(() => {
+    try {
+      const raw = sessionStorage.getItem('erp_session');
+      return raw ? JSON.parse(raw) as ErpSession : null;
+    } catch {
+      return null;
+    }
+  });
   const [loading, setLoading] = useState(false);
   const [orders, setOrders] = useState<Order[]>([]);
   const [loadingOrders, setLoadingOrders] = useState(false);
@@ -611,8 +629,47 @@ const App: React.FC = () => {
     return <ScanPurchaseBillPage onBack={() => { window.location.href = '/'; }} />;
   }
 
+  if (isErpRoute && user?.id && erpSession && erpSession.ownerUserId !== user.id) {
+    try { sessionStorage.removeItem('erp_session'); } catch { /* ignore */ }
+  }
+
   if (supplierLedgerMatch) {
+    if (!erpSession || erpSession.ownerUserId !== user.id) {
+      return (
+        <ErpLoginGate
+          ownerUserId={user.id}
+          onReady={setErpSessionState}
+          onBack={() => { window.location.href = '/'; }}
+        />
+      );
+    }
     return <AccountLedgerPage initialPartyType="supplier" onBack={() => { window.location.href = '/erp'; }} />;
+  }
+
+  if (isErpRoute && (!erpSession || erpSession.ownerUserId !== user.id)) {
+    return (
+      <ErpLoginGate
+        ownerUserId={user.id}
+        onReady={setErpSessionState}
+        onBack={() => { window.location.href = '/'; }}
+      />
+    );
+  }
+
+  if (erpUsersMatch) {
+    if (!hasCompleteErpAccess(erpSession)) {
+      return <ErpUtilitiesPage canManageUsers={false} onBack={() => { window.location.href = '/erp'; }} />;
+    }
+    return <ErpUserManagementPage onBack={() => { window.location.href = '/erp/utilities'; }} />;
+  }
+
+  if (erpUtilitiesMatch) {
+    return (
+      <ErpUtilitiesPage
+        canManageUsers={hasCompleteErpAccess(erpSession)}
+        onBack={() => { window.location.href = '/erp'; }}
+      />
+    );
   }
 
   if (erpLedgerMatch) {
@@ -620,7 +677,13 @@ const App: React.FC = () => {
   }
 
   if (erpMatch) {
-    return <ErpHomePage user={user} onBack={() => { window.location.href = '/'; }} />;
+    return (
+      <ErpHomePage
+        user={user}
+        erpSession={erpSession}
+        onBack={() => { window.location.href = '/'; }}
+      />
+    );
   }
 
   if (erpSalesMatch) {

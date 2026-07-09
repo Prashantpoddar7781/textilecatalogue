@@ -410,6 +410,27 @@ export interface LedgerEntryDetail {
   lineItems?: Array<Record<string, string | number | null>>;
 }
 
+export type ErpAccessLevel = 'data_entry' | 'complete_access';
+
+export interface ErpUserAccount {
+  id: string;
+  ownerUserId: string;
+  name: string;
+  accessLevel: ErpAccessLevel;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ErpSession {
+  erpUserId: string | null;
+  name: string;
+  accessLevel: ErpAccessLevel;
+  accountingYear: string;
+  ownerUserId: string;
+  bypass?: boolean;
+}
+
 export interface BankBillAllocation {
   billId: string;
   billType: 'order' | 'sales_invoice' | 'purchase_bill' | string;
