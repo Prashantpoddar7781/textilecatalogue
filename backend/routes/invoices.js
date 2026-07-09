@@ -19,6 +19,25 @@ const optionalNumber = (value) => {
   return Number.isFinite(num) ? num : null;
 };
 
+const normalizeTaxId = (value) => String(value || '').toUpperCase().replace(/[^0-9A-Z]/g, '');
+const PAN_REGEX = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
+const GSTIN_REGEX = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9A-Z]Z[0-9A-Z]$/;
+
+function getCompanyTaxSaveError(gstValue, panValue) {
+  const gst = normalizeTaxId(gstValue);
+  const pan = normalizeTaxId(panValue);
+
+  if (pan && (pan.length !== 10 || !PAN_REGEX.test(pan))) {
+    return 'Wrong PAN number';
+  }
+
+  if (gst.length === 15 && pan.length === 10 && gst.slice(2, 12) !== pan) {
+    return 'Wrong GST number';
+  }
+
+  return null;
+}
+
 const roundMoney = (value) => Math.round((Number(value) || 0) * 100) / 100;
 
 const normalizeState = (value) =>
@@ -298,6 +317,10 @@ router.put('/profile', authenticateToken, requireActiveSubscription, [
     }
 
     const { user } = await getOrCreateBusinessProfile(req.user.userId);
+    const taxError = getCompanyTaxSaveError(req.body.gstNumber, req.body.panNumber);
+    if (taxError) {
+      return res.status(400).json({ error: taxError });
+    }
     const payload = getProfilePayload(req.body, user);
     const profile = await prisma.businessProfile.upsert({
       where: { userId: req.user.userId },

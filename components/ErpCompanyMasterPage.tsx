@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { AlertCircle, ArrowLeft, Building2, Loader2, Save } from 'lucide-react';
 import { invoicesApi } from '../services/api';
-import { isWrongGstNumber, normalizeGstNumber, normalizePanNumber } from '../services/gstValidation';
+import { getCompanyTaxSaveError, isWrongGstNumber, isWrongPanNumber, normalizeGstNumber, normalizePanNumber } from '../services/gstValidation';
 import { BusinessProfile } from '../types';
 import { ErpTopMenu } from './ErpTopMenu';
 import { ErpSession } from '../types';
@@ -111,6 +111,8 @@ export const ErpCompanyMasterPage: React.FC<Props> = ({ onBack, erpSession }) =>
   const [saved, setSaved] = useState(false);
 
   const gstInvalid = isWrongGstNumber(form.gstNumber, form.panNumber);
+  const panInvalid = isWrongPanNumber(form.panNumber);
+  const saveBlocked = Boolean(getCompanyTaxSaveError(form.gstNumber, form.panNumber));
 
   useEffect(() => {
     let cancelled = false;
@@ -143,6 +145,12 @@ export const ErpCompanyMasterPage: React.FC<Props> = ({ onBack, erpSession }) =>
     try {
       const gstNumber = normalizeGstNumber(form.gstNumber);
       const panNumber = normalizePanNumber(form.panNumber);
+      const taxError = getCompanyTaxSaveError(gstNumber, panNumber);
+      if (taxError) {
+        setError(taxError);
+        setSaving(false);
+        return;
+      }
       await invoicesApi.updateProfile({
         companyCode: form.companyCode.trim() || null,
         legalName: form.legalName.trim() || null,
@@ -314,11 +322,17 @@ export const ErpCompanyMasterPage: React.FC<Props> = ({ onBack, erpSession }) =>
                 <label>
                   <span className={labelClass}>PAN</span>
                   <input
-                    className={fieldClass}
+                    className={`${fieldClass} ${panInvalid ? 'border-amber-400 bg-amber-50' : ''}`}
                     value={form.panNumber}
                     onChange={e => update('panNumber', e.target.value.toUpperCase())}
                     maxLength={10}
                   />
+                  {panInvalid && (
+                    <span className="mt-1.5 flex items-center gap-1.5 text-xs font-bold text-amber-700">
+                      <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                      Wrong PAN number
+                    </span>
+                  )}
                 </label>
                 <label>
                   <span className={labelClass}>Udhyam</span>
@@ -353,14 +367,11 @@ export const ErpCompanyMasterPage: React.FC<Props> = ({ onBack, erpSession }) =>
                   )}
                 </label>
               </div>
-              <p className="mt-3 text-xs text-gray-500">
-                Digits 3–12 of GST must match PAN. Invalid GST is still saved, with a warning under the field.
-              </p>
             </section>
 
             <button
               type="submit"
-              disabled={saving}
+              disabled={saving || saveBlocked}
               className="flex w-full items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-4 py-3 text-sm font-black text-white disabled:opacity-60 md:w-auto md:px-8"
             >
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
