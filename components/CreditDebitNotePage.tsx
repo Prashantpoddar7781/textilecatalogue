@@ -276,9 +276,8 @@ export const CreditDebitNotePage: React.FC<Props> = ({ noteType, onBack }) => {
               </select>
             </div>
           </div>
-        </section>
 
-        <section className="mt-6 rounded-3xl border border-gray-100 bg-white p-5 shadow-sm">
+          <div className="mt-6 rounded-3xl border border-gray-100 bg-white p-5 shadow-sm">
           <h3 className="text-sm font-black uppercase tracking-wide text-gray-900">Amount Details</h3>
           <div className="mt-4 grid gap-4 md:grid-cols-3 xl:grid-cols-6">
             <div><label className={labelClass}>Pcs.</label><input className={inputClass} type="number" value={pieces} onChange={e => setPieces(e.target.value)} /></div>
@@ -308,6 +307,7 @@ export const CreditDebitNotePage: React.FC<Props> = ({ noteType, onBack }) => {
             label={`Save ${noteType.label}`}
             className="mt-5 flex w-full items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-4 py-3 text-sm font-black text-white disabled:opacity-60"
           />
+          </div>
           </ErpFormShell>
         </section>
       </main>

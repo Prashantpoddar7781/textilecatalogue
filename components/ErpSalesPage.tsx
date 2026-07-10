@@ -220,9 +220,8 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack }) => {
               <input className="w-full rounded-xl border px-3 py-2.5 text-sm font-semibold" value={buyerName} onChange={e => setBuyerName(e.target.value)} placeholder="Or type customer name" />
             </div>
           </div>
-        </section>
 
-        <section className="mt-6 rounded-3xl border border-gray-100 bg-white p-5 shadow-sm">
+          <div className="mt-6 rounded-3xl border border-gray-100 bg-white p-5 shadow-sm">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-black uppercase tracking-wide text-gray-900">Bill Lines</h3>
             <button type="button" onClick={() => setLineItems(prev => [...prev, emptyLine()])} className="flex items-center gap-1 rounded-xl bg-indigo-50 px-3 py-2 text-xs font-black text-indigo-700">
@@ -259,6 +258,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack }) => {
             savingLabel="Saving sales entry..."
             className="mt-5 flex w-full items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-4 py-3 text-sm font-black text-white disabled:opacity-60"
           />
+          </div>
           </ErpFormShell>
         </section>
       </main>
