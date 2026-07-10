@@ -61,6 +61,178 @@ function normalizeLineItems(raw) {
   });
 }
 
+function normalizeTakaDetails(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((row, index) => ({
+      srNo: Number(row.srNo) || index + 1,
+      mts: roundMoney(row.mts)
+    }))
+    .filter(row => row.mts > 0);
+}
+
+function buildGodownRow(entry) {
+  const recMts = Number(entry.recMts) || 0;
+  const despatchMts = Number(entry.despatchMts) || 0;
+  const recTaka = Number(entry.recTaka) || 0;
+  const despatchTaka = recMts > 0 ? roundMoney(recTaka * despatchMts / recMts) : 0;
+  const stockMts = roundMoney(Math.max(0, recMts - despatchMts));
+
+  return {
+    id: entry.id,
+    date: entry.billDate,
+    srNo: entry.srNo,
+    billNo: entry.billNo,
+    partyName: entry.partyName,
+    brokerName: entry.brokerName,
+    quality: entry.quality,
+    taka: recTaka,
+    mts: recMts,
+    despatchTaka,
+    despatchMts,
+    rate: entry.purRate,
+    grossAmount: entry.grossAmount,
+    payableAmount: entry.payableAmount,
+    netAmount: entry.netAmount,
+    stockMts,
+    sourceType: 'grey_purchase',
+    sourceLabel: 'Grey Purchase',
+    godown: 'Main Godown'
+  };
+}
+
+function groupGodownRows(rows, filter) {
+  const keyFor = (row) => {
+    switch (filter) {
+      case 'agent_wise':
+        return String(row.brokerName || 'No Agent').trim() || 'No Agent';
+      case 'weaver_wise':
+        return row.partyName;
+      case 'quality_wise':
+        return String(row.quality || 'Unspecified').trim() || 'Unspecified';
+      case 'date_wise':
+        return row.date ? new Date(row.date).toLocaleDateString('en-IN') : 'No Date';
+      case 'weaver_quality_wise':
+        return `${row.partyName} · ${String(row.quality || 'Unspecified').trim() || 'Unspecified'}`;
+      case 'sr_no_wise':
+        return `Sr. ${row.srNo ?? '-'}`;
+      case 'purchase_rate_wise':
+        return `Rate ${roundMoney(row.rate).toFixed(2)}`;
+      default:
+        return 'All';
+    }
+  };
+
+  const groups = new Map();
+  for (const row of rows) {
+    const key = keyFor(row);
+    const current = groups.get(key) || {
+      key,
+      label: key,
+      rows: [],
+      totals: { taka: 0, mts: 0, grossAmount: 0, payableAmount: 0, netAmount: 0, stockMts: 0, entries: 0 }
+    };
+    current.rows.push(row);
+    current.totals.taka += Number(row.taka) || 0;
+    current.totals.mts += Number(row.mts) || 0;
+    current.totals.grossAmount += Number(row.grossAmount) || 0;
+    current.totals.payableAmount += Number(row.payableAmount) || 0;
+    current.totals.netAmount += Number(row.netAmount) || 0;
+    current.totals.stockMts += Number(row.stockMts) || 0;
+    current.totals.entries += 1;
+    groups.set(key, current);
+  }
+
+  const sorted = Array.from(groups.values());
+  if (filter === 'sr_no_wise') {
+    sorted.sort((a, b) => {
+      const aSr = Number(a.rows[0]?.srNo) || 0;
+      const bSr = Number(b.rows[0]?.srNo) || 0;
+      return aSr - bSr;
+    });
+  } else if (filter === 'purchase_rate_wise') {
+    sorted.sort((a, b) => {
+      const aRate = Number(a.rows[0]?.rate) || 0;
+      const bRate = Number(b.rows[0]?.rate) || 0;
+      return aRate - bRate || a.label.localeCompare(b.label);
+    });
+    for (const group of sorted) {
+      group.rows.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    }
+  } else if (filter === 'date_wise') {
+    sorted.sort((a, b) => new Date(b.rows[0]?.date).getTime() - new Date(a.rows[0]?.date).getTime());
+  } else {
+    sorted.sort((a, b) => a.label.localeCompare(b.label));
+  }
+
+  return sorted;
+}
+
+async function buildGreyPurchaseData(req, userId, isUpdate = false) {
+  const ctx = await getCompanyContext(userId);
+  const lineItems = normalizeLineItems(req.body.lineItems);
+  const takaDetails = normalizeTakaDetails(req.body.takaDetails);
+  const lineGross = roundMoney(lineItems.reduce((sum, line) => sum + (Number(line.grossAmount) || 0), 0));
+  const recMts = optionalNumber(req.body.recMts) ?? (takaDetails.length
+    ? roundMoney(takaDetails.reduce((s, row) => s + row.mts, 0))
+    : lineItems.reduce((s, l) => s + (Number(l.mts) || 0), 0));
+  const recTaka = optionalNumber(req.body.recTaka) ?? (takaDetails.length
+    ? takaDetails.length
+    : lineItems.reduce((s, l) => s + (Number(l.taka) || 0), 0));
+  const purRate = optionalNumber(req.body.purRate) ?? 0;
+  const grossAmount = optionalNumber(req.body.grossAmount) ?? (recMts && purRate ? roundMoney(recMts * purRate) : lineGross);
+
+  let supplierId = optionalString(req.body.supplierId);
+  let supplier = null;
+  if (supplierId) {
+    supplier = await prisma.supplier.findFirst({ where: { id: supplierId, userId } });
+    if (!supplier) supplierId = null;
+  }
+
+  const partyName = optionalString(req.body.partyName);
+  const partyGstin = optionalString(req.body.partyGstin) || supplier?.gstNumber || null;
+  const placeOfSupply = resolvePlaceOfSupply({
+    partyGstin,
+    placeOfSupply: req.body.placeOfSupply,
+    stateCode: req.body.stateCode,
+    supplierState: supplier?.state
+  });
+
+  const totals = calculateGreyPurchaseTotals({
+    grossAmount,
+    discountPercent: req.body.discountPercent,
+    discountAmount: req.body.discountAmount,
+    otherAddBefore: req.body.otherAddBefore,
+    otherLessBefore: req.body.otherLessBefore,
+    otherAddAfter: req.body.otherAddAfter,
+    otherLessAfter: req.body.otherLessAfter,
+    gstRate: req.body.gstRate ?? ctx.defaultGstRate,
+    placeOfSupply,
+    businessState: ctx.businessState,
+    partyGstin,
+    stateCode: req.body.stateCode
+  });
+
+  const count = isUpdate ? null : await prisma.greyPurchase.count({ where: { userId } });
+
+  return {
+    ctx,
+    supplierId,
+    supplier,
+    partyName,
+    partyGstin,
+    placeOfSupply,
+    totals,
+    lineItems,
+    takaDetails,
+    recMts,
+    recTaka,
+    purRate,
+    grossAmount,
+    nextSrNo: count != null ? count + 1 : null
+  };
+}
+
 function resolvePlaceOfSupply({ partyGstin, placeOfSupply, stateCode, supplierState }) {
   if (optionalString(placeOfSupply)) return optionalString(placeOfSupply);
   const fromGst = getStateFromGstin(partyGstin);
@@ -141,28 +313,20 @@ router.post('/calculate', authenticateToken, requireActiveSubscription, async (r
 
 router.get('/godown-inventory', authenticateToken, requireActiveSubscription, async (req, res, next) => {
   try {
+    const filter = String(req.query.filter || 'all').toLowerCase();
+    const validFilters = new Set([
+      'all', 'agent_wise', 'weaver_wise', 'quality_wise', 'date_wise',
+      'weaver_quality_wise', 'sr_no_wise', 'purchase_rate_wise'
+    ]);
+    const activeFilter = validFilters.has(filter) ? filter : 'all';
+
     const entries = await prisma.greyPurchase.findMany({
       where: { userId: req.user.userId, status: { not: 'cancelled' } },
       include: { supplier: true },
       orderBy: [{ billDate: 'desc' }, { createdAt: 'desc' }]
     });
 
-    const rows = entries.map(entry => ({
-      id: entry.id,
-      date: entry.billDate,
-      srNo: entry.srNo,
-      billNo: entry.billNo,
-      partyName: entry.partyName,
-      quality: entry.quality,
-      taka: entry.recTaka,
-      mts: entry.recMts,
-      rate: entry.purRate,
-      grossAmount: entry.grossAmount,
-      netAmount: entry.netAmount,
-      sourceType: 'grey_purchase',
-      sourceLabel: 'Grey Purchase',
-      godown: 'Main Godown'
-    }));
+    const rows = entries.map(buildGodownRow);
 
     const byQuality = new Map();
     for (const row of rows) {
@@ -176,16 +340,22 @@ router.get('/godown-inventory', authenticateToken, requireActiveSubscription, as
       byQuality.set(key, current);
     }
 
+    const grandTotals = {
+      taka: rows.reduce((s, r) => s + (Number(r.taka) || 0), 0),
+      mts: rows.reduce((s, r) => s + (Number(r.mts) || 0), 0),
+      grossAmount: rows.reduce((s, r) => s + (Number(r.grossAmount) || 0), 0),
+      payableAmount: rows.reduce((s, r) => s + (Number(r.payableAmount) || 0), 0),
+      netAmount: rows.reduce((s, r) => s + (Number(r.netAmount) || 0), 0),
+      stockMts: rows.reduce((s, r) => s + (Number(r.stockMts) || 0), 0),
+      entries: rows.length
+    };
+
     res.json({
-      rows,
+      filter: activeFilter,
+      rows: activeFilter === 'all' ? rows : [],
+      groups: activeFilter === 'all' ? [] : groupGodownRows(rows, activeFilter),
       summary: Array.from(byQuality.values()).sort((a, b) => a.quality.localeCompare(b.quality)),
-      totals: {
-        taka: rows.reduce((s, r) => s + (Number(r.taka) || 0), 0),
-        mts: rows.reduce((s, r) => s + (Number(r.mts) || 0), 0),
-        grossAmount: rows.reduce((s, r) => s + (Number(r.grossAmount) || 0), 0),
-        netAmount: rows.reduce((s, r) => s + (Number(r.netAmount) || 0), 0),
-        entries: rows.length
-      }
+      totals: grandTotals
     });
   } catch (error) {
     next(error);
@@ -219,6 +389,58 @@ router.get('/:id', authenticateToken, requireActiveSubscription, async (req, res
   }
 });
 
+function greyPurchaseDataPayload(req, built, userId) {
+  const { ctx, supplierId, supplier, partyName, partyGstin, placeOfSupply, totals, lineItems, takaDetails, recMts, recTaka, purRate, nextSrNo } = built;
+  return {
+    userId,
+    supplierId,
+    companyName: optionalString(req.body.companyName) || ctx.companyName,
+    partyName,
+    partyGstin,
+    partyMsme: optionalString(req.body.partyMsme) || supplier?.msmeType || null,
+    quality: optionalString(req.body.quality),
+    srNo: optionalNumber(req.body.srNo) ?? nextSrNo,
+    orderNo: optionalString(req.body.orderNo),
+    hsnCode: optionalString(req.body.hsnCode) || ctx.defaultHsnCode || null,
+    billNo: optionalString(req.body.billNo),
+    brokerName: optionalString(req.body.brokerName),
+    billDate: req.body.billDate ? new Date(req.body.billDate) : new Date(),
+    checkerName: optionalString(req.body.checkerName),
+    transactionType: 'GREY PURCHASE',
+    typeBillNumber: optionalNumber(req.body.typeBillNumber),
+    recTaka: recTaka ?? 0,
+    recMts,
+    purRate,
+    takaDetails: takaDetails.length ? takaDetails : null,
+    lineItems,
+    grossAmount: totals.grossAmount,
+    discountPercent: totals.discountPercent,
+    discountAmount: totals.discountAmount,
+    taxableAmount: totals.taxableAmount,
+    otherAddBefore: totals.otherAddBefore,
+    otherLessBefore: totals.otherLessBefore,
+    placeOfSupply: totals.placeOfSupply || placeOfSupply,
+    stateCode: totals.stateCode || getStateCodeFromName(placeOfSupply) || null,
+    gstType: totals.gstType,
+    gstRate: totals.gstRate,
+    cgstRate: totals.cgstRate,
+    cgstAmount: totals.cgstAmount,
+    sgstRate: totals.sgstRate,
+    sgstAmount: totals.sgstAmount,
+    igstRate: totals.igstRate,
+    igstAmount: totals.igstAmount,
+    totalTaxAmount: totals.totalTaxAmount,
+    payableAmount: totals.payableAmount,
+    otherAddAfter: totals.otherAddAfter,
+    otherLessAfter: totals.otherLessAfter,
+    netAmount: totals.netAmount,
+    paid: Boolean(req.body.paid),
+    paidDate: req.body.paidDate ? new Date(req.body.paidDate) : null,
+    despatchMts: optionalNumber(req.body.despatchMts) ?? 0,
+    remarks: optionalString(req.body.remarks)
+  };
+}
+
 router.post('/', authenticateToken, requireActiveSubscription, [
   body('partyName').trim().notEmpty().withMessage('Party A/C is required')
 ], async (req, res, next) => {
@@ -229,97 +451,49 @@ router.post('/', authenticateToken, requireActiveSubscription, [
     }
 
     const userId = req.user.userId;
-    const ctx = await getCompanyContext(userId);
-    const lineItems = normalizeLineItems(req.body.lineItems);
-    const lineGross = roundMoney(lineItems.reduce((sum, line) => sum + (Number(line.grossAmount) || 0), 0));
-    const recMts = optionalNumber(req.body.recMts) ?? lineItems.reduce((s, l) => s + (Number(l.mts) || 0), 0);
-    const purRate = optionalNumber(req.body.purRate) ?? 0;
-    const grossAmount = optionalNumber(req.body.grossAmount) ?? (recMts && purRate ? roundMoney(recMts * purRate) : lineGross);
-
-    let supplierId = optionalString(req.body.supplierId);
-    let supplier = null;
-    if (supplierId) {
-      supplier = await prisma.supplier.findFirst({ where: { id: supplierId, userId } });
-      if (!supplier) supplierId = null;
-    }
-
-    const partyName = optionalString(req.body.partyName);
-    const partyGstin = optionalString(req.body.partyGstin) || supplier?.gstNumber || null;
-    const placeOfSupply = resolvePlaceOfSupply({
-      partyGstin,
-      placeOfSupply: req.body.placeOfSupply,
-      stateCode: req.body.stateCode,
-      supplierState: supplier?.state
-    });
-
-    const totals = calculateGreyPurchaseTotals({
-      grossAmount,
-      discountPercent: req.body.discountPercent,
-      discountAmount: req.body.discountAmount,
-      otherAddBefore: req.body.otherAddBefore,
-      otherLessBefore: req.body.otherLessBefore,
-      otherAddAfter: req.body.otherAddAfter,
-      otherLessAfter: req.body.otherLessAfter,
-      gstRate: req.body.gstRate ?? ctx.defaultGstRate,
-      placeOfSupply,
-      businessState: ctx.businessState,
-      partyGstin,
-      stateCode: req.body.stateCode
-    });
-
-    const count = await prisma.greyPurchase.count({ where: { userId } });
+    const built = await buildGreyPurchaseData(req, userId, false);
     const entry = await prisma.greyPurchase.create({
-      data: {
-        userId,
-        supplierId,
-        companyName: optionalString(req.body.companyName) || ctx.companyName,
-        partyName,
-        partyGstin,
-        partyMsme: optionalString(req.body.partyMsme) || supplier?.msmeType || null,
-        quality: optionalString(req.body.quality),
-        srNo: optionalNumber(req.body.srNo) ?? (count + 1),
-        orderNo: optionalString(req.body.orderNo),
-        hsnCode: optionalString(req.body.hsnCode) || ctx.defaultHsnCode || null,
-        billNo: optionalString(req.body.billNo),
-        brokerName: optionalString(req.body.brokerName),
-        billDate: req.body.billDate ? new Date(req.body.billDate) : new Date(),
-        checkerName: optionalString(req.body.checkerName),
-        transactionType: 'GREY PURCHASE',
-        typeBillNumber: optionalNumber(req.body.typeBillNumber),
-        recTaka: optionalNumber(req.body.recTaka) ?? lineItems.reduce((s, l) => s + (Number(l.taka) || 0), 0),
-        recMts,
-        purRate,
-        lineItems,
-        grossAmount: totals.grossAmount,
-        discountPercent: totals.discountPercent,
-        discountAmount: totals.discountAmount,
-        taxableAmount: totals.taxableAmount,
-        otherAddBefore: totals.otherAddBefore,
-        otherLessBefore: totals.otherLessBefore,
-        placeOfSupply: totals.placeOfSupply || placeOfSupply,
-        stateCode: totals.stateCode || getStateCodeFromName(placeOfSupply) || null,
-        gstType: totals.gstType,
-        gstRate: totals.gstRate,
-        cgstRate: totals.cgstRate,
-        cgstAmount: totals.cgstAmount,
-        sgstRate: totals.sgstRate,
-        sgstAmount: totals.sgstAmount,
-        igstRate: totals.igstRate,
-        igstAmount: totals.igstAmount,
-        totalTaxAmount: totals.totalTaxAmount,
-        payableAmount: totals.payableAmount,
-        otherAddAfter: totals.otherAddAfter,
-        otherLessAfter: totals.otherLessAfter,
-        netAmount: totals.netAmount,
-        paid: Boolean(req.body.paid),
-        paidDate: req.body.paidDate ? new Date(req.body.paidDate) : null,
-        despatchMts: optionalNumber(req.body.despatchMts) ?? 0,
-        remarks: optionalString(req.body.remarks)
-      },
+      data: greyPurchaseDataPayload(req, built, userId),
       include: { supplier: true }
     });
 
     res.status(201).json({ entry });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.put('/:id', authenticateToken, requireActiveSubscription, [
+  body('partyName').trim().notEmpty().withMessage('Party A/C is required')
+], async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const userId = req.user.userId;
+    const existing = await prisma.greyPurchase.findFirst({
+      where: { id: req.params.id, userId }
+    });
+    if (!existing) return res.status(404).json({ error: 'Grey purchase not found' });
+
+    const built = await buildGreyPurchaseData(req, userId, true);
+    const payload = greyPurchaseDataPayload(req, built, userId);
+    delete payload.userId;
+    if (optionalNumber(req.body.srNo) == null) {
+      delete payload.srNo;
+    } else {
+      payload.srNo = optionalNumber(req.body.srNo);
+    }
+
+    const entry = await prisma.greyPurchase.update({
+      where: { id: existing.id },
+      data: payload,
+      include: { supplier: true }
+    });
+
+    res.json({ entry });
   } catch (error) {
     next(error);
   }

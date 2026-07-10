@@ -26,7 +26,8 @@ const sourceLabel: Record<string, string> = {
   sales_invoice: 'Sales Invoice',
   purchase_bill: 'Purchase Bill',
   bank_entry: 'Bank Entry',
-  credit_debit_note: 'Cr/Dr Note'
+  credit_debit_note: 'Cr/Dr Note',
+  grey_purchase: 'Grey Purchase'
 };
 
 const billTypeLabel: Record<string, string> = {
@@ -352,6 +353,14 @@ export const AccountLedgerPage: React.FC<Props> = ({ onBack, initialPartyType = 
                             <p className="mt-1 text-[10px] font-bold uppercase text-indigo-500">
                               {sourceLabel[entryDetail.sourceType] || entryDetail.sourceType}
                             </p>
+                            {entryDetail.canEdit && entryDetail.editPath && (
+                              <a
+                                href={entryDetail.editPath}
+                                className="mt-2 inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-white px-2.5 py-1 text-xs font-bold text-indigo-700 hover:bg-indigo-100"
+                              >
+                                Edit entry
+                              </a>
+                            )}
                           </>
                         ) : null}
                       </div>

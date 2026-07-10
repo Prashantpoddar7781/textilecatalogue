@@ -415,6 +415,7 @@ model GreyPurchase {
   recTaka            Float    @default(0)
   recMts             Float    @default(0)
   purRate            Float    @default(0)
+  takaDetails        Json?
   lineItems          Json
   grossAmount        Float    @default(0)
   discountPercent    Float    @default(0)

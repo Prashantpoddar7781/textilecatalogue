@@ -1,9 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertCircle, ArrowLeft, Loader2, Save } from 'lucide-react';
+import { AlertCircle, ArrowLeft, ListOrdered, Loader2, Save } from 'lucide-react';
+import { GREY_QUALITY_OPTIONS } from '../constants/greyQualities';
 import { greyPurchasesApi, purchasesApi } from '../services/api';
 import { isWrongGstNumber, normalizeGstNumber } from '../services/gstValidation';
-import { ErpSession, GreyPurchaseLine, Supplier } from '../types';
+import { ErpSession, GreyPurchaseLine, GreyTakaDetailRow, Supplier } from '../types';
 import { ErpTopMenu } from './ErpTopMenu';
+import { TakaDetailsModal } from './TakaDetailsModal';
 
 interface Props {
   onBack: () => void;
@@ -19,6 +21,9 @@ const labelClass = 'mb-1 block text-[10px] font-black uppercase tracking-wide te
 const calcInputClass = 'w-full rounded-lg border border-violet-200 bg-white px-2.5 py-2 text-sm font-bold outline-none focus:border-violet-400';
 
 export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
+  const editId = useMemo(() => new URLSearchParams(window.location.search).get('edit'), []);
+  const isEditMode = Boolean(editId);
+
   const [companyName, setCompanyName] = useState('');
   const [businessState, setBusinessState] = useState('');
   const [states, setStates] = useState<string[]>([]);
@@ -65,6 +70,8 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [paid, setPaid] = useState(false);
   const [paidDate, setPaidDate] = useState('');
   const [despatchMts, setDespatchMts] = useState('0');
+  const [takaDetails, setTakaDetails] = useState<GreyTakaDetailRow[]>([]);
+  const [takaModalOpen, setTakaModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -86,7 +93,7 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
 
   const itemLines: GreyPurchaseLine[] = useMemo(() => {
     const lineGross = grossAmount;
-    const lineNet = round2(lineGross - discountAmount);
+    const lineNet = netAmount;
     if (!quality && !toNum(recTaka) && !toNum(recMts) && !lineGross) {
       return [];
     }
@@ -99,7 +106,7 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
       netAmount: lineNet,
       remark: remarks || null
     }];
-  }, [quality, recTaka, recMts, purRate, grossAmount, discountAmount, remarks]);
+  }, [quality, recTaka, recMts, purRate, grossAmount, netAmount, remarks]);
 
   useEffect(() => {
     let cancelled = false;
@@ -115,11 +122,49 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
         setBusinessState(meta.businessState || '');
         setStates(meta.states || []);
         setStateCodes(meta.stateCodes || []);
-        setSrNo(String(meta.nextSrNo || 1));
+        if (!isEditMode) setSrNo(String(meta.nextSrNo || 1));
         setHsnCode(meta.defaultHsnCode || '');
         setGstRate(String(meta.defaultGstRate ?? 5));
         setPlaceOfSupply(meta.businessState || '');
         setSuppliers(suppliersRes.suppliers || []);
+
+        if (isEditMode && editId) {
+          const { entry } = await greyPurchasesApi.getById(editId);
+          if (cancelled) return;
+          setCompanyName(entry.companyName || meta.companyName || '');
+          setSupplierId(entry.supplierId || '');
+          setPartyName(entry.partyName);
+          setPartyGstin(entry.partyGstin || '');
+          setPartyMsme(entry.partyMsme || '');
+          setQuality(entry.quality || '');
+          setSrNo(String(entry.srNo ?? ''));
+          setOrderNo(entry.orderNo || '0');
+          setHsnCode(entry.hsnCode || meta.defaultHsnCode || '');
+          setBillNo(entry.billNo || '');
+          setBrokerName(entry.brokerName || '');
+          setBillDate(entry.billDate ? entry.billDate.slice(0, 10) : today());
+          setCheckerName(entry.checkerName || '');
+          setRecTaka(String(entry.recTaka || ''));
+          setRecMts(String(entry.recMts || ''));
+          setPurRate(String(entry.purRate || ''));
+          setRemarks(entry.remarks || '');
+          setDiscountPercent(String(entry.discountPercent || ''));
+          setOtherAddBefore(String(entry.otherAddBefore || ''));
+          setOtherLessBefore(String(entry.otherLessBefore || ''));
+          setOtherAddAfter(String(entry.otherAddAfter || ''));
+          setOtherLessAfter(String(entry.otherLessAfter || ''));
+          setStateCode(entry.stateCode || '');
+          setPlaceOfSupply(entry.placeOfSupply || meta.businessState || '');
+          setGstRate(String(entry.gstRate ?? 5));
+          setPaid(entry.paid);
+          setPaidDate(entry.paidDate ? entry.paidDate.slice(0, 10) : '');
+          setDespatchMts(String(entry.despatchMts || '0'));
+          setTakaDetails(Array.isArray(entry.takaDetails) ? entry.takaDetails : []);
+          if (entry.supplierId) {
+            const match = (suppliersRes.suppliers || []).find(s => s.id === entry.supplierId);
+            if (match?.gstNumber) setGstFromMaster(true);
+          }
+        }
       } catch (err: any) {
         if (!cancelled) setError(err.message || 'Could not load grey purchase.');
       } finally {
@@ -128,7 +173,7 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
     };
     void load();
     return () => { cancelled = true; };
-  }, []);
+  }, [editId, isEditMode]);
 
   const applyParty = (supplier: Supplier | null) => {
     if (!supplier) {
@@ -227,7 +272,7 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
         setSaving(false);
         return;
       }
-      await greyPurchasesApi.create({
+      const payload = {
         companyName,
         supplierId: supplierId || undefined,
         partyName: partyName.trim(),
@@ -244,6 +289,7 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
         recTaka: toNum(recTaka),
         recMts: toNum(recMts),
         purRate: toNum(purRate),
+        takaDetails,
         lineItems: itemLines,
         grossAmount,
         discountPercent: toNum(discountPercent),
@@ -259,21 +305,29 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
         paidDate: paidDate || undefined,
         despatchMts: toNum(despatchMts),
         remarks
-      });
-      setSuccess('Grey purchase saved and posted to godown inventory.');
-      setBillNo('');
-      setRecTaka('');
-      setRecMts('');
-      setPurRate('');
-      setDiscountPercent('');
-      setOtherAddBefore('');
-      setOtherLessBefore('');
-      setOtherAddAfter('');
-      setOtherLessAfter('');
-      setRemarks('');
-      setQuality('');
-      const meta = await greyPurchasesApi.getMeta();
-      setSrNo(String(meta.nextSrNo || 1));
+      };
+
+      if (isEditMode && editId) {
+        await greyPurchasesApi.update(editId, payload);
+        setSuccess('Grey purchase updated.');
+      } else {
+        await greyPurchasesApi.create(payload);
+        setSuccess('Grey purchase saved and posted to godown inventory.');
+        setBillNo('');
+        setRecTaka('');
+        setRecMts('');
+        setPurRate('');
+        setDiscountPercent('');
+        setOtherAddBefore('');
+        setOtherLessBefore('');
+        setOtherAddAfter('');
+        setOtherLessAfter('');
+        setRemarks('');
+        setQuality('');
+        setTakaDetails([]);
+        const meta = await greyPurchasesApi.getMeta();
+        setSrNo(String(meta.nextSrNo || 1));
+      }
     } catch (err: any) {
       setError(err.message || 'Could not save grey purchase.');
     } finally {
@@ -297,7 +351,9 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
             <ArrowLeft className="h-4 w-4" />
             ERP
           </button>
-          <p className="text-xs font-black uppercase tracking-wide text-violet-700">Grey Purchase</p>
+          <p className="text-xs font-black uppercase tracking-wide text-violet-700">
+            {isEditMode ? 'Edit Grey Purchase' : 'Grey Purchase'}
+          </p>
         </div>
 
         {error && <div className="mb-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{error}</div>}
@@ -336,7 +392,15 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
                 </label>
                 <label>
                   <span className={labelClass}>Quality</span>
-                  <input className={inputClass} value={quality} onChange={e => setQuality(e.target.value)} />
+                  <select className={inputClass} value={quality} onChange={e => setQuality(e.target.value)}>
+                    <option value="">Select quality</option>
+                    {quality && !GREY_QUALITY_OPTIONS.includes(quality as typeof GREY_QUALITY_OPTIONS[number]) && (
+                      <option value={quality}>{quality}</option>
+                    )}
+                    {GREY_QUALITY_OPTIONS.map(opt => (
+                      <option key={opt} value={opt}>{opt}</option>
+                    ))}
+                  </select>
                 </label>
                 <label>
                   <span className={labelClass}>HSN Code</span>
@@ -402,7 +466,18 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
               <div className="grid gap-3 md:grid-cols-4 xl:grid-cols-6">
                 <label>
                   <span className={labelClass}>Rec. Taka</span>
-                  <input className={calcInputClass} type="number" step="0.01" value={recTaka} onChange={e => setRecTaka(e.target.value)} />
+                  <div className="flex gap-1">
+                    <input className={calcInputClass} type="number" step="0.01" value={recTaka} onChange={e => setRecTaka(e.target.value)} />
+                    <button
+                      type="button"
+                      onClick={() => setTakaModalOpen(true)}
+                      className="flex shrink-0 items-center gap-1 rounded-lg border border-violet-300 bg-white px-2 text-[10px] font-black uppercase text-violet-700 hover:bg-violet-100"
+                      title="Taka Details"
+                    >
+                      <ListOrdered className="h-3.5 w-3.5" />
+                      Taka
+                    </button>
+                  </div>
                 </label>
                 <label>
                   <span className={labelClass}>Rec. Mts.</span>
@@ -589,9 +664,20 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
                 className="ml-auto flex items-center gap-2 rounded-2xl bg-indigo-600 px-6 py-3 text-sm font-black text-white disabled:opacity-60"
               >
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                {saving ? 'Saving...' : 'Save to Godown'}
+                {saving ? 'Saving...' : isEditMode ? 'Update Entry' : 'Save to Godown'}
               </button>
             </section>
+
+            <TakaDetailsModal
+              open={takaModalOpen}
+              rows={takaDetails}
+              onClose={() => setTakaModalOpen(false)}
+              onApply={(rows) => {
+                setTakaDetails(rows);
+                setRecTaka(String(rows.length));
+                setRecMts(String(round2(rows.reduce((sum, row) => sum + (Number(row.mts) || 0), 0))));
+              }}
+            />
           </form>
         )}
       </main>

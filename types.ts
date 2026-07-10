@@ -335,6 +335,11 @@ export interface PurchaseBill {
   updatedAt: string;
 }
 
+export interface GreyTakaDetailRow {
+  srNo: number;
+  mts: number;
+}
+
 export interface GreyPurchaseLine {
   quality?: string | null;
   taka?: number;
@@ -367,6 +372,7 @@ export interface GreyPurchase {
   recTaka: number;
   recMts: number;
   purRate: number;
+  takaDetails?: GreyTakaDetailRow[] | null;
   lineItems: GreyPurchaseLine[];
   grossAmount: number;
   discountPercent: number;
@@ -485,6 +491,8 @@ export interface LedgerEntryDetail {
   fields: LedgerEntryDetailField[];
   lineColumns?: LedgerEntryDetailColumn[];
   lineItems?: Array<Record<string, string | number | null>>;
+  canEdit?: boolean;
+  editPath?: string;
 }
 
 export type ErpAccessLevel = 'data_entry' | 'complete_access';

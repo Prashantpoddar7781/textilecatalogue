@@ -290,6 +290,35 @@ export async function buildSupplierLedger(prisma, userId, supplierId) {
     });
   }
 
+  const greyPurchases = await prisma.greyPurchase.findMany({
+    where: {
+      userId,
+      status: { not: 'cancelled' },
+      OR: [
+        { supplierId: supplier.id },
+        { partyName: supplier.name }
+      ]
+    },
+    orderBy: [{ billDate: 'asc' }, { createdAt: 'asc' }]
+  });
+
+  for (const grey of greyPurchases) {
+    const amount = roundMoney(grey.netAmount);
+    if (amount <= 0) continue;
+    rawEntries.push({
+      id: `grey-${grey.id}`,
+      sourceType: 'grey_purchase',
+      sourceId: grey.id,
+      date: grey.billDate || grey.createdAt,
+      voucherNumber: String(grey.srNo || '-'),
+      billNumber: grey.billNo || String(grey.srNo || '-'),
+      account: grey.transactionType || 'GREY PURCHASE',
+      particulars: `Grey purchase #${grey.srNo || '-'}${grey.quality ? ` · ${grey.quality}` : ''}`,
+      debitAmount: 0,
+      creditAmount: amount
+    });
+  }
+
   for (const note of notes) {
     if (!matchesNoteParty(note, supplier.name, 'supplier')) continue;
     const amount = roundMoney(note.netAmountAfterTds || note.netAmount || note.grossAmount);
@@ -365,7 +394,8 @@ const VALID_SOURCE_TYPES = new Set([
   'sales_invoice',
   'purchase_bill',
   'bank_entry',
-  'credit_debit_note'
+  'credit_debit_note',
+  'grey_purchase'
 ]);
 
 function buildDetailFields(items) {
@@ -585,6 +615,70 @@ export async function getLedgerEntryDetail(prisma, userId, sourceType, sourceId)
         rate: line.rate != null ? roundMoney(line.rate) : '-',
         amount: roundMoney(line.amount ?? 0)
       }))
+    };
+  }
+
+  if (sourceType === 'grey_purchase') {
+    const grey = await prisma.greyPurchase.findFirst({
+      where: { id: sourceId, userId },
+      include: { supplier: true }
+    });
+    if (!grey) return null;
+
+    const lineItems = Array.isArray(grey.lineItems) ? grey.lineItems : [];
+    const takaDetails = Array.isArray(grey.takaDetails) ? grey.takaDetails : [];
+
+    return {
+      title: `Grey Purchase #${grey.srNo ?? '-'}`,
+      subtitle: grey.partyName,
+      sourceType,
+      sourceId,
+      canEdit: true,
+      editPath: `/erp/grey-purchase?edit=${grey.id}`,
+      fields: buildDetailFields([
+        { label: 'Date', value: toIsoDate(grey.billDate) },
+        { label: 'Bill No.', value: grey.billNo },
+        { label: 'Quality', value: grey.quality },
+        { label: 'Broker', value: grey.brokerName },
+        { label: 'Rec. Taka', value: grey.recTaka },
+        { label: 'Rec. Mts', value: grey.recMts, isMoney: true },
+        { label: 'Pur Rate', value: grey.purRate, isMoney: true },
+        { label: 'Gross Amt', value: grey.grossAmount, isMoney: true },
+        { label: 'Disc Amt', value: grey.discountAmount, isMoney: true },
+        { label: 'Taxable', value: grey.taxableAmount, isMoney: true },
+        { label: 'CGST', value: grey.cgstAmount, isMoney: true },
+        { label: 'SGST', value: grey.sgstAmount, isMoney: true },
+        { label: 'IGST', value: grey.igstAmount, isMoney: true },
+        { label: 'Payable', value: grey.payableAmount, isMoney: true },
+        { label: 'Net Amount', value: grey.netAmount, isMoney: true },
+        { label: 'Despatch Mts', value: grey.despatchMts, isMoney: true },
+        { label: 'Paid', value: grey.paid ? 'Y' : 'N' },
+        { label: 'Remarks', value: grey.remarks }
+      ]),
+      lineColumns: takaDetails.length > 0
+        ? [
+          { key: 'srNo', label: 'Sr. No.' },
+          { key: 'mts', label: 'Mtrs', align: 'right', isMoney: true }
+        ]
+        : [
+          { key: 'quality', label: 'Quality' },
+          { key: 'taka', label: 'Taka', align: 'right' },
+          { key: 'mts', label: 'Mtrs', align: 'right', isMoney: true },
+          { key: 'grossAmount', label: 'Gross', align: 'right', isMoney: true },
+          { key: 'netAmount', label: 'Net', align: 'right', isMoney: true }
+        ],
+      lineItems: takaDetails.length > 0
+        ? takaDetails.map(row => ({
+          srNo: row.srNo,
+          mts: roundMoney(row.mts)
+        }))
+        : lineItems.map(line => ({
+          quality: line.quality || '-',
+          taka: line.taka ?? '-',
+          mts: roundMoney(line.mts ?? 0),
+          grossAmount: roundMoney(line.grossAmount ?? 0),
+          netAmount: roundMoney(line.netAmount ?? 0)
+        }))
     };
   }
 
