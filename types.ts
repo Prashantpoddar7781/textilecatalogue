@@ -336,23 +336,13 @@ export interface PurchaseBill {
 }
 
 export interface GreyPurchaseLine {
-  ch?: string | null;
-  desp?: string | null;
-  mill?: string | null;
-  card?: string | null;
-  despDate?: string | null;
+  quality?: string | null;
   taka?: number;
   mts?: number;
   rate?: number;
-  weight?: number | null;
-  mark?: string | null;
-  lot?: string | null;
+  grossAmount?: number;
+  netAmount?: number;
   remark?: string | null;
-  vehicleNo?: string | null;
-  ewayBill?: string | null;
-  process?: string | null;
-  master?: string | null;
-  amount?: number;
 }
 
 export interface GreyPurchase {

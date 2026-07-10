@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertCircle, ArrowLeft, Loader2, Plus, Save, Trash2 } from 'lucide-react';
+import { AlertCircle, ArrowLeft, Loader2, Save } from 'lucide-react';
 import { greyPurchasesApi, purchasesApi } from '../services/api';
 import { isWrongGstNumber, normalizeGstNumber } from '../services/gstValidation';
 import { ErpSession, GreyPurchaseLine, Supplier } from '../types';
@@ -12,30 +12,11 @@ interface Props {
 
 const today = () => new Date().toISOString().slice(0, 10);
 const toNum = (v: string | number) => Number(v) || 0;
-const money = (v: number) => (Number(v) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const round2 = (v: number) => Math.round((Number(v) || 0) * 100) / 100;
+const money = (v: number) => round2(v).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const inputClass = 'w-full rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-sm font-semibold outline-none focus:border-indigo-400';
 const labelClass = 'mb-1 block text-[10px] font-black uppercase tracking-wide text-gray-500';
 const calcInputClass = 'w-full rounded-lg border border-violet-200 bg-white px-2.5 py-2 text-sm font-bold outline-none focus:border-violet-400';
-
-const emptyLine = (): GreyPurchaseLine => ({
-  ch: '',
-  desp: '',
-  mill: '',
-  card: '',
-  despDate: '',
-  taka: 0,
-  mts: 0,
-  rate: 0,
-  weight: 0,
-  mark: '',
-  lot: '',
-  remark: '',
-  vehicleNo: '',
-  ewayBill: '',
-  process: '',
-  master: '',
-  amount: 0
-});
 
 export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [companyName, setCompanyName] = useState('');
@@ -56,18 +37,17 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [brokerName, setBrokerName] = useState('');
   const [billDate, setBillDate] = useState(today());
   const [checkerName, setCheckerName] = useState('');
-  const [lines, setLines] = useState<GreyPurchaseLine[]>([emptyLine()]);
   const [recTaka, setRecTaka] = useState('');
   const [recMts, setRecMts] = useState('');
   const [purRate, setPurRate] = useState('');
   const [remarks, setRemarks] = useState('');
-  const [grossAmount, setGrossAmount] = useState('0');
+  const [grossAmount, setGrossAmount] = useState(0);
   const [discountPercent, setDiscountPercent] = useState('');
-  const [discountAmount, setDiscountAmount] = useState('0');
-  const [taxableBeforeOther, setTaxableBeforeOther] = useState('0');
+  const [discountAmount, setDiscountAmount] = useState(0);
+  const [taxableBeforeOther, setTaxableBeforeOther] = useState(0);
   const [otherAddBefore, setOtherAddBefore] = useState('');
   const [otherLessBefore, setOtherLessBefore] = useState('');
-  const [taxableAmount, setTaxableAmount] = useState('0');
+  const [taxableAmount, setTaxableAmount] = useState(0);
   const [stateCode, setStateCode] = useState('');
   const [placeOfSupply, setPlaceOfSupply] = useState('');
   const [gstTypeLabel, setGstTypeLabel] = useState('');
@@ -78,10 +58,10 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [sgstAmount, setSgstAmount] = useState('0');
   const [igstRate, setIgstRate] = useState('0');
   const [igstAmount, setIgstAmount] = useState('0');
-  const [payableAmount, setPayableAmount] = useState('0');
+  const [payableAmount, setPayableAmount] = useState(0);
   const [otherAddAfter, setOtherAddAfter] = useState('');
   const [otherLessAfter, setOtherLessAfter] = useState('');
-  const [netAmount, setNetAmount] = useState('0');
+  const [netAmount, setNetAmount] = useState(0);
   const [paid, setPaid] = useState(false);
   const [paidDate, setPaidDate] = useState('');
   const [despatchMts, setDespatchMts] = useState('0');
@@ -93,10 +73,33 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
   const gstInvalid = isWrongGstNumber(partyGstin);
   const needsManualState = !normalizeGstNumber(partyGstin) && !placeOfSupply;
 
-  const lineGross = useMemo(
-    () => lines.reduce((sum, line) => sum + (Number(line.amount) || ((Number(line.mts) || 0) * (Number(line.rate) || 0))), 0),
-    [lines]
-  );
+  // Gross = Rec. Mts × Pur Rate (taka is count of pieces making up those meters)
+  useEffect(() => {
+    setGrossAmount(round2(toNum(recMts) * toNum(purRate)));
+  }, [recMts, purRate]);
+
+  // Disc amt auto from disc %
+  useEffect(() => {
+    const pct = toNum(discountPercent);
+    setDiscountAmount(round2(grossAmount * pct / 100));
+  }, [discountPercent, grossAmount]);
+
+  const itemLines: GreyPurchaseLine[] = useMemo(() => {
+    const lineGross = grossAmount;
+    const lineNet = round2(lineGross - discountAmount);
+    if (!quality && !toNum(recTaka) && !toNum(recMts) && !lineGross) {
+      return [];
+    }
+    return [{
+      quality: quality || '-',
+      taka: toNum(recTaka),
+      mts: toNum(recMts),
+      rate: toNum(purRate),
+      grossAmount: lineGross,
+      netAmount: lineNet,
+      remark: remarks || null
+    }];
+  }, [quality, recTaka, recMts, purRate, grossAmount, discountAmount, remarks]);
 
   useEffect(() => {
     let cancelled = false;
@@ -154,23 +157,12 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
     if (supplier.msmeType) setPartyMsme(supplier.msmeType);
   };
 
-  const updateLine = (index: number, key: keyof GreyPurchaseLine, value: string | number) => {
-    setLines(prev => prev.map((line, i) => {
-      if (i !== index) return line;
-      const next = { ...line, [key]: value };
-      const mts = Number(next.mts) || 0;
-      const rate = Number(next.rate) || 0;
-      next.amount = Math.round(mts * rate * 100) / 100;
-      return next;
-    }));
-  };
-
-  const recalculate = useCallback(async (overrideGross?: number) => {
+  const recalculate = useCallback(async () => {
     try {
       const { totals } = await greyPurchasesApi.calculate({
-        grossAmount: overrideGross != null ? overrideGross : toNum(grossAmount),
+        grossAmount,
         discountPercent: toNum(discountPercent),
-        discountAmount: discountAmount !== '' ? toNum(discountAmount) : undefined,
+        discountAmount,
         otherAddBefore: toNum(otherAddBefore),
         otherLessBefore: toNum(otherLessBefore),
         otherAddAfter: toNum(otherAddAfter),
@@ -181,10 +173,8 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
         partyGstin,
         supplierState: placeOfSupply
       });
-      setGrossAmount(String(totals.grossAmount ?? 0));
-      setDiscountAmount(String(totals.discountAmount ?? 0));
-      setTaxableBeforeOther(String(totals.taxableBeforeOther ?? totals.taxableAmount ?? 0));
-      setTaxableAmount(String(totals.taxableAmount ?? 0));
+      setTaxableBeforeOther(Number(totals.taxableBeforeOther ?? totals.taxableAmount ?? 0));
+      setTaxableAmount(Number(totals.taxableAmount ?? 0));
       if (totals.stateCode) setStateCode(String(totals.stateCode));
       if (totals.placeOfSupply) setPlaceOfSupply(String(totals.placeOfSupply));
       setGstTypeLabel(String(totals.gstTypeLabel || totals.gstType || ''));
@@ -194,21 +184,15 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
       setSgstAmount(String(totals.sgstAmount ?? 0));
       setIgstRate(String(totals.igstRate ?? 0));
       setIgstAmount(String(totals.igstAmount ?? 0));
-      setPayableAmount(String(totals.payableAmount ?? 0));
-      setNetAmount(String(totals.netAmount ?? 0));
+      setPayableAmount(Number(totals.payableAmount ?? 0));
+      setNetAmount(Number(totals.netAmount ?? 0));
     } catch {
-      // keep current values if calc fails
+      // keep current values
     }
   }, [
     discountAmount, discountPercent, grossAmount, gstRate, otherAddAfter, otherAddBefore,
     otherLessAfter, otherLessBefore, partyGstin, placeOfSupply, stateCode
   ]);
-
-  useEffect(() => {
-    setGrossAmount(String(Math.round(lineGross * 100) / 100));
-    setRecTaka(String(lines.reduce((s, l) => s + (Number(l.taka) || 0), 0)));
-    setRecMts(String(lines.reduce((s, l) => s + (Number(l.mts) || 0), 0)));
-  }, [lineGross, lines]);
 
   useEffect(() => {
     const timer = setTimeout(() => { void recalculate(); }, 250);
@@ -260,10 +244,10 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
         recTaka: toNum(recTaka),
         recMts: toNum(recMts),
         purRate: toNum(purRate),
-        lineItems: lines,
-        grossAmount: toNum(grossAmount),
+        lineItems: itemLines,
+        grossAmount,
         discountPercent: toNum(discountPercent),
-        discountAmount: toNum(discountAmount),
+        discountAmount,
         otherAddBefore: toNum(otherAddBefore),
         otherLessBefore: toNum(otherLessBefore),
         otherAddAfter: toNum(otherAddAfter),
@@ -276,16 +260,18 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
         despatchMts: toNum(despatchMts),
         remarks
       });
-      setSuccess('Grey purchase saved.');
-      setLines([emptyLine()]);
+      setSuccess('Grey purchase saved and posted to godown inventory.');
       setBillNo('');
+      setRecTaka('');
+      setRecMts('');
+      setPurRate('');
       setDiscountPercent('');
-      setDiscountAmount('0');
       setOtherAddBefore('');
       setOtherLessBefore('');
       setOtherAddAfter('');
       setOtherLessAfter('');
       setRemarks('');
+      setQuality('');
       const meta = await greyPurchasesApi.getMeta();
       setSrNo(String(meta.nextSrNo || 1));
     } catch (err: any) {
@@ -415,8 +401,24 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
               <p className="mb-3 text-[10px] font-black uppercase tracking-widest text-violet-700">Bill Amount · Calculation Series</p>
               <div className="grid gap-3 md:grid-cols-4 xl:grid-cols-6">
                 <label>
+                  <span className={labelClass}>Rec. Taka</span>
+                  <input className={calcInputClass} type="number" step="0.01" value={recTaka} onChange={e => setRecTaka(e.target.value)} />
+                </label>
+                <label>
+                  <span className={labelClass}>Rec. Mts.</span>
+                  <input className={calcInputClass} type="number" step="0.01" value={recMts} onChange={e => setRecMts(e.target.value)} />
+                </label>
+                <label>
+                  <span className={labelClass}>Pur Rate</span>
+                  <input className={calcInputClass} type="number" step="0.01" value={purRate} onChange={e => setPurRate(e.target.value)} />
+                </label>
+                <label className="md:col-span-2 xl:col-span-2">
+                  <span className={labelClass}>Remark</span>
+                  <input className={calcInputClass} value={remarks} onChange={e => setRemarks(e.target.value)} />
+                </label>
+                <label>
                   <span className={labelClass}>1. Gross Amt</span>
-                  <input className={calcInputClass} type="number" step="0.01" value={grossAmount} onChange={e => setGrossAmount(e.target.value)} />
+                  <input className={`${calcInputClass} bg-violet-100`} readOnly value={money(grossAmount)} />
                 </label>
                 <label>
                   <span className={labelClass}>2. Disc %</span>
@@ -424,11 +426,11 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
                 </label>
                 <label>
                   <span className={labelClass}>2. Disc Amt</span>
-                  <input className={calcInputClass} type="number" step="0.01" value={discountAmount} onChange={e => setDiscountAmount(e.target.value)} />
+                  <input className={`${calcInputClass} bg-violet-100`} readOnly value={money(discountAmount)} />
                 </label>
                 <label>
                   <span className={labelClass}>3. Taxable Value</span>
-                  <input className={calcInputClass} readOnly value={money(toNum(taxableBeforeOther))} />
+                  <input className={calcInputClass} readOnly value={money(taxableBeforeOther)} />
                 </label>
                 <label>
                   <span className={labelClass}>4. Other Add</span>
@@ -440,7 +442,7 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
                 </label>
                 <label>
                   <span className={labelClass}>Taxable (after add/less)</span>
-                  <input className={calcInputClass} readOnly value={money(toNum(taxableAmount))} />
+                  <input className={calcInputClass} readOnly value={money(taxableAmount)} />
                 </label>
                 <label>
                   <span className={labelClass}>5. State Code</span>
@@ -506,7 +508,7 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
                 )}
                 <label>
                   <span className={labelClass}>7. Payable Amount</span>
-                  <input className={calcInputClass} readOnly value={money(toNum(payableAmount))} />
+                  <input className={calcInputClass} readOnly value={money(payableAmount)} />
                 </label>
                 <label>
                   <span className={labelClass}>8. Other Add</span>
@@ -518,25 +520,7 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
                 </label>
                 <label>
                   <span className={labelClass}>9. Net Amount</span>
-                  <input className={`${calcInputClass} bg-violet-100`} readOnly value={money(toNum(netAmount))} />
-                </label>
-              </div>
-              <div className="mt-3 grid gap-3 md:grid-cols-4">
-                <label>
-                  <span className={labelClass}>Rec. Taka</span>
-                  <input className={calcInputClass} value={recTaka} onChange={e => setRecTaka(e.target.value)} />
-                </label>
-                <label>
-                  <span className={labelClass}>Rec. Mts.</span>
-                  <input className={calcInputClass} value={recMts} onChange={e => setRecMts(e.target.value)} />
-                </label>
-                <label>
-                  <span className={labelClass}>Pur Rate</span>
-                  <input className={calcInputClass} value={purRate} onChange={e => setPurRate(e.target.value)} />
-                </label>
-                <label>
-                  <span className={labelClass}>Remark</span>
-                  <input className={calcInputClass} value={remarks} onChange={e => setRemarks(e.target.value)} />
+                  <input className={`${calcInputClass} bg-violet-100`} readOnly value={money(netAmount)} />
                 </label>
               </div>
               {needsManualState && (
@@ -549,71 +533,33 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
               )}
             </section>
 
-            <section className="rounded-2xl border border-gray-200 bg-white p-3 shadow-sm">
-              <div className="mb-2 flex items-center justify-between">
-                <h3 className="text-xs font-black uppercase tracking-wide text-gray-900">Item Lines</h3>
-                <button
-                  type="button"
-                  onClick={() => setLines(prev => [...prev, emptyLine()])}
-                  className="flex items-center gap-1 rounded-lg bg-indigo-50 px-3 py-1.5 text-xs font-black text-indigo-700"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  Add Line
-                </button>
-              </div>
+            <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+              <h3 className="mb-3 text-xs font-black uppercase tracking-wide text-gray-900">Items (auto from Rec. details)</h3>
               <div className="overflow-x-auto">
-                <table className="min-w-[1400px] w-full text-left text-[11px]">
+                <table className="min-w-full text-left text-sm">
                   <thead className="border-b bg-gray-50 text-[10px] uppercase text-gray-500">
                     <tr>
-                      <th className="p-2">CH</th>
-                      <th className="p-2">Desp</th>
-                      <th className="p-2">Mill</th>
-                      <th className="p-2">Card</th>
-                      <th className="p-2">Desp Date</th>
-                      <th className="p-2">Taka</th>
-                      <th className="p-2">Mts.</th>
-                      <th className="p-2">Rate</th>
-                      <th className="p-2">Wt.</th>
-                      <th className="p-2">Mark</th>
-                      <th className="p-2">Lot</th>
-                      <th className="p-2">Remark</th>
-                      <th className="p-2">Vehicle No.</th>
-                      <th className="p-2">E-Way Bill</th>
-                      <th className="p-2">Process</th>
-                      <th className="p-2">Master</th>
-                      <th className="p-2 text-right">Amount</th>
-                      <th className="p-2" />
+                      <th className="p-2">Quality</th>
+                      <th className="p-2 text-right">Taka</th>
+                      <th className="p-2 text-right">Mtrs</th>
+                      <th className="p-2 text-right">Gross Amount</th>
+                      <th className="p-2 text-right">Net Amount</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {lines.map((line, idx) => (
-                      <tr key={idx} className="border-b">
-                        {([
-                          ['ch', 'text'], ['desp', 'text'], ['mill', 'text'], ['card', 'text'], ['despDate', 'date'],
-                          ['taka', 'number'], ['mts', 'number'], ['rate', 'number'], ['weight', 'number'],
-                          ['mark', 'text'], ['lot', 'text'], ['remark', 'text'], ['vehicleNo', 'text'],
-                          ['ewayBill', 'text'], ['process', 'text'], ['master', 'text']
-                        ] as Array<[keyof GreyPurchaseLine, string]>).map(([key, type]) => (
-                          <td key={key} className="p-1">
-                            <input
-                              type={type === 'number' ? 'number' : type === 'date' ? 'date' : 'text'}
-                              step={type === 'number' ? '0.01' : undefined}
-                              className="w-full min-w-[70px] rounded border px-1.5 py-1 text-[11px] font-semibold"
-                              value={(line[key] as string | number | null | undefined) ?? ''}
-                              onChange={e => updateLine(idx, key, type === 'number' ? toNum(e.target.value) : e.target.value)}
-                            />
-                          </td>
-                        ))}
-                        <td className="p-1 text-right font-bold">{money(Number(line.amount) || 0)}</td>
-                        <td className="p-1">
-                          <button
-                            type="button"
-                            onClick={() => setLines(prev => prev.length === 1 ? [emptyLine()] : prev.filter((_, i) => i !== idx))}
-                            className="rounded bg-red-50 p-1 text-red-600"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
+                    {itemLines.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="p-4 text-center text-sm text-gray-400">
+                          Enter Rec. Taka, Rec. Mts, Pur Rate and Quality to fill items.
                         </td>
+                      </tr>
+                    ) : itemLines.map((line, idx) => (
+                      <tr key={idx} className="border-b">
+                        <td className="p-2 font-semibold">{line.quality}</td>
+                        <td className="p-2 text-right">{line.taka}</td>
+                        <td className="p-2 text-right">{line.mts}</td>
+                        <td className="p-2 text-right font-bold">{money(Number(line.grossAmount) || 0)}</td>
+                        <td className="p-2 text-right font-bold text-violet-800">{money(Number(line.netAmount) || 0)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -643,7 +589,7 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
                 className="ml-auto flex items-center gap-2 rounded-2xl bg-indigo-600 px-6 py-3 text-sm font-black text-white disabled:opacity-60"
               >
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                {saving ? 'Saving...' : 'Save Grey Purchase'}
+                {saving ? 'Saving...' : 'Save to Godown'}
               </button>
             </section>
           </form>

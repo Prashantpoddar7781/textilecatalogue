@@ -47,25 +47,16 @@ function normalizeLineItems(raw) {
     const mts = Number(line.mts) || 0;
     const rate = Number(line.rate) || 0;
     const taka = Number(line.taka) || 0;
-    const amount = roundMoney(line.amount != null && line.amount !== '' ? line.amount : mts * rate);
+    const grossAmount = roundMoney(line.grossAmount != null && line.grossAmount !== '' ? line.grossAmount : mts * rate);
+    const netAmount = roundMoney(line.netAmount != null && line.netAmount !== '' ? line.netAmount : grossAmount);
     return {
-      ch: optionalString(line.ch),
-      desp: optionalString(line.desp),
-      mill: optionalString(line.mill),
-      card: optionalString(line.card),
-      despDate: optionalString(line.despDate),
+      quality: optionalString(line.quality),
       taka,
       mts,
       rate,
-      weight: optionalNumber(line.weight),
-      mark: optionalString(line.mark),
-      lot: optionalString(line.lot),
-      remark: optionalString(line.remark),
-      vehicleNo: optionalString(line.vehicleNo),
-      ewayBill: optionalString(line.ewayBill),
-      process: optionalString(line.process),
-      master: optionalString(line.master),
-      amount
+      grossAmount,
+      netAmount,
+      remark: optionalString(line.remark)
     };
   });
 }
@@ -148,6 +139,59 @@ router.post('/calculate', authenticateToken, requireActiveSubscription, async (r
   }
 });
 
+router.get('/godown-inventory', authenticateToken, requireActiveSubscription, async (req, res, next) => {
+  try {
+    const entries = await prisma.greyPurchase.findMany({
+      where: { userId: req.user.userId, status: { not: 'cancelled' } },
+      include: { supplier: true },
+      orderBy: [{ billDate: 'desc' }, { createdAt: 'desc' }]
+    });
+
+    const rows = entries.map(entry => ({
+      id: entry.id,
+      date: entry.billDate,
+      srNo: entry.srNo,
+      billNo: entry.billNo,
+      partyName: entry.partyName,
+      quality: entry.quality,
+      taka: entry.recTaka,
+      mts: entry.recMts,
+      rate: entry.purRate,
+      grossAmount: entry.grossAmount,
+      netAmount: entry.netAmount,
+      sourceType: 'grey_purchase',
+      sourceLabel: 'Grey Purchase',
+      godown: 'Main Godown'
+    }));
+
+    const byQuality = new Map();
+    for (const row of rows) {
+      const key = String(row.quality || 'Unspecified').trim() || 'Unspecified';
+      const current = byQuality.get(key) || { quality: key, taka: 0, mts: 0, grossAmount: 0, netAmount: 0, entries: 0 };
+      current.taka += Number(row.taka) || 0;
+      current.mts += Number(row.mts) || 0;
+      current.grossAmount += Number(row.grossAmount) || 0;
+      current.netAmount += Number(row.netAmount) || 0;
+      current.entries += 1;
+      byQuality.set(key, current);
+    }
+
+    res.json({
+      rows,
+      summary: Array.from(byQuality.values()).sort((a, b) => a.quality.localeCompare(b.quality)),
+      totals: {
+        taka: rows.reduce((s, r) => s + (Number(r.taka) || 0), 0),
+        mts: rows.reduce((s, r) => s + (Number(r.mts) || 0), 0),
+        grossAmount: rows.reduce((s, r) => s + (Number(r.grossAmount) || 0), 0),
+        netAmount: rows.reduce((s, r) => s + (Number(r.netAmount) || 0), 0),
+        entries: rows.length
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.get('/', authenticateToken, requireActiveSubscription, async (req, res, next) => {
   try {
     const entries = await prisma.greyPurchase.findMany({
@@ -187,8 +231,10 @@ router.post('/', authenticateToken, requireActiveSubscription, [
     const userId = req.user.userId;
     const ctx = await getCompanyContext(userId);
     const lineItems = normalizeLineItems(req.body.lineItems);
-    const lineGross = roundMoney(lineItems.reduce((sum, line) => sum + (Number(line.amount) || 0), 0));
-    const grossAmount = optionalNumber(req.body.grossAmount) ?? lineGross;
+    const lineGross = roundMoney(lineItems.reduce((sum, line) => sum + (Number(line.grossAmount) || 0), 0));
+    const recMts = optionalNumber(req.body.recMts) ?? lineItems.reduce((s, l) => s + (Number(l.mts) || 0), 0);
+    const purRate = optionalNumber(req.body.purRate) ?? 0;
+    const grossAmount = optionalNumber(req.body.grossAmount) ?? (recMts && purRate ? roundMoney(recMts * purRate) : lineGross);
 
     let supplierId = optionalString(req.body.supplierId);
     let supplier = null;
@@ -241,8 +287,8 @@ router.post('/', authenticateToken, requireActiveSubscription, [
         transactionType: 'GREY PURCHASE',
         typeBillNumber: optionalNumber(req.body.typeBillNumber),
         recTaka: optionalNumber(req.body.recTaka) ?? lineItems.reduce((s, l) => s + (Number(l.taka) || 0), 0),
-        recMts: optionalNumber(req.body.recMts) ?? lineItems.reduce((s, l) => s + (Number(l.mts) || 0), 0),
-        purRate: optionalNumber(req.body.purRate) ?? 0,
+        recMts,
+        purRate,
         lineItems,
         grossAmount: totals.grossAmount,
         discountPercent: totals.discountPercent,

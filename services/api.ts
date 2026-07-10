@@ -739,6 +739,35 @@ export const greyPurchasesApi = {
   getAll: async () => {
     return request<{ entries: GreyPurchase[] }>('/grey-purchases');
   },
+  getGodownInventory: async () => {
+    return request<{
+      rows: Array<{
+        id: string;
+        date: string;
+        srNo?: number | null;
+        billNo?: string | null;
+        partyName: string;
+        quality?: string | null;
+        taka: number;
+        mts: number;
+        rate: number;
+        grossAmount: number;
+        netAmount: number;
+        sourceType: string;
+        sourceLabel: string;
+        godown: string;
+      }>;
+      summary: Array<{
+        quality: string;
+        taka: number;
+        mts: number;
+        grossAmount: number;
+        netAmount: number;
+        entries: number;
+      }>;
+      totals: { taka: number; mts: number; grossAmount: number; netAmount: number; entries: number };
+    }>('/grey-purchases/godown-inventory');
+  },
   getById: async (id: string) => {
     return request<{ entry: GreyPurchase }>(`/grey-purchases/${id}`);
   },

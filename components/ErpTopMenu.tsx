@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, Building2, ChevronDown, LogOut } from 'lucide-react';
+import { ArrowLeft, Building2, ChevronDown, FileBarChart, LogOut, Package } from 'lucide-react';
 import { clearErpSession, hasCompleteErpAccess } from '../services/erpSession';
 import { ErpSession } from '../types';
 
@@ -11,7 +11,7 @@ interface Props {
   children?: React.ReactNode;
 }
 
-type MenuKey = 'masters' | 'utilities' | null;
+type MenuKey = 'masters' | 'reports' | 'utilities' | null;
 
 export const ErpTopMenu: React.FC<Props> = ({
   title,
@@ -101,6 +101,39 @@ export const ErpTopMenu: React.FC<Props> = ({
                 >
                   <Building2 className="h-4 w-4" />
                   Company
+                </button>
+              </div>
+            )}
+          </div>
+
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => toggle('reports')}
+              className={`flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-black uppercase tracking-wide ${
+                openMenu === 'reports' ? 'bg-indigo-600 text-white' : 'text-gray-700 hover:bg-gray-100'
+              }`}
+            >
+              Reports
+              <ChevronDown className={`h-3.5 w-3.5 transition ${openMenu === 'reports' ? 'rotate-180' : ''}`} />
+            </button>
+            {openMenu === 'reports' && (
+              <div className="absolute left-0 z-50 mt-1 min-w-[240px] rounded-xl border border-gray-100 bg-white p-1.5 shadow-xl">
+                <button
+                  type="button"
+                  onClick={() => { window.location.href = '/erp/reports/godown-inventory'; }}
+                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-gray-800 hover:bg-indigo-50 hover:text-indigo-700"
+                >
+                  <Package className="h-4 w-4" />
+                  Godown Inventory
+                </button>
+                <button
+                  type="button"
+                  disabled
+                  className="flex w-full cursor-not-allowed items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-gray-300"
+                >
+                  <FileBarChart className="h-4 w-4" />
+                  More reports soon
                 </button>
               </div>
             )}
