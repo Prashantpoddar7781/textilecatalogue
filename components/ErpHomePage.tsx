@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Banknote, BookOpen, Boxes, ChevronDown, FileText, PackageCheck, ReceiptText, Truck } from 'lucide-react';
+import { Banknote, BookOpen, Boxes, ChevronDown, FileText, Package, PackageCheck, ReceiptText, Truck } from 'lucide-react';
 import { ADDITIONAL_ERP_FEATURES } from '../constants/creditDebitNoteTypes';
 import { accessLevelLabel } from '../services/erpSession';
 import { ErpSession } from '../types';
@@ -39,6 +39,13 @@ const sections = [
     icon: BookOpen,
     href: '/erp/ledger',
     status: 'Demo ready'
+  },
+  {
+    title: 'Grey Purchase',
+    description: 'Grey purchase entry with party GST, disc, taxable, CGST/SGST or IGST, and net amount.',
+    icon: Package,
+    href: '/erp/grey-purchase',
+    status: 'Ready'
   },
   {
     title: 'Grey Dispatch',

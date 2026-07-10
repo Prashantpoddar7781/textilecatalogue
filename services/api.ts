@@ -1,4 +1,4 @@
-import { AccountLedgerEntry, AccountLedgerParty, BankEntry, BankPendingBill, BusinessProfile, CompletedOrderParty, Contact, Customer, CreditDebitNote, ErpAccessLevel, ErpSession, ErpUserAccount, LedgerEntryDetail, Order, PurchaseBill, PurchaseBillExtraction, PurchaseBillParty, SalesInvoice, Supplier, SupplierLedgerEntry } from '../types';
+import { AccountLedgerEntry, AccountLedgerParty, BankEntry, BankPendingBill, BusinessProfile, CompletedOrderParty, Contact, Customer, CreditDebitNote, ErpAccessLevel, ErpSession, ErpUserAccount, GreyPurchase, LedgerEntryDetail, Order, PurchaseBill, PurchaseBillExtraction, PurchaseBillParty, SalesInvoice, Supplier, SupplierLedgerEntry } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://textilecatalogue-production.up.railway.app/api';
 
@@ -714,6 +714,39 @@ export const creditDebitNotesApi = {
   },
   delete: async (id: string) => {
     return request<{ success: boolean }>(`/credit-debit-notes/${id}`, { method: 'DELETE' });
+  }
+};
+
+export const greyPurchasesApi = {
+  getMeta: async () => {
+    return request<{
+      companyName: string;
+      businessState: string;
+      businessGstin: string;
+      defaultHsnCode: string;
+      defaultGstRate: number;
+      nextSrNo: number;
+      states: string[];
+      stateCodes: Array<{ code: string; name: string }>;
+    }>('/grey-purchases/meta');
+  },
+  calculate: async (body: Record<string, unknown>) => {
+    return request<{ totals: Record<string, number | string> }>('/grey-purchases/calculate', {
+      method: 'POST',
+      body: JSON.stringify(body)
+    });
+  },
+  getAll: async () => {
+    return request<{ entries: GreyPurchase[] }>('/grey-purchases');
+  },
+  getById: async (id: string) => {
+    return request<{ entry: GreyPurchase }>(`/grey-purchases/${id}`);
+  },
+  create: async (body: Record<string, unknown>) => {
+    return request<{ entry: GreyPurchase }>('/grey-purchases', {
+      method: 'POST',
+      body: JSON.stringify(body)
+    });
   }
 };
 

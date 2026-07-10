@@ -14,6 +14,7 @@ export const ERP_TRANSACTION_TYPES: ErpTransactionType[] = [
   { value: 'SALES GOODS RETURN', label: 'Sales Goods Return', category: 'sales' },
   { value: 'SALES ORDERS', label: 'Sales Orders', category: 'sales' },
   { value: 'FINISH PURCHASE', label: 'Finish Purchase', category: 'purchase' },
+  { value: 'GREY PURCHASE', label: 'Grey Purchase', category: 'purchase' },
   { value: 'FINISH PURCHASE RETURN', label: 'Finish Purchase Return', category: 'purchase' },
   { value: 'GREY PURCHASE RETURN', label: 'Grey Purchase Return', category: 'purchase' },
   { value: 'BOX PURCHASES', label: 'Box Purchases', category: 'purchase' },

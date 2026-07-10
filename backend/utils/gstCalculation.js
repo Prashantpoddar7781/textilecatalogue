@@ -9,7 +9,62 @@ export const INDIAN_STATES = [
   'Telangana', 'Tripura', 'Uttar Pradesh', 'Uttarakhand', 'West Bengal'
 ];
 
+/** GSTIN first 2 digits → state name */
+export const GST_STATE_CODES = {
+  '01': 'Jammu and Kashmir',
+  '02': 'Himachal Pradesh',
+  '03': 'Punjab',
+  '04': 'Chandigarh',
+  '05': 'Uttarakhand',
+  '06': 'Haryana',
+  '07': 'Delhi',
+  '08': 'Rajasthan',
+  '09': 'Uttar Pradesh',
+  '10': 'Bihar',
+  '11': 'Sikkim',
+  '12': 'Arunachal Pradesh',
+  '13': 'Nagaland',
+  '14': 'Manipur',
+  '15': 'Mizoram',
+  '16': 'Tripura',
+  '17': 'Meghalaya',
+  '18': 'Assam',
+  '19': 'West Bengal',
+  '20': 'Jharkhand',
+  '21': 'Odisha',
+  '22': 'Chhattisgarh',
+  '23': 'Madhya Pradesh',
+  '24': 'Gujarat',
+  '25': 'Dadra and Nagar Haveli and Daman and Diu',
+  '26': 'Dadra and Nagar Haveli and Daman and Diu',
+  '27': 'Maharashtra',
+  '28': 'Andhra Pradesh',
+  '29': 'Karnataka',
+  '30': 'Goa',
+  '31': 'Lakshadweep',
+  '32': 'Kerala',
+  '33': 'Tamil Nadu',
+  '34': 'Puducherry',
+  '35': 'Andaman and Nicobar Islands',
+  '36': 'Telangana',
+  '37': 'Andhra Pradesh',
+  '38': 'Ladakh'
+};
+
 const normalizeState = (value) => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+
+export function getStateFromGstin(gstin) {
+  const code = String(gstin || '').replace(/[^0-9A-Za-z]/g, '').slice(0, 2);
+  if (!code || !GST_STATE_CODES[code]) return { stateCode: code || '', stateName: '' };
+  return { stateCode: code, stateName: GST_STATE_CODES[code] };
+}
+
+export function getStateCodeFromName(stateName) {
+  const target = normalizeState(stateName);
+  if (!target) return '';
+  const entry = Object.entries(GST_STATE_CODES).find(([, name]) => normalizeState(name) === target);
+  return entry ? entry[0] : '';
+}
 
 export function isInterStateSupply(placeOfSupply, businessState) {
   const supply = normalizeState(placeOfSupply);
@@ -72,6 +127,65 @@ export function calculateGstBreakup({
     igstAmount: 0,
     totalTaxAmount: totalTax,
     gstType: 'CGST+SGST'
+  };
+}
+
+/**
+ * Grey purchase calc series:
+ * Gross → Disc% / Disc Amt → Taxable (gross - disc)
+ * → Other Add/Less → State + GST Type → CGST/SGST or IGST
+ * → Payable (taxable after other + GST) → Other Add/Less → Net
+ */
+export function calculateGreyPurchaseTotals(input) {
+  const grossAmount = roundMoney(input.grossAmount);
+  const discountPercent = Number(input.discountPercent) || 0;
+  const discountAmount = roundMoney(
+    input.discountAmount != null && input.discountAmount !== ''
+      ? input.discountAmount
+      : grossAmount * discountPercent / 100
+  );
+  const taxableBeforeOther = roundMoney(grossAmount - discountAmount);
+  const otherAddBefore = roundMoney(input.otherAddBefore);
+  const otherLessBefore = roundMoney(input.otherLessBefore);
+  const taxableAmount = roundMoney(taxableBeforeOther + otherAddBefore - otherLessBefore);
+
+  const gst = calculateGstBreakup({
+    taxableAmount,
+    gstRate: input.gstRate,
+    placeOfSupply: input.placeOfSupply,
+    businessState: input.businessState
+  });
+
+  const payableAmount = roundMoney(taxableAmount + gst.totalTaxAmount);
+  const otherAddAfter = roundMoney(input.otherAddAfter);
+  const otherLessAfter = roundMoney(input.otherLessAfter);
+  const netAmount = roundMoney(payableAmount + otherAddAfter - otherLessAfter);
+
+  const fromGstin = getStateFromGstin(input.partyGstin);
+  let stateCode = String(input.stateCode || fromGstin.stateCode || getStateCodeFromName(input.placeOfSupply) || '');
+  if (stateCode) stateCode = stateCode.padStart(2, '0').slice(-2);
+  const displayGstType = gst.gstType === 'CGST+SGST'
+    ? 'Local Tax'
+    : gst.gstType === 'IGST'
+      ? 'Central Tax'
+      : gst.gstType;
+
+  return {
+    grossAmount,
+    discountPercent,
+    discountAmount,
+    taxableBeforeOther,
+    otherAddBefore,
+    otherLessBefore,
+    taxableAmount,
+    stateCode: stateCode === '00' ? '' : stateCode,
+    placeOfSupply: input.placeOfSupply || fromGstin.stateName || '',
+    ...gst,
+    gstTypeLabel: displayGstType,
+    payableAmount,
+    otherAddAfter,
+    otherLessAfter,
+    netAmount
   };
 }
 

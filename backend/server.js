@@ -19,6 +19,7 @@ import creditDebitNoteRoutes from './routes/creditDebitNotes.js';
 import ledgerRoutes from './routes/ledger.js';
 import erpUserRoutes from './routes/erpUsers.js';
 import erpAuthRoutes from './routes/erpAuth.js';
+import greyPurchaseRoutes from './routes/greyPurchases.js';
 
 dotenv.config();
 
@@ -150,7 +151,7 @@ app.get('/health', (req, res) => {
     res.json({
       status: 'ok',
       timestamp: new Date().toISOString(),
-      version: '2026-07-09-pan-gst-hard-check'
+      version: '2026-07-10-grey-purchase'
     });
   } catch (error) {
     res.status(500).json({ status: 'error', error: error.message });
@@ -178,7 +179,8 @@ try {
   app.use('/api/ledger', ledgerRoutes);
   app.use('/api/erp-users', erpUserRoutes);
   app.use('/api/erp-auth', erpAuthRoutes);
-  console.log('Routes configured: /api/auth, /api/billing, /api/designs, /api/users, /api/catalogues, /api/contacts, /api/customers, /api/share-links, /api/orders, /api/invoices, /api/purchases, /api/bank-entries, /api/credit-debit-notes, /api/ledger, /api/erp-users, /api/erp-auth');
+  app.use('/api/grey-purchases', greyPurchaseRoutes);
+  console.log('Routes configured: /api/auth, /api/billing, /api/designs, /api/users, /api/catalogues, /api/contacts, /api/customers, /api/share-links, /api/orders, /api/invoices, /api/purchases, /api/bank-entries, /api/credit-debit-notes, /api/ledger, /api/erp-users, /api/erp-auth, /api/grey-purchases');
 } catch (error) {
   console.error('Error setting up routes:', error);
   // Server will still start, but routes may not work

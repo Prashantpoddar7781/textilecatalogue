@@ -45,6 +45,7 @@ model User {
   bankEntries BankEntry[]
   creditDebitNotes CreditDebitNote[]
   erpUsers ErpUser[]
+  greyPurchases GreyPurchase[]
 }
 
 model ErpUser {
@@ -373,18 +374,83 @@ model Supplier {
   user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   name             String
   gstNumber        String?
+  panNumber        String?
   mobileNumber     String?
   address          String?
   city             String?
   state            String?
   pincode          String?
+  msmeType         String?
+  udyamNumber      String?
   purchaseBills    PurchaseBill[]
+  greyPurchases    GreyPurchase[]
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
   @@index([userId])
   @@index([name])
   @@index([gstNumber])
+}
+
+model GreyPurchase {
+  id                 String   @id @default(cuid())
+  userId             String
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  supplierId         String?
+  supplier           Supplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  companyName        String?
+  partyName          String
+  partyGstin         String?
+  partyMsme          String?
+  quality            String?
+  srNo               Int?
+  orderNo            String?
+  hsnCode            String?
+  billNo             String?
+  brokerName         String?
+  billDate           DateTime @default(now())
+  checkerName        String?
+  transactionType    String   @default("GREY PURCHASE")
+  typeBillNumber     Int?
+  recTaka            Float    @default(0)
+  recMts             Float    @default(0)
+  purRate            Float    @default(0)
+  lineItems          Json
+  grossAmount        Float    @default(0)
+  discountPercent    Float    @default(0)
+  discountAmount     Float    @default(0)
+  taxableAmount      Float    @default(0)
+  otherAddBefore     Float    @default(0)
+  otherLessBefore    Float    @default(0)
+  placeOfSupply      String?
+  stateCode          String?
+  gstType            String?
+  gstRate            Float    @default(5)
+  cgstRate           Float    @default(0)
+  cgstAmount         Float    @default(0)
+  sgstRate           Float    @default(0)
+  sgstAmount         Float    @default(0)
+  igstRate           Float    @default(0)
+  igstAmount         Float    @default(0)
+  totalTaxAmount     Float    @default(0)
+  payableAmount      Float    @default(0)
+  otherAddAfter      Float    @default(0)
+  otherLessAfter     Float    @default(0)
+  netAmount          Float    @default(0)
+  paid               Boolean  @default(false)
+  paidDate           DateTime?
+  despatchMts        Float    @default(0)
+  remarks            String?
+  status             String   @default("posted")
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([userId])
+  @@index([supplierId])
+  @@index([billDate])
+  @@index([partyName])
+  @@index([transactionType])
+  @@index([status])
 }
 
 model PurchaseBill {
