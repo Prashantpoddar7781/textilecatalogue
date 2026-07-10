@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowLeft, Loader2, Plus, Save, Trash2, Users } from 'lucide-react';
+import { ArrowLeft, Loader2, Plus, Trash2, Users } from 'lucide-react';
 import { erpUsersApi } from '../services/api';
 import { accessLevelLabel } from '../services/erpSession';
 import { ErpAccessLevel, ErpSession, ErpUserAccount } from '../types';
 import { ErpTopMenu } from './ErpTopMenu';
+import { ErpFormShell } from './ErpFormShell';
+import { ErpSaveButton } from './ErpSaveButton';
 
 interface Props {
   onBack: () => void;
@@ -42,8 +44,7 @@ export const ErpUserManagementPage: React.FC<Props> = ({ onBack, erpSession }) =
     void loadUsers();
   }, []);
 
-  const handleCreate = async (event: React.FormEvent) => {
-    event.preventDefault();
+  const handleCreate = async () => {
     setSaving(true);
     setError('');
     try {
@@ -90,8 +91,7 @@ export const ErpUserManagementPage: React.FC<Props> = ({ onBack, erpSession }) =
     setForm(emptyForm);
   };
 
-  const handleUpdate = async (event: React.FormEvent) => {
-    event.preventDefault();
+  const handleUpdate = async () => {
     if (!editingId) return;
     setSaving(true);
     setError('');
@@ -108,6 +108,11 @@ export const ErpUserManagementPage: React.FC<Props> = ({ onBack, erpSession }) =
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleSave = async () => {
+    if (editingId) await handleUpdate();
+    else await handleCreate();
   };
 
   const handleDelete = async (id: string) => {
@@ -154,7 +159,8 @@ export const ErpUserManagementPage: React.FC<Props> = ({ onBack, erpSession }) =
             </div>
           </div>
 
-          <form onSubmit={editingId ? handleUpdate : handleCreate} className="grid gap-3 md:grid-cols-3">
+          <ErpFormShell onSave={handleSave} saving={saving}>
+            <form onSubmit={e => e.preventDefault()} className="grid gap-3 md:grid-cols-3">
             <label className="block">
               <span className="mb-1 block text-[10px] font-black uppercase tracking-wide text-gray-500">Name</span>
               <input
@@ -197,14 +203,11 @@ export const ErpUserManagementPage: React.FC<Props> = ({ onBack, erpSession }) =
             </label>
 
             <div className="flex gap-2 md:col-span-3">
-              <button
-                type="submit"
-                disabled={saving}
+              <ErpSaveButton
+                saving={saving}
+                label={editingId ? 'Save Changes' : 'Create User'}
                 className="flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-black text-white disabled:opacity-60"
-              >
-                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : editingId ? <Save className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
-                {editingId ? 'Save Changes' : 'Create User'}
-              </button>
+              />
               {editingId && (
                 <button
                   type="button"
@@ -216,6 +219,7 @@ export const ErpUserManagementPage: React.FC<Props> = ({ onBack, erpSession }) =
               )}
             </div>
           </form>
+          </ErpFormShell>
 
           <div className="mt-4 grid gap-2 text-xs text-gray-500 sm:grid-cols-2">
             <p><span className="font-bold text-gray-700">Data Entry:</span> can make all ERP entries (sales, purchase, bank, notes).</p>

@@ -1,10 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertCircle, ArrowLeft, ListOrdered, Loader2, Save } from 'lucide-react';
+import { AlertCircle, ArrowLeft, ListOrdered, Loader2 } from 'lucide-react';
 import { GREY_QUALITY_OPTIONS } from '../constants/greyQualities';
 import { greyPurchasesApi, purchasesApi } from '../services/api';
 import { isWrongGstNumber, normalizeGstNumber } from '../services/gstValidation';
 import { ErpSession, GreyPurchaseLine, GreyTakaDetailRow, Supplier } from '../types';
 import { ErpTopMenu } from './ErpTopMenu';
+import { ErpFormShell } from './ErpFormShell';
+import { ErpSaveButton } from './ErpSaveButton';
 import { TakaDetailsModal } from './TakaDetailsModal';
 
 interface Props {
@@ -256,8 +258,7 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
     if (matched) setStateCode(matched.code);
   };
 
-  const handleSave = async (event: React.FormEvent) => {
-    event.preventDefault();
+  const handleSave = async () => {
     setSaving(true);
     setError('');
     setSuccess('');
@@ -365,7 +366,9 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
             Loading...
           </div>
         ) : (
-          <form onSubmit={handleSave} className="space-y-4">
+          <>
+          <ErpFormShell onSave={handleSave} saving={saving} className="space-y-4">
+            <form onSubmit={e => e.preventDefault()} className="space-y-4">
             <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
               <div className="grid gap-3 md:grid-cols-4 xl:grid-cols-6">
                 <label className="xl:col-span-2">
@@ -658,27 +661,27 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
                 <span className={labelClass}>Despatch Mts.</span>
                 <input className={inputClass} value={despatchMts} onChange={e => setDespatchMts(e.target.value)} />
               </label>
-              <button
-                type="submit"
-                disabled={saving}
+              <ErpSaveButton
+                saving={saving}
+                label={isEditMode ? 'Update Entry' : 'Save to Godown'}
                 className="ml-auto flex items-center gap-2 rounded-2xl bg-indigo-600 px-6 py-3 text-sm font-black text-white disabled:opacity-60"
-              >
-                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                {saving ? 'Saving...' : isEditMode ? 'Update Entry' : 'Save to Godown'}
-              </button>
+              />
             </section>
 
-            <TakaDetailsModal
-              open={takaModalOpen}
-              rows={takaDetails}
-              onClose={() => setTakaModalOpen(false)}
-              onApply={(rows) => {
-                setTakaDetails(rows);
-                setRecTaka(String(rows.length));
-                setRecMts(String(round2(rows.reduce((sum, row) => sum + (Number(row.mts) || 0), 0))));
-              }}
-            />
-          </form>
+            </form>
+          </ErpFormShell>
+
+          <TakaDetailsModal
+            open={takaModalOpen}
+            rows={takaDetails}
+            onClose={() => setTakaModalOpen(false)}
+            onApply={(rows) => {
+              setTakaDetails(rows);
+              setRecTaka(String(rows.length));
+              setRecMts(String(round2(rows.reduce((sum, row) => sum + (Number(row.mts) || 0), 0))));
+            }}
+          />
+          </>
         )}
       </main>
     </div>

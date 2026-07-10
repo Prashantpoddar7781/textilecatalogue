@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { AlertCircle, ArrowLeft, Building2, Loader2, Save } from 'lucide-react';
+import { AlertCircle, ArrowLeft, Building2, Loader2 } from 'lucide-react';
 import { invoicesApi } from '../services/api';
 import { getCompanyTaxSaveError, isWrongGstNumber, isWrongPanNumber, normalizeGstNumber, normalizePanNumber } from '../services/gstValidation';
 import { BusinessProfile } from '../types';
 import { ErpTopMenu } from './ErpTopMenu';
+import { ErpFormShell } from './ErpFormShell';
+import { ErpSaveButton } from './ErpSaveButton';
 import { ErpSession } from '../types';
 
 interface Props {
@@ -137,8 +139,7 @@ export const ErpCompanyMasterPage: React.FC<Props> = ({ onBack, erpSession }) =>
     setSaved(false);
   };
 
-  const handleSave = async (event: React.FormEvent) => {
-    event.preventDefault();
+  const handleSave = async () => {
     setSaving(true);
     setError('');
     setSaved(false);
@@ -224,7 +225,8 @@ export const ErpCompanyMasterPage: React.FC<Props> = ({ onBack, erpSession }) =>
             Loading company details...
           </div>
         ) : (
-          <form onSubmit={handleSave} className="space-y-4">
+          <ErpFormShell onSave={handleSave} saving={saving} disabled={saveBlocked}>
+            <form onSubmit={e => e.preventDefault()} className="space-y-4">
             <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
               <h2 className="mb-3 text-xs font-black uppercase tracking-wide text-gray-900">General Information</h2>
               <div className="grid gap-3 md:grid-cols-6">
@@ -369,15 +371,14 @@ export const ErpCompanyMasterPage: React.FC<Props> = ({ onBack, erpSession }) =>
               </div>
             </section>
 
-            <button
-              type="submit"
-              disabled={saving || saveBlocked}
+            <ErpSaveButton
+              saving={saving}
+              disabled={saveBlocked}
+              label="Save Company Details"
               className="flex w-full items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-4 py-3 text-sm font-black text-white disabled:opacity-60 md:w-auto md:px-8"
-            >
-              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-              {saving ? 'Saving...' : 'Save Company Details'}
-            </button>
-          </form>
+            />
+            </form>
+          </ErpFormShell>
         )}
       </main>
     </div>

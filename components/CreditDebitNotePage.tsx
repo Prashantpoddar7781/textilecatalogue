@@ -1,8 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Loader2, Save } from 'lucide-react';
+import { ArrowLeft, Loader2 } from 'lucide-react';
 import { bankEntriesApi, creditDebitNotesApi, customersApi, purchasesApi } from '../services/api';
 import { CreditDebitNoteType, INDIAN_STATES } from '../constants/creditDebitNoteTypes';
 import { Customer, Supplier } from '../types';
+import { ErpFormShell } from './ErpFormShell';
+import { ErpSaveButton } from './ErpSaveButton';
 
 interface Props {
   noteType: CreditDebitNoteType;
@@ -222,6 +224,7 @@ export const CreditDebitNotePage: React.FC<Props> = ({ noteType, onBack }) => {
           {error && <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{error}</div>}
           {success && <div className="mt-4 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm font-semibold text-green-700">{success}</div>}
 
+          <ErpFormShell onSave={saveNote} saving={saving}>
           <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <div><label className={labelClass}>Company</label><input className={inputClass} value={companyName} onChange={e => setCompanyName(e.target.value)} /></div>
             <div><label className={labelClass}>Type</label><input className={inputClass} readOnly value={noteType.label} /></div>
@@ -300,10 +303,12 @@ export const CreditDebitNotePage: React.FC<Props> = ({ noteType, onBack }) => {
             <div className="flex items-end"><label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={isTally} onChange={e => setIsTally(e.target.checked)} /> Tally</label></div>
           </div>
           <div className="mt-4"><label className={labelClass}>Remark</label><textarea className={`${inputClass} min-h-[80px]`} value={remarks} onChange={e => setRemarks(e.target.value)} /></div>
-          <button type="button" onClick={saveNote} disabled={saving} className="mt-5 flex w-full items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-4 py-3 text-sm font-black text-white disabled:opacity-60">
-            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-            Save {noteType.label}
-          </button>
+          <ErpSaveButton
+            saving={saving}
+            label={`Save ${noteType.label}`}
+            className="mt-5 flex w-full items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-4 py-3 text-sm font-black text-white disabled:opacity-60"
+          />
+          </ErpFormShell>
         </section>
       </main>
     </div>

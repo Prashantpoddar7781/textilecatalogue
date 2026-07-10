@@ -1,8 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, Camera, Loader2, Plus, Save, Trash2, Upload } from 'lucide-react';
+import { ArrowLeft, Camera, Loader2, Plus, Trash2, Upload } from 'lucide-react';
 import { purchasesApi, bankEntriesApi } from '../services/api';
 import { PurchaseBillExtraction } from '../types';
 import { DEFAULT_PURCHASE_TRANSACTION_TYPE, ERP_TRANSACTION_TYPES } from '../constants/erpTransactionTypes';
+import { ErpFormShell } from './ErpFormShell';
+import { ErpSaveButton } from './ErpSaveButton';
 
 interface Props {
   onBack: () => void;
@@ -194,7 +196,7 @@ export const ScanPurchaseBillPage: React.FC<Props> = ({ onBack, moduleTitle = 'S
                 </div>
               </div>
             ) : (
-              <div className="space-y-5">
+              <ErpFormShell onSave={saveBill} saving={saving} className="space-y-5">
                 {error && <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{error}</div>}
                 {success && <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm font-semibold text-green-700">{success}</div>}
 
@@ -282,11 +284,13 @@ export const ScanPurchaseBillPage: React.FC<Props> = ({ onBack, moduleTitle = 'S
 
                 {extraction.notes && <p className="text-xs font-semibold text-amber-700">OCR notes: {extraction.notes}</p>}
 
-                <button type="button" onClick={saveBill} disabled={saving} className="flex w-full items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-4 py-3 text-sm font-black text-white disabled:opacity-60">
-                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                  {saving ? 'Saving to Supplier Ledger...' : 'Save Purchase Entry to Ledger'}
-                </button>
-              </div>
+                <ErpSaveButton
+                  saving={saving}
+                  label="Save Purchase Entry to Ledger"
+                  savingLabel="Saving to Supplier Ledger..."
+                  className="flex w-full items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-4 py-3 text-sm font-black text-white disabled:opacity-60"
+                />
+              </ErpFormShell>
             )}
           </section>
         </div>

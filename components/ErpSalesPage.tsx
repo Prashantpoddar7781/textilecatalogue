@@ -1,8 +1,10 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { ArrowLeft, Loader2, Plus, Save, Trash2 } from 'lucide-react';
+import { ArrowLeft, Loader2, Plus, Trash2 } from 'lucide-react';
 import { bankEntriesApi, customersApi, erpApi } from '../services/api';
 import { Customer } from '../types';
 import { DEFAULT_SALES_TRANSACTION_TYPE, ERP_TRANSACTION_TYPES } from '../constants/erpTransactionTypes';
+import { ErpFormShell } from './ErpFormShell';
+import { ErpSaveButton } from './ErpSaveButton';
 
 interface Props {
   onBack: () => void;
@@ -155,6 +157,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack }) => {
           {error && <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{error}</div>}
           {success && <div className="mt-4 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm font-semibold text-green-700">{success}</div>}
 
+          <ErpFormShell onSave={saveEntry} saving={saving}>
           <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <div>
               <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-gray-500">Type</label>
@@ -250,10 +253,13 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack }) => {
             <input className="rounded-xl border px-3 py-2 text-sm sm:col-span-1" placeholder="Remark" value={remarks} onChange={e => setRemarks(e.target.value)} />
           </div>
 
-          <button type="button" onClick={saveEntry} disabled={saving} className="mt-5 flex w-full items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-4 py-3 text-sm font-black text-white disabled:opacity-60">
-            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-            {saving ? 'Saving sales entry...' : 'Save Sales Entry'}
-          </button>
+          <ErpSaveButton
+            saving={saving}
+            label="Save Sales Entry"
+            savingLabel="Saving sales entry..."
+            className="mt-5 flex w-full items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-4 py-3 text-sm font-black text-white disabled:opacity-60"
+          />
+          </ErpFormShell>
         </section>
       </main>
     </div>

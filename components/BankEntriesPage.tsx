@@ -3,6 +3,8 @@ import { ArrowLeft, Edit3, Loader2, RefreshCw, Save, Search, Trash2 } from 'luci
 import { bankEntriesApi, invoicesApi } from '../services/api';
 import { BankEntry, BankPendingBill, CompletedOrderParty, PurchaseBillParty } from '../types';
 import { DEFAULT_PURCHASE_TRANSACTION_TYPE, DEFAULT_SALES_TRANSACTION_TYPE, ERP_TRANSACTION_TYPES } from '../constants/erpTransactionTypes';
+import { ErpFormShell } from './ErpFormShell';
+import { ErpSaveButton } from './ErpSaveButton';
 
 interface Props {
   onBack: () => void;
@@ -639,6 +641,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
         {error && <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{error}</div>}
 
         {viewMode === 'entry' ? (
+          <ErpFormShell onSave={saveEntry} saving={saving} className="space-y-4">
           <div className="space-y-4">
             <section className="rounded-3xl border border-gray-100 bg-white p-5 shadow-sm">
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -1081,16 +1084,18 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
               </div>
 
               <div className="mt-4 flex flex-wrap gap-2">
-                <button type="button" onClick={() => void saveEntry()} disabled={saving} className="flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-3 text-sm font-black text-white disabled:opacity-60">
-                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                  Save Entry
-                </button>
+                <ErpSaveButton
+                  saving={saving}
+                  label="Save Entry"
+                  className="flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-3 text-sm font-black text-white disabled:opacity-60"
+                />
                 <button type="button" onClick={() => void resetForm()} className="rounded-xl border border-gray-200 bg-white px-5 py-3 text-sm font-black text-gray-700">
                   Clear
                 </button>
               </div>
             </section>
           </div>
+          </ErpFormShell>
         ) : (
           <section className="rounded-3xl border border-gray-100 bg-white p-5 shadow-sm">
             <div className="flex flex-col gap-3 border-b pb-4 md:flex-row md:items-center md:justify-between">
@@ -1101,7 +1106,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
               <div className="flex flex-col gap-2 sm:flex-row">
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                  <input className="rounded-xl border bg-gray-50 py-2 pl-9 pr-3 text-sm" placeholder="Search entries" value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') void loadEntries(); }} />
+                  <input data-erp-skip-nav className="rounded-xl border bg-gray-50 py-2 pl-9 pr-3 text-sm" placeholder="Search entries" value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') void loadEntries(); }} />
                 </div>
                 <select className="rounded-xl border px-3 py-2 text-sm font-bold" value={entryTypeFilter} onChange={e => setEntryTypeFilter(e.target.value as EntryFilter)}>
                   <option value="all">All</option>
