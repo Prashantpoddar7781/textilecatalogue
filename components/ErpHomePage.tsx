@@ -49,10 +49,10 @@ const sections = [
   },
   {
     title: 'Grey Dispatch',
-    description: 'Track grey fabric sent out for processing.',
+    description: 'Dispatch grey fabric to mill for processing with pur sr and taka selection.',
     icon: Truck,
-    href: '#',
-    status: 'Coming next'
+    href: '/erp/grey-dispatch',
+    status: 'Ready'
   },
   {
     title: 'Grey Receipts',

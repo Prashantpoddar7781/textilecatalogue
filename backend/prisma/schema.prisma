@@ -46,6 +46,7 @@ model User {
   creditDebitNotes CreditDebitNote[]
   erpUsers ErpUser[]
   greyPurchases GreyPurchase[]
+  greyDispatches GreyDispatch[]
 }
 
 model ErpUser {
@@ -445,12 +446,56 @@ model GreyPurchase {
   status             String   @default("posted")
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
+  greyDispatches     GreyDispatch[]
 
   @@index([userId])
   @@index([supplierId])
   @@index([billDate])
   @@index([partyName])
   @@index([transactionType])
+  @@index([status])
+}
+
+model GreyDispatch {
+  id               String        @id @default(cuid())
+  userId           String
+  user             User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  greyPurchaseId   String
+  greyPurchase     GreyPurchase  @relation(fields: [greyPurchaseId], references: [id], onDelete: Restrict)
+  companyName      String?
+  transactionType  String        @default("PROCESS")
+  challanNo        String?
+  dispatchDate     DateTime      @default(now())
+  millLotNo        String?
+  purSr            Int?
+  millName         String
+  ourMarka         String?
+  purBillNo        String?
+  purDate          DateTime?
+  weaverName       String?
+  quality          String?
+  cut              Float         @default(0)
+  weight           Float         @default(0)
+  rate             Float         @default(0)
+  despTaka         Float         @default(0)
+  despMts          Float         @default(0)
+  takaDetails      Json?
+  remark           String?
+  brokerName       String?
+  orderNo          String?
+  checkerName      String?
+  vehicleNo        String?
+  ewayBillNo       String?
+  srNo             Int?
+  status           String        @default("posted")
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  @@index([userId])
+  @@index([greyPurchaseId])
+  @@index([dispatchDate])
+  @@index([purSr])
+  @@index([millName])
   @@index([status])
 }
 

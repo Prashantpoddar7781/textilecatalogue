@@ -1,4 +1,4 @@
-import { AccountLedgerEntry, AccountLedgerParty, BankEntry, BankPendingBill, BusinessProfile, CompletedOrderParty, Contact, Customer, CreditDebitNote, ErpAccessLevel, ErpSession, ErpUserAccount, GreyPurchase, LedgerEntryDetail, Order, PurchaseBill, PurchaseBillExtraction, PurchaseBillParty, SalesInvoice, Supplier, SupplierLedgerEntry } from '../types';
+import { AccountLedgerEntry, AccountLedgerParty, BankEntry, BankPendingBill, BusinessProfile, CompletedOrderParty, Contact, Customer, CreditDebitNote, ErpAccessLevel, ErpSession, ErpUserAccount, GreyDispatch, GreyPurchase, GreyReceiptSummary, GreyTakaDetailRow, LedgerEntryDetail, Order, PurchaseBill, PurchaseBillExtraction, PurchaseBillParty, SalesInvoice, Supplier, SupplierLedgerEntry } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://textilecatalogue-production.up.railway.app/api';
 
@@ -829,6 +829,42 @@ export const greyPurchasesApi = {
   update: async (id: string, body: Record<string, unknown>) => {
     return request<{ entry: GreyPurchase }>(`/grey-purchases/${id}`, {
       method: 'PUT',
+      body: JSON.stringify(body)
+    });
+  }
+};
+
+export const greyDispatchesApi = {
+  getMeta: async () => {
+    return request<{
+      companyName: string;
+      nextSrNo: number;
+      transactionTypes: string[];
+      mills: string[];
+    }>('/grey-dispatches/meta');
+  },
+  getGreyReceipts: async (purSr?: number | string) => {
+    const query = purSr != null && String(purSr).trim() !== ''
+      ? `?purSr=${encodeURIComponent(String(purSr))}`
+      : '';
+    return request<{ entries: GreyReceiptSummary[] }>(`/grey-dispatches/grey-receipts${query}`);
+  },
+  getAvailableTakas: async (greyPurchaseId: string) => {
+    return request<{
+      purchase: GreyReceiptSummary;
+      availableRows: GreyTakaDetailRow[];
+      dispatchedSrNos: number[];
+    }>(`/grey-dispatches/grey-receipts/${greyPurchaseId}/available-takas`);
+  },
+  getAll: async () => {
+    return request<{ entries: GreyDispatch[] }>('/grey-dispatches');
+  },
+  getById: async (id: string) => {
+    return request<{ entry: GreyDispatch }>(`/grey-dispatches/${id}`);
+  },
+  create: async (body: Record<string, unknown>) => {
+    return request<{ entry: GreyDispatch }>('/grey-dispatches', {
+      method: 'POST',
       body: JSON.stringify(body)
     });
   }

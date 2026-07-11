@@ -404,6 +404,60 @@ export interface GreyPurchase {
   updatedAt: string;
 }
 
+export interface GreyReceiptSummary {
+  id: string;
+  srNo?: number | null;
+  billNo?: string | null;
+  billDate: string;
+  partyName: string;
+  quality?: string | null;
+  brokerName?: string | null;
+  purRate: number;
+  recTaka: number;
+  recMts: number;
+  despatchMts: number;
+  stockMts: number;
+  orderNo?: string | null;
+  remarks?: string | null;
+  checkerName?: string | null;
+  companyName?: string | null;
+}
+
+export interface GreyDispatch {
+  id: string;
+  userId: string;
+  greyPurchaseId: string;
+  greyPurchase?: GreyPurchase | null;
+  companyName?: string | null;
+  transactionType: string;
+  challanNo?: string | null;
+  dispatchDate: string;
+  millLotNo?: string | null;
+  purSr?: number | null;
+  millName: string;
+  ourMarka?: string | null;
+  purBillNo?: string | null;
+  purDate?: string | null;
+  weaverName?: string | null;
+  quality?: string | null;
+  cut: number;
+  weight: number;
+  rate: number;
+  despTaka: number;
+  despMts: number;
+  takaDetails?: GreyTakaDetailRow[] | null;
+  remark?: string | null;
+  brokerName?: string | null;
+  orderNo?: string | null;
+  checkerName?: string | null;
+  vehicleNo?: string | null;
+  ewayBillNo?: string | null;
+  srNo?: number | null;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface PurchaseBillExtraction {
   supplier: {
     name: string;
