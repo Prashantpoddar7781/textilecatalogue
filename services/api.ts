@@ -878,6 +878,106 @@ export const greyDispatchesApi = {
   getById: async (id: string) => {
     return request<{ entry: GreyDispatch }>(`/grey-dispatches/${id}`);
   },
+  getMillDispatchReport: async (filter = 'all') => {
+    const query = filter && filter !== 'all' ? `?filter=${encodeURIComponent(filter)}` : '';
+    return request<{
+      filter: string;
+      companyName: string;
+      reportDate: string;
+      rows: Array<{
+        id: string;
+        greyPurchaseId: string;
+        date: string;
+        srNo?: number | null;
+        challanNo?: string | null;
+        purSr?: number | null;
+        millName: string;
+        weaverName?: string | null;
+        brokerName?: string | null;
+        quality?: string | null;
+        taka: number;
+        mts: number;
+        balTaka: number;
+        balMts: number;
+        rate: number;
+        balAmount: number;
+        dispatchAmount: number;
+        remark?: string | null;
+        vehicleNo?: string | null;
+        ewayBillNo?: string | null;
+        transactionType?: string | null;
+      }>;
+      groups: Array<{
+        key: string;
+        label: string;
+        rows: Array<{
+          id: string;
+          greyPurchaseId: string;
+          date: string;
+          srNo?: number | null;
+          challanNo?: string | null;
+          purSr?: number | null;
+          millName: string;
+          weaverName?: string | null;
+          brokerName?: string | null;
+          quality?: string | null;
+          taka: number;
+          mts: number;
+          balTaka: number;
+          balMts: number;
+          rate: number;
+          balAmount: number;
+          dispatchAmount: number;
+        }>;
+        totals: {
+          taka: number;
+          mts: number;
+          balTaka: number;
+          balMts: number;
+          balAmount: number;
+          entries: number;
+        };
+      }>;
+      millSegments: Array<{
+        millName: string;
+        qualities: Array<{
+          quality: string;
+          taka: number;
+          mts: number;
+          balTaka: number;
+          balMts: number;
+          balAmount: number;
+          rate: number;
+          entries: number;
+        }>;
+        subtotal: {
+          taka: number;
+          mts: number;
+          balTaka: number;
+          balMts: number;
+          balAmount: number;
+          rate: number;
+          entries: number;
+        };
+      }>;
+      summary: Array<{
+        mill: string;
+        taka: number;
+        mts: number;
+        balAmount: number;
+        entries: number;
+      }>;
+      totals: {
+        taka: number;
+        mts: number;
+        balTaka: number;
+        balMts: number;
+        balAmount: number;
+        rate: number;
+        entries: number;
+      };
+    }>(`/grey-dispatches/mill-dispatch-report${query}`);
+  },
   create: async (body: Record<string, unknown>) => {
     return request<{ entry: GreyDispatch }>('/grey-dispatches', {
       method: 'POST',

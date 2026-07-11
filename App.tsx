@@ -25,6 +25,7 @@ import { ErpCompanyMasterPage } from './components/ErpCompanyMasterPage';
 import { GreyPurchasePage } from './components/GreyPurchasePage';
 import { GreyDispatchPage } from './components/GreyDispatchPage';
 import { GodownInventoryReportPage } from './components/GodownInventoryReportPage';
+import { MillDispatchReportPage } from './components/MillDispatchReportPage';
 import { CreditDebitNotePage } from './components/CreditDebitNotePage';
 import { parseNoteTypeFromPath } from './constants/creditDebitNoteTypes';
 import { BankEntriesPage } from './components/BankEntriesPage';
@@ -61,11 +62,12 @@ const App: React.FC = () => {
   const erpGreyPurchaseMatch = pathname.match(/^\/erp\/grey-purchase\/?$/);
   const erpGreyDispatchMatch = pathname.match(/^\/erp\/grey-dispatch\/?$/);
   const erpGodownReportMatch = pathname.match(/^\/erp\/reports\/godown-inventory\/?$/);
+  const erpMillDispatchReportMatch = pathname.match(/^\/erp\/reports\/mill-dispatch\/?$/);
   const erpNotesMatch = pathname.match(/^\/erp\/notes\/([^/]+)\/?$/);
   const isErpRoute = Boolean(
     erpMatch || erpBankMatch || erpSalesMatch || erpPurchaseMatch || erpLedgerMatch
     || erpUtilitiesMatch || erpUsersMatch || erpCompanyMatch || erpGreyPurchaseMatch || erpGreyDispatchMatch
-    || erpGodownReportMatch || erpNotesMatch || supplierLedgerMatch
+    || erpGodownReportMatch || erpMillDispatchReportMatch || erpNotesMatch || supplierLedgerMatch
   );
   const shareStatsMatch = pathname.match(/^\/share-stats\/?$/);
   const reportsMatch = pathname.match(/^\/reports\/?$/);
@@ -723,6 +725,15 @@ const App: React.FC = () => {
   if (erpGodownReportMatch) {
     return (
       <GodownInventoryReportPage
+        erpSession={erpSession}
+        onBack={() => { window.location.href = '/erp'; }}
+      />
+    );
+  }
+
+  if (erpMillDispatchReportMatch) {
+    return (
+      <MillDispatchReportPage
         erpSession={erpSession}
         onBack={() => { window.location.href = '/erp'; }}
       />

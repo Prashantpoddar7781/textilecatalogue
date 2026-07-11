@@ -84,6 +84,162 @@ function buildReceiptSummary(purchase) {
   };
 }
 
+function buildMillDispatchRow(dispatch) {
+  const despTaka = Number(dispatch.despTaka) || 0;
+  const despMts = Number(dispatch.despMts) || 0;
+  const rate = Number(dispatch.rate) || 0;
+  const balTaka = despTaka;
+  const balMts = despMts;
+  const balAmount = roundMoney(balMts * rate);
+  const dispatchAmount = roundMoney(despMts * rate);
+
+  return {
+    id: dispatch.id,
+    greyPurchaseId: dispatch.greyPurchaseId,
+    date: dispatch.dispatchDate,
+    srNo: dispatch.srNo,
+    challanNo: dispatch.challanNo,
+    purSr: dispatch.purSr,
+    millName: dispatch.millName || 'Unspecified Mill',
+    weaverName: dispatch.weaverName,
+    brokerName: dispatch.brokerName,
+    quality: dispatch.quality || 'Unspecified',
+    taka: despTaka,
+    mts: despMts,
+    balTaka,
+    balMts,
+    rate,
+    balAmount,
+    dispatchAmount,
+    remark: dispatch.remark,
+    vehicleNo: dispatch.vehicleNo,
+    ewayBillNo: dispatch.ewayBillNo,
+    transactionType: dispatch.transactionType
+  };
+}
+
+function emptyMillTotals() {
+  return { taka: 0, mts: 0, balTaka: 0, balMts: 0, balAmount: 0, entries: 0 };
+}
+
+function addToMillTotals(target, row) {
+  target.taka += Number(row.taka) || 0;
+  target.mts += Number(row.mts) || 0;
+  target.balTaka += Number(row.balTaka) || 0;
+  target.balMts += Number(row.balMts) || 0;
+  target.balAmount += Number(row.balAmount) || 0;
+  target.entries += 1;
+}
+
+function groupDispatchRows(rows, filter) {
+  const keyFor = (row) => {
+    switch (filter) {
+      case 'agent_wise':
+        return String(row.brokerName || 'No Agent').trim() || 'No Agent';
+      case 'mill_wise':
+        return row.millName;
+      case 'quality_wise':
+        return String(row.quality || 'Unspecified').trim() || 'Unspecified';
+      case 'date_wise':
+        return row.date ? new Date(row.date).toLocaleDateString('en-IN') : 'No Date';
+      case 'mill_quality_wise':
+        return `${row.millName} · ${String(row.quality || 'Unspecified').trim() || 'Unspecified'}`;
+      case 'sr_no_wise':
+        return `Sr. ${row.srNo ?? '-'}`;
+      case 'purchase_rate_wise':
+        return `Rate ${roundMoney(row.rate).toFixed(2)}`;
+      default:
+        return 'All';
+    }
+  };
+
+  const groups = new Map();
+  for (const row of rows) {
+    const key = keyFor(row);
+    const current = groups.get(key) || {
+      key,
+      label: key,
+      rows: [],
+      totals: emptyMillTotals()
+    };
+    current.rows.push(row);
+    addToMillTotals(current.totals, row);
+    groups.set(key, current);
+  }
+
+  const sorted = Array.from(groups.values());
+  if (filter === 'sr_no_wise') {
+    sorted.sort((a, b) => {
+      const aSr = Number(a.rows[0]?.srNo) || 0;
+      const bSr = Number(b.rows[0]?.srNo) || 0;
+      return aSr - bSr;
+    });
+  } else if (filter === 'purchase_rate_wise') {
+    sorted.sort((a, b) => {
+      const aRate = Number(a.rows[0]?.rate) || 0;
+      const bRate = Number(b.rows[0]?.rate) || 0;
+      return aRate - bRate || a.label.localeCompare(b.label);
+    });
+    for (const group of sorted) {
+      group.rows.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    }
+  } else if (filter === 'date_wise') {
+    sorted.sort((a, b) => new Date(b.rows[0]?.date).getTime() - new Date(a.rows[0]?.date).getTime());
+  } else {
+    sorted.sort((a, b) => a.label.localeCompare(b.label));
+  }
+
+  return sorted;
+}
+
+function buildMillQualitySegments(rows) {
+  const mills = new Map();
+  for (const row of rows) {
+    const millName = row.millName || 'Unspecified Mill';
+    const quality = row.quality || 'Unspecified';
+    if (!mills.has(millName)) {
+      mills.set(millName, { millName, qualities: new Map(), subtotal: emptyMillTotals() });
+    }
+    const millEntry = mills.get(millName);
+    const current = millEntry.qualities.get(quality) || {
+      quality,
+      taka: 0,
+      mts: 0,
+      balTaka: 0,
+      balMts: 0,
+      balAmount: 0,
+      rate: row.rate,
+      entries: 0
+    };
+    current.taka += Number(row.taka) || 0;
+    current.mts += Number(row.mts) || 0;
+    current.balTaka += Number(row.balTaka) || 0;
+    current.balMts += Number(row.balMts) || 0;
+    current.balAmount += Number(row.balAmount) || 0;
+    current.entries += 1;
+    millEntry.qualities.set(quality, current);
+    addToMillTotals(millEntry.subtotal, row);
+  }
+
+  return Array.from(mills.values())
+    .map(mill => ({
+      millName: mill.millName,
+      qualities: Array.from(mill.qualities.values())
+        .map(q => ({
+          ...q,
+          rate: q.balMts > 0 ? roundMoney(q.balAmount / q.balMts) : q.rate
+        }))
+        .sort((a, b) => a.quality.localeCompare(b.quality)),
+      subtotal: {
+        ...mill.subtotal,
+        rate: mill.subtotal.balMts > 0
+          ? roundMoney(mill.subtotal.balAmount / mill.subtotal.balMts)
+          : 0
+      }
+    }))
+    .sort((a, b) => a.millName.localeCompare(b.millName));
+}
+
 async function getNextChallanNo(userId) {
   const dispatches = await prisma.greyDispatch.findMany({
     where: { userId },
@@ -178,6 +334,57 @@ router.get('/grey-receipts/:greyPurchaseId/available-takas', authenticateToken, 
       purchase: buildReceiptSummary(purchase),
       availableRows,
       dispatchedSrNos: Array.from(dispatchedSrNos)
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/mill-dispatch-report', authenticateToken, requireActiveSubscription, async (req, res, next) => {
+  try {
+    const userId = req.user.userId;
+    const filter = String(req.query.filter || 'all').toLowerCase();
+    const validFilters = new Set([
+      'all', 'agent_wise', 'mill_wise', 'quality_wise', 'date_wise',
+      'mill_quality_wise', 'sr_no_wise', 'purchase_rate_wise'
+    ]);
+    const activeFilter = validFilters.has(filter) ? filter : 'all';
+    const ctx = await getCompanyContext(userId);
+
+    const dispatches = await prisma.greyDispatch.findMany({
+      where: { userId, status: { not: 'cancelled' } },
+      orderBy: [{ dispatchDate: 'desc' }, { createdAt: 'desc' }]
+    });
+
+    const rows = dispatches.map(buildMillDispatchRow);
+    const grandTotals = rows.reduce((acc, row) => {
+      addToMillTotals(acc, row);
+      return acc;
+    }, emptyMillTotals());
+    grandTotals.rate = grandTotals.balMts > 0
+      ? roundMoney(grandTotals.balAmount / grandTotals.balMts)
+      : 0;
+
+    const byMill = new Map();
+    for (const row of rows) {
+      const key = row.millName;
+      const current = byMill.get(key) || { mill: key, taka: 0, mts: 0, balAmount: 0, entries: 0 };
+      current.taka += Number(row.taka) || 0;
+      current.mts += Number(row.mts) || 0;
+      current.balAmount += Number(row.balAmount) || 0;
+      current.entries += 1;
+      byMill.set(key, current);
+    }
+
+    res.json({
+      filter: activeFilter,
+      companyName: ctx.companyName,
+      reportDate: new Date().toISOString(),
+      rows: activeFilter === 'all' ? rows : [],
+      groups: activeFilter === 'all' || activeFilter === 'mill_quality_wise' ? [] : groupDispatchRows(rows, activeFilter),
+      millSegments: activeFilter === 'mill_quality_wise' ? buildMillQualitySegments(rows) : [],
+      summary: Array.from(byMill.values()).sort((a, b) => a.mill.localeCompare(b.mill)),
+      totals: grandTotals
     });
   } catch (error) {
     next(error);
