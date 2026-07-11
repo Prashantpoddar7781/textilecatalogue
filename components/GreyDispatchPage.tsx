@@ -74,6 +74,7 @@ export const GreyDispatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
         if (cancelled) return;
         setCompanyName(meta.companyName || '');
         setSrNo(String(meta.nextSrNo || 1));
+        setChallanNo(String(meta.nextChallanNo || 1));
         setMills(meta.mills || []);
         if (meta.transactionTypes?.[0]) setTransactionType(meta.transactionTypes[0]);
       } catch (err: any) {
@@ -219,7 +220,6 @@ export const GreyDispatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
       });
 
       setSuccess('Grey dispatch saved and stock updated in godown.');
-      setChallanNo('');
       setMillLotNo('');
       setPurSr('');
       setGreyPurchaseId('');
@@ -244,6 +244,7 @@ export const GreyDispatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
       setAvailableTakas([]);
       const meta = await greyDispatchesApi.getMeta();
       setSrNo(String(meta.nextSrNo || 1));
+      setChallanNo(String(meta.nextChallanNo || 1));
     } catch (err: any) {
       setError(err.message || 'Could not save grey dispatch.');
     } finally {
@@ -293,7 +294,7 @@ export const GreyDispatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
                 </label>
                 <label>
                   <span className={labelClass}>Chal No.</span>
-                  <input className={inputClass} value={challanNo} onChange={e => setChallanNo(e.target.value)} />
+                  <input className={readonlyClass} value={challanNo} readOnly title="Auto allotted" />
                 </label>
                 <label>
                   <span className={labelClass}>Desp Date</span>

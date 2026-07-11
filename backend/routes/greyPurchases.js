@@ -71,12 +71,23 @@ function normalizeTakaDetails(raw) {
     .filter(row => row.mts > 0);
 }
 
+function sumDispatchTaka(dispatches = []) {
+  return dispatches
+    .filter(d => d.status !== 'cancelled')
+    .reduce((sum, d) => sum + (Number(d.despTaka) || 0), 0);
+}
+
 function buildGodownRow(entry) {
   const recMts = Number(entry.recMts) || 0;
   const despatchMts = Number(entry.despatchMts) || 0;
   const recTaka = Number(entry.recTaka) || 0;
-  const despatchTaka = recMts > 0 ? roundMoney(recTaka * despatchMts / recMts) : 0;
+  const dispatches = Array.isArray(entry.greyDispatches) ? entry.greyDispatches : [];
+  const actualDispatchTaka = sumDispatchTaka(dispatches);
+  const despatchTaka = actualDispatchTaka > 0
+    ? actualDispatchTaka
+    : (recMts > 0 ? roundMoney(recTaka * despatchMts / recMts) : 0);
   const stockMts = roundMoney(Math.max(0, recMts - despatchMts));
+  const stockTaka = Math.max(0, recTaka - Math.round(despatchTaka));
 
   return {
     id: entry.id,
@@ -90,6 +101,7 @@ function buildGodownRow(entry) {
     mts: recMts,
     despatchTaka,
     despatchMts,
+    stockTaka,
     rate: entry.purRate,
     grossAmount: entry.grossAmount,
     payableAmount: entry.payableAmount,
@@ -98,6 +110,24 @@ function buildGodownRow(entry) {
     sourceType: 'grey_purchase',
     sourceLabel: 'Grey Purchase',
     godown: 'Main Godown'
+  };
+}
+
+function buildPurchaseStockSummary(entry, dispatches = []) {
+  const recMts = Number(entry.recMts) || 0;
+  const despatchMts = Number(entry.despatchMts) || 0;
+  const recTaka = Number(entry.recTaka) || 0;
+  const actualDispatchTaka = sumDispatchTaka(dispatches);
+  const despatchTaka = actualDispatchTaka > 0
+    ? actualDispatchTaka
+    : (recMts > 0 ? roundMoney(recTaka * despatchMts / recMts) : 0);
+  return {
+    recTaka,
+    recMts,
+    despatchTaka,
+    despatchMts,
+    stockTaka: Math.max(0, recTaka - Math.round(despatchTaka)),
+    stockMts: roundMoney(Math.max(0, recMts - despatchMts))
   };
 }
 
@@ -322,7 +352,13 @@ router.get('/godown-inventory', authenticateToken, requireActiveSubscription, as
 
     const entries = await prisma.greyPurchase.findMany({
       where: { userId: req.user.userId, status: { not: 'cancelled' } },
-      include: { supplier: true },
+      include: {
+        supplier: true,
+        greyDispatches: {
+          where: { status: { not: 'cancelled' } },
+          select: { despTaka: true, status: true }
+        }
+      },
       orderBy: [{ billDate: 'desc' }, { createdAt: 'desc' }]
     });
 
@@ -343,6 +379,8 @@ router.get('/godown-inventory', authenticateToken, requireActiveSubscription, as
     const grandTotals = {
       taka: rows.reduce((s, r) => s + (Number(r.taka) || 0), 0),
       mts: rows.reduce((s, r) => s + (Number(r.mts) || 0), 0),
+      despatchTaka: rows.reduce((s, r) => s + (Number(r.despatchTaka) || 0), 0),
+      stockTaka: rows.reduce((s, r) => s + (Number(r.stockTaka) || 0), 0),
       grossAmount: rows.reduce((s, r) => s + (Number(r.grossAmount) || 0), 0),
       payableAmount: rows.reduce((s, r) => s + (Number(r.payableAmount) || 0), 0),
       netAmount: rows.reduce((s, r) => s + (Number(r.netAmount) || 0), 0),
@@ -380,10 +418,22 @@ router.get('/:id', authenticateToken, requireActiveSubscription, async (req, res
   try {
     const entry = await prisma.greyPurchase.findFirst({
       where: { id: req.params.id, userId: req.user.userId },
-      include: { supplier: true }
+      include: {
+        supplier: true,
+        greyDispatches: {
+          where: { status: { not: 'cancelled' } },
+          orderBy: [{ dispatchDate: 'asc' }, { createdAt: 'asc' }]
+        }
+      }
     });
     if (!entry) return res.status(404).json({ error: 'Grey purchase not found' });
-    res.json({ entry });
+    const { greyDispatches, ...purchase } = entry;
+    const stockSummary = buildPurchaseStockSummary(purchase, greyDispatches);
+    res.json({
+      entry: purchase,
+      dispatches: greyDispatches,
+      stockSummary
+    });
   } catch (error) {
     next(error);
   }

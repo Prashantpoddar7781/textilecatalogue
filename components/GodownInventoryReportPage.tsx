@@ -22,6 +22,7 @@ interface GodownRow {
   mts: number;
   despatchTaka: number;
   despatchMts: number;
+  stockTaka: number;
   rate: number;
   grossAmount: number;
   payableAmount: number;
@@ -42,6 +43,7 @@ interface GodownGroup {
     payableAmount: number;
     netAmount: number;
     stockMts: number;
+    stockTaka: number;
     entries: number;
   };
 }
@@ -59,6 +61,8 @@ const GODOWN_FILTERS = [
 
 const money = (v: number) =>
   (Number(v) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+const takaCount = (v: number) => String(Math.round(Number(v) || 0));
 
 const formatDate = (value?: string | null) =>
   value ? new Date(value).toLocaleDateString('en-IN') : '-';
@@ -84,6 +88,7 @@ const GodownTable: React.FC<{
         <th className="px-2 py-2 text-right">Desp Mts</th>
         <th className="px-2 py-2 text-right">Amount</th>
         <th className="px-2 py-2 text-right">Gross Amt.</th>
+        <th className="px-2 py-2 text-right">Stock Taka</th>
         <th className="px-2 py-2 text-right">Stock Mt</th>
         <th className="px-2 py-2 text-right">N Rate</th>
       </tr>
@@ -100,12 +105,13 @@ const GodownTable: React.FC<{
           <td className="px-2 py-2">{formatDate(row.date)}</td>
           <td className="px-2 py-2 font-semibold">{row.partyName}</td>
           <td className="px-2 py-2">{row.quality || '-'}</td>
-          <td className="px-2 py-2 text-right">{money(row.taka)}</td>
+          <td className="px-2 py-2 text-right">{takaCount(row.taka)}</td>
           <td className="px-2 py-2 text-right">{money(row.mts)}</td>
-          <td className="px-2 py-2 text-right">{money(row.despatchTaka)}</td>
+          <td className="px-2 py-2 text-right">{takaCount(row.despatchTaka)}</td>
           <td className="px-2 py-2 text-right">{money(row.despatchMts)}</td>
           <td className="px-2 py-2 text-right font-bold">{money(row.payableAmount)}</td>
           <td className="px-2 py-2 text-right">{money(row.grossAmount)}</td>
+          <td className="px-2 py-2 text-right font-bold text-indigo-800">{takaCount(row.stockTaka)}</td>
           <td className="px-2 py-2 text-right font-bold text-emerald-800">{money(row.stockMts)}</td>
           <td className="px-2 py-2 text-right">{money(row.rate)}</td>
         </tr>
@@ -113,12 +119,13 @@ const GodownTable: React.FC<{
       {showGrand && grand && (
         <tr className="border-t-2 bg-slate-900 text-[11px] font-black uppercase text-white">
           <td className="px-2 py-2" colSpan={5}>Grand</td>
-          <td className="px-2 py-2 text-right">{money(grand.taka || 0)}</td>
+          <td className="px-2 py-2 text-right">{takaCount(grand.taka || 0)}</td>
           <td className="px-2 py-2 text-right">{money(grand.mts || 0)}</td>
-          <td className="px-2 py-2 text-right">-</td>
+          <td className="px-2 py-2 text-right">{takaCount(grand.despatchTaka || 0)}</td>
           <td className="px-2 py-2 text-right">-</td>
           <td className="px-2 py-2 text-right">{money(grand.payableAmount || 0)}</td>
           <td className="px-2 py-2 text-right">{money(grand.grossAmount || 0)}</td>
+          <td className="px-2 py-2 text-right">{takaCount(grand.stockTaka || 0)}</td>
           <td className="px-2 py-2 text-right">{money(grand.stockMts || 0)}</td>
           <td className="px-2 py-2 text-right">-</td>
         </tr>
@@ -132,7 +139,7 @@ export const GodownInventoryReportPage: React.FC<Props> = ({ onBack, erpSession 
   const [rows, setRows] = useState<GodownRow[]>([]);
   const [groups, setGroups] = useState<GodownGroup[]>([]);
   const [summary, setSummary] = useState<Array<{ quality: string; taka: number; mts: number; grossAmount: number; netAmount: number; entries: number }>>([]);
-  const [totals, setTotals] = useState({ taka: 0, mts: 0, grossAmount: 0, payableAmount: 0, netAmount: 0, stockMts: 0, entries: 0 });
+  const [totals, setTotals] = useState({ taka: 0, mts: 0, despatchTaka: 0, stockTaka: 0, grossAmount: 0, payableAmount: 0, netAmount: 0, stockMts: 0, entries: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null);
@@ -145,7 +152,7 @@ export const GodownInventoryReportPage: React.FC<Props> = ({ onBack, erpSession 
       setRows(result.rows || []);
       setGroups(result.groups || []);
       setSummary(result.summary || []);
-      setTotals(result.totals || { taka: 0, mts: 0, grossAmount: 0, payableAmount: 0, netAmount: 0, stockMts: 0, entries: 0 });
+      setTotals(result.totals || { taka: 0, mts: 0, despatchTaka: 0, stockTaka: 0, grossAmount: 0, payableAmount: 0, netAmount: 0, stockMts: 0, entries: 0 });
     } catch (err: any) {
       setError(err.message || 'Could not load godown inventory.');
     } finally {
@@ -216,7 +223,7 @@ export const GodownInventoryReportPage: React.FC<Props> = ({ onBack, erpSession 
               </select>
             </label>
           </div>
-          <div className="mt-4 grid gap-3 sm:grid-cols-4">
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
             <div className="rounded-xl bg-white/10 px-3 py-2">
               <p className="text-[10px] font-black uppercase text-emerald-200">Entries</p>
               <p className="text-lg font-black">{totals.entries}</p>
@@ -224,6 +231,10 @@ export const GodownInventoryReportPage: React.FC<Props> = ({ onBack, erpSession 
             <div className="rounded-xl bg-white/10 px-3 py-2">
               <p className="text-[10px] font-black uppercase text-emerald-200">Total Taka</p>
               <p className="text-lg font-black">{money(totals.taka)}</p>
+            </div>
+            <div className="rounded-xl bg-white/10 px-3 py-2">
+              <p className="text-[10px] font-black uppercase text-emerald-200">Stock Taka</p>
+              <p className="text-lg font-black">{Math.round(totals.stockTaka)}</p>
             </div>
             <div className="rounded-xl bg-white/10 px-3 py-2">
               <p className="text-[10px] font-black uppercase text-emerald-200">Stock Mtrs</p>

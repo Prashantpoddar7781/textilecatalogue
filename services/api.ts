@@ -755,6 +755,7 @@ export const greyPurchasesApi = {
         mts: number;
         despatchTaka: number;
         despatchMts: number;
+        stockTaka: number;
         rate: number;
         grossAmount: number;
         payableAmount: number;
@@ -779,6 +780,7 @@ export const greyPurchasesApi = {
           mts: number;
           despatchTaka: number;
           despatchMts: number;
+          stockTaka: number;
           rate: number;
           grossAmount: number;
           payableAmount: number;
@@ -809,6 +811,8 @@ export const greyPurchasesApi = {
       totals: {
         taka: number;
         mts: number;
+        despatchTaka: number;
+        stockTaka: number;
         grossAmount: number;
         payableAmount: number;
         netAmount: number;
@@ -818,7 +822,18 @@ export const greyPurchasesApi = {
     }>(`/grey-purchases/godown-inventory${query}`);
   },
   getById: async (id: string) => {
-    return request<{ entry: GreyPurchase }>(`/grey-purchases/${id}`);
+    return request<{
+      entry: GreyPurchase;
+      dispatches: GreyDispatch[];
+      stockSummary: {
+        recTaka: number;
+        recMts: number;
+        despatchTaka: number;
+        despatchMts: number;
+        stockTaka: number;
+        stockMts: number;
+      };
+    }>(`/grey-purchases/${id}`);
   },
   create: async (body: Record<string, unknown>) => {
     return request<{ entry: GreyPurchase }>('/grey-purchases', {
@@ -839,6 +854,7 @@ export const greyDispatchesApi = {
     return request<{
       companyName: string;
       nextSrNo: number;
+      nextChallanNo: number;
       transactionTypes: string[];
       mills: string[];
     }>('/grey-dispatches/meta');

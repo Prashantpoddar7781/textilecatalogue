@@ -84,10 +84,25 @@ function buildReceiptSummary(purchase) {
   };
 }
 
+async function getNextChallanNo(userId) {
+  const dispatches = await prisma.greyDispatch.findMany({
+    where: { userId },
+    select: { challanNo: true }
+  });
+  let maxChallan = 0;
+  for (const dispatch of dispatches) {
+    const num = Number(dispatch.challanNo);
+    if (Number.isFinite(num) && num > maxChallan) maxChallan = num;
+  }
+  return maxChallan + 1;
+}
+
 router.get('/meta', authenticateToken, requireActiveSubscription, async (req, res, next) => {
   try {
-    const ctx = await getCompanyContext(req.user.userId);
-    const count = await prisma.greyDispatch.count({ where: { userId: req.user.userId } });
+    const userId = req.user.userId;
+    const ctx = await getCompanyContext(userId);
+    const count = await prisma.greyDispatch.count({ where: { userId } });
+    const nextChallanNo = await getNextChallanNo(userId);
     const [customers, suppliers] = await Promise.all([
       prisma.customer.findMany({
         where: { userId: req.user.userId },
@@ -107,6 +122,7 @@ router.get('/meta', authenticateToken, requireActiveSubscription, async (req, re
     res.json({
       ...ctx,
       nextSrNo: count + 1,
+      nextChallanNo,
       transactionTypes: ['PROCESS'],
       mills: Array.from(new Set(mills)).sort((a, b) => a.localeCompare(b))
     });
@@ -233,6 +249,7 @@ router.post('/', authenticateToken, requireActiveSubscription, [
     }
 
     const count = await prisma.greyDispatch.count({ where: { userId } });
+    const nextChallanNo = await getNextChallanNo(userId);
     const entry = await prisma.$transaction(async (tx) => {
       const created = await tx.greyDispatch.create({
         data: {
@@ -240,7 +257,7 @@ router.post('/', authenticateToken, requireActiveSubscription, [
           greyPurchaseId: purchase.id,
           companyName: optionalString(req.body.companyName) || purchase.companyName || ctx.companyName,
           transactionType: optionalString(req.body.transactionType) || 'PROCESS',
-          challanNo: optionalString(req.body.challanNo),
+          challanNo: optionalString(req.body.challanNo) || String(nextChallanNo),
           dispatchDate: req.body.dispatchDate ? new Date(req.body.dispatchDate) : new Date(),
           millLotNo: optionalString(req.body.millLotNo),
           purSr: optionalNumber(req.body.purSr) ?? purchase.srNo,
