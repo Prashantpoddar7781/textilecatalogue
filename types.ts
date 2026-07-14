@@ -458,6 +458,64 @@ export interface GreyDispatch {
   updatedAt: string;
 }
 
+export interface GreyPurchaseReturn {
+  id: string;
+  userId: string;
+  greyPurchaseId: string;
+  greyPurchase?: GreyPurchase | null;
+  greyDispatchId?: string | null;
+  companyName?: string | null;
+  entryType: string;
+  greyType: string;
+  voucherNo?: number | null;
+  saleAccount: string;
+  purSr?: number | null;
+  quality?: string | null;
+  hsnCode?: string | null;
+  partyName: string;
+  partyGstin?: string | null;
+  placeOfSupply?: string | null;
+  stateCode?: string | null;
+  gstType?: string | null;
+  billNo?: string | null;
+  returnDate: string;
+  refBillNo?: string | null;
+  refBillDate?: string | null;
+  brokerName?: string | null;
+  challanNo?: string | null;
+  station?: string | null;
+  transport?: string | null;
+  vehicleNo?: string | null;
+  ewayBillNo?: string | null;
+  lrNo?: string | null;
+  checkerName?: string | null;
+  pcs: number;
+  mts: number;
+  rate: number;
+  grossAmount: number;
+  discountPercent: number;
+  discountAmount: number;
+  otherLess: number;
+  otherAdd: number;
+  taxableAmount: number;
+  gstRate: number;
+  cgstRate: number;
+  cgstAmount: number;
+  sgstRate: number;
+  sgstAmount: number;
+  igstRate: number;
+  igstAmount: number;
+  netAmount: number;
+  paidAmount: number;
+  paid: boolean;
+  adjustBillNo?: string | null;
+  remarks?: string | null;
+  takaDetails?: GreyTakaDetailRow[] | null;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface PurchaseBillExtraction {
   supplier: {
     name: string;

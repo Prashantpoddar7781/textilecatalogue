@@ -21,6 +21,7 @@ import erpUserRoutes from './routes/erpUsers.js';
 import erpAuthRoutes from './routes/erpAuth.js';
 import greyPurchaseRoutes from './routes/greyPurchases.js';
 import greyDispatchRoutes from './routes/greyDispatches.js';
+import greyPurchaseReturnRoutes from './routes/greyPurchaseReturns.js';
 
 dotenv.config();
 
@@ -182,7 +183,8 @@ try {
   app.use('/api/erp-auth', erpAuthRoutes);
   app.use('/api/grey-purchases', greyPurchaseRoutes);
   app.use('/api/grey-dispatches', greyDispatchRoutes);
-  console.log('Routes configured: /api/auth, /api/billing, /api/designs, /api/users, /api/catalogues, /api/contacts, /api/customers, /api/share-links, /api/orders, /api/invoices, /api/purchases, /api/bank-entries, /api/credit-debit-notes, /api/ledger, /api/erp-users, /api/erp-auth, /api/grey-purchases, /api/grey-dispatches');
+  app.use('/api/grey-purchase-returns', greyPurchaseReturnRoutes);
+  console.log('Routes configured: /api/auth, /api/billing, /api/designs, /api/users, /api/catalogues, /api/contacts, /api/customers, /api/share-links, /api/orders, /api/invoices, /api/purchases, /api/bank-entries, /api/credit-debit-notes, /api/ledger, /api/erp-users, /api/erp-auth, /api/grey-purchases, /api/grey-dispatches, /api/grey-purchase-returns');
 } catch (error) {
   console.error('Error setting up routes:', error);
   // Server will still start, but routes may not work

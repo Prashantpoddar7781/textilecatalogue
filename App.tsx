@@ -24,6 +24,7 @@ import { ErpUserManagementPage } from './components/ErpUserManagementPage';
 import { ErpCompanyMasterPage } from './components/ErpCompanyMasterPage';
 import { GreyPurchasePage } from './components/GreyPurchasePage';
 import { GreyDispatchPage } from './components/GreyDispatchPage';
+import { GreyPurchaseReturnPage } from './components/GreyPurchaseReturnPage';
 import { GodownInventoryReportPage } from './components/GodownInventoryReportPage';
 import { MillDispatchReportPage } from './components/MillDispatchReportPage';
 import { CreditDebitNotePage } from './components/CreditDebitNotePage';
@@ -61,12 +62,13 @@ const App: React.FC = () => {
   const erpCompanyMatch = pathname.match(/^\/erp\/masters\/company\/?$/);
   const erpGreyPurchaseMatch = pathname.match(/^\/erp\/grey-purchase\/?$/);
   const erpGreyDispatchMatch = pathname.match(/^\/erp\/grey-dispatch\/?$/);
+  const erpGreyPurchaseReturnMatch = pathname.match(/^\/erp\/grey-purchase-return\/?$/);
   const erpGodownReportMatch = pathname.match(/^\/erp\/reports\/godown-inventory\/?$/);
   const erpMillDispatchReportMatch = pathname.match(/^\/erp\/reports\/mill-dispatch\/?$/);
   const erpNotesMatch = pathname.match(/^\/erp\/notes\/([^/]+)\/?$/);
   const isErpRoute = Boolean(
     erpMatch || erpBankMatch || erpSalesMatch || erpPurchaseMatch || erpLedgerMatch
-    || erpUtilitiesMatch || erpUsersMatch || erpCompanyMatch || erpGreyPurchaseMatch || erpGreyDispatchMatch
+    || erpUtilitiesMatch || erpUsersMatch || erpCompanyMatch || erpGreyPurchaseMatch || erpGreyDispatchMatch || erpGreyPurchaseReturnMatch
     || erpGodownReportMatch || erpMillDispatchReportMatch || erpNotesMatch || supplierLedgerMatch
   );
   const shareStatsMatch = pathname.match(/^\/share-stats\/?$/);
@@ -716,6 +718,15 @@ const App: React.FC = () => {
   if (erpGreyDispatchMatch) {
     return (
       <GreyDispatchPage
+        erpSession={erpSession}
+        onBack={() => { window.location.href = '/erp'; }}
+      />
+    );
+  }
+
+  if (erpGreyPurchaseReturnMatch) {
+    return (
+      <GreyPurchaseReturnPage
         erpSession={erpSession}
         onBack={() => { window.location.href = '/erp'; }}
       />

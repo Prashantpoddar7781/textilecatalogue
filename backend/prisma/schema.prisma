@@ -47,6 +47,7 @@ model User {
   erpUsers ErpUser[]
   greyPurchases GreyPurchase[]
   greyDispatches GreyDispatch[]
+  greyPurchaseReturns GreyPurchaseReturn[]
 }
 
 model ErpUser {
@@ -447,12 +448,79 @@ model GreyPurchase {
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
   greyDispatches     GreyDispatch[]
+  greyPurchaseReturns GreyPurchaseReturn[]
 
   @@index([userId])
   @@index([supplierId])
   @@index([billDate])
   @@index([partyName])
   @@index([transactionType])
+  @@index([status])
+}
+
+model GreyPurchaseReturn {
+  id               String        @id @default(cuid())
+  userId           String
+  user             User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  greyPurchaseId   String
+  greyPurchase     GreyPurchase  @relation(fields: [greyPurchaseId], references: [id], onDelete: Restrict)
+  greyDispatchId   String?       @unique
+  companyName      String?
+  entryType        String        @default("GREY PURCHASE")
+  greyType         String        @default("GREY")
+  voucherNo        Int?
+  saleAccount      String        @default("GREY PURCHASE RETURN")
+  purSr            Int?
+  quality          String?
+  hsnCode          String?
+  partyName        String
+  partyGstin       String?
+  placeOfSupply    String?
+  stateCode        String?
+  gstType          String?
+  billNo           String?
+  returnDate       DateTime      @default(now())
+  refBillNo        String?
+  refBillDate      DateTime?
+  brokerName       String?
+  challanNo        String?
+  station          String?
+  transport        String?
+  vehicleNo        String?
+  ewayBillNo       String?
+  lrNo             String?
+  checkerName      String?
+  pcs              Float         @default(0)
+  mts              Float         @default(0)
+  rate             Float         @default(0)
+  grossAmount      Float         @default(0)
+  discountPercent  Float         @default(0)
+  discountAmount   Float         @default(0)
+  otherLess        Float         @default(0)
+  otherAdd         Float         @default(0)
+  taxableAmount    Float         @default(0)
+  gstRate          Float         @default(5)
+  cgstRate         Float         @default(0)
+  cgstAmount       Float         @default(0)
+  sgstRate         Float         @default(0)
+  sgstAmount       Float         @default(0)
+  igstRate         Float         @default(0)
+  igstAmount       Float         @default(0)
+  netAmount        Float         @default(0)
+  paidAmount       Float         @default(0)
+  paid             Boolean       @default(false)
+  adjustBillNo     String?
+  remarks          String?
+  takaDetails      Json?
+  status           String        @default("posted")
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  @@index([userId])
+  @@index([greyPurchaseId])
+  @@index([returnDate])
+  @@index([purSr])
+  @@index([partyName])
   @@index([status])
 }
 

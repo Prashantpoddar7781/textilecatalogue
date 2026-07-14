@@ -171,8 +171,10 @@ export const GreyPurchaseDetailPanel: React.FC<Props> = ({ entryId, onClose, onE
                 </tr>
               </thead>
               <tbody>
-                {dispatches.map(dispatch => (
-                  <tr key={dispatch.id} className="border-b">
+                {dispatches.map(dispatch => {
+                  const isReturn = dispatch.transactionType === 'RETURN' || dispatch.millName === 'GREY SALES INVENTORY';
+                  return (
+                  <tr key={dispatch.id} className={`border-b ${isReturn ? 'bg-rose-50/80 text-rose-950' : ''}`}>
                     <td className="px-2 py-2">{dispatch.challanNo || '-'}</td>
                     <td className="px-2 py-2">{dispatch.srNo ?? '-'}</td>
                     <td className="px-2 py-2 font-semibold">{dispatch.millName}</td>
@@ -183,9 +185,10 @@ export const GreyPurchaseDetailPanel: React.FC<Props> = ({ entryId, onClose, onE
                     <td className="px-2 py-2">{dispatch.remark || '-'}</td>
                     <td className="px-2 py-2">{dispatch.vehicleNo || '-'}</td>
                     <td className="px-2 py-2">{dispatch.ewayBillNo || '-'}</td>
-                    <td className="px-2 py-2">{dispatch.transactionType || 'PROCESS'}</td>
+                    <td className="px-2 py-2 font-bold">{isReturn ? 'RETURN' : (dispatch.transactionType || 'PROCESS')}</td>
                   </tr>
-                ))}
+                  );
+                })}
                 {summary.stockTaka > 0 && (
                   <tr className="border-b bg-emerald-50/70 font-semibold text-emerald-900">
                     <td className="px-2 py-2">-</td>
@@ -225,13 +228,23 @@ export const GreyPurchaseDetailPanel: React.FC<Props> = ({ entryId, onClose, onE
                     const dispatched = dispatches.some(d =>
                       Array.isArray(d.takaDetails) && d.takaDetails!.some(t => t.srNo === row.srNo)
                     );
+                    const returned = dispatches.some(d =>
+                      (d.transactionType === 'RETURN' || d.millName === 'GREY SALES INVENTORY')
+                      && Array.isArray(d.takaDetails) && d.takaDetails!.some(t => t.srNo === row.srNo)
+                    );
+                    const statusLabel = returned ? 'Returned' : dispatched ? 'Dispatched' : 'In Godown';
+                    const statusClass = returned
+                      ? 'bg-rose-100 text-rose-800'
+                      : dispatched
+                        ? 'bg-violet-100 text-violet-800'
+                        : 'bg-emerald-100 text-emerald-800';
                     return (
                       <tr key={i} className="border-b last:border-0">
                         <td className="px-3 py-2">{row.srNo}</td>
                         <td className="px-3 py-2 text-right">{money(row.mts)}</td>
                         <td className="px-3 py-2">
-                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${dispatched ? 'bg-violet-100 text-violet-800' : 'bg-emerald-100 text-emerald-800'}`}>
-                            {dispatched ? 'Dispatched' : 'In Godown'}
+                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${statusClass}`}>
+                            {statusLabel}
                           </span>
                         </td>
                       </tr>

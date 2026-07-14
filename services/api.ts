@@ -1,4 +1,4 @@
-import { AccountLedgerEntry, AccountLedgerParty, BankEntry, BankPendingBill, BusinessProfile, CompletedOrderParty, Contact, Customer, CreditDebitNote, ErpAccessLevel, ErpSession, ErpUserAccount, GreyDispatch, GreyPurchase, GreyReceiptSummary, GreyTakaDetailRow, LedgerEntryDetail, Order, PurchaseBill, PurchaseBillExtraction, PurchaseBillParty, SalesInvoice, Supplier, SupplierLedgerEntry } from '../types';
+import { AccountLedgerEntry, AccountLedgerParty, BankEntry, BankPendingBill, BusinessProfile, CompletedOrderParty, Contact, Customer, CreditDebitNote, ErpAccessLevel, ErpSession, ErpUserAccount, GreyDispatch, GreyPurchase, GreyPurchaseReturn, GreyReceiptSummary, GreyTakaDetailRow, LedgerEntryDetail, Order, PurchaseBill, PurchaseBillExtraction, PurchaseBillParty, SalesInvoice, Supplier, SupplierLedgerEntry } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://textilecatalogue-production.up.railway.app/api';
 
@@ -980,6 +980,41 @@ export const greyDispatchesApi = {
   },
   create: async (body: Record<string, unknown>) => {
     return request<{ entry: GreyDispatch }>('/grey-dispatches', {
+      method: 'POST',
+      body: JSON.stringify(body)
+    });
+  }
+};
+
+export const greyPurchaseReturnsApi = {
+  getMeta: async () => {
+    return request<{
+      companyName: string;
+      businessState: string;
+      defaultHsnCode: string;
+      defaultGstRate: number;
+      nextVoucherNo: number;
+      nextChallanNo: number;
+      entryTypes: string[];
+      greyTypes: string[];
+      saleAccounts: string[];
+      states: string[];
+    }>('/grey-purchase-returns/meta');
+  },
+  calculate: async (body: Record<string, unknown>) => {
+    return request<{ totals: Record<string, number | string> }>('/grey-purchase-returns/calculate', {
+      method: 'POST',
+      body: JSON.stringify(body)
+    });
+  },
+  getAll: async () => {
+    return request<{ entries: GreyPurchaseReturn[] }>('/grey-purchase-returns');
+  },
+  getById: async (id: string) => {
+    return request<{ entry: GreyPurchaseReturn }>(`/grey-purchase-returns/${id}`);
+  },
+  create: async (body: Record<string, unknown>) => {
+    return request<{ entry: GreyPurchaseReturn }>('/grey-purchase-returns', {
       method: 'POST',
       body: JSON.stringify(body)
     });

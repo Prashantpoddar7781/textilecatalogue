@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, Building2, ChevronDown, FileBarChart, LogOut, Package } from 'lucide-react';
+import { ArrowLeft, Building2, ChevronDown, FileBarChart, LogOut, Package, RotateCcw } from 'lucide-react';
 import { clearErpSession, hasCompleteErpAccess } from '../services/erpSession';
 import { ErpSession } from '../types';
 
@@ -11,7 +11,7 @@ interface Props {
   children?: React.ReactNode;
 }
 
-type MenuKey = 'masters' | 'reports' | 'utilities' | null;
+type MenuKey = 'masters' | 'reports' | 'greySales' | 'utilities' | null;
 
 export const ErpTopMenu: React.FC<Props> = ({
   title,
@@ -134,6 +134,39 @@ export const ErpTopMenu: React.FC<Props> = ({
                 >
                   <FileBarChart className="h-4 w-4" />
                   Mill Dispatch Report
+                </button>
+              </div>
+            )}
+          </div>
+
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => toggle('greySales')}
+              className={`flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-black uppercase tracking-wide ${
+                openMenu === 'greySales' ? 'bg-rose-600 text-white' : 'text-gray-700 hover:bg-gray-100'
+              }`}
+            >
+              Grey Sales
+              <ChevronDown className={`h-3.5 w-3.5 transition ${openMenu === 'greySales' ? 'rotate-180' : ''}`} />
+            </button>
+            {openMenu === 'greySales' && (
+              <div className="absolute left-0 z-50 mt-1 min-w-[260px] rounded-xl border border-gray-100 bg-white p-1.5 shadow-xl">
+                <button
+                  type="button"
+                  onClick={() => { window.location.href = '/erp/grey-purchase-return'; }}
+                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-gray-800 hover:bg-rose-50 hover:text-rose-700"
+                >
+                  <RotateCcw className="h-4 w-4" />
+                  Grey Purchase Return
+                </button>
+                <button
+                  type="button"
+                  disabled
+                  className="flex w-full cursor-not-allowed items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-gray-300"
+                >
+                  <Package className="h-4 w-4" />
+                  Grey Sales (coming next)
                 </button>
               </div>
             )}

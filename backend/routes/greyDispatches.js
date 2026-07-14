@@ -6,6 +6,7 @@ import { requireActiveSubscription } from '../middleware/subscription.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
+const RETURN_MILL_NAME = 'GREY SALES INVENTORY';
 
 const optionalString = (value) => {
   if (value === undefined || value === null) return null;
@@ -352,7 +353,12 @@ router.get('/mill-dispatch-report', authenticateToken, requireActiveSubscription
     const ctx = await getCompanyContext(userId);
 
     const dispatches = await prisma.greyDispatch.findMany({
-      where: { userId, status: { not: 'cancelled' } },
+      where: {
+        userId,
+        status: { not: 'cancelled' },
+        transactionType: { not: 'RETURN' },
+        millName: { not: RETURN_MILL_NAME }
+      },
       orderBy: [{ dispatchDate: 'desc' }, { createdAt: 'desc' }]
     });
 
