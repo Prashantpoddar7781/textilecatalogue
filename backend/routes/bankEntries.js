@@ -23,6 +23,7 @@ import {
 } from '../constants/erpTransactionTypes.js';
 import { allocateNextTypeBillNumber } from '../utils/transactionBilling.js';
 import { getPendingCreditDebitNotes, mergePendingBillsWithNotes } from '../utils/creditDebitNotes.js';
+import { ensurePartyMaster } from '../utils/partyMaster.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -501,10 +502,15 @@ router.post('/', authenticateToken, requireActiveSubscription, [
     }
 
     const payload = normalizePayload(req.body);
+    const party = await ensurePartyMaster(prisma, req.user.userId, {
+      partyType: payload.partyType,
+      partyName: payload.partyName
+    });
     const entry = await prisma.bankEntry.create({
       data: {
         userId: req.user.userId,
-        ...payload
+        ...payload,
+        partyName: party.partyName || payload.partyName
       }
     });
 
@@ -537,9 +543,16 @@ router.put('/:id', authenticateToken, requireActiveSubscription, [
     }
 
     const payload = normalizePayload({ ...existing, ...req.body });
+    const party = await ensurePartyMaster(prisma, req.user.userId, {
+      partyType: payload.partyType,
+      partyName: payload.partyName
+    });
     const entry = await prisma.bankEntry.update({
       where: { id: existing.id },
-      data: payload
+      data: {
+        ...payload,
+        partyName: party.partyName || payload.partyName
+      }
     });
 
     res.json({ entry });

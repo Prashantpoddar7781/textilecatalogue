@@ -9,6 +9,7 @@ import {
   getStateFromGstin,
   INDIAN_STATES
 } from '../utils/gstCalculation.js';
+import { resolveSupplierForEntry } from '../utils/partyMaster.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -244,6 +245,13 @@ router.post('/', authenticateToken, requireActiveSubscription, [
     const returnCount = await prisma.greyPurchaseReturn.count({ where: { userId } });
     const dispatchCount = await prisma.greyDispatch.count({ where: { userId } });
     const nextChallanNo = await getNextChallanNo(userId);
+
+    await resolveSupplierForEntry(prisma, userId, {
+      partyName: optionalString(req.body.partyName) || purchase.partyName,
+      partyGstin,
+      placeOfSupply: totals.placeOfSupply || placeOfSupply,
+      partyMsme: purchase.partyMsme
+    });
 
     const entry = await prisma.$transaction(async (tx) => {
       const dispatch = await tx.greyDispatch.create({

@@ -4,6 +4,7 @@ import { body, validationResult } from 'express-validator';
 import { authenticateToken } from '../middleware/auth.js';
 import { requireActiveSubscription } from '../middleware/subscription.js';
 import { CREDIT_DEBIT_NOTE_TYPES, parseNoteType } from '../constants/creditDebitNoteTypes.js';
+import { resolveCustomerForEntry, resolveSupplierForEntry } from '../utils/partyMaster.js';
 import { calculateNoteTotals } from '../utils/gstCalculation.js';
 import { roundMoney } from '../utils/orderBilling.js';
 
@@ -73,7 +74,18 @@ async function resolveParty(userId, noteType, body) {
       error.status = 400;
       throw error;
     }
-    return { partyType: 'customer', partyName: name, customerId: null, supplierId: null };
+    const customer = await resolveCustomerForEntry(prisma, userId, {
+      customerId: body.customerId,
+      partyName: name,
+      state: optionalString(body.state),
+      gstNumber: optionalString(body.partyGstin)
+    });
+    return {
+      partyType: 'customer',
+      partyName: customer?.organizationName || name,
+      customerId: customer?.id || null,
+      supplierId: null
+    };
   }
 
   if (body.supplierId) {
@@ -98,7 +110,18 @@ async function resolveParty(userId, noteType, body) {
     error.status = 400;
     throw error;
   }
-  return { partyType: 'supplier', partyName: name, customerId: null, supplierId: null };
+  const supplier = await resolveSupplierForEntry(prisma, userId, {
+    supplierId: body.supplierId,
+    partyName: name,
+    partyGstin: optionalString(body.partyGstin),
+    placeOfSupply: optionalString(body.placeOfSupply)
+  });
+  return {
+    partyType: 'supplier',
+    partyName: supplier?.name || name,
+    customerId: null,
+    supplierId: supplier?.id || null
+  };
 }
 
 function normalizePayload(body, businessState) {

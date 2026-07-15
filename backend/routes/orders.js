@@ -7,6 +7,7 @@ import { requireActiveSubscription } from '../middleware/subscription.js';
 import { allocateNextInvoiceNumber } from '../utils/orderBilling.js';
 import { normalizeTransactionType, DEFAULT_SALES_TRANSACTION_TYPE } from '../constants/erpTransactionTypes.js';
 import { allocateNextTypeBillNumber } from '../utils/transactionBilling.js';
+import { resolveCustomerForEntry } from '../utils/partyMaster.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -148,9 +149,26 @@ async function resolveManualCustomer(userId, body) {
     };
   }
 
+  const buyerName = optionalString(body.buyerName);
+  if (buyerName) {
+    const customer = await resolveCustomerForEntry(prisma, userId, {
+      buyerName,
+      state: optionalString(body.state),
+      agentName: optionalString(body.agentName)
+    });
+    if (customer) {
+      return {
+        customerId: customer.id,
+        buyerName: customer.organizationName,
+        buyerPhone: customer.mobileNumber || '-',
+        customer
+      };
+    }
+  }
+
   return {
     customerId: null,
-    buyerName: optionalString(body.buyerName) || 'Walk-in customer',
+    buyerName: buyerName || 'Walk-in customer',
     buyerPhone: optionalString(body.buyerPhone) || '-',
     customer: null
   };

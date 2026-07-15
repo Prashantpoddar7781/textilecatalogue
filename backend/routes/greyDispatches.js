@@ -3,6 +3,7 @@ import { PrismaClient } from '@prisma/client';
 import { body, validationResult } from 'express-validator';
 import { authenticateToken } from '../middleware/auth.js';
 import { requireActiveSubscription } from '../middleware/subscription.js';
+import { ensureMillParty, resolveSupplierForEntry } from '../utils/partyMaster.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -463,6 +464,19 @@ router.post('/', authenticateToken, requireActiveSubscription, [
 
     const count = await prisma.greyDispatch.count({ where: { userId } });
     const nextChallanNo = await getNextChallanNo(userId);
+    const millName = optionalString(req.body.millName);
+    if (!millName) {
+      return res.status(400).json({ error: 'Mill is required.' });
+    }
+
+    await ensureMillParty(prisma, userId, millName);
+    await resolveSupplierForEntry(prisma, userId, {
+      partyName: optionalString(req.body.weaverName) || purchase.partyName,
+      partyGstin: purchase.partyGstin,
+      placeOfSupply: purchase.placeOfSupply,
+      partyMsme: purchase.partyMsme
+    });
+
     const entry = await prisma.$transaction(async (tx) => {
       const created = await tx.greyDispatch.create({
         data: {
@@ -474,7 +488,7 @@ router.post('/', authenticateToken, requireActiveSubscription, [
           dispatchDate: req.body.dispatchDate ? new Date(req.body.dispatchDate) : new Date(),
           millLotNo: optionalString(req.body.millLotNo),
           purSr: optionalNumber(req.body.purSr) ?? purchase.srNo,
-          millName: optionalString(req.body.millName),
+          millName,
           ourMarka: optionalString(req.body.ourMarka),
           purBillNo: optionalString(req.body.purBillNo) || purchase.billNo,
           purDate: req.body.purDate ? new Date(req.body.purDate) : purchase.billDate,

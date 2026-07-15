@@ -4,6 +4,7 @@ import { body, validationResult } from 'express-validator';
 import { authenticateToken } from '../middleware/auth.js';
 import { requireActiveSubscription } from '../middleware/subscription.js';
 import { normalizeTransactionType, DEFAULT_PURCHASE_TRANSACTION_TYPE } from '../constants/erpTransactionTypes.js';
+import { findOrCreateSupplier } from '../utils/partyMaster.js';
 import { allocateNextTypeBillNumber } from '../utils/transactionBilling.js';
 
 const router = express.Router();
@@ -206,40 +207,15 @@ Focus on supplier name, GST number, mobile, invoice/bill number, items, HSN, qua
   return normalizeExtraction(JSON.parse(stripJsonFence(text)));
 }
 
-async function findOrCreateSupplier(userId, supplierPayload) {
-  const gstNumber = optionalString(supplierPayload.gstNumber);
-  const name = optionalString(supplierPayload.name) || 'Unknown Supplier';
-
-  const existing = gstNumber
-    ? await prisma.supplier.findFirst({ where: { userId, gstNumber } })
-    : await prisma.supplier.findFirst({ where: { userId, name: { equals: name, mode: 'insensitive' } } });
-
-  const data = {
-    name,
-    gstNumber,
+async function findOrCreateSupplierForBill(userId, supplierPayload) {
+  return findOrCreateSupplier(prisma, userId, {
+    name: optionalString(supplierPayload.name) || 'Unknown Supplier',
+    gstNumber: optionalString(supplierPayload.gstNumber),
     mobileNumber: optionalString(supplierPayload.mobileNumber),
     address: optionalString(supplierPayload.address),
     city: optionalString(supplierPayload.city),
     state: optionalString(supplierPayload.state),
     pincode: optionalString(supplierPayload.pincode)
-  };
-
-  if (existing) {
-    return prisma.supplier.update({
-      where: { id: existing.id },
-      data: {
-        ...data,
-        name: data.name || existing.name,
-        gstNumber: data.gstNumber || existing.gstNumber
-      }
-    });
-  }
-
-  return prisma.supplier.create({
-    data: {
-      userId,
-      ...data
-    }
   });
 }
 
@@ -274,7 +250,7 @@ router.post('/bills', authenticateToken, requireActiveSubscription, [
       req.body.transactionType || extraction.transactionType,
       DEFAULT_PURCHASE_TRANSACTION_TYPE
     );
-    const supplier = await findOrCreateSupplier(userId, extraction.supplier);
+    const supplier = await findOrCreateSupplierForBill(userId, extraction.supplier);
     const bill = await prisma.$transaction(async (tx) => {
       const typeBillNumber = await allocateNextTypeBillNumber(tx, userId, transactionType, 'purchase_bill');
       return tx.purchaseBill.create({
