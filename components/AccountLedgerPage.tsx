@@ -27,7 +27,8 @@ const sourceLabel: Record<string, string> = {
   purchase_bill: 'Purchase Bill',
   bank_entry: 'Bank Entry',
   credit_debit_note: 'Cr/Dr Note',
-  grey_purchase: 'Grey Purchase'
+  grey_purchase: 'Grey Purchase',
+  grey_purchase_return: 'Grey Purchase Return'
 };
 
 const billTypeLabel: Record<string, string> = {

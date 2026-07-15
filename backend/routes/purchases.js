@@ -6,6 +6,7 @@ import { requireActiveSubscription } from '../middleware/subscription.js';
 import { normalizeTransactionType, DEFAULT_PURCHASE_TRANSACTION_TYPE } from '../constants/erpTransactionTypes.js';
 import { findOrCreateSupplier } from '../utils/partyMaster.js';
 import { allocateNextTypeBillNumber } from '../utils/transactionBilling.js';
+import { buildSupplierLedger } from '../utils/accountLedger.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -316,43 +317,29 @@ router.get('/suppliers', authenticateToken, requireActiveSubscription, async (re
 
 router.get('/suppliers/:id/ledger', authenticateToken, requireActiveSubscription, async (req, res, next) => {
   try {
-    const supplier = await prisma.supplier.findFirst({
-      where: {
-        id: req.params.id,
-        userId: req.user.userId
-      },
-      include: {
-        purchaseBills: {
-          orderBy: [
-            { billDate: 'asc' },
-            { createdAt: 'asc' }
-          ]
-        }
-      }
-    });
-
-    if (!supplier) {
+    const result = await buildSupplierLedger(prisma, req.user.userId, req.params.id);
+    if (!result) {
       return res.status(404).json({ error: 'Supplier not found' });
     }
 
-    let runningBalance = 0;
-    const ledger = supplier.purchaseBills.map((bill) => {
-      runningBalance += bill.grandTotal;
-      return {
-        id: bill.id,
-        date: bill.billDate || bill.createdAt,
-        billNumber: bill.billNumber,
-        voucherNumber: bill.voucherNumber,
-        account: bill.transactionType || 'FINISH PURCHASE',
-        creditAmount: bill.grandTotal,
-        debitAmount: 0,
-        runningBalance,
-        status: bill.status,
-        lineCount: Array.isArray(bill.lineItems) ? bill.lineItems.length : 0
-      };
-    });
+    const ledger = result.ledger.map(entry => ({
+      id: entry.sourceId,
+      date: entry.date,
+      billNumber: entry.billNumber,
+      voucherNumber: entry.voucherNumber,
+      account: entry.account,
+      creditAmount: entry.creditAmount,
+      debitAmount: entry.debitAmount,
+      runningBalance: entry.runningBalance,
+      status: 'posted',
+      lineCount: entry.lineCount || 0
+    }));
 
-    res.json({ supplier, ledger, runningBalance });
+    res.json({
+      supplier: result.supplier,
+      ledger,
+      runningBalance: result.runningBalance
+    });
   } catch (error) {
     next(error);
   }

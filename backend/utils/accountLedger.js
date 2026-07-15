@@ -96,24 +96,61 @@ export async function getCustomerLedgerParties(prisma, userId) {
 }
 
 export async function getSupplierLedgerParties(prisma, userId) {
-  const suppliers = await prisma.supplier.findMany({
-    where: { userId },
-    include: {
-      purchaseBills: { select: { grandTotal: true } },
-      _count: { select: { purchaseBills: true } }
-    },
-    orderBy: { name: 'asc' }
-  });
+  const [suppliers, greyPurchases, greyReturns] = await Promise.all([
+    prisma.supplier.findMany({
+      where: { userId },
+      include: {
+        purchaseBills: {
+          where: { status: { not: 'cancelled' } },
+          select: { grandTotal: true }
+        },
+        _count: { select: { purchaseBills: true } }
+      },
+      orderBy: { name: 'asc' }
+    }),
+    prisma.greyPurchase.findMany({
+      where: { userId, status: { not: 'cancelled' } },
+      select: { supplierId: true, partyName: true, netAmount: true }
+    }),
+    prisma.greyPurchaseReturn.findMany({
+      where: { userId, status: { not: 'cancelled' } },
+      select: {
+        partyName: true,
+        netAmount: true,
+        greyPurchase: { select: { supplierId: true, partyName: true } }
+      }
+    })
+  ]);
 
-  return suppliers.map(supplier => ({
-    partyType: 'supplier',
-    partyName: supplier.name,
-    supplierId: supplier.id,
-    gstNumber: supplier.gstNumber,
-    mobileNumber: supplier.mobileNumber,
-    entryCount: supplier._count.purchaseBills,
-    runningBalance: roundMoney(supplier.purchaseBills.reduce((sum, bill) => sum + bill.grandTotal, 0))
-  }));
+  return suppliers.map(supplier => {
+    let runningBalance = supplier.purchaseBills.reduce((sum, bill) => sum + bill.grandTotal, 0);
+    let entryCount = supplier._count.purchaseBills;
+
+    for (const grey of greyPurchases) {
+      if (grey.supplierId !== supplier.id && !matchesSupplierName(supplier.name, grey.partyName)) continue;
+      runningBalance = roundMoney(runningBalance + grey.netAmount);
+      entryCount += 1;
+    }
+
+    for (const ret of greyReturns) {
+      const linkedToSupplier = ret.greyPurchase?.supplierId === supplier.id
+        || matchesSupplierName(supplier.name, ret.partyName)
+        || matchesSupplierName(supplier.name, ret.greyPurchase?.partyName);
+      if (!linkedToSupplier) continue;
+      runningBalance = roundMoney(runningBalance - ret.netAmount);
+      entryCount += 1;
+    }
+
+    return {
+      partyType: 'supplier',
+      partyName: supplier.name,
+      supplierId: supplier.id,
+      gstNumber: supplier.gstNumber,
+      mobileNumber: supplier.mobileNumber,
+      entryCount,
+      runningBalance
+    };
+  });
 }
 
 export async function buildCustomerLedger(prisma, userId, partyName) {
@@ -319,6 +356,44 @@ export async function buildSupplierLedger(prisma, userId, supplierId) {
     });
   }
 
+  const greyReturns = await prisma.greyPurchaseReturn.findMany({
+    where: {
+      userId,
+      status: { not: 'cancelled' },
+      OR: [
+        { partyName: supplier.name },
+        { greyPurchase: { supplierId: supplier.id } },
+        { greyPurchase: { partyName: supplier.name } }
+      ]
+    },
+    include: {
+      greyPurchase: { select: { srNo: true, billNo: true, partyName: true, supplierId: true } }
+    },
+    orderBy: [{ returnDate: 'asc' }, { createdAt: 'asc' }]
+  });
+
+  for (const ret of greyReturns) {
+    const linkedToSupplier = ret.greyPurchase?.supplierId === supplier.id
+      || matchesSupplierName(supplier.name, ret.partyName)
+      || matchesSupplierName(supplier.name, ret.greyPurchase?.partyName);
+    if (!linkedToSupplier) continue;
+
+    const amount = roundMoney(ret.netAmount);
+    if (amount <= 0) continue;
+    rawEntries.push({
+      id: `grey-return-${ret.id}`,
+      sourceType: 'grey_purchase_return',
+      sourceId: ret.id,
+      date: ret.returnDate || ret.createdAt,
+      voucherNumber: String(ret.voucherNo || ret.challanNo || '-'),
+      billNumber: ret.billNo || ret.refBillNo || String(ret.voucherNo || '-'),
+      account: ret.saleAccount || 'GREY PURCHASE RETURN',
+      particulars: `Grey purchase return #${ret.voucherNo || '-'}${ret.purSr ? ` · Pur ${ret.purSr}` : ''}${ret.quality ? ` · ${ret.quality}` : ''}`,
+      debitAmount: amount,
+      creditAmount: 0
+    });
+  }
+
   for (const note of notes) {
     if (!matchesNoteParty(note, supplier.name, 'supplier')) continue;
     const amount = roundMoney(note.netAmountAfterTds || note.netAmount || note.grossAmount);
@@ -395,7 +470,8 @@ const VALID_SOURCE_TYPES = new Set([
   'purchase_bill',
   'bank_entry',
   'credit_debit_note',
-  'grey_purchase'
+  'grey_purchase',
+  'grey_purchase_return'
 ]);
 
 function buildDetailFields(items) {
@@ -615,6 +691,58 @@ export async function getLedgerEntryDetail(prisma, userId, sourceType, sourceId)
         rate: line.rate != null ? roundMoney(line.rate) : '-',
         amount: roundMoney(line.amount ?? 0)
       }))
+    };
+  }
+
+  if (sourceType === 'grey_purchase_return') {
+    const ret = await prisma.greyPurchaseReturn.findFirst({
+      where: { id: sourceId, userId },
+      include: { greyPurchase: true }
+    });
+    if (!ret) return null;
+
+    const takaDetails = Array.isArray(ret.takaDetails) ? ret.takaDetails : [];
+
+    return {
+      title: `Grey Purchase Return #${ret.voucherNo ?? '-'}`,
+      subtitle: ret.partyName,
+      sourceType,
+      sourceId,
+      canEdit: true,
+      editPath: `/erp/grey-purchase-return?edit=${ret.id}`,
+      fields: buildDetailFields([
+        { label: 'Date', value: toIsoDate(ret.returnDate) },
+        { label: 'Voucher', value: ret.voucherNo != null ? String(ret.voucherNo) : '' },
+        { label: 'Challan', value: ret.challanNo },
+        { label: 'Ref. Bill', value: ret.refBillNo },
+        { label: 'Pur Sr.', value: ret.purSr != null ? String(ret.purSr) : '' },
+        { label: 'Quality', value: ret.quality },
+        { label: 'Broker', value: ret.brokerName },
+        { label: 'Pcs', value: ret.pcs },
+        { label: 'Mts', value: ret.mts, isMoney: true },
+        { label: 'Rate', value: ret.rate, isMoney: true },
+        { label: 'Gross Amt', value: ret.grossAmount, isMoney: true },
+        { label: 'Disc Amt', value: ret.discountAmount, isMoney: true },
+        { label: 'Taxable', value: ret.taxableAmount, isMoney: true },
+        { label: 'CGST', value: ret.cgstAmount, isMoney: true },
+        { label: 'SGST', value: ret.sgstAmount, isMoney: true },
+        { label: 'IGST', value: ret.igstAmount, isMoney: true },
+        { label: 'Net Amount', value: ret.netAmount, isMoney: true },
+        { label: 'Paid', value: ret.paid ? 'Y' : 'N' },
+        { label: 'Remarks', value: ret.remarks }
+      ]),
+      lineColumns: takaDetails.length
+        ? [
+          { key: 'srNo', label: 'Sr. No.' },
+          { key: 'mts', label: 'Mtrs', align: 'right', isMoney: true }
+        ]
+        : undefined,
+      lineItems: takaDetails.length
+        ? takaDetails.map(row => ({
+          srNo: row.srNo,
+          mts: roundMoney(row.mts)
+        }))
+        : undefined
     };
   }
 
