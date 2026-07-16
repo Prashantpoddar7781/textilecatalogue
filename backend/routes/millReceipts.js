@@ -197,10 +197,11 @@ router.post('/calculate', authenticateToken, requireActiveSubscription, async (r
       stateCode: req.body.stateCode
     });
 
+    const invoiceValue = totals.netAmount;
     const tdsOnAmt = optionalNumber(req.body.tdsOnAmt) ?? totals.taxableAmount;
     const tdsPercent = optionalNumber(req.body.tdsPercent) || 0;
-    const tdsAmount = optionalNumber(req.body.tdsAmount) ?? roundMoney(tdsOnAmt * tdsPercent / 100);
-    const invoiceValue = totals.netAmount;
+    // Always derive TDS amount from % — never trust a stale client amount
+    const tdsAmount = roundMoney(tdsOnAmt * tdsPercent / 100);
     const netAfterTds = roundMoney(invoiceValue - tdsAmount);
 
     res.json({
@@ -542,10 +543,10 @@ router.post('/', authenticateToken, requireActiveSubscription, [
       stateCode: req.body.stateCode
     });
 
+    const invoiceValue = totals.netAmount;
     const tdsOnAmt = optionalNumber(req.body.tdsOnAmt) ?? totals.taxableAmount;
     const tdsPercent = optionalNumber(req.body.tdsPercent) || 0;
-    const tdsAmount = optionalNumber(req.body.tdsAmount) ?? roundMoney(tdsOnAmt * tdsPercent / 100);
-    const invoiceValue = totals.netAmount;
+    const tdsAmount = roundMoney(tdsOnAmt * tdsPercent / 100);
     const netAfterTds = roundMoney(invoiceValue - tdsAmount);
 
     const count = await prisma.millReceipt.count({ where: { userId } });

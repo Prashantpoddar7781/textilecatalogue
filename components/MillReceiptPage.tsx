@@ -69,10 +69,12 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [igstAmount, setIgstAmount] = useState('0');
   const [grossAmount, setGrossAmount] = useState(0);
   const [invoiceValue, setInvoiceValue] = useState(0);
+  const [taxableAmount, setTaxableAmount] = useState(0);
   const [tdsOnAmt, setTdsOnAmt] = useState('');
   const [tdsPercent, setTdsPercent] = useState('');
   const [tdsAmount, setTdsAmount] = useState('0');
   const [netAfterTds, setNetAfterTds] = useState(0);
+  const [tdsOnAmtTouched, setTdsOnAmtTouched] = useState(false);
 
   const [pendingDispatches, setPendingDispatches] = useState<MillPendingDispatch[]>([]);
   const [availableTakas, setAvailableTakas] = useState<MillReceiptTakaRow[]>([]);
@@ -100,6 +102,15 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
     setShortMts(String(short));
     setShortPct(String(grey > 0 ? round2((short / grey) * 100) : 0));
   }, [greyMts, recMts]);
+
+  // TDS Amt = TDS On Amt × TDS % (always local, instant)
+  useEffect(() => {
+    const base = toNum(tdsOnAmt) || taxableAmount;
+    const pct = toNum(tdsPercent);
+    const amt = round2(base * pct / 100);
+    setTdsAmount(String(amt));
+    setNetAfterTds(round2(invoiceValue - amt));
+  }, [tdsOnAmt, tdsPercent, taxableAmount, invoiceValue]);
 
   const recalcGst = useCallback(async () => {
     if (!toNum(recMts) && !jobAmount) return;
@@ -129,15 +140,16 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
       setIgstRate(String(totals.igstRate ?? 0));
       setIgstAmount(String(totals.igstAmount ?? 0));
       setInvoiceValue(Number(totals.invoiceValue) || 0);
-      setTdsAmount(String(totals.tdsAmount ?? 0));
-      setNetAfterTds(Number(totals.netAfterTds) || 0);
-      if (!tdsOnAmt) setTdsOnAmt(String(totals.tdsOnAmt ?? totals.taxableAmount ?? ''));
+      setTaxableAmount(Number(totals.taxableAmount) || 0);
+      if (!tdsOnAmtTouched) {
+        setTdsOnAmt(String(totals.tdsOnAmt ?? totals.taxableAmount ?? ''));
+      }
       if (totals.placeOfSupply) setPlaceOfSupply(String(totals.placeOfSupply));
       if (totals.stateCode) setStateCode(String(totals.stateCode));
     } catch {
       // keep local values
     }
-  }, [recMts, jobRate, jobAmount, rdLessAddAmt, grossAmount, discountPercent, otherLess, otherAdd, gstRate, millGstin, placeOfSupply, stateCode, tdsOnAmt, tdsPercent]);
+  }, [recMts, jobRate, jobAmount, rdLessAddAmt, grossAmount, discountPercent, otherLess, otherAdd, gstRate, millGstin, placeOfSupply, stateCode, tdsOnAmt, tdsPercent, tdsOnAmtTouched]);
 
   useEffect(() => {
     const timer = setTimeout(() => { void recalcGst(); }, 300);
@@ -308,6 +320,8 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
       setLotNo('');
       setBillNo('');
       setRemarks('');
+      setTdsPercent('');
+      setTdsOnAmtTouched(false);
       resetLine();
       setSelectedTakaDetails([]);
     } catch (err: any) {
@@ -597,28 +611,44 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
               <input className={readonlyClass} value={igstAmount} readOnly />
             </div>
             <div>
-              <label className={labelClass}>TDS On Amt</label>
-              <input className={inputClass} type="number" step="0.01" value={tdsOnAmt} onChange={e => setTdsOnAmt(e.target.value)} />
-            </div>
-            <div>
-              <label className={labelClass}>TDS %</label>
-              <input className={inputClass} type="number" step="0.01" value={tdsPercent} onChange={e => setTdsPercent(e.target.value)} />
-            </div>
-            <div>
-              <label className={labelClass}>TDS Amt</label>
-              <input className={readonlyClass} value={tdsAmount} readOnly />
+              <label className={labelClass}>GST Rate</label>
+              <input className={inputClass} type="number" step="0.01" value={gstRate} onChange={e => setGstRate(e.target.value)} />
             </div>
             <div>
               <label className={labelClass}>Invoice Value</label>
               <input className={readonlyClass} value={invoiceValue.toFixed(2)} readOnly />
             </div>
             <div>
-              <label className={labelClass}>Net After TDS</label>
-              <input className={readonlyClass} value={netAfterTds.toFixed(2)} readOnly />
+              <label className={labelClass}>TDS On Amt</label>
+              <input
+                className={inputClass}
+                type="number"
+                step="0.01"
+                value={tdsOnAmt}
+                onChange={e => {
+                  setTdsOnAmtTouched(true);
+                  setTdsOnAmt(e.target.value);
+                }}
+              />
             </div>
             <div>
-              <label className={labelClass}>GST Rate</label>
-              <input className={inputClass} type="number" step="0.01" value={gstRate} onChange={e => setGstRate(e.target.value)} />
+              <label className={labelClass}>TDS %</label>
+              <input
+                className={calcInputClass}
+                type="number"
+                step="0.01"
+                value={tdsPercent}
+                onChange={e => setTdsPercent(e.target.value)}
+                placeholder="e.g. 0.1"
+              />
+            </div>
+            <div>
+              <label className={labelClass}>TDS Amt</label>
+              <input className={readonlyClass} value={toNum(tdsAmount).toFixed(2)} readOnly />
+            </div>
+            <div>
+              <label className={labelClass}>Net After TDS</label>
+              <input className={readonlyClass} value={netAfterTds.toFixed(2)} readOnly />
             </div>
           </section>
 

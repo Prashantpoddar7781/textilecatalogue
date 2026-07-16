@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowLeft, Loader2, PackageCheck, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Loader2, PackageCheck, RefreshCw, X } from 'lucide-react';
 import { millReceiptsApi } from '../services/api';
-import { ErpSession } from '../types';
+import { ErpSession, MillReceipt } from '../types';
 import { ErpTopMenu } from './ErpTopMenu';
 
 interface Props {
@@ -67,6 +67,131 @@ const fyStart = () => {
   return `${year}-04-01`;
 };
 
+const MillReceiptDetailPanel: React.FC<{
+  entryId: string;
+  onClose: () => void;
+}> = ({ entryId, onClose }) => {
+  const [entry, setEntry] = useState<MillReceipt | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      setLoading(true);
+      setError('');
+      try {
+        const { entry: fetched } = await millReceiptsApi.getById(entryId);
+        if (!cancelled) setEntry(fetched);
+      } catch (err: any) {
+        if (!cancelled) setError(err.message || 'Could not load mill receipt.');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    void load();
+    return () => { cancelled = true; };
+  }, [entryId]);
+
+  if (loading) {
+    return (
+      <div className="mt-4 rounded-2xl border border-teal-100 bg-teal-50/70 p-4 text-sm text-teal-800">
+        <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
+        Loading receipt details...
+      </div>
+    );
+  }
+
+  if (error || !entry) {
+    return (
+      <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">
+        {error || 'Mill receipt not found.'}
+      </div>
+    );
+  }
+
+  const takaDetails = Array.isArray(entry.takaDetails) ? entry.takaDetails : [];
+
+  return (
+    <div className="mt-4 rounded-3xl border border-teal-100 bg-teal-50/60 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-black uppercase tracking-wide text-teal-950">
+            Mill Receipt #{entry.voucherNo ?? '-'}
+          </h3>
+          <p className="mt-1 text-xs font-semibold text-teal-700">
+            {entry.millName} · Lot {entry.lotNo} · Desp {entry.despNo || '-'}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-lg border border-teal-200 bg-white px-2.5 py-1.5 text-xs font-bold text-teal-700"
+          aria-label="Close"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
+
+      <div className="mt-4 grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-4">
+        {[
+          { label: 'Date', value: formatDate(entry.receiptDate) },
+          { label: 'Bill / G.P. No.', value: entry.billNo || '-' },
+          { label: 'Quality', value: entry.quality || '-' },
+          { label: 'Print Style', value: entry.printStyle || '-' },
+          { label: 'Marka', value: entry.marka || '-' },
+          { label: 'Rec. Taka', value: takaCount(entry.recTaka) },
+          { label: 'Grey Mts', value: money(entry.greyMts) },
+          { label: 'Rec. Mts', value: money(entry.recMts) },
+          { label: 'Short Mts', value: money(entry.shortMts) },
+          { label: 'Shortage %', value: money(entry.shortPct) },
+          { label: 'Job Rate', value: money(entry.jobRate) },
+          { label: 'Job Amt', value: money(entry.jobAmount) },
+          { label: 'Taxable', value: money(entry.taxableAmount) },
+          { label: 'CGST', value: money(entry.cgstAmount) },
+          { label: 'SGST', value: money(entry.sgstAmount) },
+          { label: 'IGST', value: money(entry.igstAmount) },
+          { label: 'Invoice Value', value: money(entry.invoiceValue) },
+          { label: 'TDS %', value: money(entry.tdsPercent) },
+          { label: 'TDS Amt', value: money(entry.tdsAmount) },
+          { label: 'Net After TDS', value: money(entry.netAfterTds) },
+          { label: 'Remarks', value: entry.remarks || '-' }
+        ].map(field => (
+          <p key={field.label} className="rounded-xl bg-white/80 px-3 py-2">
+            <span className="font-bold text-gray-700">{field.label}:</span>{' '}
+            <span className="text-gray-900">{field.value}</span>
+          </p>
+        ))}
+      </div>
+
+      {takaDetails.length > 0 && (
+        <div className="mt-4 overflow-x-auto rounded-xl border bg-white">
+          <table className="min-w-full text-left text-xs">
+            <thead className="border-b bg-gray-50 text-[10px] uppercase text-gray-500">
+              <tr>
+                <th className="px-3 py-2">Taka Sr.</th>
+                <th className="px-3 py-2 text-right">Grey Mts</th>
+                <th className="px-3 py-2 text-right">Rec Mts</th>
+                <th className="px-3 py-2 text-right">Short %</th>
+              </tr>
+            </thead>
+            <tbody>
+              {takaDetails.map(row => (
+                <tr key={row.srNo} className="border-b">
+                  <td className="px-3 py-2 font-semibold">{row.srNo}</td>
+                  <td className="px-3 py-2 text-right">{money(row.greyMts)}</td>
+                  <td className="px-3 py-2 text-right font-bold">{money(row.recMts)}</td>
+                  <td className="px-3 py-2 text-right text-rose-700">{money(row.shortPct || 0)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+};
+
 export const MillReceiptReportPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [filter, setFilter] = useState<string>('all');
   const [millName, setMillName] = useState('');
@@ -78,10 +203,12 @@ export const MillReceiptReportPage: React.FC<Props> = ({ onBack, erpSession }) =
   const [totals, setTotals] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
     setError('');
+    setSelectedEntryId(null);
     try {
       const result = await millReceiptsApi.getReport({
         filter,
@@ -125,7 +252,11 @@ export const MillReceiptReportPage: React.FC<Props> = ({ onBack, erpSession }) =
       </thead>
       <tbody>
         {data.map(row => (
-          <tr key={row.id} className="border-b hover:bg-teal-50">
+          <tr
+            key={row.id}
+            className={`cursor-pointer border-b transition-colors hover:bg-teal-50 ${selectedEntryId === row.id ? 'bg-teal-50' : ''}`}
+            onClick={() => setSelectedEntryId(row.id)}
+          >
             <td className="px-2 py-2 font-semibold">{row.despNo}</td>
             <td className="px-2 py-2 font-bold text-teal-800">{row.lotNo}</td>
             <td className="px-2 py-2">{row.billNo}</td>
@@ -261,7 +392,7 @@ export const MillReceiptReportPage: React.FC<Props> = ({ onBack, erpSession }) =
               <Loader2 className="h-7 w-7 animate-spin text-teal-700" />
             </div>
           ) : filter === 'all' ? (
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto p-0">
               <ReportTable data={rows} showGrand />
               {!rows.length && (
                 <p className="px-4 py-10 text-center text-sm text-gray-500">No mill receipts in this range.</p>
@@ -293,6 +424,13 @@ export const MillReceiptReportPage: React.FC<Props> = ({ onBack, erpSession }) =
             </div>
           )}
         </section>
+
+        {selectedEntryId && (
+          <MillReceiptDetailPanel
+            entryId={selectedEntryId}
+            onClose={() => setSelectedEntryId(null)}
+          />
+        )}
       </main>
     </div>
   );
