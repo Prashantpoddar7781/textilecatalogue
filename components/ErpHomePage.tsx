@@ -55,11 +55,11 @@ const sections = [
     status: 'Ready'
   },
   {
-    title: 'Grey Receipts',
-    description: 'Track grey fabric received back from processing.',
+    title: 'Mill / Grey Receipt',
+    description: 'Receive processed fabric from mill — lot no, despatch pick, taka details, job work bill.',
     icon: PackageCheck,
-    href: '#',
-    status: 'Coming next'
+    href: '/erp/mill-receipt',
+    status: 'Ready'
   },
   {
     title: 'Misc Work Dispatch / Receipt',

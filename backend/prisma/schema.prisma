@@ -48,6 +48,7 @@ model User {
   greyPurchases GreyPurchase[]
   greyDispatches GreyDispatch[]
   greyPurchaseReturns GreyPurchaseReturn[]
+  millReceipts MillReceipt[]
 }
 
 model ErpUser {
@@ -449,6 +450,7 @@ model GreyPurchase {
   updatedAt          DateTime @updatedAt
   greyDispatches     GreyDispatch[]
   greyPurchaseReturns GreyPurchaseReturn[]
+  millReceipts       MillReceipt[]
 
   @@index([userId])
   @@index([supplierId])
@@ -559,11 +561,82 @@ model GreyDispatch {
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
 
+  millReceipts     MillReceipt[]
+
   @@index([userId])
   @@index([greyPurchaseId])
   @@index([dispatchDate])
   @@index([purSr])
   @@index([millName])
+  @@index([status])
+}
+
+model MillReceipt {
+  id               String        @id @default(cuid())
+  userId           String
+  user             User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  greyDispatchId   String
+  greyDispatch     GreyDispatch  @relation(fields: [greyDispatchId], references: [id], onDelete: Restrict)
+  greyPurchaseId   String?
+  greyPurchase     GreyPurchase? @relation(fields: [greyPurchaseId], references: [id], onDelete: SetNull)
+  companyName      String?
+  millName         String
+  millGstin        String?
+  partyMsme        String?
+  entryType        String        @default("JOB WORK")
+  hsnCode          String?       @default("9988")
+  voucherNo        Int?
+  receiptDate      DateTime      @default(now())
+  billNo           String?
+  placeOfSupply    String?
+  stateCode        String?
+  gstType          String?
+  lotNo            String
+  despNo           String?
+  recChallan       String?
+  marka            String?
+  quality          String?
+  printStyle       String?
+  recTaka          Float         @default(0)
+  recMts           Float         @default(0)
+  greyMts          Float         @default(0)
+  shortMts         Float         @default(0)
+  shortPct         Float         @default(0)
+  jobRate          Float         @default(0)
+  jobAmount        Float         @default(0)
+  rdPerMtr         Float         @default(0)
+  rdLessAddAmt     Float         @default(0)
+  discountPercent  Float         @default(0)
+  discountAmount   Float         @default(0)
+  otherLess        Float         @default(0)
+  otherAdd         Float         @default(0)
+  taxableAmount    Float         @default(0)
+  gstRate          Float         @default(5)
+  cgstRate         Float         @default(0)
+  cgstAmount       Float         @default(0)
+  sgstRate         Float         @default(0)
+  sgstAmount       Float         @default(0)
+  igstRate         Float         @default(0)
+  igstAmount       Float         @default(0)
+  grossAmount      Float         @default(0)
+  invoiceValue     Float         @default(0)
+  tdsOnAmt         Float         @default(0)
+  tdsPercent       Float         @default(0)
+  tdsAmount        Float         @default(0)
+  netAfterTds      Float         @default(0)
+  remarks          String?
+  takaDetails      Json?
+  status           String        @default("posted")
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  @@index([userId])
+  @@index([greyDispatchId])
+  @@index([greyPurchaseId])
+  @@index([receiptDate])
+  @@index([millName])
+  @@index([lotNo])
+  @@index([voucherNo])
   @@index([status])
 }
 

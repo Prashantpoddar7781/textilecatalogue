@@ -1,4 +1,4 @@
-import { AccountLedgerEntry, AccountLedgerParty, BankEntry, BankPendingBill, BusinessProfile, CompletedOrderParty, Contact, Customer, CreditDebitNote, ErpAccessLevel, ErpSession, ErpUserAccount, GreyDispatch, GreyPurchase, GreyPurchaseReturn, GreyReceiptSummary, GreyTakaDetailRow, LedgerEntryDetail, Order, PurchaseBill, PurchaseBillExtraction, PurchaseBillParty, SalesInvoice, Supplier, SupplierLedgerEntry } from '../types';
+import { AccountLedgerEntry, AccountLedgerParty, BankEntry, BankPendingBill, BusinessProfile, CompletedOrderParty, Contact, Customer, CreditDebitNote, ErpAccessLevel, ErpSession, ErpUserAccount, GreyDispatch, GreyPurchase, GreyPurchaseReturn, GreyReceiptSummary, GreyTakaDetailRow, LedgerEntryDetail, MillPendingDispatch, MillReceipt, MillReceiptTakaRow, Order, PurchaseBill, PurchaseBillExtraction, PurchaseBillParty, SalesInvoice, Supplier, SupplierLedgerEntry } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://textilecatalogue-production.up.railway.app/api';
 
@@ -1015,6 +1015,81 @@ export const greyPurchaseReturnsApi = {
   },
   create: async (body: Record<string, unknown>) => {
     return request<{ entry: GreyPurchaseReturn }>('/grey-purchase-returns', {
+      method: 'POST',
+      body: JSON.stringify(body)
+    });
+  }
+};
+
+export const millReceiptsApi = {
+  getMeta: async () => {
+    return request<{
+      companyName: string;
+      businessState: string;
+      defaultHsnCode: string;
+      defaultGstRate: number;
+      nextVoucherNo: number;
+      entryTypes: string[];
+      mills: string[];
+      states: string[];
+    }>('/mill-receipts/meta');
+  },
+  calculate: async (body: Record<string, unknown>) => {
+    return request<{ totals: Record<string, number | string> }>('/mill-receipts/calculate', {
+      method: 'POST',
+      body: JSON.stringify(body)
+    });
+  },
+  getPendingDispatches: async (millName: string) => {
+    return request<{ entries: MillPendingDispatch[] }>(
+      `/mill-receipts/pending-dispatches?millName=${encodeURIComponent(millName)}`
+    );
+  },
+  getAvailableTakas: async (dispatchId: string) => {
+    return request<{
+      dispatch: MillPendingDispatch;
+      availableRows: MillReceiptTakaRow[];
+      receivedSrNos: number[];
+      receivedMts: number;
+    }>(`/mill-receipts/pending-dispatches/${dispatchId}/available-takas`);
+  },
+  getAll: async () => {
+    return request<{ entries: MillReceipt[] }>('/mill-receipts');
+  },
+  getById: async (id: string) => {
+    return request<{ entry: MillReceipt }>(`/mill-receipts/${id}`);
+  },
+  getReport: async (params?: {
+    filter?: string;
+    millName?: string;
+    fromDate?: string;
+    toDate?: string;
+  }) => {
+    const query = new URLSearchParams();
+    if (params?.filter) query.set('filter', params.filter);
+    if (params?.millName) query.set('millName', params.millName);
+    if (params?.fromDate) query.set('fromDate', params.fromDate);
+    if (params?.toDate) query.set('toDate', params.toDate);
+    const qs = query.toString();
+    return request<{
+      filter: string;
+      companyName: string;
+      millName?: string | null;
+      fromDate?: string | null;
+      toDate?: string | null;
+      reportDate: string;
+      rows: Array<Record<string, unknown>>;
+      groups: Array<{
+        key: string;
+        label: string;
+        rows: Array<Record<string, unknown>>;
+        totals: Record<string, number>;
+      }>;
+      totals: Record<string, number>;
+    }>(`/mill-receipts/report${qs ? `?${qs}` : ''}`);
+  },
+  create: async (body: Record<string, unknown>) => {
+    return request<{ entry: MillReceipt }>('/mill-receipts', {
       method: 'POST',
       body: JSON.stringify(body)
     });

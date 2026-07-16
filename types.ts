@@ -340,6 +340,14 @@ export interface GreyTakaDetailRow {
   mts: number;
 }
 
+export interface MillReceiptTakaRow {
+  srNo: number;
+  greyMts: number;
+  recMts: number;
+  shortMts?: number;
+  shortPct?: number;
+}
+
 export interface GreyPurchaseLine {
   quality?: string | null;
   taka?: number;
@@ -453,6 +461,88 @@ export interface GreyDispatch {
   vehicleNo?: string | null;
   ewayBillNo?: string | null;
   srNo?: number | null;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MillPendingDispatch {
+  id: string;
+  greyPurchaseId: string;
+  srNo?: number | null;
+  challanNo?: string | null;
+  dispatchDate: string;
+  millName: string;
+  millLotNo?: string | null;
+  purSr?: number | null;
+  quality?: string | null;
+  weaverName?: string | null;
+  brokerName?: string | null;
+  ourMarka?: string | null;
+  rate: number;
+  despTaka: number;
+  despMts: number;
+  pendingTaka: number;
+  pendingMts: number;
+  receivedMts: number;
+  takaDetails?: MillReceiptTakaRow[];
+  greyPurchase?: { id: string; srNo?: number | null; billNo?: string | null; partyName?: string | null } | null;
+}
+
+export interface MillReceipt {
+  id: string;
+  userId: string;
+  greyDispatchId: string;
+  greyDispatch?: GreyDispatch | null;
+  greyPurchaseId?: string | null;
+  greyPurchase?: GreyPurchase | null;
+  companyName?: string | null;
+  millName: string;
+  millGstin?: string | null;
+  partyMsme?: string | null;
+  entryType: string;
+  hsnCode?: string | null;
+  voucherNo?: number | null;
+  receiptDate: string;
+  billNo?: string | null;
+  placeOfSupply?: string | null;
+  stateCode?: string | null;
+  gstType?: string | null;
+  lotNo: string;
+  despNo?: string | null;
+  recChallan?: string | null;
+  marka?: string | null;
+  quality?: string | null;
+  printStyle?: string | null;
+  recTaka: number;
+  recMts: number;
+  greyMts: number;
+  shortMts: number;
+  shortPct: number;
+  jobRate: number;
+  jobAmount: number;
+  rdPerMtr: number;
+  rdLessAddAmt: number;
+  discountPercent: number;
+  discountAmount: number;
+  otherLess: number;
+  otherAdd: number;
+  taxableAmount: number;
+  gstRate: number;
+  cgstRate: number;
+  cgstAmount: number;
+  sgstRate: number;
+  sgstAmount: number;
+  igstRate: number;
+  igstAmount: number;
+  grossAmount: number;
+  invoiceValue: number;
+  tdsOnAmt: number;
+  tdsPercent: number;
+  tdsAmount: number;
+  netAfterTds: number;
+  remarks?: string | null;
+  takaDetails?: MillReceiptTakaRow[] | null;
   status: string;
   createdAt: string;
   updatedAt: string;

@@ -22,6 +22,7 @@ import erpAuthRoutes from './routes/erpAuth.js';
 import greyPurchaseRoutes from './routes/greyPurchases.js';
 import greyDispatchRoutes from './routes/greyDispatches.js';
 import greyPurchaseReturnRoutes from './routes/greyPurchaseReturns.js';
+import millReceiptRoutes from './routes/millReceipts.js';
 
 dotenv.config();
 
@@ -184,6 +185,7 @@ try {
   app.use('/api/grey-purchases', greyPurchaseRoutes);
   app.use('/api/grey-dispatches', greyDispatchRoutes);
   app.use('/api/grey-purchase-returns', greyPurchaseReturnRoutes);
+  app.use('/api/mill-receipts', millReceiptRoutes);
   console.log('Routes configured: /api/auth, /api/billing, /api/designs, /api/users, /api/catalogues, /api/contacts, /api/customers, /api/share-links, /api/orders, /api/invoices, /api/purchases, /api/bank-entries, /api/credit-debit-notes, /api/ledger, /api/erp-users, /api/erp-auth, /api/grey-purchases, /api/grey-dispatches, /api/grey-purchase-returns');
 } catch (error) {
   console.error('Error setting up routes:', error);

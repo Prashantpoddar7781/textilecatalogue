@@ -25,8 +25,10 @@ import { ErpCompanyMasterPage } from './components/ErpCompanyMasterPage';
 import { GreyPurchasePage } from './components/GreyPurchasePage';
 import { GreyDispatchPage } from './components/GreyDispatchPage';
 import { GreyPurchaseReturnPage } from './components/GreyPurchaseReturnPage';
+import { MillReceiptPage } from './components/MillReceiptPage';
 import { GodownInventoryReportPage } from './components/GodownInventoryReportPage';
 import { MillDispatchReportPage } from './components/MillDispatchReportPage';
+import { MillReceiptReportPage } from './components/MillReceiptReportPage';
 import { CreditDebitNotePage } from './components/CreditDebitNotePage';
 import { parseNoteTypeFromPath } from './constants/creditDebitNoteTypes';
 import { BankEntriesPage } from './components/BankEntriesPage';
@@ -63,13 +65,16 @@ const App: React.FC = () => {
   const erpGreyPurchaseMatch = pathname.match(/^\/erp\/grey-purchase\/?$/);
   const erpGreyDispatchMatch = pathname.match(/^\/erp\/grey-dispatch\/?$/);
   const erpGreyPurchaseReturnMatch = pathname.match(/^\/erp\/grey-purchase-return\/?$/);
+  const erpMillReceiptMatch = pathname.match(/^\/erp\/mill-receipt\/?$/);
   const erpGodownReportMatch = pathname.match(/^\/erp\/reports\/godown-inventory\/?$/);
   const erpMillDispatchReportMatch = pathname.match(/^\/erp\/reports\/mill-dispatch\/?$/);
+  const erpMillReceiptReportMatch = pathname.match(/^\/erp\/reports\/mill-receipt\/?$/);
   const erpNotesMatch = pathname.match(/^\/erp\/notes\/([^/]+)\/?$/);
   const isErpRoute = Boolean(
     erpMatch || erpBankMatch || erpSalesMatch || erpPurchaseMatch || erpLedgerMatch
     || erpUtilitiesMatch || erpUsersMatch || erpCompanyMatch || erpGreyPurchaseMatch || erpGreyDispatchMatch || erpGreyPurchaseReturnMatch
-    || erpGodownReportMatch || erpMillDispatchReportMatch || erpNotesMatch || supplierLedgerMatch
+    || erpMillReceiptMatch || erpGodownReportMatch || erpMillDispatchReportMatch || erpMillReceiptReportMatch
+    || erpNotesMatch || supplierLedgerMatch
   );
   const shareStatsMatch = pathname.match(/^\/share-stats\/?$/);
   const reportsMatch = pathname.match(/^\/reports\/?$/);
@@ -733,6 +738,15 @@ const App: React.FC = () => {
     );
   }
 
+  if (erpMillReceiptMatch) {
+    return (
+      <MillReceiptPage
+        erpSession={erpSession}
+        onBack={() => { window.location.href = '/erp'; }}
+      />
+    );
+  }
+
   if (erpGodownReportMatch) {
     return (
       <GodownInventoryReportPage
@@ -745,6 +759,15 @@ const App: React.FC = () => {
   if (erpMillDispatchReportMatch) {
     return (
       <MillDispatchReportPage
+        erpSession={erpSession}
+        onBack={() => { window.location.href = '/erp'; }}
+      />
+    );
+  }
+
+  if (erpMillReceiptReportMatch) {
+    return (
+      <MillReceiptReportPage
         erpSession={erpSession}
         onBack={() => { window.location.href = '/erp'; }}
       />

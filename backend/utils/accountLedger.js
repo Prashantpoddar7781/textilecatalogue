@@ -96,7 +96,7 @@ export async function getCustomerLedgerParties(prisma, userId) {
 }
 
 export async function getSupplierLedgerParties(prisma, userId) {
-  const [suppliers, greyPurchases, greyReturns] = await Promise.all([
+  const [suppliers, greyPurchases, greyReturns, millReceipts] = await Promise.all([
     prisma.supplier.findMany({
       where: { userId },
       include: {
@@ -119,6 +119,10 @@ export async function getSupplierLedgerParties(prisma, userId) {
         netAmount: true,
         greyPurchase: { select: { supplierId: true, partyName: true } }
       }
+    }),
+    prisma.millReceipt.findMany({
+      where: { userId, status: { not: 'cancelled' } },
+      select: { millName: true, netAfterTds: true, invoiceValue: true }
     })
   ]);
 
@@ -138,6 +142,13 @@ export async function getSupplierLedgerParties(prisma, userId) {
         || matchesSupplierName(supplier.name, ret.greyPurchase?.partyName);
       if (!linkedToSupplier) continue;
       runningBalance = roundMoney(runningBalance - ret.netAmount);
+      entryCount += 1;
+    }
+
+    for (const receipt of millReceipts) {
+      if (!matchesSupplierName(supplier.name, receipt.millName)) continue;
+      const amount = roundMoney(receipt.netAfterTds || receipt.invoiceValue || 0);
+      runningBalance = roundMoney(runningBalance + amount);
       entryCount += 1;
     }
 
@@ -394,6 +405,32 @@ export async function buildSupplierLedger(prisma, userId, supplierId) {
     });
   }
 
+  const millReceipts = await prisma.millReceipt.findMany({
+    where: {
+      userId,
+      status: { not: 'cancelled' }
+    },
+    orderBy: [{ receiptDate: 'asc' }, { createdAt: 'asc' }]
+  });
+
+  for (const receipt of millReceipts) {
+    if (!matchesSupplierName(supplier.name, receipt.millName)) continue;
+    const amount = roundMoney(receipt.netAfterTds || receipt.invoiceValue || 0);
+    if (amount <= 0) continue;
+    rawEntries.push({
+      id: `mill-receipt-${receipt.id}`,
+      sourceType: 'mill_receipt',
+      sourceId: receipt.id,
+      date: receipt.receiptDate || receipt.createdAt,
+      voucherNumber: String(receipt.voucherNo || '-'),
+      billNumber: receipt.billNo || String(receipt.voucherNo || '-'),
+      account: receipt.entryType || 'JOB WORK',
+      particulars: `Mill receipt #${receipt.voucherNo || '-'} · Lot ${receipt.lotNo}${receipt.quality ? ` · ${receipt.quality}` : ''}`,
+      debitAmount: 0,
+      creditAmount: amount
+    });
+  }
+
   for (const note of notes) {
     if (!matchesNoteParty(note, supplier.name, 'supplier')) continue;
     const amount = roundMoney(note.netAmountAfterTds || note.netAmount || note.grossAmount);
@@ -471,7 +508,8 @@ const VALID_SOURCE_TYPES = new Set([
   'bank_entry',
   'credit_debit_note',
   'grey_purchase',
-  'grey_purchase_return'
+  'grey_purchase_return',
+  'mill_receipt'
 ]);
 
 function buildDetailFields(items) {
@@ -691,6 +729,62 @@ export async function getLedgerEntryDetail(prisma, userId, sourceType, sourceId)
         rate: line.rate != null ? roundMoney(line.rate) : '-',
         amount: roundMoney(line.amount ?? 0)
       }))
+    };
+  }
+
+  if (sourceType === 'mill_receipt') {
+    const receipt = await prisma.millReceipt.findFirst({
+      where: { id: sourceId, userId },
+      include: { greyDispatch: true }
+    });
+    if (!receipt) return null;
+
+    const takaDetails = Array.isArray(receipt.takaDetails) ? receipt.takaDetails : [];
+
+    return {
+      title: `Mill Receipt #${receipt.voucherNo ?? '-'}`,
+      subtitle: receipt.millName,
+      sourceType,
+      sourceId,
+      canEdit: true,
+      editPath: `/erp/mill-receipt?edit=${receipt.id}`,
+      fields: buildDetailFields([
+        { label: 'Date', value: toIsoDate(receipt.receiptDate) },
+        { label: 'Lot No.', value: receipt.lotNo },
+        { label: 'Desp. No.', value: receipt.despNo },
+        { label: 'Bill No.', value: receipt.billNo },
+        { label: 'Quality', value: receipt.quality },
+        { label: 'Rec. Taka', value: receipt.recTaka },
+        { label: 'Grey Mts', value: receipt.greyMts, isMoney: true },
+        { label: 'Rec. Mts', value: receipt.recMts, isMoney: true },
+        { label: 'Short Mts', value: receipt.shortMts, isMoney: true },
+        { label: 'Job Rate', value: receipt.jobRate, isMoney: true },
+        { label: 'Job Amt', value: receipt.jobAmount, isMoney: true },
+        { label: 'Taxable', value: receipt.taxableAmount, isMoney: true },
+        { label: 'CGST', value: receipt.cgstAmount, isMoney: true },
+        { label: 'SGST', value: receipt.sgstAmount, isMoney: true },
+        { label: 'IGST', value: receipt.igstAmount, isMoney: true },
+        { label: 'Invoice Value', value: receipt.invoiceValue, isMoney: true },
+        { label: 'TDS', value: receipt.tdsAmount, isMoney: true },
+        { label: 'Net After TDS', value: receipt.netAfterTds, isMoney: true },
+        { label: 'Remarks', value: receipt.remarks }
+      ]),
+      lineColumns: takaDetails.length
+        ? [
+          { key: 'srNo', label: 'Taka Sr.' },
+          { key: 'greyMts', label: 'Grey Mts', align: 'right', isMoney: true },
+          { key: 'recMts', label: 'Rec Mts', align: 'right', isMoney: true },
+          { key: 'shortPct', label: 'Short %', align: 'right' }
+        ]
+        : undefined,
+      lineItems: takaDetails.length
+        ? takaDetails.map(row => ({
+          srNo: row.srNo,
+          greyMts: roundMoney(row.greyMts),
+          recMts: roundMoney(row.recMts),
+          shortPct: roundMoney(row.shortPct)
+        }))
+        : undefined
     };
   }
 

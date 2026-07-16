@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, Building2, ChevronDown, FileBarChart, LogOut, Package, RotateCcw } from 'lucide-react';
+import { ArrowLeft, Building2, ChevronDown, FileBarChart, LogOut, Package, PackageCheck, RotateCcw } from 'lucide-react';
 import { clearErpSession, hasCompleteErpAccess } from '../services/erpSession';
 import { ErpSession } from '../types';
 
@@ -135,6 +135,14 @@ export const ErpTopMenu: React.FC<Props> = ({
                   <FileBarChart className="h-4 w-4" />
                   Mill Dispatch Report
                 </button>
+                <button
+                  type="button"
+                  onClick={() => { window.location.href = '/erp/reports/mill-receipt'; }}
+                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-gray-800 hover:bg-indigo-50 hover:text-indigo-700"
+                >
+                  <Package className="h-4 w-4" />
+                  Mill Receipt Report
+                </button>
               </div>
             )}
           </div>
@@ -159,6 +167,14 @@ export const ErpTopMenu: React.FC<Props> = ({
                 >
                   <RotateCcw className="h-4 w-4" />
                   Grey Purchase Return
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { window.location.href = '/erp/mill-receipt'; }}
+                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-gray-800 hover:bg-rose-50 hover:text-rose-700"
+                >
+                  <PackageCheck className="h-4 w-4" />
+                  Mill / Grey Receipt
                 </button>
                 <button
                   type="button"
