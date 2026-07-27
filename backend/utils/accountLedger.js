@@ -122,7 +122,7 @@ export async function getSupplierLedgerParties(prisma, userId) {
     }),
     prisma.millReceipt.findMany({
       where: { userId, status: { not: 'cancelled' } },
-      select: { millName: true, netAfterTds: true, invoiceValue: true }
+      select: { millName: true, netAfterTds: true, invoiceValue: true, tdsAmount: true }
     })
   ]);
 
@@ -147,9 +147,15 @@ export async function getSupplierLedgerParties(prisma, userId) {
 
     for (const receipt of millReceipts) {
       if (!matchesSupplierName(supplier.name, receipt.millName)) continue;
-      const amount = roundMoney(receipt.netAfterTds || receipt.invoiceValue || 0);
-      runningBalance = roundMoney(runningBalance + amount);
-      entryCount += 1;
+      const tdsAmount = roundMoney(receipt.tdsAmount || 0);
+      const invoiceValue = roundMoney(
+        receipt.invoiceValue
+        || (Number(receipt.netAfterTds || 0) + tdsAmount)
+        || 0
+      );
+      // Net payable = invoice credit − TDS debit
+      runningBalance = roundMoney(runningBalance + invoiceValue - tdsAmount);
+      entryCount += 1 + (tdsAmount > 0 ? 1 : 0);
     }
 
     return {
@@ -360,8 +366,9 @@ export async function buildSupplierLedger(prisma, userId, supplierId) {
       date: grey.billDate || grey.createdAt,
       voucherNumber: String(grey.srNo || '-'),
       billNumber: grey.billNo || String(grey.srNo || '-'),
-      account: grey.transactionType || 'GREY PURCHASE',
-      particulars: `Grey purchase #${grey.srNo || '-'}${grey.quality ? ` · ${grey.quality}` : ''}`,
+      account: 'GREY PURCHASE',
+      particulars: grey.quality ? String(grey.quality) : '',
+      remarks: grey.remarks || '',
       debitAmount: 0,
       creditAmount: amount
     });
@@ -391,6 +398,7 @@ export async function buildSupplierLedger(prisma, userId, supplierId) {
 
     const amount = roundMoney(ret.netAmount);
     if (amount <= 0) continue;
+    const adjustBill = ret.adjustBillNo || ret.refBillNo || ret.greyPurchase?.billNo;
     rawEntries.push({
       id: `grey-return-${ret.id}`,
       sourceType: 'grey_purchase_return',
@@ -399,7 +407,10 @@ export async function buildSupplierLedger(prisma, userId, supplierId) {
       voucherNumber: String(ret.voucherNo || ret.challanNo || '-'),
       billNumber: ret.billNo || ret.refBillNo || String(ret.voucherNo || '-'),
       account: ret.saleAccount || 'GREY PURCHASE RETURN',
-      particulars: `Grey purchase return #${ret.voucherNo || '-'}${ret.purSr ? ` · Pur ${ret.purSr}` : ''}${ret.quality ? ` · ${ret.quality}` : ''}`,
+      particulars: ret.quality ? String(ret.quality) : '',
+      remarks: adjustBill
+        ? `ADJUSTED AGAINST BILL NO. ${adjustBill}`
+        : (ret.remarks || ''),
       debitAmount: amount,
       creditAmount: 0
     });
@@ -415,20 +426,47 @@ export async function buildSupplierLedger(prisma, userId, supplierId) {
 
   for (const receipt of millReceipts) {
     if (!matchesSupplierName(supplier.name, receipt.millName)) continue;
-    const amount = roundMoney(receipt.netAfterTds || receipt.invoiceValue || 0);
-    if (amount <= 0) continue;
-    rawEntries.push({
-      id: `mill-receipt-${receipt.id}`,
-      sourceType: 'mill_receipt',
-      sourceId: receipt.id,
-      date: receipt.receiptDate || receipt.createdAt,
-      voucherNumber: String(receipt.voucherNo || '-'),
-      billNumber: receipt.billNo || String(receipt.voucherNo || '-'),
-      account: receipt.entryType || 'JOB WORK',
-      particulars: `Mill receipt #${receipt.voucherNo || '-'} · Lot ${receipt.lotNo}${receipt.quality ? ` · ${receipt.quality}` : ''}`,
-      debitAmount: 0,
-      creditAmount: amount
-    });
+    const tdsAmount = roundMoney(receipt.tdsAmount || 0);
+    const invoiceValue = roundMoney(
+      receipt.invoiceValue
+      || (Number(receipt.netAfterTds || 0) + tdsAmount)
+      || 0
+    );
+    if (invoiceValue <= 0 && tdsAmount <= 0) continue;
+
+    // Legacy: full invoice as JOB CHARGES credit
+    if (invoiceValue > 0) {
+      rawEntries.push({
+        id: `mill-receipt-${receipt.id}`,
+        sourceType: 'mill_receipt',
+        sourceId: receipt.id,
+        date: receipt.receiptDate || receipt.createdAt,
+        voucherNumber: String(receipt.voucherNo || '-'),
+        billNumber: receipt.billNo || String(receipt.voucherNo || '-'),
+        account: 'JOB CHARGES',
+        particulars: receipt.quality || receipt.lotNo || '',
+        remarks: receipt.remarks || '',
+        debitAmount: 0,
+        creditAmount: invoiceValue
+      });
+    }
+
+    // Legacy image-031: TDS PAYABLE A/C as debit reducing mill payable
+    if (tdsAmount > 0) {
+      rawEntries.push({
+        id: `mill-receipt-tds-${receipt.id}`,
+        sourceType: 'mill_receipt_tds',
+        sourceId: receipt.id,
+        date: receipt.receiptDate || receipt.createdAt,
+        voucherNumber: String(receipt.voucherNo || '-'),
+        billNumber: receipt.billNo || String(receipt.voucherNo || '-'),
+        account: 'TDS PAYABLE A/C',
+        particulars: `TDS ${roundMoney(receipt.tdsPercent || 0)}%`,
+        remarks: '',
+        debitAmount: tdsAmount,
+        creditAmount: 0
+      });
+    }
   }
 
   for (const note of notes) {
@@ -509,7 +547,8 @@ const VALID_SOURCE_TYPES = new Set([
   'credit_debit_note',
   'grey_purchase',
   'grey_purchase_return',
-  'mill_receipt'
+  'mill_receipt',
+  'mill_receipt_tds'
 ]);
 
 function buildDetailFields(items) {
@@ -732,7 +771,7 @@ export async function getLedgerEntryDetail(prisma, userId, sourceType, sourceId)
     };
   }
 
-  if (sourceType === 'mill_receipt') {
+  if (sourceType === 'mill_receipt' || sourceType === 'mill_receipt_tds') {
     const receipt = await prisma.millReceipt.findFirst({
       where: { id: sourceId, userId },
       include: { greyDispatch: true }
@@ -740,13 +779,16 @@ export async function getLedgerEntryDetail(prisma, userId, sourceType, sourceId)
     if (!receipt) return null;
 
     const takaDetails = Array.isArray(receipt.takaDetails) ? receipt.takaDetails : [];
+    const isTdsLine = sourceType === 'mill_receipt_tds';
 
     return {
-      title: `Mill Receipt #${receipt.voucherNo ?? '-'}`,
+      title: isTdsLine
+        ? `TDS on Mill Receipt #${receipt.voucherNo ?? '-'}`
+        : `Mill Receipt #${receipt.voucherNo ?? '-'}`,
       subtitle: receipt.millName,
       sourceType,
       sourceId,
-      canEdit: true,
+      canEdit: !isTdsLine,
       editPath: `/erp/mill-receipt?edit=${receipt.id}`,
       fields: buildDetailFields([
         { label: 'Date', value: toIsoDate(receipt.receiptDate) },
@@ -765,7 +807,9 @@ export async function getLedgerEntryDetail(prisma, userId, sourceType, sourceId)
         { label: 'SGST', value: receipt.sgstAmount, isMoney: true },
         { label: 'IGST', value: receipt.igstAmount, isMoney: true },
         { label: 'Invoice Value', value: receipt.invoiceValue, isMoney: true },
-        { label: 'TDS', value: receipt.tdsAmount, isMoney: true },
+        { label: 'TDS On Amt', value: receipt.tdsOnAmt, isMoney: true },
+        { label: 'TDS %', value: receipt.tdsPercent },
+        { label: 'TDS Amt', value: receipt.tdsAmount, isMoney: true },
         { label: 'Net After TDS', value: receipt.netAfterTds, isMoney: true },
         { label: 'Remarks', value: receipt.remarks }
       ]),

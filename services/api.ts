@@ -1031,6 +1031,12 @@ export const millReceiptsApi = {
       nextVoucherNo: number;
       entryTypes: string[];
       mills: string[];
+      millParties?: Array<{
+        name: string;
+        gstNumber?: string | null;
+        panNumber?: string | null;
+        suggestedTdsPercent?: number | null;
+      }>;
       states: string[];
     }>('/mill-receipts/meta');
   },

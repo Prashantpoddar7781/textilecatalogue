@@ -1,4 +1,5 @@
 import { getStateFromGstin } from './gstCalculation.js';
+import { extractPanFromGstin, normalizePan, resolvePartyPan } from './tds.js';
 
 const optionalString = (value) => {
   if (value === undefined || value === null) return null;
@@ -24,11 +25,20 @@ async function findCustomerByName(prisma, userId, name) {
   return customers.find(row => normalizeName(row.organizationName) === target) || null;
 }
 
+function resolvePanPayload(payload = {}) {
+  const gstNumber = optionalString(payload.gstNumber) || optionalString(payload.partyGstin);
+  const panNumber = resolvePartyPan({
+    panNumber: optionalString(payload.panNumber),
+    gstNumber
+  }) || null;
+  return { gstNumber, panNumber: panNumber ? normalizePan(panNumber) : null };
+}
+
 export async function findOrCreateSupplier(prisma, userId, payload = {}) {
   const name = optionalString(payload.name);
   if (!name) return null;
 
-  const gstNumber = optionalString(payload.gstNumber);
+  const { gstNumber, panNumber } = resolvePanPayload(payload);
   const fromGst = gstNumber ? getStateFromGstin(gstNumber) : { stateName: '' };
 
   let existing = null;
@@ -42,6 +52,7 @@ export async function findOrCreateSupplier(prisma, userId, payload = {}) {
   const data = {
     name,
     gstNumber,
+    panNumber,
     mobileNumber: optionalString(payload.mobileNumber),
     address: optionalString(payload.address),
     city: optionalString(payload.city),
@@ -56,6 +67,7 @@ export async function findOrCreateSupplier(prisma, userId, payload = {}) {
       data: {
         name: data.name,
         gstNumber: data.gstNumber || existing.gstNumber,
+        panNumber: data.panNumber || existing.panNumber || extractPanFromGstin(data.gstNumber || existing.gstNumber) || null,
         mobileNumber: data.mobileNumber || existing.mobileNumber,
         address: data.address || existing.address,
         city: data.city || existing.city,
@@ -78,7 +90,7 @@ export async function findOrCreateCustomer(prisma, userId, payload = {}) {
   const organizationName = optionalString(payload.organizationName) || optionalString(payload.name);
   if (!organizationName) return null;
 
-  const gstNumber = optionalString(payload.gstNumber);
+  const { gstNumber, panNumber } = resolvePanPayload(payload);
   let existing = null;
   if (gstNumber) {
     existing = await prisma.customer.findFirst({ where: { userId, gstNumber } });
@@ -90,6 +102,7 @@ export async function findOrCreateCustomer(prisma, userId, payload = {}) {
   const data = {
     organizationName,
     gstNumber,
+    panNumber,
     contactPersonName: optionalString(payload.contactPersonName),
     mobileNumber: optionalString(payload.mobileNumber),
     agentName: optionalString(payload.agentName),
@@ -106,6 +119,7 @@ export async function findOrCreateCustomer(prisma, userId, payload = {}) {
       data: {
         organizationName: data.organizationName,
         gstNumber: data.gstNumber || existing.gstNumber,
+        panNumber: data.panNumber || existing.panNumber || extractPanFromGstin(data.gstNumber || existing.gstNumber) || null,
         contactPersonName: data.contactPersonName || existing.contactPersonName,
         mobileNumber: data.mobileNumber || existing.mobileNumber,
         agentName: data.agentName || existing.agentName,
@@ -142,6 +156,7 @@ export async function resolveSupplierForEntry(prisma, userId, input = {}) {
   return findOrCreateSupplier(prisma, userId, {
     name: partyName,
     gstNumber: partyGstin,
+    panNumber: optionalString(input.panNumber),
     state: optionalString(input.placeOfSupply) || fromGst.stateName || null,
     msmeType: optionalString(input.partyMsme)
   });

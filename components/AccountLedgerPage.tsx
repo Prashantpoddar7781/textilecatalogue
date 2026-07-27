@@ -1,11 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, BookOpen, Loader2, RefreshCw, Search, X } from 'lucide-react';
 import { ledgerApi } from '../services/api';
-import { AccountLedgerEntry, AccountLedgerParty, LedgerEntryDetail } from '../types';
+import { AccountLedgerEntry, AccountLedgerParty, ErpSession, LedgerEntryDetail } from '../types';
+import { ErpTopMenu } from './ErpTopMenu';
 
 interface Props {
   onBack: () => void;
   initialPartyType?: 'customer' | 'supplier';
+  erpSession?: ErpSession | null;
 }
 
 const formatMoney = (value: number) =>
@@ -29,7 +31,8 @@ const sourceLabel: Record<string, string> = {
   credit_debit_note: 'Cr/Dr Note',
   grey_purchase: 'Grey Purchase',
   grey_purchase_return: 'Grey Purchase Return',
-  mill_receipt: 'Mill Receipt'
+  mill_receipt: 'Job Charges',
+  mill_receipt_tds: 'TDS Payable'
 };
 
 const billTypeLabel: Record<string, string> = {
@@ -38,7 +41,7 @@ const billTypeLabel: Record<string, string> = {
   credit_debit_note: 'Cr/Dr Note'
 };
 
-export const AccountLedgerPage: React.FC<Props> = ({ onBack, initialPartyType = 'customer' }) => {
+export const AccountLedgerPage: React.FC<Props> = ({ onBack, initialPartyType = 'customer', erpSession }) => {
   const [partyType, setPartyType] = useState<'customer' | 'supplier'>(initialPartyType);
   const [parties, setParties] = useState<AccountLedgerParty[]>([]);
   const [selectedCustomerName, setSelectedCustomerName] = useState('');
@@ -159,21 +162,19 @@ export const AccountLedgerPage: React.FC<Props> = ({ onBack, initialPartyType = 
 
   return (
     <div className="min-h-screen bg-[#F6F7FB]">
-      <header className="sticky top-0 z-30 border-b bg-white/95 px-4 py-3 shadow-sm backdrop-blur-xl">
-        <div className="mx-auto flex max-w-7xl items-center justify-between">
-          <button onClick={onBack} className="flex items-center gap-2 text-sm font-bold text-gray-600 hover:text-gray-900">
-            <ArrowLeft className="h-4 w-4" />
-            ERP
+      <ErpTopMenu title="Ledger - Dynamic View" erpSession={erpSession} showSessionActions onBackToCatalogue={onBack} />
+
+      <main className="mx-auto max-w-7xl px-4 py-6">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <button type="button" onClick={onBack} className="inline-flex items-center gap-2 text-sm font-bold text-gray-600 hover:text-gray-900">
+            <ArrowLeft className="h-4 w-4" /> Back to ERP
           </button>
-          <h1 className="text-lg font-black text-gray-900">Account Ledgers</h1>
-          <button type="button" onClick={() => void loadParties()} className="flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-bold">
+          <button type="button" onClick={() => void loadParties()} className="flex items-center gap-2 rounded-xl border bg-white px-3 py-2 text-xs font-bold">
             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </button>
         </div>
-      </header>
 
-      <main className="mx-auto max-w-7xl px-4 py-6">
         {error && <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{error}</div>}
 
         <section className="mb-4 rounded-2xl border border-indigo-100 bg-white p-2 shadow-sm">
@@ -194,7 +195,7 @@ export const AccountLedgerPage: React.FC<Props> = ({ onBack, initialPartyType = 
             </button>
           </div>
           <p className="mt-2 px-2 text-xs text-gray-500">
-            Auto-synced from sales bills, purchase bills, bank receipts/payments, and credit/debit notes.
+            ERP ledger: grey purchase / return, mill job charges + TDS, sales, purchases, bank, and notes.
           </p>
         </section>
 
@@ -295,20 +296,27 @@ export const AccountLedgerPage: React.FC<Props> = ({ onBack, initialPartyType = 
                   <p className="py-16 text-center text-sm text-gray-400">No ledger entries for this account yet.</p>
                 ) : (
                   <div className="mt-4 overflow-x-auto">
-                    <table className="min-w-full text-left text-sm">
-                      <thead className="border-b text-xs uppercase text-gray-500">
+                    <table className="min-w-full text-left text-xs">
+                      <thead className="border-b bg-slate-50 text-[10px] uppercase text-gray-500">
                         <tr>
-                          <th className="py-2">Date</th>
-                          <th>Source</th>
-                          <th>Bill / Voucher</th>
-                          <th>Account</th>
-                          <th>Particulars</th>
-                          <th className="text-right">Debit</th>
-                          <th className="text-right">Credit</th>
-                          <th className="text-right">Balance</th>
+                          <th className="px-2 py-2">Date</th>
+                          <th className="px-2 py-2">Chq/Bill</th>
+                          <th className="px-2 py-2">Reference A/C</th>
+                          <th className="px-2 py-2 text-right">Debit</th>
+                          <th className="px-2 py-2 text-right">Credit</th>
+                          <th className="px-2 py-2 text-right">Balance</th>
+                          <th className="px-2 py-2">V No.</th>
+                          <th className="px-2 py-2">Remark</th>
                         </tr>
                       </thead>
                       <tbody>
+                        <tr className="border-b bg-gray-50 text-gray-500">
+                          <td className="px-2 py-2" colSpan={3}>Bal. Brought Forward</td>
+                          <td className="px-2 py-2 text-right">0.00</td>
+                          <td className="px-2 py-2 text-right">0.00</td>
+                          <td className="px-2 py-2 text-right">-</td>
+                          <td className="px-2 py-2" colSpan={2} />
+                        </tr>
                         {ledger.map(entry => {
                           const isSelected = selectedEntry?.id === entry.id;
                           return (
@@ -317,15 +325,17 @@ export const AccountLedgerPage: React.FC<Props> = ({ onBack, initialPartyType = 
                               className={`cursor-pointer border-b transition-colors hover:bg-indigo-50 ${isSelected ? 'bg-indigo-50' : ''}`}
                               onClick={() => void openEntryDetail(entry)}
                             >
-                              <td className="py-3">{formatDate(entry.date)}</td>
-                              <td className="text-xs font-bold text-gray-600">{sourceLabel[entry.sourceType] || entry.sourceType}</td>
-                              <td className="font-semibold">{entry.billNumber || entry.voucherNumber || '-'}</td>
-                              <td className="text-xs">{entry.account}</td>
-                              <td className="max-w-[220px] truncate text-xs text-gray-600" title={entry.particulars}>{entry.particulars}</td>
-                              <td className="text-right text-red-700">{entry.debitAmount ? formatMoney(entry.debitAmount) : '-'}</td>
-                              <td className="text-right text-emerald-700">{entry.creditAmount ? formatMoney(entry.creditAmount) : '-'}</td>
-                              <td className="text-right font-bold">
-                                {formatMoney(Math.abs(entry.runningBalance))} {entry.balanceType}
+                              <td className="px-2 py-2.5 whitespace-nowrap">{formatDate(entry.date)}</td>
+                              <td className="px-2 py-2.5 font-semibold">{entry.billNumber || '-'}</td>
+                              <td className="px-2 py-2.5 font-bold text-slate-800">{entry.account}</td>
+                              <td className="px-2 py-2.5 text-right text-red-700">{entry.debitAmount ? formatMoney(entry.debitAmount) : ''}</td>
+                              <td className="px-2 py-2.5 text-right text-emerald-700">{entry.creditAmount ? formatMoney(entry.creditAmount) : ''}</td>
+                              <td className="px-2 py-2.5 text-right font-bold whitespace-nowrap">
+                                {formatMoney(Math.abs(entry.runningBalance))} {entry.balanceType === 'CR' ? 'Cr' : 'Dr'}
+                              </td>
+                              <td className="px-2 py-2.5">{entry.voucherNumber || '-'}</td>
+                              <td className="px-2 py-2.5 max-w-[180px] truncate text-gray-600" title={entry.remarks || entry.particulars || ''}>
+                                {entry.remarks || entry.particulars || ''}
                               </td>
                             </tr>
                           );

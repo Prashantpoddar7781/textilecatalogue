@@ -11,6 +11,7 @@ import {
 } from '../utils/gstCalculation.js';
 import { ensureMillParty, resolveSupplierForEntry } from '../utils/partyMaster.js';
 import { matchesSupplierName, roundMoney } from '../utils/orderBilling.js';
+import { resolvePartyPan, suggestTdsPercentFromPan } from '../utils/tds.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -151,16 +152,52 @@ router.get('/meta', authenticateToken, requireActiveSubscription, async (req, re
         take: 300
       })
     ]);
-    const mills = Array.from(new Set([
-      ...customers.map(c => c.organizationName),
-      ...suppliers.map(s => s.name)
-    ].filter(Boolean))).sort((a, b) => a.localeCompare(b));
+
+    const millMap = new Map();
+    for (const s of suppliers) {
+      const pan = resolvePartyPan({ panNumber: s.panNumber, gstNumber: s.gstNumber });
+      millMap.set(s.name.toLowerCase(), {
+        name: s.name,
+        gstNumber: s.gstNumber || null,
+        panNumber: pan || null,
+        suggestedTdsPercent: suggestTdsPercentFromPan(pan),
+        source: 'supplier'
+      });
+    }
+    for (const c of customers) {
+      const key = c.organizationName.toLowerCase();
+      if (millMap.has(key)) {
+        const current = millMap.get(key);
+        const pan = resolvePartyPan({
+          panNumber: current.panNumber || c.panNumber,
+          gstNumber: current.gstNumber || c.gstNumber
+        });
+        millMap.set(key, {
+          ...current,
+          gstNumber: current.gstNumber || c.gstNumber || null,
+          panNumber: pan || null,
+          suggestedTdsPercent: suggestTdsPercentFromPan(pan)
+        });
+        continue;
+      }
+      const pan = resolvePartyPan({ panNumber: c.panNumber, gstNumber: c.gstNumber });
+      millMap.set(key, {
+        name: c.organizationName,
+        gstNumber: c.gstNumber || null,
+        panNumber: pan || null,
+        suggestedTdsPercent: suggestTdsPercentFromPan(pan),
+        source: 'customer'
+      });
+    }
+
+    const millParties = Array.from(millMap.values()).sort((a, b) => a.name.localeCompare(b.name));
 
     res.json({
       ...ctx,
       nextVoucherNo: count + 1,
       entryTypes: [DEFAULT_ENTRY_TYPE],
-      mills,
+      mills: millParties.map(m => m.name),
+      millParties,
       states: INDIAN_STATES
     });
   } catch (error) {

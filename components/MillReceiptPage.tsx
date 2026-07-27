@@ -27,6 +27,13 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [companyName, setCompanyName] = useState('');
   const [millName, setMillName] = useState('');
   const [mills, setMills] = useState<string[]>([]);
+  const [millParties, setMillParties] = useState<Array<{
+    name: string;
+    gstNumber?: string | null;
+    panNumber?: string | null;
+    suggestedTdsPercent?: number | null;
+  }>>([]);
+  const [tdsPercentTouched, setTdsPercentTouched] = useState(false);
   const [entryType, setEntryType] = useState('JOB WORK');
   const [hsnCode, setHsnCode] = useState('9988');
   const [stateCode, setStateCode] = useState('');
@@ -168,6 +175,7 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
         setHsnCode(meta.defaultHsnCode || '9988');
         setGstRate(String(meta.defaultGstRate ?? 5));
         setMills(meta.mills || []);
+        setMillParties((meta as any).millParties || []);
         if (meta.entryTypes?.[0]) setEntryType(meta.entryTypes[0]);
       } catch (err: any) {
         if (!cancelled) setError(err.message || 'Could not load mill receipt.');
@@ -178,6 +186,15 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
     void load();
     return () => { cancelled = true; };
   }, []);
+
+  const applyMillPartyDefaults = (name: string) => {
+    const match = millParties.find(m => m.name.toLowerCase() === name.trim().toLowerCase());
+    if (!match) return;
+    if (match.gstNumber && !millGstin) setMillGstin(match.gstNumber);
+    if (!tdsPercentTouched && match.suggestedTdsPercent != null) {
+      setTdsPercent(String(match.suggestedTdsPercent));
+    }
+  };
 
   const resetLine = () => {
     setGreyDispatchId('');
@@ -322,6 +339,7 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
       setRemarks('');
       setTdsPercent('');
       setTdsOnAmtTouched(false);
+      setTdsPercentTouched(false);
       resetLine();
       setSelectedTakaDetails([]);
     } catch (err: any) {
@@ -407,6 +425,7 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
                     setMillName(e.target.value);
                     resetLine();
                   }}
+                  onBlur={() => applyMillPartyDefaults(millName)}
                   placeholder="Select mill"
                 />
                 <datalist id="mill-receipt-mills">
@@ -638,9 +657,20 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
                 type="number"
                 step="0.01"
                 value={tdsPercent}
-                onChange={e => setTdsPercent(e.target.value)}
-                placeholder="e.g. 0.1"
+                onChange={e => {
+                  setTdsPercentTouched(true);
+                  setTdsPercent(e.target.value);
+                }}
+                placeholder="1 or 2 (auto from PAN)"
               />
+              {!tdsPercentTouched && millParties.find(m => m.name.toLowerCase() === millName.trim().toLowerCase())?.suggestedTdsPercent != null && (
+                <p className="mt-1 text-[10px] font-semibold text-teal-700">
+                  Auto from PAN → {millParties.find(m => m.name.toLowerCase() === millName.trim().toLowerCase())?.suggestedTdsPercent}%
+                </p>
+              )}
+              {!tdsPercentTouched && millName.trim() && millParties.find(m => m.name.toLowerCase() === millName.trim().toLowerCase())?.suggestedTdsPercent == null && (
+                <p className="mt-1 text-[10px] font-semibold text-amber-700">No PAN in master — enter TDS % manually</p>
+              )}
             </div>
             <div>
               <label className={labelClass}>TDS Amt</label>

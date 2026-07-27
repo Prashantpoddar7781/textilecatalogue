@@ -154,6 +154,7 @@ model Customer {
   user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   organizationName  String
   gstNumber         String?
+  panNumber         String?
   contactPersonName String?
   mobileNumber      String?
   agentName         String?
@@ -170,6 +171,7 @@ model Customer {
   @@index([userId])
   @@index([organizationName])
   @@index([mobileNumber])
+  @@index([gstNumber])
 }
 
 model ShareLink {

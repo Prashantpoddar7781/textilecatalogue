@@ -654,6 +654,7 @@ export interface AccountLedgerEntry {
   billNumber?: string | null;
   account: string;
   particulars: string;
+  remarks?: string | null;
   debitAmount: number;
   creditAmount: number;
   runningBalance: number;
