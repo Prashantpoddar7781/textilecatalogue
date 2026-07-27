@@ -32,6 +32,18 @@ const optionalNumber = (value) => {
   return Number.isFinite(num) ? num : null;
 };
 
+/** TDS on taxable/job when On Amt is blank or 0; always derive Amt from % × base. */
+function resolveTdsFields({ tdsOnAmtInput, tdsPercentInput, taxableAmount, invoiceValue, jobAmount }) {
+  const tdsPercent = optionalNumber(tdsPercentInput) || 0;
+  const rawOnAmt = optionalNumber(tdsOnAmtInput);
+  const tdsOnAmt = (rawOnAmt != null && rawOnAmt > 0)
+    ? rawOnAmt
+    : roundMoney(taxableAmount || jobAmount || 0);
+  const tdsAmount = roundMoney(tdsOnAmt * tdsPercent / 100);
+  const netAfterTds = roundMoney((optionalNumber(invoiceValue) || 0) - tdsAmount);
+  return { tdsOnAmt, tdsPercent, tdsAmount, netAfterTds };
+}
+
 function normalizeTakaDetails(raw) {
   if (!Array.isArray(raw)) return [];
   return raw
@@ -235,11 +247,13 @@ router.post('/calculate', authenticateToken, requireActiveSubscription, async (r
     });
 
     const invoiceValue = totals.netAmount;
-    const tdsOnAmt = optionalNumber(req.body.tdsOnAmt) ?? totals.taxableAmount;
-    const tdsPercent = optionalNumber(req.body.tdsPercent) || 0;
-    // Always derive TDS amount from % — never trust a stale client amount
-    const tdsAmount = roundMoney(tdsOnAmt * tdsPercent / 100);
-    const netAfterTds = roundMoney(invoiceValue - tdsAmount);
+    const { tdsOnAmt, tdsPercent, tdsAmount, netAfterTds } = resolveTdsFields({
+      tdsOnAmtInput: req.body.tdsOnAmt,
+      tdsPercentInput: req.body.tdsPercent,
+      taxableAmount: totals.taxableAmount,
+      invoiceValue,
+      jobAmount
+    });
 
     res.json({
       totals: {
@@ -496,7 +510,33 @@ router.get('/:id', authenticateToken, requireActiveSubscription, async (req, res
       }
     });
     if (!entry) return res.status(404).json({ error: 'Mill receipt not found' });
-    res.json({ entry });
+
+    // Repair display when older rows saved TDS % with On Amt / Amt stuck at 0
+    const tdsPercent = Number(entry.tdsPercent) || 0;
+    let tdsOnAmt = roundMoney(entry.tdsOnAmt || 0);
+    let tdsAmount = roundMoney(entry.tdsAmount || 0);
+    if (tdsPercent > 0 && (tdsOnAmt <= 0 || tdsAmount <= 0)) {
+      if (tdsOnAmt <= 0) {
+        tdsOnAmt = roundMoney(entry.taxableAmount || entry.jobAmount || 0);
+      }
+      if (tdsAmount <= 0) {
+        tdsAmount = roundMoney(tdsOnAmt * tdsPercent / 100);
+      }
+    }
+    const invoiceValue = roundMoney(entry.invoiceValue || 0);
+    const netAfterTds = tdsAmount > 0
+      ? roundMoney(invoiceValue - tdsAmount)
+      : roundMoney(entry.netAfterTds || invoiceValue);
+
+    res.json({
+      entry: {
+        ...entry,
+        tdsOnAmt,
+        tdsPercent,
+        tdsAmount,
+        netAfterTds
+      }
+    });
   } catch (error) {
     next(error);
   }
@@ -581,10 +621,13 @@ router.post('/', authenticateToken, requireActiveSubscription, [
     });
 
     const invoiceValue = totals.netAmount;
-    const tdsOnAmt = optionalNumber(req.body.tdsOnAmt) ?? totals.taxableAmount;
-    const tdsPercent = optionalNumber(req.body.tdsPercent) || 0;
-    const tdsAmount = roundMoney(tdsOnAmt * tdsPercent / 100);
-    const netAfterTds = roundMoney(invoiceValue - tdsAmount);
+    const { tdsOnAmt, tdsPercent, tdsAmount, netAfterTds } = resolveTdsFields({
+      tdsOnAmtInput: req.body.tdsOnAmt,
+      tdsPercentInput: req.body.tdsPercent,
+      taxableAmount: totals.taxableAmount,
+      invoiceValue,
+      jobAmount
+    });
 
     const count = await prisma.millReceipt.count({ where: { userId } });
     await ensureMillParty(prisma, userId, millName);
@@ -656,6 +699,168 @@ router.post('/', authenticateToken, requireActiveSubscription, [
     });
 
     res.status(201).json({ entry });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.put('/:id', authenticateToken, requireActiveSubscription, [
+  body('millName').trim().notEmpty().withMessage('Mill is required'),
+  body('lotNo').trim().notEmpty().withMessage('Lot number is required')
+], async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const userId = req.user.userId;
+    const existing = await prisma.millReceipt.findFirst({
+      where: { id: req.params.id, userId, status: { not: 'cancelled' } }
+    });
+    if (!existing) return res.status(404).json({ error: 'Mill receipt not found' });
+
+    const ctx = await getCompanyContext(userId);
+    const greyDispatchId = optionalString(req.body.greyDispatchId) || existing.greyDispatchId;
+    const dispatch = await prisma.greyDispatch.findFirst({
+      where: {
+        id: greyDispatchId,
+        userId,
+        status: { not: 'cancelled' },
+        transactionType: { not: 'RETURN' }
+      }
+    });
+    if (!dispatch) return res.status(404).json({ error: 'Grey dispatch not found' });
+
+    const millName = optionalString(req.body.millName) || dispatch.millName;
+    const takaDetails = normalizeTakaDetails(req.body.takaDetails);
+    const { srNos: alreadyReceived } = await getReceivedSrNos(dispatch.id, existing.id);
+    for (const row of takaDetails) {
+      if (alreadyReceived.has(row.srNo)) {
+        return res.status(400).json({ error: `Taka ${row.srNo} is already received from this dispatch.` });
+      }
+    }
+
+    const takaGreyMts = roundMoney(takaDetails.reduce((s, r) => s + r.greyMts, 0));
+    const takaRecMts = roundMoney(takaDetails.reduce((s, r) => s + r.recMts, 0));
+    const greyMts = optionalNumber(req.body.greyMts)
+      ?? (takaGreyMts > 0 ? takaGreyMts : roundMoney(existing.greyMts || dispatch.despMts));
+    const recMts = optionalNumber(req.body.recMts) ?? (takaRecMts || existing.recMts);
+    const recTaka = optionalNumber(req.body.recTaka) ?? (takaDetails.length || existing.recTaka);
+
+    if (recMts <= 0) {
+      return res.status(400).json({ error: 'Received meters must be greater than zero.' });
+    }
+
+    const shortMts = optionalNumber(req.body.shortMts) ?? roundMoney(Math.max(0, greyMts - recMts));
+    const shortPct = optionalNumber(req.body.shortPct)
+      ?? (greyMts > 0 ? roundMoney((shortMts / greyMts) * 100) : 0);
+    const jobRate = optionalNumber(req.body.jobRate) ?? existing.jobRate;
+    const jobAmount = optionalNumber(req.body.jobAmount) ?? roundMoney(recMts * jobRate);
+    const rdLessAddAmt = optionalNumber(req.body.rdLessAddAmt) ?? existing.rdLessAddAmt;
+    const grossAmount = optionalNumber(req.body.grossAmount) ?? roundMoney(jobAmount + rdLessAddAmt);
+
+    const millGstin = optionalString(req.body.millGstin) || existing.millGstin;
+    const placeOfSupply = resolvePlaceOfSupply({
+      millGstin,
+      placeOfSupply: req.body.placeOfSupply || existing.placeOfSupply,
+      stateCode: req.body.stateCode || existing.stateCode
+    });
+
+    const totals = calculateGreyPurchaseTotals({
+      grossAmount,
+      discountPercent: req.body.discountPercent ?? existing.discountPercent,
+      discountAmount: req.body.discountAmount,
+      otherAddBefore: req.body.otherAdd ?? existing.otherAdd,
+      otherLessBefore: req.body.otherLess ?? existing.otherLess,
+      otherAddAfter: 0,
+      otherLessAfter: 0,
+      gstRate: req.body.gstRate ?? existing.gstRate ?? ctx.defaultGstRate,
+      placeOfSupply,
+      businessState: ctx.businessState,
+      partyGstin: millGstin,
+      stateCode: req.body.stateCode || existing.stateCode
+    });
+
+    const invoiceValue = totals.netAmount;
+    const { tdsOnAmt, tdsPercent, tdsAmount, netAfterTds } = resolveTdsFields({
+      tdsOnAmtInput: req.body.tdsOnAmt,
+      tdsPercentInput: req.body.tdsPercent,
+      taxableAmount: totals.taxableAmount,
+      invoiceValue,
+      jobAmount
+    });
+
+    await ensureMillParty(prisma, userId, millName);
+    await resolveSupplierForEntry(prisma, userId, {
+      partyName: millName,
+      partyGstin: millGstin,
+      placeOfSupply: totals.placeOfSupply || placeOfSupply,
+      partyMsme: optionalString(req.body.partyMsme) || existing.partyMsme
+    });
+
+    const entry = await prisma.millReceipt.update({
+      where: { id: existing.id },
+      data: {
+        greyDispatchId: dispatch.id,
+        greyPurchaseId: dispatch.greyPurchaseId,
+        companyName: optionalString(req.body.companyName) || existing.companyName || ctx.companyName,
+        millName,
+        millGstin,
+        partyMsme: optionalString(req.body.partyMsme) ?? existing.partyMsme,
+        entryType: optionalString(req.body.entryType) || existing.entryType || DEFAULT_ENTRY_TYPE,
+        hsnCode: optionalString(req.body.hsnCode) || existing.hsnCode || DEFAULT_HSN,
+        voucherNo: optionalNumber(req.body.voucherNo) ?? existing.voucherNo,
+        receiptDate: req.body.receiptDate ? new Date(req.body.receiptDate) : existing.receiptDate,
+        billNo: optionalString(req.body.billNo) ?? existing.billNo,
+        placeOfSupply: totals.placeOfSupply || placeOfSupply,
+        stateCode: totals.stateCode || getStateCodeFromName(placeOfSupply) || existing.stateCode,
+        gstType: totals.gstTypeLabel || totals.gstType,
+        lotNo: optionalString(req.body.lotNo) || existing.lotNo,
+        despNo: optionalString(req.body.despNo)
+          || existing.despNo
+          || String(dispatch.srNo || dispatch.challanNo || ''),
+        recChallan: optionalString(req.body.recChallan) ?? existing.recChallan,
+        marka: optionalString(req.body.marka) ?? existing.marka,
+        quality: optionalString(req.body.quality) ?? existing.quality,
+        printStyle: optionalString(req.body.printStyle) ?? existing.printStyle,
+        recTaka,
+        recMts,
+        greyMts,
+        shortMts,
+        shortPct,
+        jobRate,
+        jobAmount,
+        rdPerMtr: optionalNumber(req.body.rdPerMtr) ?? existing.rdPerMtr,
+        rdLessAddAmt,
+        discountPercent: totals.discountPercent,
+        discountAmount: totals.discountAmount,
+        otherLess: totals.otherLessBefore,
+        otherAdd: totals.otherAddBefore,
+        taxableAmount: totals.taxableAmount,
+        gstRate: totals.gstRate,
+        cgstRate: totals.cgstRate,
+        cgstAmount: totals.cgstAmount,
+        sgstRate: totals.sgstRate,
+        sgstAmount: totals.sgstAmount,
+        igstRate: totals.igstRate,
+        igstAmount: totals.igstAmount,
+        grossAmount: totals.grossAmount,
+        invoiceValue,
+        tdsOnAmt,
+        tdsPercent,
+        tdsAmount,
+        netAfterTds,
+        remarks: optionalString(req.body.remarks) ?? existing.remarks,
+        takaDetails: takaDetails.length ? takaDetails : existing.takaDetails
+      },
+      include: {
+        greyDispatch: true,
+        greyPurchase: { select: { id: true, srNo: true, billNo: true, partyName: true } }
+      }
+    });
+
+    res.json({ entry });
   } catch (error) {
     next(error);
   }

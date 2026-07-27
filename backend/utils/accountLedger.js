@@ -122,7 +122,16 @@ export async function getSupplierLedgerParties(prisma, userId) {
     }),
     prisma.millReceipt.findMany({
       where: { userId, status: { not: 'cancelled' } },
-      select: { millName: true, netAfterTds: true, invoiceValue: true, tdsAmount: true }
+      select: {
+        millName: true,
+        netAfterTds: true,
+        invoiceValue: true,
+        tdsAmount: true,
+        tdsPercent: true,
+        tdsOnAmt: true,
+        taxableAmount: true,
+        jobAmount: true
+      }
     })
   ]);
 
@@ -147,7 +156,12 @@ export async function getSupplierLedgerParties(prisma, userId) {
 
     for (const receipt of millReceipts) {
       if (!matchesSupplierName(supplier.name, receipt.millName)) continue;
-      const tdsAmount = roundMoney(receipt.tdsAmount || 0);
+      const tdsPercent = Number(receipt.tdsPercent) || 0;
+      let tdsAmount = roundMoney(receipt.tdsAmount || 0);
+      if (tdsAmount <= 0 && tdsPercent > 0) {
+        const base = roundMoney(receipt.tdsOnAmt || receipt.taxableAmount || receipt.jobAmount || 0);
+        tdsAmount = roundMoney(base * tdsPercent / 100);
+      }
       const invoiceValue = roundMoney(
         receipt.invoiceValue
         || (Number(receipt.netAfterTds || 0) + tdsAmount)
@@ -426,7 +440,13 @@ export async function buildSupplierLedger(prisma, userId, supplierId) {
 
   for (const receipt of millReceipts) {
     if (!matchesSupplierName(supplier.name, receipt.millName)) continue;
-    const tdsAmount = roundMoney(receipt.tdsAmount || 0);
+    const tdsPercent = Number(receipt.tdsPercent) || 0;
+    let tdsAmount = roundMoney(receipt.tdsAmount || 0);
+    // Repair older rows saved with TDS % but tdsOnAmt/tdsAmount stuck at 0
+    if (tdsAmount <= 0 && tdsPercent > 0) {
+      const base = roundMoney(receipt.tdsOnAmt || receipt.taxableAmount || receipt.jobAmount || 0);
+      tdsAmount = roundMoney(base * tdsPercent / 100);
+    }
     const invoiceValue = roundMoney(
       receipt.invoiceValue
       || (Number(receipt.netAfterTds || 0) + tdsAmount)
@@ -461,7 +481,7 @@ export async function buildSupplierLedger(prisma, userId, supplierId) {
         voucherNumber: String(receipt.voucherNo || '-'),
         billNumber: receipt.billNo || String(receipt.voucherNo || '-'),
         account: 'TDS PAYABLE A/C',
-        particulars: `TDS ${roundMoney(receipt.tdsPercent || 0)}%`,
+        particulars: `TDS ${roundMoney(tdsPercent)}%`,
         remarks: '',
         debitAmount: tdsAmount,
         creditAmount: 0
@@ -780,6 +800,21 @@ export async function getLedgerEntryDetail(prisma, userId, sourceType, sourceId)
 
     const takaDetails = Array.isArray(receipt.takaDetails) ? receipt.takaDetails : [];
     const isTdsLine = sourceType === 'mill_receipt_tds';
+    const tdsPercent = Number(receipt.tdsPercent) || 0;
+    let tdsOnAmt = roundMoney(receipt.tdsOnAmt || 0);
+    let tdsAmount = roundMoney(receipt.tdsAmount || 0);
+    if (tdsPercent > 0 && (tdsOnAmt <= 0 || tdsAmount <= 0)) {
+      if (tdsOnAmt <= 0) {
+        tdsOnAmt = roundMoney(receipt.taxableAmount || receipt.jobAmount || 0);
+      }
+      if (tdsAmount <= 0) {
+        tdsAmount = roundMoney(tdsOnAmt * tdsPercent / 100);
+      }
+    }
+    const invoiceValue = roundMoney(receipt.invoiceValue || 0);
+    const netAfterTds = tdsAmount > 0
+      ? roundMoney(invoiceValue - tdsAmount)
+      : roundMoney(receipt.netAfterTds || invoiceValue);
 
     return {
       title: isTdsLine
@@ -788,7 +823,7 @@ export async function getLedgerEntryDetail(prisma, userId, sourceType, sourceId)
       subtitle: receipt.millName,
       sourceType,
       sourceId,
-      canEdit: !isTdsLine,
+      canEdit: true,
       editPath: `/erp/mill-receipt?edit=${receipt.id}`,
       fields: buildDetailFields([
         { label: 'Date', value: toIsoDate(receipt.receiptDate) },
@@ -806,11 +841,11 @@ export async function getLedgerEntryDetail(prisma, userId, sourceType, sourceId)
         { label: 'CGST', value: receipt.cgstAmount, isMoney: true },
         { label: 'SGST', value: receipt.sgstAmount, isMoney: true },
         { label: 'IGST', value: receipt.igstAmount, isMoney: true },
-        { label: 'Invoice Value', value: receipt.invoiceValue, isMoney: true },
-        { label: 'TDS On Amt', value: receipt.tdsOnAmt, isMoney: true },
-        { label: 'TDS %', value: receipt.tdsPercent },
-        { label: 'TDS Amt', value: receipt.tdsAmount, isMoney: true },
-        { label: 'Net After TDS', value: receipt.netAfterTds, isMoney: true },
+        { label: 'Invoice Value', value: invoiceValue, isMoney: true },
+        { label: 'TDS On Amt', value: tdsOnAmt, isMoney: true },
+        { label: 'TDS %', value: tdsPercent },
+        { label: 'TDS Amt', value: tdsAmount, isMoney: true },
+        { label: 'Net After TDS', value: netAfterTds, isMoney: true },
         { label: 'Remarks', value: receipt.remarks }
       ]),
       lineColumns: takaDetails.length

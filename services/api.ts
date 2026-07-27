@@ -1099,6 +1099,12 @@ export const millReceiptsApi = {
       method: 'POST',
       body: JSON.stringify(body)
     });
+  },
+  update: async (id: string, body: Record<string, unknown>) => {
+    return request<{ entry: MillReceipt }>(`/mill-receipts/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(body)
+    });
   }
 };
 
