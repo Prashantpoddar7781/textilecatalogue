@@ -38,6 +38,8 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
   }>>([]);
   const [tdsPercentTouched, setTdsPercentTouched] = useState(false);
   const [entryType, setEntryType] = useState('JOB WORK');
+  const [processType, setProcessType] = useState<'FINISH' | 'RETURN'>('FINISH');
+  const isReturn = processType === 'RETURN';
   const [hsnCode, setHsnCode] = useState('9988');
   const [stateCode, setStateCode] = useState('');
   const [placeOfSupply, setPlaceOfSupply] = useState('');
@@ -100,10 +102,15 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [success, setSuccess] = useState('');
 
   useEffect(() => {
+    if (isReturn) {
+      setJobAmount(0);
+      setGrossAmount(0);
+      return;
+    }
     const amt = round2(toNum(recMts) * toNum(jobRate));
     setJobAmount(amt);
     setGrossAmount(round2(amt + toNum(rdLessAddAmt)));
-  }, [recMts, jobRate, rdLessAddAmt]);
+  }, [recMts, jobRate, rdLessAddAmt, isReturn]);
 
   useEffect(() => {
     const grey = toNum(greyMts);
@@ -113,20 +120,37 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
     setShortPct(String(grey > 0 ? round2((short / grey) * 100) : 0));
   }, [greyMts, recMts]);
 
-  // TDS Amt = (TDS On Amt || taxable || job amt) × TDS % — instant
+  // TDS Amt = (TDS On Amt || taxable || job amt) × TDS % — instant (skip for RETURN)
   useEffect(() => {
+    if (isReturn) {
+      setTdsAmount('0');
+      setNetAfterTds(0);
+      return;
+    }
     const base = toNum(tdsOnAmt) > 0 ? toNum(tdsOnAmt) : (taxableAmount || jobAmount);
     const pct = toNum(tdsPercent);
     const amt = round2(base * pct / 100);
     setTdsAmount(String(amt));
     setNetAfterTds(round2(invoiceValue - amt));
-    // Auto-fill TDS On Amt from taxable as soon as % is entered
     if (pct > 0 && !toNum(tdsOnAmt) && (taxableAmount || jobAmount) && !tdsOnAmtTouched) {
       setTdsOnAmt(String(taxableAmount || jobAmount));
     }
-  }, [tdsOnAmt, tdsPercent, taxableAmount, jobAmount, invoiceValue, tdsOnAmtTouched]);
+  }, [tdsOnAmt, tdsPercent, taxableAmount, jobAmount, invoiceValue, tdsOnAmtTouched, isReturn]);
 
   const recalcGst = useCallback(async () => {
+    if (isReturn) {
+      setJobAmount(0);
+      setGrossAmount(0);
+      setDiscountAmount(0);
+      setTaxableAmount(0);
+      setInvoiceValue(0);
+      setCgstAmount('0');
+      setSgstAmount('0');
+      setIgstAmount('0');
+      setTdsAmount('0');
+      setNetAfterTds(0);
+      return;
+    }
     if (!toNum(recMts) && !jobAmount) return;
     try {
       const { totals } = await millReceiptsApi.calculate({
@@ -163,12 +187,37 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
     } catch {
       // keep local values
     }
-  }, [recMts, jobRate, jobAmount, rdLessAddAmt, grossAmount, discountPercent, otherLess, otherAdd, gstRate, millGstin, placeOfSupply, stateCode, tdsOnAmt, tdsPercent, tdsOnAmtTouched]);
+  }, [recMts, jobRate, jobAmount, rdLessAddAmt, grossAmount, discountPercent, otherLess, otherAdd, gstRate, millGstin, placeOfSupply, stateCode, tdsOnAmt, tdsPercent, tdsOnAmtTouched, isReturn]);
 
   useEffect(() => {
     const timer = setTimeout(() => { void recalcGst(); }, 300);
     return () => clearTimeout(timer);
   }, [recalcGst]);
+
+  useEffect(() => {
+    if (!isReturn) return;
+    setJobRate('');
+    setJobAmount(0);
+    setRdPerMtr('');
+    setRdLessAddAmt('');
+    setDiscountPercent('');
+    setDiscountAmount(0);
+    setOtherLess('');
+    setOtherAdd('');
+    setTdsOnAmt('');
+    setTdsPercent('');
+    setTdsAmount('0');
+    setTdsOnAmtTouched(false);
+    setGrossAmount(0);
+    setTaxableAmount(0);
+    setInvoiceValue(0);
+    setNetAfterTds(0);
+    setCgstAmount('0');
+    setSgstAmount('0');
+    setIgstAmount('0');
+    // For return, rec mts = grey mts (no finish short)
+    if (toNum(greyMts) > 0) setRecMts(String(toNum(greyMts)));
+  }, [isReturn, greyMts]);
 
   useEffect(() => {
     let cancelled = false;
@@ -193,6 +242,7 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
           setMillGstin(entry.millGstin || '');
           setPartyMsme(entry.partyMsme || '');
           setEntryType(entry.entryType || 'JOB WORK');
+          setProcessType((entry.processType || 'FINISH').toUpperCase() === 'RETURN' ? 'RETURN' : 'FINISH');
           setHsnCode(entry.hsnCode || meta.defaultHsnCode || '9988');
           setVoucherNo(String(entry.voucherNo ?? ''));
           setReceiptDate(entry.receiptDate ? entry.receiptDate.slice(0, 10) : today());
@@ -360,11 +410,15 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
       if (!millName.trim()) throw new Error('Mill A/C is required.');
       if (!lotNo.trim()) throw new Error('Lot number is required.');
       if (!greyDispatchId) throw new Error('Select a grey dispatch.');
-      if (!toNum(recMts)) throw new Error('Select received takas or enter Rec. Mts.');
+      if (!selectedTakaDetails.length && !toNum(recMts) && !toNum(greyMts)) {
+        throw new Error(isReturn ? 'Select returned takas.' : 'Select received takas or enter Rec. Mts.');
+      }
+      if (!isReturn && !toNum(recMts)) throw new Error('Select received takas or enter Rec. Mts.');
+      if (isReturn && !toNum(greyMts)) throw new Error('Select returned takas.');
 
-      const effectiveTdsOn = toNum(tdsOnAmt) > 0 ? toNum(tdsOnAmt) : (taxableAmount || jobAmount);
-      const effectiveTdsPct = toNum(tdsPercent);
-      const effectiveTdsAmt = round2(effectiveTdsOn * effectiveTdsPct / 100);
+      const effectiveTdsOn = isReturn ? 0 : (toNum(tdsOnAmt) > 0 ? toNum(tdsOnAmt) : (taxableAmount || jobAmount));
+      const effectiveTdsPct = isReturn ? 0 : toNum(tdsPercent);
+      const effectiveTdsAmt = isReturn ? 0 : round2(effectiveTdsOn * effectiveTdsPct / 100);
 
       const payload = {
         greyDispatchId,
@@ -373,6 +427,7 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
         millGstin: millGstin || undefined,
         partyMsme: partyMsme || undefined,
         entryType,
+        processType,
         hsnCode,
         voucherNo: toNum(voucherNo),
         receiptDate,
@@ -386,17 +441,17 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
         quality: quality || undefined,
         printStyle: printStyle || undefined,
         recTaka: toNum(recTaka),
-        recMts: toNum(recMts),
+        recMts: isReturn ? toNum(greyMts) : toNum(recMts),
         greyMts: toNum(greyMts),
-        shortMts: toNum(shortMts),
-        shortPct: toNum(shortPct),
-        jobRate: toNum(jobRate),
-        jobAmount,
-        rdPerMtr: toNum(rdPerMtr),
-        rdLessAddAmt: toNum(rdLessAddAmt),
-        discountPercent: toNum(discountPercent),
-        otherLess: toNum(otherLess),
-        otherAdd: toNum(otherAdd),
+        shortMts: isReturn ? 0 : toNum(shortMts),
+        shortPct: isReturn ? 0 : toNum(shortPct),
+        jobRate: isReturn ? 0 : toNum(jobRate),
+        jobAmount: isReturn ? 0 : jobAmount,
+        rdPerMtr: isReturn ? 0 : toNum(rdPerMtr),
+        rdLessAddAmt: isReturn ? 0 : toNum(rdLessAddAmt),
+        discountPercent: isReturn ? 0 : toNum(discountPercent),
+        otherLess: isReturn ? 0 : toNum(otherLess),
+        otherAdd: isReturn ? 0 : toNum(otherAdd),
         gstRate: toNum(gstRate),
         tdsOnAmt: effectiveTdsOn,
         tdsPercent: effectiveTdsPct,
@@ -407,10 +462,18 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
 
       if (isEditMode && editId) {
         await millReceiptsApi.update(editId, payload);
-        setSuccess(`Mill receipt updated for lot ${lotNo}.`);
+        setSuccess(
+          isReturn
+            ? `Mill return (reprocess) updated for lot ${lotNo}. Not posted to ledger.`
+            : `Mill receipt updated for lot ${lotNo}.`
+        );
       } else {
         await millReceiptsApi.create(payload);
-        setSuccess(`Mill receipt saved for lot ${lotNo}.`);
+        setSuccess(
+          isReturn
+            ? `Mill return (reprocess) saved for lot ${lotNo}. Grey restored to godown; not posted to ledger.`
+            : `Mill receipt saved for lot ${lotNo}.`
+        );
         const meta = await millReceiptsApi.getMeta();
         setVoucherNo(String(meta.nextVoucherNo || 1));
         setLotNo('');
@@ -420,6 +483,7 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
         setTdsOnAmt('');
         setTdsOnAmtTouched(false);
         setTdsPercentTouched(false);
+        setProcessType('FINISH');
         resetLine();
         setSelectedTakaDetails([]);
       }
@@ -622,7 +686,7 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
                     <th className="px-2 py-2 text-right">Short</th>
                     <th className="px-2 py-2 text-right">Job Ra</th>
                     <th className="px-2 py-2 text-right">Job Amt</th>
-                    <th className="px-2 py-2">Disp</th>
+                    <th className="px-2 py-2">Process</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -646,14 +710,36 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
                     <td className="px-2 py-2 text-right">{toNum(linePreview.greyMts).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
                     <td className="px-2 py-2 text-right text-rose-700">{toNum(linePreview.shortMts).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
                     <td className="px-2 py-2">
-                      <input className={calcInputClass} type="number" step="0.01" value={jobRate} onChange={e => setJobRate(e.target.value)} />
+                      <input
+                        className={calcInputClass}
+                        type="number"
+                        step="0.01"
+                        value={jobRate}
+                        onChange={e => setJobRate(e.target.value)}
+                        disabled={isReturn}
+                        readOnly={isReturn}
+                      />
                     </td>
                     <td className="px-2 py-2 text-right font-black">{jobAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                    <td className="px-2 py-2 font-bold">N</td>
+                    <td className="px-2 py-2">
+                      <select
+                        className={`${inputClass} min-w-[110px] font-black ${isReturn ? 'border-amber-300 bg-amber-50 text-amber-900' : 'text-teal-900'}`}
+                        value={processType}
+                        onChange={e => setProcessType(e.target.value === 'RETURN' ? 'RETURN' : 'FINISH')}
+                      >
+                        <option value="FINISH">FINISH</option>
+                        <option value="RETURN">RETURN</option>
+                      </select>
+                    </td>
                   </tr>
                 </tbody>
               </table>
             </div>
+            {isReturn && (
+              <div className="border-t bg-amber-50 px-4 py-2 text-xs font-semibold text-amber-900">
+                RETURN / reprocess: mill sent grey back without dyeing. Select returned takas — no job charges, not posted to mill ledger, grey restored to godown.
+              </div>
+            )}
           </section>
 
           <section className="mt-4 grid gap-3 rounded-2xl border bg-white p-4 shadow-sm md:grid-cols-4 lg:grid-cols-6">
@@ -775,7 +861,14 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
           </section>
 
           <div className="mt-4 flex justify-end">
-            <ErpSaveButton saving={saving} label={isEditMode ? 'Update Mill Receipt' : 'Save Mill Receipt'} />
+            <ErpSaveButton
+              saving={saving}
+              label={
+                isEditMode
+                  ? (isReturn ? 'Update Mill Return' : 'Update Mill Receipt')
+                  : (isReturn ? 'Save Mill Return' : 'Save Mill Receipt')
+              }
+            />
           </div>
         </ErpFormShell>
       </main>
@@ -869,6 +962,7 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
       <MillReceiptTakaModal
         open={takaModalOpen}
         rows={availableTakas}
+        mode={processType}
         onClose={() => setTakaModalOpen(false)}
         onApply={applyTakas}
       />

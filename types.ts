@@ -501,6 +501,7 @@ export interface MillReceipt {
   millGstin?: string | null;
   partyMsme?: string | null;
   entryType: string;
+  processType?: string | null;
   hsnCode?: string | null;
   voucherNo?: number | null;
   receiptDate: string;

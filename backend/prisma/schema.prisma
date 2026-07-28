@@ -586,6 +586,7 @@ model MillReceipt {
   millGstin        String?
   partyMsme        String?
   entryType        String        @default("JOB WORK")
+  processType      String        @default("FINISH") // FINISH | RETURN (mill reprocess / unfinished return)
   hsnCode          String?       @default("9988")
   voucherNo        Int?
   receiptDate      DateTime      @default(now())
@@ -639,6 +640,7 @@ model MillReceipt {
   @@index([millName])
   @@index([lotNo])
   @@index([voucherNo])
+  @@index([processType])
   @@index([status])
 }
 

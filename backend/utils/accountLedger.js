@@ -124,6 +124,7 @@ export async function getSupplierLedgerParties(prisma, userId) {
       where: { userId, status: { not: 'cancelled' } },
       select: {
         millName: true,
+        processType: true,
         netAfterTds: true,
         invoiceValue: true,
         tdsAmount: true,
@@ -156,6 +157,7 @@ export async function getSupplierLedgerParties(prisma, userId) {
 
     for (const receipt of millReceipts) {
       if (!matchesSupplierName(supplier.name, receipt.millName)) continue;
+      if (String(receipt.processType || '').toUpperCase() === 'RETURN') continue;
       const tdsPercent = Number(receipt.tdsPercent) || 0;
       let tdsAmount = roundMoney(receipt.tdsAmount || 0);
       if (tdsAmount <= 0 && tdsPercent > 0) {
@@ -440,6 +442,8 @@ export async function buildSupplierLedger(prisma, userId, supplierId) {
 
   for (const receipt of millReceipts) {
     if (!matchesSupplierName(supplier.name, receipt.millName)) continue;
+    // RETURN / reprocess: mill sent grey back unfinished — no ledger posting
+    if (String(receipt.processType || '').toUpperCase() === 'RETURN') continue;
     const tdsPercent = Number(receipt.tdsPercent) || 0;
     let tdsAmount = roundMoney(receipt.tdsAmount || 0);
     // Repair older rows saved with TDS % but tdsOnAmt/tdsAmount stuck at 0
@@ -831,6 +835,7 @@ export async function getLedgerEntryDetail(prisma, userId, sourceType, sourceId)
         { label: 'Desp. No.', value: receipt.despNo },
         { label: 'Bill No.', value: receipt.billNo },
         { label: 'Quality', value: receipt.quality },
+        { label: 'Process', value: receipt.processType || 'FINISH' },
         { label: 'Rec. Taka', value: receipt.recTaka },
         { label: 'Grey Mts', value: receipt.greyMts, isMoney: true },
         { label: 'Rec. Mts', value: receipt.recMts, isMoney: true },

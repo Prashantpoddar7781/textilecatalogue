@@ -138,6 +138,7 @@ const MillReceiptDetailPanel: React.FC<{
           { label: 'Date', value: formatDate(entry.receiptDate) },
           { label: 'Bill / G.P. No.', value: entry.billNo || '-' },
           { label: 'Quality', value: entry.quality || '-' },
+          { label: 'Process', value: entry.processType || 'FINISH' },
           { label: 'Print Style', value: entry.printStyle || '-' },
           { label: 'Marka', value: entry.marka || '-' },
           { label: 'Rec. Taka', value: takaCount(entry.recTaka) },
@@ -246,6 +247,7 @@ export const MillReceiptReportPage: React.FC<Props> = ({ onBack, erpSession }) =
           <th className="px-2 py-2 text-right">Short Mt.</th>
           <th className="px-2 py-2 text-right">Shortage %</th>
           <th className="px-2 py-2">Quality</th>
+          <th className="px-2 py-2">Process</th>
           <th className="px-2 py-2 text-right">Job Amt.</th>
           {filter === 'all' && <th className="px-2 py-2">Mill</th>}
         </tr>
@@ -254,7 +256,9 @@ export const MillReceiptReportPage: React.FC<Props> = ({ onBack, erpSession }) =
         {data.map(row => (
           <tr
             key={row.id}
-            className={`cursor-pointer border-b transition-colors hover:bg-teal-50 ${selectedEntryId === row.id ? 'bg-teal-50' : ''}`}
+            className={`cursor-pointer border-b transition-colors hover:bg-teal-50 ${selectedEntryId === row.id ? 'bg-teal-50' : ''} ${
+              String(row.processType || '').toUpperCase() === 'RETURN' ? 'bg-amber-50/60' : ''
+            }`}
             onClick={() => setSelectedEntryId(row.id)}
           >
             <td className="px-2 py-2 font-semibold">{row.despNo}</td>
@@ -268,6 +272,9 @@ export const MillReceiptReportPage: React.FC<Props> = ({ onBack, erpSession }) =
             <td className="px-2 py-2 text-right text-rose-700">{money(row.shortMts)}</td>
             <td className="px-2 py-2 text-right">{money(row.shortPct)}</td>
             <td className="px-2 py-2">{row.quality}</td>
+            <td className={`px-2 py-2 font-black ${String(row.processType || '').toUpperCase() === 'RETURN' ? 'text-amber-800' : 'text-teal-800'}`}>
+              {row.processType || 'FINISH'}
+            </td>
             <td className="px-2 py-2 text-right font-bold">{money(row.jobAmount)}</td>
             {filter === 'all' && <td className="px-2 py-2">{row.millName}</td>}
           </tr>

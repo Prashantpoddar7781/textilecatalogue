@@ -1030,6 +1030,8 @@ export const millReceiptsApi = {
       defaultGstRate: number;
       nextVoucherNo: number;
       entryTypes: string[];
+      processTypes?: string[];
+      defaultProcessType?: string;
       mills: string[];
       millParties?: Array<{
         name: string;
