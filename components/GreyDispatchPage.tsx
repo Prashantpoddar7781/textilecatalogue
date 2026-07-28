@@ -90,7 +90,9 @@ export const GreyDispatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const loadGreyReceipts = async (filterSr?: string) => {
     setReceiptsLoading(true);
     try {
-      const { entries } = await greyDispatchesApi.getGreyReceipts(filterSr?.trim() || undefined);
+      const { entries } = await greyDispatchesApi.getGreyReceipts(filterSr?.trim() || undefined, {
+        transactionType
+      });
       setGreyReceipts(entries || []);
       setPurPickerOpen(true);
     } catch (err: any) {
@@ -119,7 +121,7 @@ export const GreyDispatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
     setPurPickerOpen(false);
 
     try {
-      const { availableRows } = await greyDispatchesApi.getAvailableTakas(receipt.id);
+      const { availableRows } = await greyDispatchesApi.getAvailableTakas(receipt.id, { transactionType });
       setAvailableTakas(availableRows || []);
     } catch {
       setAvailableTakas([]);
@@ -142,10 +144,16 @@ export const GreyDispatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
     if (event.key === 'Enter' && purSr.trim()) {
       event.stopPropagation();
       void (async () => {
-        const { entries } = await greyDispatchesApi.getGreyReceipts(purSr.trim());
+        const { entries } = await greyDispatchesApi.getGreyReceipts(purSr.trim(), { transactionType });
         const match = entries?.[0];
         if (match) await applyGreyReceipt(match);
-        else setError(`No grey receipt found for Pur Sr. ${purSr.trim()}.`);
+        else {
+          setError(
+            transactionType === 'REPROCESS'
+              ? `No mill-returned bill found for Pur Sr. ${purSr.trim()}.`
+              : `No grey receipt found for Pur Sr. ${purSr.trim()}.`
+          );
+        }
       })();
     }
   };
@@ -157,10 +165,14 @@ export const GreyDispatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
     }
     setError('');
     try {
-      const { availableRows } = await greyDispatchesApi.getAvailableTakas(greyPurchaseId);
+      const { availableRows } = await greyDispatchesApi.getAvailableTakas(greyPurchaseId, { transactionType });
       setAvailableTakas(availableRows || []);
       if (!availableRows?.length) {
-        setError('No taka left to dispatch for this receipt.');
+        setError(
+          transactionType === 'REPROCESS'
+            ? 'No returned taka left to reprocess for this receipt.'
+            : 'No taka left to dispatch for this receipt.'
+        );
         return;
       }
       setTakaModalOpen(true);
@@ -219,7 +231,11 @@ export const GreyDispatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
         srNo: toNum(srNo)
       });
 
-      setSuccess('Grey dispatch saved and stock updated in godown.');
+      setSuccess(
+        transactionType === 'REPROCESS'
+          ? 'REPROCESS dispatch saved — grey re-sent to mill from returned stock.'
+          : 'Grey dispatch saved and stock updated in godown.'
+      );
       setMillLotNo('');
       setPurSr('');
       setGreyPurchaseId('');
@@ -288,8 +304,24 @@ export const GreyDispatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
                 </label>
                 <label>
                   <span className={labelClass}>Type</span>
-                  <select className={inputClass} value={transactionType} onChange={e => setTransactionType(e.target.value)}>
+                  <select
+                    className={`${inputClass} ${transactionType === 'REPROCESS' ? 'border-amber-400 bg-amber-50 font-black text-amber-900' : ''}`}
+                    value={transactionType}
+                    onChange={e => {
+                      const next = e.target.value === 'REPROCESS' ? 'REPROCESS' : 'PROCESS';
+                      setTransactionType(next);
+                      setGreyPurchaseId('');
+                      setPurSr('');
+                      setDespTaka('');
+                      setDespMts('');
+                      setSelectedTakaDetails([]);
+                      setGreyReceipts([]);
+                      setPurPickerOpen(false);
+                      setError('');
+                    }}
+                  >
                     <option value="PROCESS">PROCESS</option>
+                    <option value="REPROCESS">REPROCESS</option>
                   </select>
                 </label>
                 <label>
@@ -319,7 +351,11 @@ export const GreyDispatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
                       {receiptsLoading ? (
                         <p className="px-3 py-4 text-xs text-gray-500">Loading grey receipts...</p>
                       ) : greyReceipts.length === 0 ? (
-                        <p className="px-3 py-4 text-xs text-gray-500">No grey receipts with stock.</p>
+                        <p className="px-3 py-4 text-xs text-gray-500">
+                          {transactionType === 'REPROCESS'
+                            ? 'No mill-returned bills with godown stock. First enter Mill Receipt as RETURN.'
+                            : 'No grey receipts with stock.'}
+                        </p>
                       ) : greyReceipts.map(receipt => (
                         <button
                           key={receipt.id}
@@ -333,6 +369,13 @@ export const GreyDispatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
                           <span className="mx-2 text-gray-400">·</span>
                           <span>{receipt.quality || '-'}</span>
                           <span className="ml-2 text-orange-700">{receipt.stockMts} mtrs left</span>
+                          {receipt.returnedLotNo && (
+                            <span className="mt-0.5 block text-[10px] font-bold uppercase tracking-wide text-amber-800">
+                              Returned lot {receipt.returnedLotNo}
+                              {receipt.returnedFromMill ? ` · ${receipt.returnedFromMill}` : ''}
+                              {receipt.returnedMts != null ? ` · ${receipt.returnedMts} mtrs` : ''}
+                            </span>
+                          )}
                         </button>
                       ))}
                     </div>

@@ -429,6 +429,11 @@ export interface GreyReceiptSummary {
   remarks?: string | null;
   checkerName?: string | null;
   companyName?: string | null;
+  returnedLotNo?: string | null;
+  returnedMts?: number | null;
+  returnedTaka?: number | null;
+  returnedDate?: string | null;
+  returnedFromMill?: string | null;
 }
 
 export interface GreyDispatch {

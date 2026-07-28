@@ -152,7 +152,9 @@ export const GreyPurchaseReturnPage: React.FC<Props> = ({ onBack, erpSession }) 
   const loadGreyReceipts = async (filterSr?: string) => {
     setReceiptsLoading(true);
     try {
-      const { entries } = await greyDispatchesApi.getGreyReceipts(filterSr?.trim() || undefined);
+      const { entries } = await greyDispatchesApi.getGreyReceipts(filterSr?.trim() || undefined, {
+        transactionType: greyType === 'REPROCESS' ? 'REPROCESS' : 'PROCESS'
+      });
       setGreyReceipts(entries || []);
       setPurPickerOpen(true);
     } catch (err: any) {
@@ -179,7 +181,9 @@ export const GreyPurchaseReturnPage: React.FC<Props> = ({ onBack, erpSession }) 
     setPurPickerOpen(false);
 
     try {
-      const { availableRows } = await greyDispatchesApi.getAvailableTakas(receipt.id);
+      const { availableRows } = await greyDispatchesApi.getAvailableTakas(receipt.id, {
+        transactionType: greyType === 'REPROCESS' ? 'REPROCESS' : 'PROCESS'
+      });
       setAvailableTakas(availableRows || []);
     } catch {
       setAvailableTakas([]);
@@ -192,10 +196,18 @@ export const GreyPurchaseReturnPage: React.FC<Props> = ({ onBack, erpSession }) 
     if (event.key === 'Enter' && purSr.trim()) {
       event.stopPropagation();
       void (async () => {
-        const { entries } = await greyDispatchesApi.getGreyReceipts(purSr.trim());
+        const { entries } = await greyDispatchesApi.getGreyReceipts(purSr.trim(), {
+          transactionType: greyType === 'REPROCESS' ? 'REPROCESS' : 'PROCESS'
+        });
         const match = entries?.[0];
         if (match) await applyGreyReceipt(match);
-        else setError(`No purchase voucher found for Pur Vno ${purSr.trim()}.`);
+        else {
+          setError(
+            greyType === 'REPROCESS'
+              ? `No mill-returned purchase found for Pur Vno ${purSr.trim()}.`
+              : `No purchase voucher found for Pur Vno ${purSr.trim()}.`
+          );
+        }
       })();
     }
   };
@@ -207,10 +219,16 @@ export const GreyPurchaseReturnPage: React.FC<Props> = ({ onBack, erpSession }) 
     }
     setError('');
     try {
-      const { availableRows } = await greyDispatchesApi.getAvailableTakas(greyPurchaseId);
+      const { availableRows } = await greyDispatchesApi.getAvailableTakas(greyPurchaseId, {
+        transactionType: greyType === 'REPROCESS' ? 'REPROCESS' : 'PROCESS'
+      });
       setAvailableTakas(availableRows || []);
       if (!availableRows?.length) {
-        setError('No taka left in godown for this purchase.');
+        setError(
+          greyType === 'REPROCESS'
+            ? 'No returned taka left in godown for this purchase.'
+            : 'No taka left in godown for this purchase.'
+        );
         return;
       }
       setTakaModalOpen(true);
@@ -326,7 +344,27 @@ export const GreyPurchaseReturnPage: React.FC<Props> = ({ onBack, erpSession }) 
                 <label><span className={labelClass}>Company</span><input className={inputClass} value={companyName} onChange={e => setCompanyName(e.target.value)} /></label>
                 <label><span className={labelClass}>Type</span><input className={readonlyClass} value={entryType} readOnly /></label>
                 <label><span className={labelClass}>Voucher No.</span><input className={readonlyClass} value={voucherNo} readOnly /></label>
-                <label><span className={labelClass}>Grey Type</span><input className={readonlyClass} value={greyType} readOnly /></label>
+                <label>
+                  <span className={labelClass}>Grey Type</span>
+                  <select
+                    className={`${inputClass} ${greyType === 'REPROCESS' ? 'border-amber-400 bg-amber-50 font-black text-amber-900' : ''}`}
+                    value={greyType}
+                    onChange={e => {
+                      const next = e.target.value === 'REPROCESS' ? 'REPROCESS' : 'GREY';
+                      setGreyType(next);
+                      setGreyPurchaseId('');
+                      setPurSr('');
+                      setPcs('');
+                      setMts('');
+                      setSelectedTakaDetails([]);
+                      setGreyReceipts([]);
+                      setPurPickerOpen(false);
+                    }}
+                  >
+                    <option value="GREY">GREY</option>
+                    <option value="REPROCESS">REPROCESS</option>
+                  </select>
+                </label>
                 <label className="relative">
                   <span className={labelClass}>Pur Vno</span>
                   <input
@@ -342,7 +380,11 @@ export const GreyPurchaseReturnPage: React.FC<Props> = ({ onBack, erpSession }) 
                       {receiptsLoading ? (
                         <p className="px-3 py-4 text-xs text-gray-500">Loading purchases with godown stock...</p>
                       ) : greyReceipts.length === 0 ? (
-                        <p className="px-3 py-4 text-xs text-gray-500">No purchase with godown stock.</p>
+                        <p className="px-3 py-4 text-xs text-gray-500">
+                          {greyType === 'REPROCESS'
+                            ? 'No mill-returned bills with godown stock.'
+                            : 'No purchase with godown stock.'}
+                        </p>
                       ) : greyReceipts.map(receipt => (
                         <button
                           key={receipt.id}
@@ -351,6 +393,12 @@ export const GreyPurchaseReturnPage: React.FC<Props> = ({ onBack, erpSession }) 
                           onClick={() => void applyGreyReceipt(receipt)}
                         >
                           <span className="font-bold">Sr. {receipt.srNo}</span> · {receipt.partyName} · {receipt.quality} · Stock {receipt.stockMts} mts
+                          {receipt.returnedLotNo && (
+                            <span className="mt-0.5 block text-[10px] font-bold uppercase text-amber-800">
+                              Returned lot {receipt.returnedLotNo}
+                              {receipt.returnedFromMill ? ` · ${receipt.returnedFromMill}` : ''}
+                            </span>
+                          )}
                         </button>
                       ))}
                     </div>

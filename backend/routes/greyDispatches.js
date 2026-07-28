@@ -8,6 +8,7 @@ import { ensureMillParty, resolveSupplierForEntry } from '../utils/partyMaster.j
 const router = express.Router();
 const prisma = new PrismaClient();
 const RETURN_MILL_NAME = 'GREY SALES INVENTORY';
+const DISPATCH_TYPES = ['PROCESS', 'REPROCESS'];
 
 const optionalString = (value) => {
   if (value === undefined || value === null) return null;
@@ -22,6 +23,11 @@ const optionalNumber = (value) => {
 };
 
 const roundMoney = (value) => Math.round((Number(value) || 0) * 100) / 100;
+
+function normalizeDispatchType(value) {
+  const text = String(value || '').trim().toUpperCase();
+  return DISPATCH_TYPES.includes(text) ? text : 'PROCESS';
+}
 
 function normalizeTakaDetails(raw) {
   if (!Array.isArray(raw)) return [];
@@ -43,26 +49,103 @@ async function getCompanyContext(userId) {
   };
 }
 
-async function getDispatchedSrNos(greyPurchaseId, excludeDispatchId = null) {
-  const dispatches = await prisma.greyDispatch.findMany({
-    where: {
-      greyPurchaseId,
-      status: { not: 'cancelled' },
-      ...(excludeDispatchId ? { id: { not: excludeDispatchId } } : {})
-    },
-    select: { takaDetails: true }
-  });
-  const srNos = new Set();
+/**
+ * Taka occupancy:
+ * - PROCESS: any prior dispatch occupies (mill RETURN does not free for PROCESS)
+ * - REPROCESS: mill RETURN frees takas so they can be sent again
+ */
+async function getOccupiedSrNos(greyPurchaseId, { mode = 'PROCESS', excludeDispatchId = null } = {}) {
+  const [dispatches, millReturns] = await Promise.all([
+    prisma.greyDispatch.findMany({
+      where: {
+        greyPurchaseId,
+        status: { not: 'cancelled' },
+        ...(excludeDispatchId ? { id: { not: excludeDispatchId } } : {})
+      },
+      select: { takaDetails: true }
+    }),
+    mode === 'REPROCESS'
+      ? prisma.millReceipt.findMany({
+        where: {
+          greyPurchaseId,
+          processType: 'RETURN',
+          status: { not: 'cancelled' }
+        },
+        select: { takaDetails: true }
+      })
+      : Promise.resolve([])
+  ]);
+
+  const dispatchCount = new Map();
   for (const dispatch of dispatches) {
     const rows = Array.isArray(dispatch.takaDetails) ? dispatch.takaDetails : [];
     for (const row of rows) {
-      if (row?.srNo != null) srNos.add(Number(row.srNo));
+      if (row?.srNo == null) continue;
+      const sr = Number(row.srNo);
+      dispatchCount.set(sr, (dispatchCount.get(sr) || 0) + 1);
     }
   }
-  return srNos;
+
+  if (mode !== 'REPROCESS') {
+    return new Set(dispatchCount.keys());
+  }
+
+  const returnCount = new Map();
+  for (const receipt of millReturns) {
+    const rows = Array.isArray(receipt.takaDetails) ? receipt.takaDetails : [];
+    for (const row of rows) {
+      if (row?.srNo == null) continue;
+      const sr = Number(row.srNo);
+      returnCount.set(sr, (returnCount.get(sr) || 0) + 1);
+    }
+  }
+
+  const occupied = new Set();
+  for (const [sr, count] of dispatchCount.entries()) {
+    if (count > (returnCount.get(sr) || 0)) occupied.add(sr);
+  }
+  return occupied;
 }
 
-function buildReceiptSummary(purchase) {
+/** @deprecated use getOccupiedSrNos */
+async function getDispatchedSrNos(greyPurchaseId, excludeDispatchId = null) {
+  return getOccupiedSrNos(greyPurchaseId, { mode: 'PROCESS', excludeDispatchId });
+}
+
+async function getMillReturnMetaByPurchaseIds(userId, purchaseIds) {
+  if (!purchaseIds.length) return new Map();
+  const returns = await prisma.millReceipt.findMany({
+    where: {
+      userId,
+      greyPurchaseId: { in: purchaseIds },
+      processType: 'RETURN',
+      status: { not: 'cancelled' }
+    },
+    orderBy: [{ receiptDate: 'desc' }, { createdAt: 'desc' }],
+    select: {
+      greyPurchaseId: true,
+      lotNo: true,
+      greyMts: true,
+      recTaka: true,
+      receiptDate: true,
+      millName: true
+    }
+  });
+  const map = new Map();
+  for (const row of returns) {
+    if (!row.greyPurchaseId || map.has(row.greyPurchaseId)) continue;
+    map.set(row.greyPurchaseId, {
+      returnedLotNo: row.lotNo,
+      returnedMts: roundMoney(row.greyMts),
+      returnedTaka: Number(row.recTaka) || 0,
+      returnedDate: row.receiptDate,
+      returnedFromMill: row.millName
+    });
+  }
+  return map;
+}
+
+function buildReceiptSummary(purchase, extra = {}) {
   const recMts = Number(purchase.recMts) || 0;
   const despatchMts = Number(purchase.despatchMts) || 0;
   const stockMts = roundMoney(Math.max(0, recMts - despatchMts));
@@ -82,7 +165,8 @@ function buildReceiptSummary(purchase) {
     orderNo: purchase.orderNo,
     remarks: purchase.remarks,
     checkerName: purchase.checkerName,
-    companyName: purchase.companyName
+    companyName: purchase.companyName,
+    ...extra
   };
 }
 
@@ -281,7 +365,7 @@ router.get('/meta', authenticateToken, requireActiveSubscription, async (req, re
       ...ctx,
       nextSrNo: count + 1,
       nextChallanNo,
-      transactionTypes: ['PROCESS'],
+      transactionTypes: DISPATCH_TYPES,
       mills: Array.from(new Set(mills)).sort((a, b) => a.localeCompare(b))
     });
   } catch (error) {
@@ -294,23 +378,39 @@ router.get('/grey-receipts', authenticateToken, requireActiveSubscription, async
     const userId = req.user.userId;
     const purSr = optionalNumber(req.query.purSr);
     const q = optionalString(req.query.q);
+    const dispatchType = normalizeDispatchType(req.query.transactionType || req.query.type);
+    const isReprocess = dispatchType === 'REPROCESS';
 
     const purchases = await prisma.greyPurchase.findMany({
       where: {
         userId,
         status: { not: 'cancelled' },
         ...(purSr != null ? { srNo: purSr } : {}),
-        ...(q && purSr == null && /^\d+$/.test(q) ? { srNo: Number(q) } : {})
+        ...(q && purSr == null && /^\d+$/.test(q) ? { srNo: Number(q) } : {}),
+        ...(isReprocess
+          ? {
+            millReceipts: {
+              some: {
+                processType: 'RETURN',
+                status: { not: 'cancelled' }
+              }
+            }
+          }
+          : {})
       },
       orderBy: [{ billDate: 'desc' }, { srNo: 'desc' }],
       take: 100
     });
 
+    const returnMeta = isReprocess
+      ? await getMillReturnMetaByPurchaseIds(userId, purchases.map(p => p.id))
+      : new Map();
+
     const entries = purchases
-      .map(buildReceiptSummary)
+      .map(purchase => buildReceiptSummary(purchase, returnMeta.get(purchase.id) || {}))
       .filter(row => row.stockMts > 0);
 
-    res.json({ entries });
+    res.json({ entries, transactionType: dispatchType });
   } catch (error) {
     next(error);
   }
@@ -319,23 +419,29 @@ router.get('/grey-receipts', authenticateToken, requireActiveSubscription, async
 router.get('/grey-receipts/:greyPurchaseId/available-takas', authenticateToken, requireActiveSubscription, async (req, res, next) => {
   try {
     const userId = req.user.userId;
+    const mode = normalizeDispatchType(req.query.transactionType || req.query.type);
     const purchase = await prisma.greyPurchase.findFirst({
       where: { id: req.params.greyPurchaseId, userId, status: { not: 'cancelled' } }
     });
     if (!purchase) return res.status(404).json({ error: 'Grey receipt not found' });
 
-    const dispatchedSrNos = await getDispatchedSrNos(purchase.id);
+    const occupiedSrNos = await getOccupiedSrNos(purchase.id, { mode });
     const allRows = Array.isArray(purchase.takaDetails) ? normalizeTakaDetails(purchase.takaDetails) : [];
     const availableRows = allRows.length
-      ? allRows.filter(row => !dispatchedSrNos.has(row.srNo))
+      ? allRows.filter(row => !occupiedSrNos.has(row.srNo))
       : (Number(purchase.recMts) > Number(purchase.despatchMts)
         ? [{ srNo: 1, mts: roundMoney(Number(purchase.recMts) - Number(purchase.despatchMts)) }]
         : []);
 
+    const returnMeta = mode === 'REPROCESS'
+      ? await getMillReturnMetaByPurchaseIds(userId, [purchase.id])
+      : new Map();
+
     res.json({
-      purchase: buildReceiptSummary(purchase),
+      purchase: buildReceiptSummary(purchase, returnMeta.get(purchase.id) || {}),
       availableRows,
-      dispatchedSrNos: Array.from(dispatchedSrNos)
+      dispatchedSrNos: Array.from(occupiedSrNos),
+      transactionType: mode
     });
   } catch (error) {
     next(error);
@@ -455,7 +561,8 @@ router.post('/', authenticateToken, requireActiveSubscription, [
       return res.status(400).json({ error: `Only ${stockMts} meters available in godown for this receipt.` });
     }
 
-    const dispatchedSrNos = await getDispatchedSrNos(purchase.id);
+    const transactionType = normalizeDispatchType(req.body.transactionType);
+    const dispatchedSrNos = await getOccupiedSrNos(purchase.id, { mode: transactionType });
     for (const row of takaDetails) {
       if (dispatchedSrNos.has(row.srNo)) {
         return res.status(400).json({ error: `Taka ${row.srNo} is already dispatched.` });
@@ -467,6 +574,22 @@ router.post('/', authenticateToken, requireActiveSubscription, [
     const millName = optionalString(req.body.millName);
     if (!millName) {
       return res.status(400).json({ error: 'Mill is required.' });
+    }
+
+    if (transactionType === 'REPROCESS') {
+      const millReturnCount = await prisma.millReceipt.count({
+        where: {
+          userId,
+          greyPurchaseId: purchase.id,
+          processType: 'RETURN',
+          status: { not: 'cancelled' }
+        }
+      });
+      if (millReturnCount <= 0) {
+        return res.status(400).json({
+          error: 'REPROCESS requires a mill RETURN (reprocess) receipt for this purchase bill.'
+        });
+      }
     }
 
     await ensureMillParty(prisma, userId, millName);
@@ -483,7 +606,7 @@ router.post('/', authenticateToken, requireActiveSubscription, [
           userId,
           greyPurchaseId: purchase.id,
           companyName: optionalString(req.body.companyName) || purchase.companyName || ctx.companyName,
-          transactionType: optionalString(req.body.transactionType) || 'PROCESS',
+          transactionType,
           challanNo: optionalString(req.body.challanNo) || String(nextChallanNo),
           dispatchDate: req.body.dispatchDate ? new Date(req.body.dispatchDate) : new Date(),
           millLotNo: optionalString(req.body.millLotNo),

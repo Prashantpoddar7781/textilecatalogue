@@ -859,18 +859,25 @@ export const greyDispatchesApi = {
       mills: string[];
     }>('/grey-dispatches/meta');
   },
-  getGreyReceipts: async (purSr?: number | string) => {
-    const query = purSr != null && String(purSr).trim() !== ''
-      ? `?purSr=${encodeURIComponent(String(purSr))}`
-      : '';
-    return request<{ entries: GreyReceiptSummary[] }>(`/grey-dispatches/grey-receipts${query}`);
+  getGreyReceipts: async (purSr?: number | string, opts?: { transactionType?: string }) => {
+    const query = new URLSearchParams();
+    if (purSr != null && String(purSr).trim() !== '') query.set('purSr', String(purSr));
+    if (opts?.transactionType) query.set('transactionType', opts.transactionType);
+    const qs = query.toString();
+    return request<{ entries: GreyReceiptSummary[]; transactionType?: string }>(
+      `/grey-dispatches/grey-receipts${qs ? `?${qs}` : ''}`
+    );
   },
-  getAvailableTakas: async (greyPurchaseId: string) => {
+  getAvailableTakas: async (greyPurchaseId: string, opts?: { transactionType?: string }) => {
+    const query = new URLSearchParams();
+    if (opts?.transactionType) query.set('transactionType', opts.transactionType);
+    const qs = query.toString();
     return request<{
       purchase: GreyReceiptSummary;
       availableRows: GreyTakaDetailRow[];
       dispatchedSrNos: number[];
-    }>(`/grey-dispatches/grey-receipts/${greyPurchaseId}/available-takas`);
+      transactionType?: string;
+    }>(`/grey-dispatches/grey-receipts/${greyPurchaseId}/available-takas${qs ? `?${qs}` : ''}`);
   },
   getAll: async () => {
     return request<{ entries: GreyDispatch[] }>('/grey-dispatches');

@@ -105,7 +105,7 @@ router.get('/meta', authenticateToken, requireActiveSubscription, async (req, re
       nextVoucherNo: count + 1,
       nextChallanNo,
       entryTypes: ['GREY PURCHASE'],
-      greyTypes: ['GREY'],
+      greyTypes: ['GREY', 'REPROCESS'],
       saleAccounts: [DEFAULT_SALE_ACCOUNT],
       states: INDIAN_STATES
     });
@@ -289,7 +289,10 @@ router.post('/', authenticateToken, requireActiveSubscription, [
           greyDispatchId: dispatch.id,
           companyName: optionalString(req.body.companyName) || purchase.companyName || ctx.companyName,
           entryType: optionalString(req.body.entryType) || 'GREY PURCHASE',
-          greyType: optionalString(req.body.greyType) || 'GREY',
+          greyType: (() => {
+            const raw = optionalString(req.body.greyType) || 'GREY';
+            return String(raw).toUpperCase() === 'REPROCESS' ? 'REPROCESS' : 'GREY';
+          })(),
           voucherNo: optionalNumber(req.body.voucherNo) ?? (returnCount + 1),
           saleAccount: optionalString(req.body.saleAccount) || DEFAULT_SALE_ACCOUNT,
           purSr: optionalNumber(req.body.purSr) ?? purchase.srNo,
