@@ -1210,6 +1210,8 @@ export const workReceiptsApi = {
         amount?: number;
         taxableAmount: number;
         invoiceValue: number;
+        tdsAmount?: number;
+        netAfterTds?: number;
       };
     }>(`/work-receipts/report${qs ? `?${qs}` : ''}`);
   },

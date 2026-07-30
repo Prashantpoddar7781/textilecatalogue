@@ -12,6 +12,11 @@ interface Props {
 const money = (v: number) => Number(v || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const formatDate = (v?: string | null) => (v ? new Date(v).toLocaleDateString('en-IN') : '-');
 
+const emptyTotals = () => ({
+  recPcs: 0, recMts: 0, plain: 0, sec: 0, lost: 0, lace: 0, fresh: 0,
+  amount: 0, taxableAmount: 0, invoiceValue: 0, tdsAmount: 0, netAfterTds: 0
+});
+
 export const WorkReceiptReportPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -20,9 +25,7 @@ export const WorkReceiptReportPage: React.FC<Props> = ({ onBack, erpSession }) =
   const [toDate, setToDate] = useState('');
   const [partyName, setPartyName] = useState('');
   const [rows, setRows] = useState<Array<Record<string, any>>>([]);
-  const [totals, setTotals] = useState({
-    recPcs: 0, recMts: 0, plain: 0, sec: 0, lost: 0, lace: 0, fresh: 0, amount: 0, taxableAmount: 0, invoiceValue: 0
-  });
+  const [totals, setTotals] = useState(emptyTotals());
 
   const load = async () => {
     setLoading(true);
@@ -35,10 +38,7 @@ export const WorkReceiptReportPage: React.FC<Props> = ({ onBack, erpSession }) =
       });
       setCompanyName(result.companyName || '');
       setRows(result.rows || []);
-      setTotals({
-        recPcs: 0, recMts: 0, plain: 0, sec: 0, lost: 0, lace: 0, fresh: 0, amount: 0, taxableAmount: 0, invoiceValue: 0,
-        ...(result.totals || {})
-      });
+      setTotals({ ...emptyTotals(), ...(result.totals || {}) });
     } catch (err: any) {
       setError(err.message || 'Could not load report.');
     } finally {
@@ -49,14 +49,10 @@ export const WorkReceiptReportPage: React.FC<Props> = ({ onBack, erpSession }) =
   useEffect(() => { void load(); }, []);
 
   const grouped = useMemo(() => {
-    const map = new Map<string, { party: string; rows: Array<Record<string, any>>; sub: typeof totals }>();
+    const map = new Map<string, { party: string; rows: Array<Record<string, any>>; sub: ReturnType<typeof emptyTotals> }>();
     for (const row of rows) {
       const key = row.partyName || 'Unknown';
-      const cur = map.get(key) || {
-        party: key,
-        rows: [],
-        sub: { recPcs: 0, recMts: 0, plain: 0, sec: 0, lost: 0, lace: 0, fresh: 0, amount: 0, taxableAmount: 0, invoiceValue: 0 }
-      };
+      const cur = map.get(key) || { party: key, rows: [], sub: emptyTotals() };
       cur.rows.push(row);
       cur.sub.recPcs += Number(row.recPcs) || 0;
       cur.sub.recMts += Number(row.recMts) || 0;
@@ -67,6 +63,18 @@ export const WorkReceiptReportPage: React.FC<Props> = ({ onBack, erpSession }) =
       cur.sub.fresh += Number(row.fresh) || 0;
       cur.sub.amount += Number(row.amount) || 0;
       map.set(key, cur);
+    }
+    // Bill / net are bill-level — sum once per receiptId
+    for (const group of map.values()) {
+      const seen = new Set<string>();
+      for (const row of group.rows) {
+        const rid = String(row.receiptId || '');
+        if (!rid || seen.has(rid)) continue;
+        seen.add(rid);
+        group.sub.invoiceValue += Number(row.invoiceValue) || 0;
+        group.sub.tdsAmount += Number(row.tdsAmount) || 0;
+        group.sub.netAfterTds += Number(row.netAfterTds) || 0;
+      }
     }
     return Array.from(map.values());
   }, [rows]);
@@ -125,37 +133,44 @@ export const WorkReceiptReportPage: React.FC<Props> = ({ onBack, erpSession }) =
                     <th className="px-3 py-2 text-right">Fresh</th>
                     <th className="px-3 py-2 text-right">Rate</th>
                     <th className="px-3 py-2 text-right">Gross Am</th>
+                    <th className="px-3 py-2 text-right">Bill Amt</th>
+                    <th className="px-3 py-2 text-right">Net Amt</th>
                   </tr>
                 </thead>
                 <tbody>
                   {grouped.map(group => (
                     <React.Fragment key={group.party}>
                       <tr className="bg-rose-50/80">
-                        <td colSpan={14} className="px-3 py-2 text-sm font-black uppercase text-rose-800">{group.party}</td>
+                        <td colSpan={16} className="px-3 py-2 text-sm font-black uppercase text-rose-800">{group.party}</td>
                       </tr>
-                      {group.rows.map(row => (
-                        <tr
-                          key={row.id}
-                          className="cursor-pointer border-b hover:bg-fuchsia-50/70"
-                          onClick={() => openEntry(row)}
-                          title="Open entry to edit"
-                        >
-                          <td className="px-3 py-2">{formatDate(row.date)}</td>
-                          <td className="px-3 py-2 font-bold text-fuchsia-800">{row.billNo}</td>
-                          <td className="px-3 py-2">{row.despChallan}</td>
-                          <td className="px-3 py-2">{row.itemName}</td>
-                          <td className="px-3 py-2">{row.jobType}</td>
-                          <td className="px-3 py-2 text-right">{row.recPcs}</td>
-                          <td className="px-3 py-2 text-right">{money(row.recMts)}</td>
-                          <td className="px-3 py-2 text-right">{money(row.plain)}</td>
-                          <td className="px-3 py-2 text-right">{money(row.sec)}</td>
-                          <td className="px-3 py-2 text-right">{money(row.lost)}</td>
-                          <td className="px-3 py-2 text-right">{money(row.lace)}</td>
-                          <td className="px-3 py-2 text-right font-bold text-emerald-800">{money(row.fresh)}</td>
-                          <td className="px-3 py-2 text-right">{money(row.rate)}</td>
-                          <td className="px-3 py-2 text-right font-bold">{money(row.amount)}</td>
-                        </tr>
-                      ))}
+                      {group.rows.map((row, idx) => {
+                        const showBillNet = idx === 0 || group.rows[idx - 1]?.receiptId !== row.receiptId;
+                        return (
+                          <tr
+                            key={row.id}
+                            className="cursor-pointer border-b hover:bg-fuchsia-50/70"
+                            onClick={() => openEntry(row)}
+                            title="Open entry to edit"
+                          >
+                            <td className="px-3 py-2">{formatDate(row.date)}</td>
+                            <td className="px-3 py-2 font-bold text-fuchsia-800">{row.billNo}</td>
+                            <td className="px-3 py-2">{row.despChallan}</td>
+                            <td className="px-3 py-2">{row.itemName}</td>
+                            <td className="px-3 py-2">{row.jobType}</td>
+                            <td className="px-3 py-2 text-right">{row.recPcs}</td>
+                            <td className="px-3 py-2 text-right">{money(row.recMts)}</td>
+                            <td className="px-3 py-2 text-right">{money(row.plain)}</td>
+                            <td className="px-3 py-2 text-right">{money(row.sec)}</td>
+                            <td className="px-3 py-2 text-right">{money(row.lost)}</td>
+                            <td className="px-3 py-2 text-right">{money(row.lace)}</td>
+                            <td className="px-3 py-2 text-right font-bold text-emerald-800">{money(row.fresh)}</td>
+                            <td className="px-3 py-2 text-right">{money(row.rate)}</td>
+                            <td className="px-3 py-2 text-right font-bold">{money(row.amount)}</td>
+                            <td className="px-3 py-2 text-right font-semibold">{showBillNet ? money(row.invoiceValue) : ''}</td>
+                            <td className="px-3 py-2 text-right font-black text-fuchsia-900">{showBillNet ? money(row.netAfterTds) : ''}</td>
+                          </tr>
+                        );
+                      })}
                       <tr className="bg-sky-50 text-[11px] font-black uppercase">
                         <td className="px-3 py-2" colSpan={5}>Party Subtotal</td>
                         <td className="px-3 py-2 text-right">{group.sub.recPcs}</td>
@@ -167,16 +182,18 @@ export const WorkReceiptReportPage: React.FC<Props> = ({ onBack, erpSession }) =
                         <td className="px-3 py-2 text-right">{money(group.sub.fresh)}</td>
                         <td className="px-3 py-2" />
                         <td className="px-3 py-2 text-right">{money(group.sub.amount)}</td>
+                        <td className="px-3 py-2 text-right">{money(group.sub.invoiceValue)}</td>
+                        <td className="px-3 py-2 text-right">{money(group.sub.netAfterTds)}</td>
                       </tr>
                     </React.Fragment>
                   ))}
                   {!rows.length && (
-                    <tr><td colSpan={14} className="px-3 py-10 text-center text-sm text-gray-500">No work receipt entries.</td></tr>
+                    <tr><td colSpan={16} className="px-3 py-10 text-center text-sm text-gray-500">No work receipt entries.</td></tr>
                   )}
                 </tbody>
                 <tfoot>
                   <tr className="bg-slate-900 text-[11px] font-black uppercase text-white">
-                    <td className="px-3 py-2" colSpan={5}>Grand Total · Invoice {money(totals.invoiceValue)}</td>
+                    <td className="px-3 py-2" colSpan={5}>Grand Total</td>
                     <td className="px-3 py-2 text-right">{totals.recPcs}</td>
                     <td className="px-3 py-2 text-right">{money(totals.recMts)}</td>
                     <td className="px-3 py-2 text-right">{money(totals.plain || 0)}</td>
@@ -186,6 +203,8 @@ export const WorkReceiptReportPage: React.FC<Props> = ({ onBack, erpSession }) =
                     <td className="px-3 py-2 text-right">{money(totals.fresh || 0)}</td>
                     <td className="px-3 py-2" />
                     <td className="px-3 py-2 text-right">{money(totals.amount || totals.taxableAmount)}</td>
+                    <td className="px-3 py-2 text-right">{money(totals.invoiceValue)}</td>
+                    <td className="px-3 py-2 text-right">{money(totals.netAfterTds || 0)}</td>
                   </tr>
                 </tfoot>
               </table>

@@ -215,6 +215,19 @@ router.get('/report', authenticateToken, requireActiveSubscription, async (req, 
     const rows = [];
     for (const receipt of receipts) {
       const lines = Array.isArray(receipt.lineItems) ? receipt.lineItems : [];
+      const invoiceValue = roundMoney(receipt.invoiceValue || 0);
+      let tdsAmount = roundMoney(receipt.tdsAmount || 0);
+      const tdsPercent = Number(receipt.tdsPercent) || 0;
+      if (tdsAmount <= 0 && tdsPercent > 0) {
+        const base = roundMoney(receipt.tdsOnAmt || receipt.taxableAmount || receipt.grossAmount || 0);
+        tdsAmount = roundMoney(base * tdsPercent / 100);
+      }
+      const netAfterTds = roundMoney(
+        receipt.netAfterTds != null && receipt.netAfterTds !== ''
+          ? receipt.netAfterTds
+          : Math.max(0, invoiceValue - tdsAmount)
+      );
+
       if (!lines.length) {
         rows.push({
           id: receipt.id,
@@ -236,7 +249,9 @@ router.get('/report', authenticateToken, requireActiveSubscription, async (req, 
           rate: 0,
           amount: receipt.grossAmount || receipt.taxableAmount,
           taxableAmount: receipt.taxableAmount,
-          invoiceValue: receipt.invoiceValue || receipt.netAfterTds
+          invoiceValue,
+          tdsAmount,
+          netAfterTds
         });
         continue;
       }
@@ -269,7 +284,9 @@ router.get('/report', authenticateToken, requireActiveSubscription, async (req, 
           rate: Number(line.rate) || 0,
           amount: Number(line.amount) || 0,
           taxableAmount: Number(line.taxableValue) || Number(line.amount) || 0,
-          invoiceValue: receipt.invoiceValue || receipt.netAfterTds
+          invoiceValue,
+          tdsAmount,
+          netAfterTds
         });
       }
     }
@@ -284,7 +301,14 @@ router.get('/report', authenticateToken, requireActiveSubscription, async (req, 
       fresh: roundMoney(rows.reduce((s, r) => s + (Number(r.fresh) || 0), 0)),
       amount: roundMoney(rows.reduce((s, r) => s + (Number(r.amount) || 0), 0)),
       taxableAmount: roundMoney(receipts.reduce((s, r) => s + (Number(r.taxableAmount) || 0), 0)),
-      invoiceValue: roundMoney(receipts.reduce((s, r) => s + (Number(r.invoiceValue) || Number(r.netAfterTds) || 0), 0))
+      invoiceValue: roundMoney(receipts.reduce((s, r) => s + (Number(r.invoiceValue) || 0), 0)),
+      tdsAmount: roundMoney(receipts.reduce((s, r) => s + (Number(r.tdsAmount) || 0), 0)),
+      netAfterTds: roundMoney(receipts.reduce((s, r) => {
+        const inv = Number(r.invoiceValue) || 0;
+        const tds = Number(r.tdsAmount) || 0;
+        const net = r.netAfterTds != null ? Number(r.netAfterTds) : Math.max(0, inv - tds);
+        return s + net;
+      }, 0))
     };
 
     res.json({
