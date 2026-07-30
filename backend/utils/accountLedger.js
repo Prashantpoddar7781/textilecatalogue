@@ -16,8 +16,8 @@ const sortByDate = (a, b) => {
   return String(a.sourceType).localeCompare(String(b.sourceType));
 };
 
-function withRunningBalance(entries, balanceMode) {
-  let running = 0;
+function withRunningBalance(entries, balanceMode, initialRunning = 0) {
+  let running = Number(initialRunning) || 0;
   return entries.map(entry => {
     if (balanceMode === 'customer') {
       running = roundMoney(running + entry.debitAmount - entry.creditAmount);
@@ -262,29 +262,67 @@ export async function getAllLedgerParties(prisma, userId) {
   return Array.from(map.values()).sort((a, b) => a.partyName.localeCompare(b.partyName));
 }
 
-function finalizeLedgerRows(rawEntries, partyType, partyName, extra = {}) {
+function finalizeLedgerRows(rawEntries, partyType, partyName, extra = {}, opening = null) {
   const mode = partyType === 'customer' ? 'customer' : 'supplier';
+  let openingRunning = 0;
+  let openingDebit = 0;
+  let openingCredit = 0;
+  if (opening) {
+    openingDebit = roundMoney(opening.debit || 0);
+    openingCredit = roundMoney(opening.credit || 0);
+    openingRunning = mode === 'customer'
+      ? roundMoney(openingDebit - openingCredit)
+      : roundMoney(openingCredit - openingDebit);
+  }
+
   const sorted = [...rawEntries].sort(sortByDate);
-  const ledger = withRunningBalance(sorted, mode).map(entry => ({
+  const ledger = withRunningBalance(sorted, mode, openingRunning).map(entry => ({
     ...entry,
     date: entry.date instanceof Date ? entry.date.toISOString() : entry.date,
     runningBalance: Math.abs(entry.runningBalance),
   }));
   const last = ledger[ledger.length - 1];
+
   return {
     partyType,
     partyName,
     ...extra,
+    openingDebit,
+    openingCredit,
+    openingBalance: Math.abs(openingRunning),
+    openingBalanceType: mode === 'customer'
+      ? (openingRunning >= 0 ? 'DR' : 'CR')
+      : (openingRunning >= 0 ? 'CR' : 'DR'),
     ledger,
-    runningBalance: last ? last.runningBalance : 0,
-    balanceType: last ? last.balanceType : (mode === 'customer' ? 'DR' : 'CR'),
+    runningBalance: last ? last.runningBalance : Math.abs(openingRunning),
+    balanceType: last
+      ? last.balanceType
+      : (mode === 'customer'
+        ? (openingRunning >= 0 ? 'DR' : 'CR')
+        : (openingRunning >= 0 ? 'CR' : 'DR')),
     totalDebit: roundMoney(ledger.reduce((s, r) => s + (r.debitAmount || 0), 0)),
     totalCredit: roundMoney(ledger.reduce((s, r) => s + (r.creditAmount || 0), 0))
   };
 }
 
+function toDayStart(value) {
+  if (!value) return null;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function toDayEnd(value) {
+  if (!value) return null;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  d.setHours(23, 59, 59, 999);
+  return d;
+}
+
 /** Unified single-account ledger (customer and/or supplier activity for one A/C name). */
-export async function buildUnifiedPartyLedger(prisma, userId, { partyName, supplierId, customerId }) {
+export async function buildUnifiedPartyLedger(prisma, userId, { partyName, supplierId, customerId, fromDate, toDate }) {
   const name = String(partyName || '').trim();
   if (!name) return null;
 
@@ -306,18 +344,26 @@ export async function buildUnifiedPartyLedger(prisma, userId, { partyName, suppl
   const customerLedger = await buildCustomerLedger(prisma, userId, name);
   if (customerLedger?.ledger?.length) chunks.push(customerLedger);
 
+  const emptyResult = {
+    partyType: resolvedSupplierId ? 'supplier' : 'customer',
+    partyName: name,
+    supplierId: resolvedSupplierId,
+    customerId: customerId || null,
+    fromDate: fromDate || null,
+    toDate: toDate || null,
+    ledger: [],
+    openingDebit: 0,
+    openingCredit: 0,
+    openingBalance: 0,
+    openingBalanceType: resolvedSupplierId ? 'CR' : 'DR',
+    runningBalance: 0,
+    balanceType: resolvedSupplierId ? 'CR' : 'DR',
+    totalDebit: 0,
+    totalCredit: 0
+  };
+
   if (!chunks.length) {
-    return {
-      partyType: resolvedSupplierId ? 'supplier' : 'customer',
-      partyName: name,
-      supplierId: resolvedSupplierId,
-      customerId: customerId || null,
-      ledger: [],
-      runningBalance: 0,
-      balanceType: 'DR',
-      totalDebit: 0,
-      totalCredit: 0
-    };
+    return emptyResult;
   }
 
   const byId = new Map();
@@ -339,14 +385,45 @@ export async function buildUnifiedPartyLedger(prisma, userId, { partyName, suppl
     }
   }
 
+  const allRows = Array.from(byId.values());
+  const from = toDayStart(fromDate);
+  const to = toDayEnd(toDate);
+
+  let openingDebit = 0;
+  let openingCredit = 0;
+  if (from) {
+    for (const row of allRows) {
+      const d = new Date(row.date);
+      if (d < from) {
+        openingDebit = roundMoney(openingDebit + (row.debitAmount || 0));
+        openingCredit = roundMoney(openingCredit + (row.creditAmount || 0));
+      }
+    }
+  }
+
+  const filtered = allRows.filter(row => {
+    const d = new Date(row.date);
+    if (from && d < from) return false;
+    if (to && d > to) return false;
+    return true;
+  });
+
   const partyType = resolvedSupplierId && (customerId || chunks.length > 1)
     ? 'both'
     : (resolvedSupplierId ? 'supplier' : 'customer');
 
-  return finalizeLedgerRows(Array.from(byId.values()), partyType, name, {
-    supplierId: resolvedSupplierId,
-    customerId: customerId || null
-  });
+  return finalizeLedgerRows(
+    filtered,
+    partyType,
+    name,
+    {
+      supplierId: resolvedSupplierId,
+      customerId: customerId || null,
+      fromDate: fromDate || null,
+      toDate: toDate || null
+    },
+    { debit: openingDebit, credit: openingCredit }
+  );
 }
 
 export async function buildCustomerLedger(prisma, userId, partyName) {

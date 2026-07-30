@@ -555,16 +555,30 @@ export const ledgerApi = {
   getParties: async (partyType: 'customer' | 'supplier' | 'all' = 'all') => {
     return request<{ partyType: string; parties: AccountLedgerParty[] }>(`/ledger/parties?partyType=${partyType}`);
   },
-  getAccountLedger: async (params: { partyName: string; supplierId?: string | null; customerId?: string | null }) => {
+  getAccountLedger: async (params: {
+    partyName: string;
+    supplierId?: string | null;
+    customerId?: string | null;
+    fromDate?: string | null;
+    toDate?: string | null;
+  }) => {
     const query = new URLSearchParams();
     query.set('partyName', params.partyName);
     if (params.supplierId) query.set('supplierId', params.supplierId);
     if (params.customerId) query.set('customerId', params.customerId);
+    if (params.fromDate) query.set('fromDate', params.fromDate);
+    if (params.toDate) query.set('toDate', params.toDate);
     return request<{
       partyType: string;
       partyName: string;
       supplierId?: string | null;
       customerId?: string | null;
+      fromDate?: string | null;
+      toDate?: string | null;
+      openingDebit?: number;
+      openingCredit?: number;
+      openingBalance?: number;
+      openingBalanceType?: 'DR' | 'CR';
       ledger: AccountLedgerEntry[];
       runningBalance: number;
       balanceType: 'DR' | 'CR';

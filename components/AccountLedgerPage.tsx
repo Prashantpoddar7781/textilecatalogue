@@ -43,14 +43,30 @@ const billTypeLabel: Record<string, string> = {
   credit_debit_note: 'Cr/Dr Note'
 };
 
+/** Default FY range like legacy ledger: 01/04 → 31/03 */
+const defaultFyRange = () => {
+  const now = new Date();
+  const year = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
+  const from = `${year}-04-01`;
+  const to = `${year + 1}-03-31`;
+  return { from, to };
+};
+
 export const AccountLedgerPage: React.FC<Props> = ({ onBack, erpSession }) => {
+  const fy = useMemo(() => defaultFyRange(), []);
   const [parties, setParties] = useState<AccountLedgerParty[]>([]);
   const [selectedKey, setSelectedKey] = useState('');
+  const [fromDate, setFromDate] = useState(fy.from);
+  const [toDate, setToDate] = useState(fy.to);
   const [ledger, setLedger] = useState<AccountLedgerEntry[]>([]);
   const [runningBalance, setRunningBalance] = useState(0);
   const [balanceType, setBalanceType] = useState<'DR' | 'CR'>('DR');
   const [totalDebit, setTotalDebit] = useState(0);
   const [totalCredit, setTotalCredit] = useState(0);
+  const [openingDebit, setOpeningDebit] = useState(0);
+  const [openingCredit, setOpeningCredit] = useState(0);
+  const [openingBalance, setOpeningBalance] = useState(0);
+  const [openingBalanceType, setOpeningBalanceType] = useState<'DR' | 'CR'>('DR');
   const [selectedEntry, setSelectedEntry] = useState<AccountLedgerEntry | null>(null);
   const [entryDetail, setEntryDetail] = useState<LedgerEntryDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -98,13 +114,19 @@ export const AccountLedgerPage: React.FC<Props> = ({ onBack, erpSession }) => {
       const result = await ledgerApi.getAccountLedger({
         partyName: selectedParty.partyName,
         supplierId: selectedParty.supplierId,
-        customerId: selectedParty.customerId
+        customerId: selectedParty.customerId,
+        fromDate: fromDate || undefined,
+        toDate: toDate || undefined
       });
       setLedger(result.ledger || []);
       setRunningBalance(result.runningBalance);
       setBalanceType(result.balanceType);
       setTotalDebit(result.totalDebit);
       setTotalCredit(result.totalCredit);
+      setOpeningDebit(Number(result.openingDebit) || 0);
+      setOpeningCredit(Number(result.openingCredit) || 0);
+      setOpeningBalance(Number(result.openingBalance) || 0);
+      setOpeningBalanceType(result.openingBalanceType || 'DR');
     } catch (err: any) {
       setError(err.message || 'Could not load ledger.');
     } finally {
@@ -118,7 +140,7 @@ export const AccountLedgerPage: React.FC<Props> = ({ onBack, erpSession }) => {
 
   useEffect(() => {
     void loadLedger();
-  }, [selectedKey]);
+  }, [selectedKey, fromDate, toDate]);
 
   const filteredParties = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -219,6 +241,33 @@ export const AccountLedgerPage: React.FC<Props> = ({ onBack, erpSession }) => {
                     <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">A/C</p>
                     <h2 className="text-2xl font-black text-gray-900">{selectedParty.partyName}</h2>
                     <p className="text-sm text-gray-500">Single account ledger · Dynamic view</p>
+                    <div className="mt-3 flex flex-wrap items-end gap-3">
+                      <label className="text-xs font-bold text-gray-600">
+                        From
+                        <input
+                          type="date"
+                          className="mt-1 block rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-sm font-semibold"
+                          value={fromDate}
+                          onChange={e => setFromDate(e.target.value)}
+                        />
+                      </label>
+                      <label className="text-xs font-bold text-gray-600">
+                        To
+                        <input
+                          type="date"
+                          className="mt-1 block rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-sm font-semibold"
+                          value={toDate}
+                          onChange={e => setToDate(e.target.value)}
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => void loadLedger()}
+                        className="rounded-xl bg-slate-900 px-3 py-2 text-xs font-black uppercase text-white"
+                      >
+                        Apply
+                      </button>
+                    </div>
                   </div>
                   <div className="rounded-2xl bg-sky-50 px-4 py-3 text-right">
                     <p className="text-xs font-black uppercase text-sky-700">Closing Balance</p>
@@ -266,11 +315,13 @@ export const AccountLedgerPage: React.FC<Props> = ({ onBack, erpSession }) => {
                         </tr>
                       </thead>
                       <tbody>
-                        <tr className="border-b bg-gray-50 text-gray-500">
-                          <td className="px-2 py-2" colSpan={3}>Bal. Brought Forward</td>
-                          <td className="px-2 py-2 text-right">0.00</td>
-                          <td className="px-2 py-2 text-right">0.00</td>
-                          <td className="px-2 py-2 text-right">-</td>
+                        <tr className="border-b bg-gray-50 text-gray-700">
+                          <td className="px-2 py-2 font-semibold" colSpan={3}>Bal. Brought Forward</td>
+                          <td className="px-2 py-2 text-right">{openingDebit ? formatMoney(openingDebit) : '0.00'}</td>
+                          <td className="px-2 py-2 text-right">{openingCredit ? formatMoney(openingCredit) : '0.00'}</td>
+                          <td className="px-2 py-2 text-right font-bold whitespace-nowrap">
+                            {openingBalance > 0 ? `${formatMoney(openingBalance)} ${openingBalanceType === 'CR' ? 'Cr' : 'Dr'}` : '-'}
+                          </td>
                           <td className="px-2 py-2" colSpan={2} />
                         </tr>
                         {ledger.map(entry => {

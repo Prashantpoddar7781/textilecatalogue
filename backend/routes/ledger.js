@@ -44,10 +44,14 @@ router.get('/account', authenticateToken, requireActiveSubscription, async (req,
     }
     const supplierId = req.query.supplierId ? String(req.query.supplierId) : null;
     const customerId = req.query.customerId ? String(req.query.customerId) : null;
+    const fromDate = req.query.fromDate ? String(req.query.fromDate).trim() : null;
+    const toDate = req.query.toDate ? String(req.query.toDate).trim() : null;
     const result = await buildUnifiedPartyLedger(prisma, req.user.userId, {
       partyName,
       supplierId,
-      customerId
+      customerId,
+      fromDate,
+      toDate
     });
     if (!result) {
       return res.status(404).json({ error: 'Account not found' });
