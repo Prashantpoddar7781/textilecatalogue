@@ -96,7 +96,7 @@ export async function getCustomerLedgerParties(prisma, userId) {
 }
 
 export async function getSupplierLedgerParties(prisma, userId) {
-  const [suppliers, greyPurchases, greyReturns, millReceipts] = await Promise.all([
+  const [suppliers, greyPurchases, greyReturns, millReceipts, workReceipts] = await Promise.all([
     prisma.supplier.findMany({
       where: { userId },
       include: {
@@ -132,6 +132,14 @@ export async function getSupplierLedgerParties(prisma, userId) {
         tdsOnAmt: true,
         taxableAmount: true,
         jobAmount: true
+      }
+    }),
+    prisma.workReceipt.findMany({
+      where: { userId, status: { not: 'cancelled' } },
+      select: {
+        partyName: true,
+        invoiceValue: true,
+        taxableAmount: true
       }
     })
   ]);
@@ -172,6 +180,14 @@ export async function getSupplierLedgerParties(prisma, userId) {
       // Net payable = invoice credit − TDS debit
       runningBalance = roundMoney(runningBalance + invoiceValue - tdsAmount);
       entryCount += 1 + (tdsAmount > 0 ? 1 : 0);
+    }
+
+    for (const receipt of workReceipts) {
+      if (!matchesSupplierName(supplier.name, receipt.partyName)) continue;
+      const invoiceValue = roundMoney(receipt.invoiceValue || receipt.taxableAmount || 0);
+      if (invoiceValue <= 0) continue;
+      runningBalance = roundMoney(runningBalance + invoiceValue);
+      entryCount += 1;
     }
 
     return {
@@ -493,6 +509,30 @@ export async function buildSupplierLedger(prisma, userId, supplierId) {
     }
   }
 
+  const workReceipts = await prisma.workReceipt.findMany({
+    where: { userId, status: { not: 'cancelled' } },
+    orderBy: [{ receiptDate: 'asc' }, { createdAt: 'asc' }]
+  });
+
+  for (const receipt of workReceipts) {
+    if (!matchesSupplierName(supplier.name, receipt.partyName)) continue;
+    const invoiceValue = roundMoney(receipt.invoiceValue || receipt.taxableAmount || 0);
+    if (invoiceValue <= 0) continue;
+    rawEntries.push({
+      id: `work-receipt-${receipt.id}`,
+      sourceType: 'work_receipt',
+      sourceId: receipt.id,
+      date: receipt.receiptDate || receipt.createdAt,
+      voucherNumber: String(receipt.voucherNo || '-'),
+      billNumber: receipt.billNo || receipt.challanNo || String(receipt.voucherNo || '-'),
+      account: 'WORK CHARGES',
+      particulars: receipt.workType || '',
+      remarks: receipt.remarks || '',
+      debitAmount: 0,
+      creditAmount: invoiceValue
+    });
+  }
+
   for (const note of notes) {
     if (!matchesNoteParty(note, supplier.name, 'supplier')) continue;
     const amount = roundMoney(note.netAmountAfterTds || note.netAmount || note.grossAmount);
@@ -572,7 +612,8 @@ const VALID_SOURCE_TYPES = new Set([
   'grey_purchase',
   'grey_purchase_return',
   'mill_receipt',
-  'mill_receipt_tds'
+  'mill_receipt_tds',
+  'work_receipt'
 ]);
 
 function buildDetailFields(items) {
@@ -867,6 +908,57 @@ export async function getLedgerEntryDetail(prisma, userId, sourceType, sourceId)
           greyMts: roundMoney(row.greyMts),
           recMts: roundMoney(row.recMts),
           shortPct: roundMoney(row.shortPct)
+        }))
+        : undefined
+    };
+  }
+
+  if (sourceType === 'work_receipt') {
+    const receipt = await prisma.workReceipt.findFirst({
+      where: { id: sourceId, userId },
+      include: { workDespatch: true }
+    });
+    if (!receipt) return null;
+    const lineItems = Array.isArray(receipt.lineItems) ? receipt.lineItems : [];
+    return {
+      title: `Work Receipt #${receipt.voucherNo ?? '-'}`,
+      subtitle: receipt.partyName,
+      sourceType,
+      sourceId,
+      canEdit: true,
+      editPath: `/erp/work-receipt?edit=${receipt.id}`,
+      fields: buildDetailFields([
+        { label: 'Date', value: toIsoDate(receipt.receiptDate) },
+        { label: 'Challan', value: receipt.challanNo },
+        { label: 'Desp. Challan', value: receipt.workDespatch?.challanNo },
+        { label: 'Work Type', value: receipt.workType },
+        { label: 'Rec. Pcs', value: receipt.totalPcs },
+        { label: 'Rec. Mts', value: receipt.totalMts, isMoney: true },
+        { label: 'Taxable', value: receipt.taxableAmount, isMoney: true },
+        { label: 'CGST', value: receipt.cgstAmount, isMoney: true },
+        { label: 'SGST', value: receipt.sgstAmount, isMoney: true },
+        { label: 'IGST', value: receipt.igstAmount, isMoney: true },
+        { label: 'Invoice Value', value: receipt.invoiceValue, isMoney: true },
+        { label: 'Remarks', value: receipt.remarks }
+      ]),
+      lineColumns: lineItems.length
+        ? [
+          { key: 'itemName', label: 'Item' },
+          { key: 'jobType', label: 'Job Type' },
+          { key: 'pcs', label: 'Pcs', align: 'right' },
+          { key: 'mtsQty', label: 'Mts', align: 'right', isMoney: true },
+          { key: 'rate', label: 'Rate', align: 'right', isMoney: true },
+          { key: 'amount', label: 'Amount', align: 'right', isMoney: true }
+        ]
+        : undefined,
+      lineItems: lineItems.length
+        ? lineItems.map(row => ({
+          itemName: row.itemName,
+          jobType: row.jobType,
+          pcs: roundMoney(row.pcs),
+          mtsQty: roundMoney(row.mtsQty),
+          rate: roundMoney(row.rate),
+          amount: roundMoney(row.amount)
         }))
         : undefined
     };

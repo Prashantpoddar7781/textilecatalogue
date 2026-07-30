@@ -29,6 +29,10 @@ import { MillReceiptPage } from './components/MillReceiptPage';
 import { GodownInventoryReportPage } from './components/GodownInventoryReportPage';
 import { MillDispatchReportPage } from './components/MillDispatchReportPage';
 import { MillReceiptReportPage } from './components/MillReceiptReportPage';
+import { WorkDespatchPage } from './components/WorkDespatchPage';
+import { WorkReceiptPage } from './components/WorkReceiptPage';
+import { WorkDespatchReportPage } from './components/WorkDespatchReportPage';
+import { WorkReceiptReportPage } from './components/WorkReceiptReportPage';
 import { CreditDebitNotePage } from './components/CreditDebitNotePage';
 import { parseNoteTypeFromPath } from './constants/creditDebitNoteTypes';
 import { BankEntriesPage } from './components/BankEntriesPage';
@@ -66,14 +70,20 @@ const App: React.FC = () => {
   const erpGreyDispatchMatch = pathname.match(/^\/erp\/grey-dispatch\/?$/);
   const erpGreyPurchaseReturnMatch = pathname.match(/^\/erp\/grey-purchase-return\/?$/);
   const erpMillReceiptMatch = pathname.match(/^\/erp\/mill-receipt\/?$/);
+  const erpWorkDespatchMatch = pathname.match(/^\/erp\/work-despatch\/?$/);
+  const erpWorkReceiptMatch = pathname.match(/^\/erp\/work-receipt\/?$/);
   const erpGodownReportMatch = pathname.match(/^\/erp\/reports\/godown-inventory\/?$/);
   const erpMillDispatchReportMatch = pathname.match(/^\/erp\/reports\/mill-dispatch\/?$/);
   const erpMillReceiptReportMatch = pathname.match(/^\/erp\/reports\/mill-receipt\/?$/);
+  const erpWorkDespatchReportMatch = pathname.match(/^\/erp\/reports\/work-despatch\/?$/);
+  const erpWorkReceiptReportMatch = pathname.match(/^\/erp\/reports\/work-receipt\/?$/);
   const erpNotesMatch = pathname.match(/^\/erp\/notes\/([^/]+)\/?$/);
   const isErpRoute = Boolean(
     erpMatch || erpBankMatch || erpSalesMatch || erpPurchaseMatch || erpLedgerMatch
     || erpUtilitiesMatch || erpUsersMatch || erpCompanyMatch || erpGreyPurchaseMatch || erpGreyDispatchMatch || erpGreyPurchaseReturnMatch
-    || erpMillReceiptMatch || erpGodownReportMatch || erpMillDispatchReportMatch || erpMillReceiptReportMatch
+    || erpMillReceiptMatch || erpWorkDespatchMatch || erpWorkReceiptMatch
+    || erpGodownReportMatch || erpMillDispatchReportMatch || erpMillReceiptReportMatch
+    || erpWorkDespatchReportMatch || erpWorkReceiptReportMatch
     || erpNotesMatch || supplierLedgerMatch
   );
   const shareStatsMatch = pathname.match(/^\/share-stats\/?$/);
@@ -747,6 +757,24 @@ const App: React.FC = () => {
     );
   }
 
+  if (erpWorkDespatchMatch) {
+    return (
+      <WorkDespatchPage
+        erpSession={erpSession}
+        onBack={() => { window.location.href = '/erp'; }}
+      />
+    );
+  }
+
+  if (erpWorkReceiptMatch) {
+    return (
+      <WorkReceiptPage
+        erpSession={erpSession}
+        onBack={() => { window.location.href = '/erp'; }}
+      />
+    );
+  }
+
   if (erpGodownReportMatch) {
     return (
       <GodownInventoryReportPage
@@ -768,6 +796,24 @@ const App: React.FC = () => {
   if (erpMillReceiptReportMatch) {
     return (
       <MillReceiptReportPage
+        erpSession={erpSession}
+        onBack={() => { window.location.href = '/erp'; }}
+      />
+    );
+  }
+
+  if (erpWorkDespatchReportMatch) {
+    return (
+      <WorkDespatchReportPage
+        erpSession={erpSession}
+        onBack={() => { window.location.href = '/erp'; }}
+      />
+    );
+  }
+
+  if (erpWorkReceiptReportMatch) {
+    return (
+      <WorkReceiptReportPage
         erpSession={erpSession}
         onBack={() => { window.location.href = '/erp'; }}
       />

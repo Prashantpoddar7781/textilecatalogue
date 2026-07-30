@@ -868,6 +868,108 @@ export interface CreditDebitNote {
   updatedAt: string;
 }
 
+export interface WorkLineItem {
+  lineNo?: number;
+  itemName: string;
+  bundles?: number;
+  jobType?: string | null;
+  unit?: string | null;
+  pcs: number;
+  cut: number;
+  mtsQty: number;
+  rate: number;
+  amount: number;
+  fabricRate?: number;
+  taxableValue?: number;
+  pendingPcs?: number;
+  pendingMts?: number;
+}
+
+export interface WorkPendingDespatch {
+  id: string;
+  challanNo?: string | null;
+  despatchDate?: string;
+  partyName: string;
+  partyGstin?: string | null;
+  workType?: string | null;
+  brokerName?: string | null;
+  transactionType?: string;
+  totalPcs: number;
+  totalMts: number;
+  receivedPcs: number;
+  receivedMts: number;
+  pendingPcs: number;
+  pendingMts: number;
+  lineItems?: WorkLineItem[];
+  pendingLines?: WorkLineItem[];
+}
+
+export interface WorkDespatch {
+  id: string;
+  userId: string;
+  companyName?: string | null;
+  transactionType: string;
+  partyName: string;
+  partyGstin?: string | null;
+  placeOfSupply?: string | null;
+  stateCode?: string | null;
+  gstType?: string | null;
+  challanNo?: string | null;
+  despatchDate: string;
+  brokerName?: string | null;
+  vehicleNo?: string | null;
+  workType?: string | null;
+  hsnCode?: string | null;
+  remarks?: string | null;
+  receivedBy?: string | null;
+  deliveryDays?: number;
+  deliveryDueDate?: string | null;
+  lrNo?: string | null;
+  ewayBillNo?: string | null;
+  lineItems: WorkLineItem[];
+  totalBundles: number;
+  totalPcs: number;
+  totalMts: number;
+  totalAmount: number;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WorkReceipt {
+  id: string;
+  userId: string;
+  workDespatchId: string;
+  workDespatch?: WorkDespatch | null;
+  companyName?: string | null;
+  transactionType: string;
+  partyName: string;
+  partyGstin?: string | null;
+  placeOfSupply?: string | null;
+  stateCode?: string | null;
+  gstType?: string | null;
+  challanNo?: string | null;
+  voucherNo?: number | null;
+  receiptDate: string;
+  brokerName?: string | null;
+  workType?: string | null;
+  hsnCode?: string | null;
+  remarks?: string | null;
+  billNo?: string | null;
+  lineItems: WorkLineItem[];
+  totalPcs: number;
+  totalMts: number;
+  taxableAmount: number;
+  gstRate: number;
+  cgstAmount: number;
+  sgstAmount: number;
+  igstAmount: number;
+  invoiceValue: number;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface SubscriptionStatus {
   status: string | null;
   plan: string | null;

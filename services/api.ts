@@ -1117,6 +1117,83 @@ export const millReceiptsApi = {
   }
 };
 
+export const workDespatchesApi = {
+  getMeta: async () => {
+    return request<{
+      companyName: string;
+      nextChallanNo: number;
+      nextSrNo: number;
+      transactionTypes: string[];
+      workTypes: string[];
+      units: string[];
+      defaultCut: number;
+      parties: Array<{ name: string; gstNumber?: string | null; state?: string | null; brokerName?: string | null }>;
+    }>('/work-despatches/meta');
+  },
+  getPending: async (partyName?: string) => {
+    const qs = partyName ? `?partyName=${encodeURIComponent(partyName)}` : '';
+    return request<{ entries: import('../types').WorkPendingDespatch[] }>(`/work-despatches/pending${qs}`);
+  },
+  getReport: async (params?: { fromDate?: string; toDate?: string; partyName?: string }) => {
+    const query = new URLSearchParams();
+    if (params?.fromDate) query.set('fromDate', params.fromDate);
+    if (params?.toDate) query.set('toDate', params.toDate);
+    if (params?.partyName) query.set('partyName', params.partyName);
+    const qs = query.toString();
+    return request<{
+      companyName: string;
+      fromDate?: string | null;
+      toDate?: string | null;
+      reportDate: string;
+      rows: Array<Record<string, unknown>>;
+      totals: { desPcs: number; desMts: number; pendingPcs: number; pendingMts: number };
+    }>(`/work-despatches/report${qs ? `?${qs}` : ''}`);
+  },
+  create: async (body: Record<string, unknown>) => {
+    return request<{ entry: import('../types').WorkDespatch }>('/work-despatches', {
+      method: 'POST',
+      body: JSON.stringify(body)
+    });
+  }
+};
+
+export const workReceiptsApi = {
+  getMeta: async () => {
+    return request<{
+      companyName: string;
+      businessState?: string | null;
+      defaultGstRate: number;
+      nextVoucherNo: number;
+      transactionTypes: string[];
+      states: string[];
+    }>('/work-receipts/meta');
+  },
+  calculate: async (body: Record<string, unknown>) => {
+    return request<{ totals: Record<string, number | string> }>('/work-receipts/calculate', {
+      method: 'POST',
+      body: JSON.stringify(body)
+    });
+  },
+  getReport: async (params?: { fromDate?: string; toDate?: string; partyName?: string }) => {
+    const query = new URLSearchParams();
+    if (params?.fromDate) query.set('fromDate', params.fromDate);
+    if (params?.toDate) query.set('toDate', params.toDate);
+    if (params?.partyName) query.set('partyName', params.partyName);
+    const qs = query.toString();
+    return request<{
+      companyName: string;
+      rows: Array<Record<string, unknown>>;
+      totals: { recPcs: number; recMts: number; taxableAmount: number; invoiceValue: number };
+    }>(`/work-receipts/report${qs ? `?${qs}` : ''}`);
+  },
+  create: async (body: Record<string, unknown>) => {
+    return request<{ entry: import('../types').WorkReceipt }>('/work-receipts', {
+      method: 'POST',
+      body: JSON.stringify(body)
+    });
+  }
+};
+
 // Billing API
 export const billingApi = {
   getPlans: async () => {

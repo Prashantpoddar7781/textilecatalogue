@@ -62,11 +62,18 @@ const sections = [
     status: 'Ready'
   },
   {
-    title: 'Misc Work Dispatch / Receipt',
-    description: 'Job-work movement for dyeing, finishing, embroidery, and other processes.',
+    title: 'Work Despatch',
+    description: 'Send fabric for embroidery / hand work — cut default 6.30, no ledger effect.',
     icon: Boxes,
-    href: '#',
-    status: 'Coming next'
+    href: '/erp/work-despatch',
+    status: 'Ready'
+  },
+  {
+    title: 'Work Receipt',
+    description: 'Receive job-work back from khataval — posts WORK CHARGES to ledger.',
+    icon: PackageCheck,
+    href: '/erp/work-receipt',
+    status: 'Ready'
   }
 ];
 

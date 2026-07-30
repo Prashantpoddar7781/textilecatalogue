@@ -49,6 +49,8 @@ model User {
   greyDispatches GreyDispatch[]
   greyPurchaseReturns GreyPurchaseReturn[]
   millReceipts MillReceipt[]
+  workDespatches WorkDespatch[]
+  workReceipts WorkReceipt[]
 }
 
 model ErpUser {
@@ -641,6 +643,96 @@ model MillReceipt {
   @@index([lotNo])
   @@index([voucherNo])
   @@index([processType])
+  @@index([status])
+}
+
+model WorkDespatch {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  companyName     String?
+  transactionType String   @default("WORK DESP.SUIT CHALLAN")
+  partyName       String
+  partyGstin      String?
+  placeOfSupply   String?
+  stateCode       String?
+  gstType         String?
+  challanNo       String?
+  despatchDate    DateTime @default(now())
+  brokerName      String?
+  vehicleNo       String?
+  workType        String?
+  hsnCode         String?  @default("5407")
+  remarks         String?
+  receivedBy      String?
+  deliveryDays    Int      @default(0)
+  deliveryDueDate DateTime?
+  lrNo            String?
+  ewayBillNo      String?
+  dhara           Float    @default(0)
+  grace           Float    @default(0)
+  rateInChallan   Boolean  @default(false)
+  srNo            Int?
+  lineItems       Json
+  totalBundles    Float    @default(0)
+  totalPcs        Float    @default(0)
+  totalMts        Float    @default(0)
+  totalAmount     Float    @default(0)
+  status          String   @default("posted")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  workReceipts    WorkReceipt[]
+
+  @@index([userId])
+  @@index([despatchDate])
+  @@index([partyName])
+  @@index([challanNo])
+  @@index([status])
+}
+
+model WorkReceipt {
+  id              String       @id @default(cuid())
+  userId          String
+  user            User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workDespatchId  String
+  workDespatch    WorkDespatch @relation(fields: [workDespatchId], references: [id], onDelete: Restrict)
+  companyName     String?
+  transactionType String       @default("WORK REC. CHALLAN")
+  partyName       String
+  partyGstin      String?
+  placeOfSupply   String?
+  stateCode       String?
+  gstType         String?
+  challanNo       String?
+  voucherNo       Int?
+  receiptDate     DateTime     @default(now())
+  brokerName      String?
+  vehicleNo       String?
+  workType        String?
+  hsnCode         String?      @default("5407")
+  remarks         String?
+  receivedBy      String?
+  billNo          String?
+  lineItems       Json
+  totalPcs        Float        @default(0)
+  totalMts        Float        @default(0)
+  taxableAmount   Float        @default(0)
+  gstRate         Float        @default(5)
+  cgstRate        Float        @default(0)
+  cgstAmount      Float        @default(0)
+  sgstRate        Float        @default(0)
+  sgstAmount      Float        @default(0)
+  igstRate        Float        @default(0)
+  igstAmount      Float        @default(0)
+  invoiceValue    Float        @default(0)
+  status          String       @default("posted")
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  @@index([userId])
+  @@index([workDespatchId])
+  @@index([receiptDate])
+  @@index([partyName])
   @@index([status])
 }
 
