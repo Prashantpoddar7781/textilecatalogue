@@ -139,7 +139,12 @@ export async function getSupplierLedgerParties(prisma, userId) {
       select: {
         partyName: true,
         invoiceValue: true,
-        taxableAmount: true
+        taxableAmount: true,
+        grossAmount: true,
+        tdsPercent: true,
+        tdsAmount: true,
+        tdsOnAmt: true,
+        netAfterTds: true
       }
     })
   ]);
@@ -184,10 +189,13 @@ export async function getSupplierLedgerParties(prisma, userId) {
 
     for (const receipt of workReceipts) {
       if (!matchesSupplierName(supplier.name, receipt.partyName)) continue;
+      const tdsPercent = Number(receipt.tdsPercent) || 0;
+      const taxable = roundMoney(receipt.taxableAmount || receipt.grossAmount || 0);
+      const tdsAmount = tdsPercent > 0 ? roundMoney(taxable * tdsPercent / 100) : 0;
       const invoiceValue = roundMoney(receipt.invoiceValue || receipt.taxableAmount || 0);
-      if (invoiceValue <= 0) continue;
-      runningBalance = roundMoney(runningBalance + invoiceValue);
-      entryCount += 1;
+      if (invoiceValue <= 0 && tdsAmount <= 0) continue;
+      runningBalance = roundMoney(runningBalance + invoiceValue - tdsAmount);
+      entryCount += 1 + (tdsAmount > 0 ? 1 : 0);
     }
 
     return {
@@ -199,6 +207,145 @@ export async function getSupplierLedgerParties(prisma, userId) {
       entryCount,
       runningBalance
     };
+  });
+}
+
+/** Single-account list: customers + suppliers merged by name (Dynamic Ledger). */
+export async function getAllLedgerParties(prisma, userId) {
+  const [customers, suppliers] = await Promise.all([
+    getCustomerLedgerParties(prisma, userId),
+    getSupplierLedgerParties(prisma, userId)
+  ]);
+  const map = new Map();
+  for (const party of customers) {
+    const key = String(party.partyName || '').trim().toLowerCase();
+    if (!key) continue;
+    map.set(key, {
+      partyType: 'customer',
+      partyName: party.partyName,
+      customerId: party.customerId || null,
+      supplierId: null,
+      gstNumber: party.gstNumber || null,
+      mobileNumber: party.mobileNumber || null,
+      entryCount: party.entryCount || 0,
+      runningBalance: party.runningBalance || 0
+    });
+  }
+  for (const party of suppliers) {
+    const key = String(party.partyName || '').trim().toLowerCase();
+    if (!key) continue;
+    const existing = map.get(key);
+    if (existing) {
+      map.set(key, {
+        ...existing,
+        partyType: 'both',
+        supplierId: party.supplierId || existing.supplierId,
+        customerId: existing.customerId,
+        gstNumber: party.gstNumber || existing.gstNumber,
+        mobileNumber: party.mobileNumber || existing.mobileNumber,
+        entryCount: (existing.entryCount || 0) + (party.entryCount || 0),
+        runningBalance: roundMoney((existing.runningBalance || 0) + (party.runningBalance || 0))
+      });
+    } else {
+      map.set(key, {
+        partyType: 'supplier',
+        partyName: party.partyName,
+        customerId: null,
+        supplierId: party.supplierId || null,
+        gstNumber: party.gstNumber || null,
+        mobileNumber: party.mobileNumber || null,
+        entryCount: party.entryCount || 0,
+        runningBalance: party.runningBalance || 0
+      });
+    }
+  }
+  return Array.from(map.values()).sort((a, b) => a.partyName.localeCompare(b.partyName));
+}
+
+function finalizeLedgerRows(rawEntries, partyType, partyName, extra = {}) {
+  const mode = partyType === 'customer' ? 'customer' : 'supplier';
+  const sorted = [...rawEntries].sort(sortByDate);
+  const ledger = withRunningBalance(sorted, mode).map(entry => ({
+    ...entry,
+    date: entry.date instanceof Date ? entry.date.toISOString() : entry.date,
+    runningBalance: Math.abs(entry.runningBalance),
+  }));
+  const last = ledger[ledger.length - 1];
+  return {
+    partyType,
+    partyName,
+    ...extra,
+    ledger,
+    runningBalance: last ? last.runningBalance : 0,
+    balanceType: last ? last.balanceType : (mode === 'customer' ? 'DR' : 'CR'),
+    totalDebit: roundMoney(ledger.reduce((s, r) => s + (r.debitAmount || 0), 0)),
+    totalCredit: roundMoney(ledger.reduce((s, r) => s + (r.creditAmount || 0), 0))
+  };
+}
+
+/** Unified single-account ledger (customer and/or supplier activity for one A/C name). */
+export async function buildUnifiedPartyLedger(prisma, userId, { partyName, supplierId, customerId }) {
+  const name = String(partyName || '').trim();
+  if (!name) return null;
+
+  let resolvedSupplierId = supplierId || null;
+  if (!resolvedSupplierId) {
+    const supplier = await prisma.supplier.findFirst({
+      where: { userId, name: { equals: name, mode: 'insensitive' } },
+      select: { id: true }
+    });
+    resolvedSupplierId = supplier?.id || null;
+  }
+
+  const chunks = [];
+  if (resolvedSupplierId) {
+    const supplierLedger = await buildSupplierLedger(prisma, userId, resolvedSupplierId);
+    if (supplierLedger?.ledger?.length) chunks.push(supplierLedger);
+  }
+
+  const customerLedger = await buildCustomerLedger(prisma, userId, name);
+  if (customerLedger?.ledger?.length) chunks.push(customerLedger);
+
+  if (!chunks.length) {
+    return {
+      partyType: resolvedSupplierId ? 'supplier' : 'customer',
+      partyName: name,
+      supplierId: resolvedSupplierId,
+      customerId: customerId || null,
+      ledger: [],
+      runningBalance: 0,
+      balanceType: 'DR',
+      totalDebit: 0,
+      totalCredit: 0
+    };
+  }
+
+  const byId = new Map();
+  for (const chunk of chunks) {
+    for (const row of chunk.ledger || []) {
+      byId.set(row.id, {
+        id: row.id,
+        sourceType: row.sourceType,
+        sourceId: row.sourceId,
+        date: row.date,
+        voucherNumber: row.voucherNumber,
+        billNumber: row.billNumber,
+        account: row.account,
+        particulars: row.particulars,
+        remarks: row.remarks,
+        debitAmount: row.debitAmount || 0,
+        creditAmount: row.creditAmount || 0
+      });
+    }
+  }
+
+  const partyType = resolvedSupplierId && (customerId || chunks.length > 1)
+    ? 'both'
+    : (resolvedSupplierId ? 'supplier' : 'customer');
+
+  return finalizeLedgerRows(Array.from(byId.values()), partyType, name, {
+    supplierId: resolvedSupplierId,
+    customerId: customerId || null
   });
 }
 
@@ -517,11 +664,9 @@ export async function buildSupplierLedger(prisma, userId, supplierId) {
   for (const receipt of workReceipts) {
     if (!matchesSupplierName(supplier.name, receipt.partyName)) continue;
     const tdsPercent = Number(receipt.tdsPercent) || 0;
-    let tdsAmount = roundMoney(receipt.tdsAmount || 0);
-    if (tdsAmount <= 0 && tdsPercent > 0) {
-      const base = roundMoney(receipt.tdsOnAmt || receipt.taxableAmount || receipt.grossAmount || 0);
-      tdsAmount = roundMoney(base * tdsPercent / 100);
-    }
+    // Always derive TDS from taxable × % (same as entry UI) — ignore stale saved tdsAmount/tdsOnAmt
+    const taxable = roundMoney(receipt.taxableAmount || receipt.grossAmount || 0);
+    const tdsAmount = tdsPercent > 0 ? roundMoney(taxable * tdsPercent / 100) : 0;
     const invoiceValue = roundMoney(
       receipt.invoiceValue
       || (Number(receipt.netAfterTds || 0) + tdsAmount)
@@ -556,7 +701,7 @@ export async function buildSupplierLedger(prisma, userId, supplierId) {
         billNumber: receipt.billNo || receipt.challanNo || String(receipt.voucherNo || '-'),
         account: 'TDS PAYABLE A/C',
         particulars: `TDS ${roundMoney(tdsPercent)}%`,
-        remarks: '',
+        remarks: `TDS ${roundMoney(tdsPercent)}% on ${taxable.toFixed(2)}`,
         debitAmount: tdsAmount,
         creditAmount: 0
       });
@@ -953,20 +1098,11 @@ export async function getLedgerEntryDetail(prisma, userId, sourceType, sourceId)
     const lineItems = Array.isArray(receipt.lineItems) ? receipt.lineItems : [];
     const isTdsLine = sourceType === 'work_receipt_tds';
     const tdsPercent = Number(receipt.tdsPercent) || 0;
-    let tdsOnAmt = roundMoney(receipt.tdsOnAmt || 0);
-    let tdsAmount = roundMoney(receipt.tdsAmount || 0);
-    if (tdsPercent > 0 && (tdsOnAmt <= 0 || tdsAmount <= 0)) {
-      if (tdsOnAmt <= 0) {
-        tdsOnAmt = roundMoney(receipt.taxableAmount || receipt.grossAmount || 0);
-      }
-      if (tdsAmount <= 0) {
-        tdsAmount = roundMoney(tdsOnAmt * tdsPercent / 100);
-      }
-    }
+    const taxable = roundMoney(receipt.taxableAmount || receipt.grossAmount || 0);
+    const tdsOnAmt = taxable;
+    const tdsAmount = tdsPercent > 0 ? roundMoney(taxable * tdsPercent / 100) : 0;
     const invoiceValue = roundMoney(receipt.invoiceValue || 0);
-    const netAfterTds = tdsAmount > 0
-      ? roundMoney(invoiceValue - tdsAmount)
-      : roundMoney(receipt.netAfterTds || invoiceValue);
+    const netAfterTds = roundMoney(invoiceValue - tdsAmount);
 
     return {
       title: isTdsLine

@@ -35,7 +35,7 @@ const sections = [
   },
   {
     title: 'Account Ledgers',
-    description: 'Customer and supplier ledgers synced from sales, purchases, bank, and notes.',
+    description: 'Single account ledger — all parties in one dynamic view.',
     icon: BookOpen,
     href: '/erp/ledger',
     status: 'Demo ready'

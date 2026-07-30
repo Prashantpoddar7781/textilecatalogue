@@ -5,6 +5,8 @@ import { requireActiveSubscription } from '../middleware/subscription.js';
 import {
   buildCustomerLedger,
   buildSupplierLedger,
+  buildUnifiedPartyLedger,
+  getAllLedgerParties,
   getCustomerLedgerParties,
   getLedgerEntryDetail,
   getSupplierLedgerParties
@@ -16,15 +18,41 @@ const prisma = new PrismaClient();
 router.get('/parties', authenticateToken, requireActiveSubscription, async (req, res, next) => {
   try {
     const userId = req.user.userId;
-    const partyType = req.query.partyType === 'supplier' ? 'supplier' : 'customer';
+    const rawType = String(req.query.partyType || 'all').toLowerCase();
 
-    if (partyType === 'supplier') {
+    if (rawType === 'supplier') {
       const parties = await getSupplierLedgerParties(prisma, userId);
-      return res.json({ partyType, parties });
+      return res.json({ partyType: 'supplier', parties });
+    }
+    if (rawType === 'customer') {
+      const parties = await getCustomerLedgerParties(prisma, userId);
+      return res.json({ partyType: 'customer', parties });
     }
 
-    const parties = await getCustomerLedgerParties(prisma, userId);
-    res.json({ partyType, parties });
+    const parties = await getAllLedgerParties(prisma, userId);
+    res.json({ partyType: 'all', parties });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/account', authenticateToken, requireActiveSubscription, async (req, res, next) => {
+  try {
+    const partyName = String(req.query.partyName || '').trim();
+    if (!partyName) {
+      return res.status(400).json({ error: 'partyName is required' });
+    }
+    const supplierId = req.query.supplierId ? String(req.query.supplierId) : null;
+    const customerId = req.query.customerId ? String(req.query.customerId) : null;
+    const result = await buildUnifiedPartyLedger(prisma, req.user.userId, {
+      partyName,
+      supplierId,
+      customerId
+    });
+    if (!result) {
+      return res.status(404).json({ error: 'Account not found' });
+    }
+    res.json(result);
   } catch (error) {
     next(error);
   }

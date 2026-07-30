@@ -552,8 +552,25 @@ export const erpApi = {
 
 // Account Ledger API
 export const ledgerApi = {
-  getParties: async (partyType: 'customer' | 'supplier') => {
+  getParties: async (partyType: 'customer' | 'supplier' | 'all' = 'all') => {
     return request<{ partyType: string; parties: AccountLedgerParty[] }>(`/ledger/parties?partyType=${partyType}`);
+  },
+  getAccountLedger: async (params: { partyName: string; supplierId?: string | null; customerId?: string | null }) => {
+    const query = new URLSearchParams();
+    query.set('partyName', params.partyName);
+    if (params.supplierId) query.set('supplierId', params.supplierId);
+    if (params.customerId) query.set('customerId', params.customerId);
+    return request<{
+      partyType: string;
+      partyName: string;
+      supplierId?: string | null;
+      customerId?: string | null;
+      ledger: AccountLedgerEntry[];
+      runningBalance: number;
+      balanceType: 'DR' | 'CR';
+      totalDebit: number;
+      totalCredit: number;
+    }>(`/ledger/account?${query.toString()}`);
   },
   getCustomerLedger: async (partyName: string) => {
     return request<{

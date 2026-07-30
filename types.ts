@@ -669,7 +669,7 @@ export interface AccountLedgerEntry {
 }
 
 export interface AccountLedgerParty {
-  partyType: 'customer' | 'supplier';
+  partyType: 'customer' | 'supplier' | 'both' | string;
   partyName: string;
   customerId?: string | null;
   supplierId?: string | null;
