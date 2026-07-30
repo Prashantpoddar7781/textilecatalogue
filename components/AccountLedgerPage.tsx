@@ -33,7 +33,8 @@ const sourceLabel: Record<string, string> = {
   grey_purchase_return: 'Grey Purchase Return',
   mill_receipt: 'Job Charges',
   mill_receipt_tds: 'TDS Payable',
-  work_receipt: 'Work Charges'
+  work_receipt: 'EMB Job Charges',
+  work_receipt_tds: 'TDS Payable'
 };
 
 const billTypeLabel: Record<string, string> = {

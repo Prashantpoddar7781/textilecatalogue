@@ -33,6 +33,9 @@ const emptyLine = (): WorkLineItem => ({
 });
 
 export const WorkDespatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
+  const editId = useMemo(() => new URLSearchParams(window.location.search).get('edit'), []);
+  const isEditMode = Boolean(editId);
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -42,7 +45,7 @@ export const WorkDespatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [workTypes, setWorkTypes] = useState<string[]>([]);
   const [units, setUnits] = useState<string[]>(['PCS', 'MTS']);
   const [parties, setParties] = useState<Array<{ name: string; gstNumber?: string | null; state?: string | null; brokerName?: string | null }>>([]);
-  const [transactionType, setTransactionType] = useState('WORK DESP.SUIT CHALLAN');
+  const [transactionType, setTransactionType] = useState('WORK DESP CHALLAN');
   const [partyName, setPartyName] = useState('');
   const [partyGstin, setPartyGstin] = useState('');
   const [stateCode, setStateCode] = useState('');
@@ -71,13 +74,39 @@ export const WorkDespatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
         const meta = await workDespatchesApi.getMeta();
         if (cancelled) return;
         setCompanyName(meta.companyName || '');
-        setChallanNo(String(meta.nextChallanNo || 1));
+        if (!isEditMode) setChallanNo(String(meta.nextChallanNo || 1));
         setTransactionTypes(meta.transactionTypes || []);
-        if (meta.transactionTypes?.[0]) setTransactionType(meta.transactionTypes[0]);
+        if (!isEditMode && meta.transactionTypes?.[0]) setTransactionType(meta.transactionTypes[0]);
         setWorkTypes(meta.workTypes || []);
-        if (meta.workTypes?.[0]) setWorkType(meta.workTypes[0]);
+        if (!isEditMode && meta.workTypes?.[0]) setWorkType(meta.workTypes[0]);
         setUnits(meta.units || ['PCS']);
         setParties(meta.parties || []);
+
+        if (isEditMode && editId) {
+          const { entry } = await workDespatchesApi.getById(editId);
+          if (cancelled) return;
+          setCompanyName(entry.companyName || meta.companyName || '');
+          setTransactionType(entry.transactionType || 'WORK DESP CHALLAN');
+          setPartyName(entry.partyName || '');
+          setPartyGstin(entry.partyGstin || '');
+          setStateCode(entry.stateCode || '');
+          setPlaceOfSupply(entry.placeOfSupply || '');
+          setGstType(entry.gstType || '');
+          setChallanNo(entry.challanNo || '');
+          setDespatchDate(entry.despatchDate ? entry.despatchDate.slice(0, 10) : today());
+          setBrokerName(entry.brokerName || '');
+          setVehicleNo(entry.vehicleNo || '');
+          setWorkType(entry.workType || 'EMB WORK');
+          setHsnCode(entry.hsnCode || '5407');
+          setRemarks(entry.remarks || '');
+          setReceivedBy(entry.receivedBy || '');
+          setDeliveryDays(String(entry.deliveryDays ?? 0));
+          setDeliveryDueDate(entry.deliveryDueDate ? entry.deliveryDueDate.slice(0, 10) : today());
+          setLrNo(entry.lrNo || '');
+          setEwayBillNo(entry.ewayBillNo || '');
+          setRateInChallan(Boolean(entry.rateInChallan));
+          setLines((entry.lineItems || []).length ? entry.lineItems : [emptyLine()]);
+        }
       } catch (err: any) {
         if (!cancelled) setError(err.message || 'Could not load work despatch.');
       } finally {
@@ -86,7 +115,7 @@ export const WorkDespatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
     };
     void load();
     return () => { cancelled = true; };
-  }, []);
+  }, [editId, isEditMode]);
 
   const applyParty = (name: string) => {
     setPartyName(name);
@@ -137,7 +166,7 @@ export const WorkDespatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
       if (!partyName.trim()) throw new Error('Party is required.');
       const validLines = lines.filter(l => l.itemName.trim() && (toNum(l.pcs) > 0 || toNum(l.mtsQty) > 0));
       if (!validLines.length) throw new Error('Add at least one item line.');
-      await workDespatchesApi.create({
+      const payload = {
         companyName,
         transactionType,
         partyName: partyName.trim(),
@@ -159,13 +188,19 @@ export const WorkDespatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
         ewayBillNo: ewayBillNo || undefined,
         rateInChallan,
         lineItems: validLines
-      });
-      setSuccess('Work despatch saved. No ledger posting (despatch only).');
-      const meta = await workDespatchesApi.getMeta();
-      setChallanNo(String(meta.nextChallanNo || 1));
-      setLines([emptyLine()]);
-      setRemarks('');
-      setVehicleNo('');
+      };
+      if (isEditMode && editId) {
+        await workDespatchesApi.update(editId, payload);
+        setSuccess('Work despatch updated.');
+      } else {
+        await workDespatchesApi.create(payload);
+        setSuccess('Work despatch saved. No ledger posting (despatch only).');
+        const meta = await workDespatchesApi.getMeta();
+        setChallanNo(String(meta.nextChallanNo || 1));
+        setLines([emptyLine()]);
+        setRemarks('');
+        setVehicleNo('');
+      }
     } catch (err: any) {
       setError(err.message || 'Could not save work despatch.');
     } finally {
@@ -205,7 +240,9 @@ export const WorkDespatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
           <section className="rounded-2xl border border-violet-200 bg-violet-50/40 p-4 shadow-sm">
             <div className="mb-3 flex items-center justify-between">
               <h1 className="text-lg font-black uppercase tracking-wide text-gray-900">Work Despatch Entry</h1>
-              <span className="rounded-full bg-violet-100 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-violet-800">Add Mode</span>
+              <span className="rounded-full bg-violet-100 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-violet-800">
+                {isEditMode ? 'Edit Mode' : 'Add Mode'}
+              </span>
             </div>
             <div className="grid gap-3 md:grid-cols-4 xl:grid-cols-6">
               <label><span className={labelClass}>Company</span><input className={inputClass} value={companyName} onChange={e => setCompanyName(e.target.value)} /></label>
@@ -315,7 +352,7 @@ export const WorkDespatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
           </section>
 
           <div className="mt-4 flex justify-end">
-            <ErpSaveButton saving={saving} label="Save Work Despatch" />
+            <ErpSaveButton saving={saving} label={isEditMode ? 'Update Work Despatch' : 'Save Work Despatch'} />
           </div>
         </ErpFormShell>
       </main>

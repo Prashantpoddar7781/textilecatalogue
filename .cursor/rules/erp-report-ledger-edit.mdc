@@ -1,0 +1,17 @@
+---
+description: ERP reports and ledger rows must open the source entry in edit mode when clicked
+alwaysApply: true
+---
+
+# Report / Ledger → Edit Entry (locked)
+
+Whenever building or changing ERP **reports**, **ledgers**, or **entry lists**:
+
+1. Every data row that represents a saved document **must be clickable**.
+2. Clicking opens that document’s entry screen with the existing record loaded (**edit mode**), not a blank add form.
+3. Prefer URL pattern: `/erp/<module>?edit=<id>` (same as mill receipt / ledger `editPath`).
+4. Entry pages must read `?edit=`, fetch by id, populate all fields, and save via **PUT/update**.
+5. Ledger detail panels must expose **Edit entry** when `canEdit` + `editPath` are set; report rows should navigate to the same `editPath`.
+6. Do not ship a new report or ledger source without click-to-edit wired end-to-end.
+
+Applies to: grey purchase/dispatch/return, mill receipt, work despatch/receipt, bank, notes, sales/purchase, and any future ERP modules.

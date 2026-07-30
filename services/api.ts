@@ -1130,6 +1130,11 @@ export const workDespatchesApi = {
       parties: Array<{ name: string; gstNumber?: string | null; state?: string | null; brokerName?: string | null }>;
     }>('/work-despatches/meta');
   },
+  getById: async (id: string) => {
+    return request<{ entry: import('../types').WorkDespatch; pending?: import('../types').WorkPendingDespatch }>(
+      `/work-despatches/${id}`
+    );
+  },
   getPending: async (partyName?: string) => {
     const qs = partyName ? `?partyName=${encodeURIComponent(partyName)}` : '';
     return request<{ entries: import('../types').WorkPendingDespatch[] }>(`/work-despatches/pending${qs}`);
@@ -1154,6 +1159,12 @@ export const workDespatchesApi = {
       method: 'POST',
       body: JSON.stringify(body)
     });
+  },
+  update: async (id: string, body: Record<string, unknown>) => {
+    return request<{ entry: import('../types').WorkDespatch }>(`/work-despatches/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(body)
+    });
   }
 };
 
@@ -1163,13 +1174,18 @@ export const workReceiptsApi = {
       companyName: string;
       businessState?: string | null;
       defaultGstRate: number;
+      defaultHsnCode?: string;
       nextVoucherNo: number;
       transactionTypes: string[];
       states: string[];
+      parties?: Array<{ name: string; gstNumber?: string | null; state?: string | null; brokerName?: string | null }>;
     }>('/work-receipts/meta');
   },
+  getById: async (id: string) => {
+    return request<{ entry: import('../types').WorkReceipt }>(`/work-receipts/${id}`);
+  },
   calculate: async (body: Record<string, unknown>) => {
-    return request<{ totals: Record<string, number | string> }>('/work-receipts/calculate', {
+    return request<{ totals: Record<string, number | string>; lineItems?: import('../types').WorkLineItem[] }>('/work-receipts/calculate', {
       method: 'POST',
       body: JSON.stringify(body)
     });
@@ -1183,12 +1199,29 @@ export const workReceiptsApi = {
     return request<{
       companyName: string;
       rows: Array<Record<string, unknown>>;
-      totals: { recPcs: number; recMts: number; taxableAmount: number; invoiceValue: number };
+      totals: {
+        recPcs: number;
+        recMts: number;
+        plain?: number;
+        sec?: number;
+        lost?: number;
+        lace?: number;
+        fresh?: number;
+        amount?: number;
+        taxableAmount: number;
+        invoiceValue: number;
+      };
     }>(`/work-receipts/report${qs ? `?${qs}` : ''}`);
   },
   create: async (body: Record<string, unknown>) => {
     return request<{ entry: import('../types').WorkReceipt }>('/work-receipts', {
       method: 'POST',
+      body: JSON.stringify(body)
+    });
+  },
+  update: async (id: string, body: Record<string, unknown>) => {
+    return request<{ entry: import('../types').WorkReceipt }>(`/work-receipts/${id}`, {
+      method: 'PUT',
       body: JSON.stringify(body)
     });
   }

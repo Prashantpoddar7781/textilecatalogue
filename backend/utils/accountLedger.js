@@ -516,21 +516,51 @@ export async function buildSupplierLedger(prisma, userId, supplierId) {
 
   for (const receipt of workReceipts) {
     if (!matchesSupplierName(supplier.name, receipt.partyName)) continue;
-    const invoiceValue = roundMoney(receipt.invoiceValue || receipt.taxableAmount || 0);
-    if (invoiceValue <= 0) continue;
-    rawEntries.push({
-      id: `work-receipt-${receipt.id}`,
-      sourceType: 'work_receipt',
-      sourceId: receipt.id,
-      date: receipt.receiptDate || receipt.createdAt,
-      voucherNumber: String(receipt.voucherNo || '-'),
-      billNumber: receipt.billNo || receipt.challanNo || String(receipt.voucherNo || '-'),
-      account: 'WORK CHARGES',
-      particulars: receipt.workType || '',
-      remarks: receipt.remarks || '',
-      debitAmount: 0,
-      creditAmount: invoiceValue
-    });
+    const tdsPercent = Number(receipt.tdsPercent) || 0;
+    let tdsAmount = roundMoney(receipt.tdsAmount || 0);
+    if (tdsAmount <= 0 && tdsPercent > 0) {
+      const base = roundMoney(receipt.tdsOnAmt || receipt.taxableAmount || receipt.grossAmount || 0);
+      tdsAmount = roundMoney(base * tdsPercent / 100);
+    }
+    const invoiceValue = roundMoney(
+      receipt.invoiceValue
+      || (Number(receipt.netAfterTds || 0) + tdsAmount)
+      || receipt.taxableAmount
+      || 0
+    );
+    if (invoiceValue <= 0 && tdsAmount <= 0) continue;
+
+    if (invoiceValue > 0) {
+      rawEntries.push({
+        id: `work-receipt-${receipt.id}`,
+        sourceType: 'work_receipt',
+        sourceId: receipt.id,
+        date: receipt.receiptDate || receipt.createdAt,
+        voucherNumber: String(receipt.voucherNo || '-'),
+        billNumber: receipt.billNo || receipt.challanNo || String(receipt.voucherNo || '-'),
+        account: 'EMB JOB CHARGES',
+        particulars: receipt.workType || '',
+        remarks: receipt.remarks || '',
+        debitAmount: 0,
+        creditAmount: invoiceValue
+      });
+    }
+
+    if (tdsAmount > 0) {
+      rawEntries.push({
+        id: `work-receipt-tds-${receipt.id}`,
+        sourceType: 'work_receipt_tds',
+        sourceId: receipt.id,
+        date: receipt.receiptDate || receipt.createdAt,
+        voucherNumber: String(receipt.voucherNo || '-'),
+        billNumber: receipt.billNo || receipt.challanNo || String(receipt.voucherNo || '-'),
+        account: 'TDS PAYABLE A/C',
+        particulars: `TDS ${roundMoney(tdsPercent)}%`,
+        remarks: '',
+        debitAmount: tdsAmount,
+        creditAmount: 0
+      });
+    }
   }
 
   for (const note of notes) {
@@ -613,7 +643,8 @@ const VALID_SOURCE_TYPES = new Set([
   'grey_purchase_return',
   'mill_receipt',
   'mill_receipt_tds',
-  'work_receipt'
+  'work_receipt',
+  'work_receipt_tds'
 ]);
 
 function buildDetailFields(items) {
@@ -913,15 +944,34 @@ export async function getLedgerEntryDetail(prisma, userId, sourceType, sourceId)
     };
   }
 
-  if (sourceType === 'work_receipt') {
+  if (sourceType === 'work_receipt' || sourceType === 'work_receipt_tds') {
     const receipt = await prisma.workReceipt.findFirst({
       where: { id: sourceId, userId },
       include: { workDespatch: true }
     });
     if (!receipt) return null;
     const lineItems = Array.isArray(receipt.lineItems) ? receipt.lineItems : [];
+    const isTdsLine = sourceType === 'work_receipt_tds';
+    const tdsPercent = Number(receipt.tdsPercent) || 0;
+    let tdsOnAmt = roundMoney(receipt.tdsOnAmt || 0);
+    let tdsAmount = roundMoney(receipt.tdsAmount || 0);
+    if (tdsPercent > 0 && (tdsOnAmt <= 0 || tdsAmount <= 0)) {
+      if (tdsOnAmt <= 0) {
+        tdsOnAmt = roundMoney(receipt.taxableAmount || receipt.grossAmount || 0);
+      }
+      if (tdsAmount <= 0) {
+        tdsAmount = roundMoney(tdsOnAmt * tdsPercent / 100);
+      }
+    }
+    const invoiceValue = roundMoney(receipt.invoiceValue || 0);
+    const netAfterTds = tdsAmount > 0
+      ? roundMoney(invoiceValue - tdsAmount)
+      : roundMoney(receipt.netAfterTds || invoiceValue);
+
     return {
-      title: `Work Receipt #${receipt.voucherNo ?? '-'}`,
+      title: isTdsLine
+        ? `TDS on Work Receipt #${receipt.voucherNo ?? '-'}`
+        : `Work Receipt #${receipt.voucherNo ?? '-'}`,
       subtitle: receipt.partyName,
       sourceType,
       sourceId,
@@ -933,30 +983,44 @@ export async function getLedgerEntryDetail(prisma, userId, sourceType, sourceId)
         { label: 'Desp. Challan', value: receipt.workDespatch?.challanNo },
         { label: 'Work Type', value: receipt.workType },
         { label: 'Rec. Pcs', value: receipt.totalPcs },
+        { label: 'Fresh', value: receipt.totalFresh },
         { label: 'Rec. Mts', value: receipt.totalMts, isMoney: true },
+        { label: 'Gross', value: receipt.grossAmount, isMoney: true },
         { label: 'Taxable', value: receipt.taxableAmount, isMoney: true },
         { label: 'CGST', value: receipt.cgstAmount, isMoney: true },
         { label: 'SGST', value: receipt.sgstAmount, isMoney: true },
         { label: 'IGST', value: receipt.igstAmount, isMoney: true },
-        { label: 'Invoice Value', value: receipt.invoiceValue, isMoney: true },
+        { label: 'Invoice Value', value: invoiceValue, isMoney: true },
+        { label: 'TDS On Amt', value: tdsOnAmt, isMoney: true },
+        { label: 'TDS %', value: tdsPercent },
+        { label: 'TDS Amt', value: tdsAmount, isMoney: true },
+        { label: 'Net After TDS', value: netAfterTds, isMoney: true },
         { label: 'Remarks', value: receipt.remarks }
       ]),
-      lineColumns: lineItems.length
+      lineColumns: !isTdsLine && lineItems.length
         ? [
           { key: 'itemName', label: 'Item' },
           { key: 'jobType', label: 'Job Type' },
           { key: 'pcs', label: 'Pcs', align: 'right' },
-          { key: 'mtsQty', label: 'Mts', align: 'right', isMoney: true },
+          { key: 'plain', label: 'Plain', align: 'right' },
+          { key: 'sec', label: 'Sec', align: 'right' },
+          { key: 'lost', label: 'Lost', align: 'right' },
+          { key: 'lace', label: 'Lace', align: 'right' },
+          { key: 'fresh', label: 'Fresh', align: 'right' },
           { key: 'rate', label: 'Rate', align: 'right', isMoney: true },
           { key: 'amount', label: 'Amount', align: 'right', isMoney: true }
         ]
         : undefined,
-      lineItems: lineItems.length
+      lineItems: !isTdsLine && lineItems.length
         ? lineItems.map(row => ({
           itemName: row.itemName,
           jobType: row.jobType,
           pcs: roundMoney(row.pcs),
-          mtsQty: roundMoney(row.mtsQty),
+          plain: roundMoney(row.plain),
+          sec: roundMoney(row.sec),
+          lost: roundMoney(row.lost),
+          lace: roundMoney(row.lace),
+          fresh: roundMoney(row.fresh),
           rate: roundMoney(row.rate),
           amount: roundMoney(row.amount)
         }))

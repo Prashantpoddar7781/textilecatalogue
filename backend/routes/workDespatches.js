@@ -10,6 +10,7 @@ const router = express.Router();
 const prisma = new PrismaClient();
 
 const DESP_TYPES = [
+  'WORK DESP CHALLAN',
   'WORK DESP.SUIT CHALLAN',
   'WORK DESP.LACE SUIT CHALLAN',
   'WORK DESP LACE CHALLAN',
@@ -43,7 +44,8 @@ async function getCompanyContext(userId) {
   };
 }
 
-export function normalizeWorkLines(raw) {
+export function normalizeWorkLines(raw, options = {}) {
+  const billOnFresh = Boolean(options.billOnFresh);
   if (!Array.isArray(raw)) return [];
   return raw
     .map((row, index) => {
@@ -51,7 +53,16 @@ export function normalizeWorkLines(raw) {
       const cut = roundMoney(row.cut != null && row.cut !== '' ? row.cut : DEFAULT_CUT);
       const mtsQty = roundMoney(row.mtsQty != null && row.mtsQty !== '' ? row.mtsQty : pcs * cut);
       const rate = roundMoney(row.rate ?? 0);
-      const amount = roundMoney(row.amount != null && row.amount !== '' ? row.amount : mtsQty * rate);
+      const plain = roundMoney(row.plain ?? 0);
+      const sec = roundMoney(row.sec ?? 0);
+      const lost = roundMoney(row.lost ?? 0);
+      const lace = roundMoney(row.lace ?? 0);
+      const fresh = roundMoney(Math.max(0, pcs - plain - sec - lost - lace));
+      const amount = roundMoney(
+        billOnFresh
+          ? fresh * rate
+          : (row.amount != null && row.amount !== '' ? row.amount : mtsQty * rate)
+      );
       const fabricRate = roundMoney(row.fabricRate ?? 0);
       const taxableValue = roundMoney(row.taxableValue != null && row.taxableValue !== '' ? row.taxableValue : amount);
       return {
@@ -63,6 +74,11 @@ export function normalizeWorkLines(raw) {
         pcs,
         cut,
         mtsQty,
+        plain,
+        sec,
+        lost,
+        lace,
+        fresh,
         rate,
         amount,
         fabricRate,
@@ -279,7 +295,7 @@ router.get('/pending', authenticateToken, requireActiveSubscription, async (req,
       where: {
         userId,
         status: { not: 'cancelled' },
-        ...(partyName ? { partyName: { contains: partyName, mode: 'insensitive' } } : {})
+        ...(partyName ? { partyName: { equals: partyName, mode: 'insensitive' } } : {})
       },
       orderBy: [{ despatchDate: 'desc' }, { createdAt: 'desc' }],
       take: 100
@@ -377,6 +393,69 @@ router.post('/', authenticateToken, requireActiveSubscription, [
     });
 
     res.status(201).json({ entry });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.put('/:id', authenticateToken, requireActiveSubscription, [
+  body('partyName').trim().notEmpty().withMessage('Party is required')
+], async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+
+    const userId = req.user.userId;
+    const existing = await prisma.workDespatch.findFirst({
+      where: { id: req.params.id, userId, status: { not: 'cancelled' } }
+    });
+    if (!existing) return res.status(404).json({ error: 'Work despatch not found' });
+
+    const lineItems = normalizeWorkLines(req.body.lineItems);
+    if (!lineItems.length) {
+      return res.status(400).json({ error: 'Add at least one item line.' });
+    }
+    const totals = lineTotals(lineItems);
+    const partyName = optionalString(req.body.partyName);
+
+    await ensureMillParty(prisma, userId, partyName);
+    await resolveSupplierForEntry(prisma, userId, {
+      partyName,
+      partyGstin: optionalString(req.body.partyGstin),
+      placeOfSupply: optionalString(req.body.placeOfSupply)
+    });
+
+    const entry = await prisma.workDespatch.update({
+      where: { id: existing.id },
+      data: {
+        companyName: optionalString(req.body.companyName) || existing.companyName,
+        transactionType: optionalString(req.body.transactionType) || existing.transactionType,
+        partyName,
+        partyGstin: optionalString(req.body.partyGstin),
+        placeOfSupply: optionalString(req.body.placeOfSupply),
+        stateCode: optionalString(req.body.stateCode),
+        gstType: optionalString(req.body.gstType),
+        challanNo: optionalString(req.body.challanNo) || existing.challanNo,
+        despatchDate: req.body.despatchDate ? new Date(req.body.despatchDate) : existing.despatchDate,
+        brokerName: optionalString(req.body.brokerName),
+        vehicleNo: optionalString(req.body.vehicleNo),
+        workType: optionalString(req.body.workType),
+        hsnCode: optionalString(req.body.hsnCode) || existing.hsnCode || '5407',
+        remarks: optionalString(req.body.remarks),
+        receivedBy: optionalString(req.body.receivedBy),
+        deliveryDays: optionalNumber(req.body.deliveryDays) ?? existing.deliveryDays ?? 0,
+        deliveryDueDate: req.body.deliveryDueDate ? new Date(req.body.deliveryDueDate) : existing.deliveryDueDate,
+        lrNo: optionalString(req.body.lrNo),
+        ewayBillNo: optionalString(req.body.ewayBillNo),
+        dhara: optionalNumber(req.body.dhara) ?? existing.dhara ?? 0,
+        grace: optionalNumber(req.body.grace) ?? existing.grace ?? 0,
+        rateInChallan: req.body.rateInChallan != null ? Boolean(req.body.rateInChallan) : existing.rateInChallan,
+        lineItems,
+        ...totals
+      }
+    });
+
+    res.json({ entry });
   } catch (error) {
     next(error);
   }

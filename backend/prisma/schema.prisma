@@ -709,13 +709,19 @@ model WorkReceipt {
   brokerName      String?
   vehicleNo       String?
   workType        String?
-  hsnCode         String?      @default("5407")
+  hsnCode         String?      @default("9988")
   remarks         String?
   receivedBy      String?
   billNo          String?
   lineItems       Json
   totalPcs        Float        @default(0)
   totalMts        Float        @default(0)
+  totalFresh      Float        @default(0)
+  grossAmount     Float        @default(0)
+  discountPercent Float        @default(0)
+  discountAmount  Float        @default(0)
+  otherLess       Float        @default(0)
+  otherAdd        Float        @default(0)
   taxableAmount   Float        @default(0)
   gstRate         Float        @default(5)
   cgstRate        Float        @default(0)
@@ -725,6 +731,10 @@ model WorkReceipt {
   igstRate        Float        @default(0)
   igstAmount      Float        @default(0)
   invoiceValue    Float        @default(0)
+  tdsOnAmt        Float        @default(0)
+  tdsPercent      Float        @default(0)
+  tdsAmount       Float        @default(0)
+  netAfterTds     Float        @default(0)
   status          String       @default("posted")
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt

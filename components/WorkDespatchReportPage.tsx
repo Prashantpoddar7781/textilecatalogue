@@ -58,7 +58,7 @@ export const WorkDespatchReportPage: React.FC<Props> = ({ onBack, erpSession }) 
 
         <div className="mb-4 rounded-2xl border bg-white p-4 shadow-sm">
           <h1 className="text-lg font-black uppercase text-gray-900">Work Desp All Status Report</h1>
-          <p className="text-xs font-semibold text-violet-800">Company: {companyName || '-'}</p>
+          <p className="text-xs font-semibold text-violet-800">Company: {companyName || '-'} · Click any row to edit</p>
           <div className="mt-3 grid gap-3 md:grid-cols-4">
             <label className="text-xs font-bold">From<input type="date" className="mt-1 w-full rounded-lg border px-2 py-2" value={fromDate} onChange={e => setFromDate(e.target.value)} /></label>
             <label className="text-xs font-bold">To<input type="date" className="mt-1 w-full rounded-lg border px-2 py-2" value={toDate} onChange={e => setToDate(e.target.value)} /></label>
@@ -89,7 +89,15 @@ export const WorkDespatchReportPage: React.FC<Props> = ({ onBack, erpSession }) 
               </thead>
               <tbody>
                 {rows.map(row => (
-                  <tr key={row.id} className="border-b hover:bg-violet-50/50">
+                  <tr
+                    key={row.id}
+                    className="cursor-pointer border-b hover:bg-violet-50/50"
+                    onClick={() => {
+                      const id = row.despatchId || row.id;
+                      if (id) window.location.href = `/erp/work-despatch?edit=${id}`;
+                    }}
+                    title="Open entry to edit"
+                  >
                     <td className="px-3 py-2 font-semibold">{row.partyName}</td>
                     <td className="px-3 py-2">{formatDate(row.date)}</td>
                     <td className="px-3 py-2 font-bold text-violet-800">{row.challanNo}</td>
