@@ -4,7 +4,11 @@ const prisma = new PrismaClient();
 
 export const FREE_DESIGN_LIMIT = Number.parseInt(process.env.FREE_DESIGN_LIMIT || '8', 10);
 const FORCE_FREE = process.env.FORCE_FREE === 'true';
-const DEFAULT_FREE_EMAILS = ['sunitapoddar95@gmail.com'];
+const DEFAULT_FREE_EMAILS = [
+  'sunitapoddar95@gmail.com',
+  'vibhorag91@gmail.com',
+  'raghavfashion2018@gmail.com'
+];
 const FREE_EMAILS = new Set(
   (process.env.FREE_EMAILS || DEFAULT_FREE_EMAILS.join(','))
     .split(',')
