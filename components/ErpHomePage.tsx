@@ -14,23 +14,23 @@ interface Props {
 const sections = [
   {
     title: 'Sales',
-    description: 'Sales Orders and Finish Sales conversion with partial fulfilment and accounting bills.',
+    description: 'Sales entry with type heads. Choose SALES ORDERS to open the Sales Order form.',
     icon: ReceiptText,
     href: '/erp/sales',
     status: 'Ready'
   },
   {
-    title: 'Sales Order Report',
-    description: 'Ordered, sold, and pending quantities with party, item, broker, haste, and status filters.',
+    title: 'Sales Order',
+    description: 'Sales Order entry — party, main screen, packing, cut, GST. No ledger effect.',
     icon: FileText,
-    href: '/erp/reports/sales-order',
+    href: '/erp/sales-order',
     status: 'Ready'
   },
   {
-    title: 'Finish Sales Register',
-    description: 'Accounting sales register with bill, transport, order reference, taxable, GST, and invoice values.',
-    icon: ReceiptText,
-    href: '/erp/reports/finish-sales',
+    title: 'Sales Order Report',
+    description: 'Ordered, sold, and pending quantities by party — click row to edit.',
+    icon: FileText,
+    href: '/erp/reports/sales-order',
     status: 'Ready'
   },
   {
