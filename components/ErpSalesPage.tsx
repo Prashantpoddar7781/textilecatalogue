@@ -114,6 +114,11 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack }) => {
   const [transportName, setTransportName] = useState('');
   const [vehicleNo, setVehicleNo] = useState('');
   const [lrNo, setLrNo] = useState('');
+  const [challanNo, setChallanNo] = useState('');
+  const [hasteGstin, setHasteGstin] = useState('');
+  const [dhara, setDhara] = useState(0);
+  const [grace, setGrace] = useState(0);
+  const [screenSeries, setScreenSeries] = useState('');
   const [orderNo, setOrderNo] = useState('');
   const [orderDate, setOrderDate] = useState(today());
   const [expectedDate, setExpectedDate] = useState('');
@@ -177,6 +182,11 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack }) => {
           setTransportName(order.transportName || '');
           setVehicleNo(order.vehicleNo || '');
           setLrNo(order.lrNo || '');
+          setChallanNo(order.challanNo || '');
+          setHasteGstin(order.hasteGstin || '');
+          setDhara(num(order.dhara));
+          setGrace(num(order.grace));
+          setScreenSeries(order.screenSeries || '');
           setOrderNo(String(order.orderNo));
           setOrderDate(order.orderDate.slice(0, 10));
           setExpectedDate(order.expectedDate?.slice(0, 10) || '');
@@ -232,6 +242,13 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack }) => {
     setStation(bill.station || '');
     setBrokerName(bill.agentName || '');
     setTransportName(bill.transportName || '');
+    setVehicleNo(bill.vehicleNo || '');
+    setLrNo(bill.lrNo || '');
+    setChallanNo(bill.challanNo || '');
+    setHasteGstin(bill.hasteGstin || '');
+    setDhara(num(bill.dhara));
+    setGrace(num(bill.grace));
+    setScreenSeries(bill.screenSeries || '');
     setOrderNo(bill.orderNumber || '');
     setOrderDate((bill.orderDate || bill.createdAt).slice(0, 10));
     setExpectedDate(bill.expectedDate?.slice(0, 10) || '');
@@ -313,6 +330,11 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack }) => {
     setTransportName(order.transportName || '');
     setVehicleNo(order.vehicleNo || '');
     setLrNo(order.lrNo || '');
+    setChallanNo(order.challanNo || '');
+    setHasteGstin(order.hasteGstin || '');
+    setDhara(num(order.dhara));
+    setGrace(num(order.grace));
+    setScreenSeries(order.screenSeries || '');
     setOrderNo(String(order.orderNo));
     setHaste(order.haste || '');
     setRemarks(order.remarks || '');
@@ -398,6 +420,12 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack }) => {
       transportName,
       vehicleNo,
       lrNo,
+      challanNo,
+      gstType: businessState.trim() && state.trim() && businessState.trim().toLowerCase() !== state.trim().toLowerCase() ? 'IGST' : 'LOCAL TAX',
+      hasteGstin,
+      dhara,
+      grace,
+      screenSeries,
       orderNo: isSalesOrder ? num(orderNo || nextOrderNo) : undefined,
       orderNumber: orderNo || undefined,
       orderDate,
@@ -434,13 +462,13 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack }) => {
   }
 
   return (
-    <div className="min-h-screen bg-[#eef2f7]">
-      <header className="sticky top-0 z-30 border-b bg-white/95 px-4 py-3 shadow-sm backdrop-blur-xl">
+    <div className="min-h-screen bg-[#e8e8dc]">
+      <header className="sticky top-0 z-30 border-b border-slate-400 bg-[#deded2] px-4 py-2 shadow-sm">
         <div className="mx-auto flex max-w-[1600px] items-center justify-between">
           <button onClick={onBack} className="flex items-center gap-2 text-sm font-bold text-gray-600 hover:text-gray-900">
             <ArrowLeft className="h-4 w-4" /> ERP
           </button>
-          <h1 className="text-lg font-black text-gray-900">{isSalesOrder ? 'Sales Order' : 'Finish Sales'} Entry</h1>
+          <h1 className="font-mono text-lg font-black tracking-[0.25em] text-indigo-950">SALES ENTRY</h1>
           <span className="rounded-full bg-indigo-50 px-3 py-1 text-[10px] font-black uppercase text-indigo-700">
             {isEditMode ? 'Edit mode' : 'Add mode'}
           </span>
@@ -448,15 +476,16 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack }) => {
       </header>
 
       <main className="mx-auto max-w-[1600px] px-3 py-5">
-        <section className="overflow-hidden rounded-2xl border border-slate-300 bg-white shadow-lg">
-          <div className="bg-gradient-to-r from-indigo-950 to-slate-800 px-5 py-3 text-white">
-            <p className="text-xs font-black uppercase tracking-[0.25em]">{companyName || 'Company'} · Sales</p>
+        <section className="overflow-hidden border border-slate-500 bg-[#f1f0e5] shadow-lg">
+          <div className="border-b border-slate-500 bg-[#d6d5c8] px-5 py-2">
+            <p className="font-mono text-xs font-black uppercase tracking-[0.25em] text-indigo-950">{transactionType} · {isEditMode ? 'EDIT MODE' : 'ADD MODE'}</p>
           </div>
           {error && <div className="m-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{error}</div>}
           {success && <div className="m-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm font-semibold text-green-700">{success}</div>}
 
           <ErpFormShell onSave={saveEntry} saving={saving}>
-            <div className="grid gap-3 border-b bg-slate-50 p-4 md:grid-cols-3 xl:grid-cols-6">
+            <div className="grid gap-2 border-b border-slate-400 bg-[#e6e5d9] p-3 md:grid-cols-3 xl:grid-cols-6">
+              <Field label="Company"><input className="entry-input bg-[#f2f1e5] font-black" readOnly value={companyName} /></Field>
               <Field label="Type">
                 <select className="entry-input" value={transactionType} disabled={isEditMode} onChange={e => setTransactionType(e.target.value)}>
                   {ERP_TRANSACTION_TYPES.filter(type => type.category === 'sales').map(type => (
@@ -464,48 +493,49 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack }) => {
                   ))}
                 </select>
               </Field>
-              <Field label={isSalesOrder ? 'Order No.' : 'Voucher / Bill No.'}>
-                <input className="entry-input bg-slate-100 font-black" readOnly value={isSalesOrder ? (orderNo || nextOrderNo) : (typeBillNumber ?? '—')} />
-              </Field>
-              <Field label="Date"><input className="entry-input" type="date" value={orderDate} onChange={e => setOrderDate(e.target.value)} /></Field>
-              <Field label="Expected Date"><input className="entry-input" type="date" value={expectedDate} onChange={e => setExpectedDate(e.target.value)} /></Field>
-              <Field label="Haste"><input className="entry-input" value={haste} onChange={e => setHaste(e.target.value)} /></Field>
-              <Field label="Company"><input className="entry-input bg-slate-100" readOnly value={companyName} /></Field>
-              <Field label="Customer">
-                <select className="entry-input" value={customerId} onChange={e => chooseCustomer(e.target.value)}>
-                  <option value="">Type customer below</option>
-                  {customers.map(customer => <option key={customer.id} value={customer.id}>{customer.organizationName}</option>)}
-                </select>
-              </Field>
-              <Field label="Party Name"><input className="entry-input" value={partyName} onChange={e => setPartyName(e.target.value)} /></Field>
-              <Field label="GSTIN"><input className="entry-input" value={partyGstin} onChange={e => setPartyGstin(e.target.value)} /></Field>
-              <Field label="State"><input className="entry-input" value={state} onChange={e => setState(e.target.value)} /></Field>
-              <Field label="Station"><input className="entry-input" value={station} onChange={e => setStation(e.target.value)} /></Field>
-              <Field label="Broker"><input className="entry-input" value={brokerName} onChange={e => setBrokerName(e.target.value)} /></Field>
-              <Field label="Transport"><input className="entry-input" value={transportName} onChange={e => setTransportName(e.target.value)} /></Field>
-              <Field label="Vehicle No."><input className="entry-input" value={vehicleNo} onChange={e => setVehicleNo(e.target.value)} /></Field>
-              <Field label="LR No."><input className="entry-input" value={lrNo} onChange={e => setLrNo(e.target.value)} /></Field>
-              {!isSalesOrder && (
-                <Field label="Order / Ref">
-                  <select className="entry-input border-amber-300 bg-amber-50" value={sourceSalesOrderId} onChange={e => applyPendingOrder(e.target.value)}>
-                    <option value="">Direct bill / select order</option>
-                    {sourceSalesOrderId && !pendingOrders.some(order => order.id === sourceSalesOrderId) && (
-                      <option value={sourceSalesOrderId}>SO {orderNo || 'current'} · linked order</option>
-                    )}
-                    {pendingOrders.map(order => (
-                      <option key={order.id} value={order.id}>SO {order.orderNo} · {order.pendingPcs} pcs · {new Date(order.orderDate).toLocaleDateString('en-IN')}</option>
-                    ))}
+              <Field label="Voucher"><input className="entry-input bg-[#f2f1e5] font-black" readOnly value={isSalesOrder ? (orderNo || nextOrderNo) : (typeBillNumber ?? '—')} /></Field>
+              <Field label="Ord / Ref">
+                {isSalesOrder ? (
+                  <input className="entry-input" value={orderNo || nextOrderNo} onChange={e => setOrderNo(e.target.value)} />
+                ) : (
+                  <select className="entry-input border-amber-500 bg-amber-50" value={sourceSalesOrderId} onChange={e => applyPendingOrder(e.target.value)}>
+                    <option value="">Direct bill / select Sales Order</option>
+                    {sourceSalesOrderId && !pendingOrders.some(order => order.id === sourceSalesOrderId) && <option value={sourceSalesOrderId}>SO {orderNo || 'current'}</option>}
+                    {pendingOrders.map(order => <option key={order.id} value={order.id}>SO {order.orderNo} · {order.pendingPcs} PCS pending</option>)}
                   </select>
-                </Field>
-              )}
+                )}
+              </Field>
+              <Field label="Challan No."><input className="entry-input" value={challanNo} onChange={e => setChallanNo(e.target.value)} /></Field>
+              <Field label="Date"><input className="entry-input" type="date" value={orderDate} onChange={e => setOrderDate(e.target.value)} /></Field>
+              <Field label="Party">
+                <input className="entry-input" list="sales-customers" value={partyName} onChange={e => setPartyName(e.target.value)} onBlur={() => {
+                  const customer = customers.find(row => row.organizationName.toLowerCase() === partyName.trim().toLowerCase());
+                  if (customer) chooseCustomer(customer.id);
+                }} />
+                <datalist id="sales-customers">{customers.map(customer => <option key={customer.id} value={customer.organizationName} />)}</datalist>
+              </Field>
+              <Field label="State"><input className="entry-input" value={state} onChange={e => setState(e.target.value)} /></Field>
+              <Field label="GST Type"><input className="entry-input bg-[#f2f1e5]" readOnly value={businessState && state && businessState.toLowerCase() !== state.toLowerCase() ? 'IGST' : 'LOCAL TAX'} /></Field>
+              <Field label="LR No. / AWB"><input className="entry-input" value={lrNo} onChange={e => setLrNo(e.target.value)} /></Field>
+              <Field label="Haste"><input className="entry-input" value={haste} onChange={e => setHaste(e.target.value)} /></Field>
+              <Field label="Broker"><input className="entry-input" value={brokerName} onChange={e => setBrokerName(e.target.value)} /></Field>
+              <Field label="Haste GSTIN"><input className="entry-input" value={hasteGstin} onChange={e => setHasteGstin(e.target.value)} /></Field>
+              <Field label="Vehicle No."><input className="entry-input" value={vehicleNo} onChange={e => setVehicleNo(e.target.value)} /></Field>
+              <Field label="Station"><input className="entry-input" value={station} onChange={e => setStation(e.target.value)} /></Field>
+              <Field label="Transport"><input className="entry-input" value={transportName} onChange={e => setTransportName(e.target.value)} /></Field>
+              <Field label="Screen Series"><input className="entry-input" value={screenSeries} onChange={e => setScreenSeries(e.target.value)} /></Field>
+              <Field label="Party GSTIN"><input className="entry-input" value={partyGstin} onChange={e => setPartyGstin(e.target.value)} /></Field>
+              <Field label="Dhara"><NumberField value={dhara} onChange={setDhara} /></Field>
+              <Field label="Grace"><NumberField value={grace} onChange={setGrace} /></Field>
+              <Field label="Expected Date"><input className="entry-input" type="date" value={expectedDate} onChange={e => setExpectedDate(e.target.value)} /></Field>
             </div>
 
             <div className="overflow-x-auto">
-              <table className="min-w-[1650px] w-full border-collapse text-xs">
-                <thead className="bg-slate-800 text-white">
+              <table className="min-w-[1750px] w-full border-collapse font-mono text-[11px]">
+                <thead className="bg-[#d6d5c8] text-slate-950">
                   <tr>
-                    {['#', 'Item Name', 'Bundles', 'Main Screen', 'Packing', 'Unit', 'PCS', 'Cut', 'MTS', 'Rate', 'Amount', 'Disc %', 'Add/Less', 'GST %', 'Tax', 'Net', ''].map(label => (
-                      <th key={label} className="border border-slate-600 px-2 py-2 text-left font-black uppercase">{label}</th>
+                    {['#', 'Item Name', 'Bundles', 'Main Screen', 'Packing', 'Unit', 'PCS', 'Cut', 'MTS/Qty', 'Rate', 'Amount', 'R.D.', 'Disc %', 'Manual Add/Ls', 'GST %', 'SGST %', 'CGST/IGST Amt.', ''].map(label => (
+                      <th key={label} className="border border-slate-400 px-2 py-2 text-left font-black uppercase">{label}</th>
                     ))}
                   </tr>
                 </thead>
@@ -536,11 +566,12 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack }) => {
                       <td className="grid-cell"><NumberInput value={line.mtsQty} onChange={value => updateLine(index, 'mtsQty', value)} /></td>
                       <td className="grid-cell"><NumberInput value={line.rate} onChange={value => updateLine(index, 'rate', value)} /></td>
                       <td className="grid-cell bg-slate-100 text-right font-bold">{money(num(line.amount)).toFixed(2)}</td>
+                      <td className="grid-cell"><NumberInput value={line.rd} onChange={value => updateLine(index, 'rd', value)} /></td>
                       <td className="grid-cell"><NumberInput value={line.discountPercent} onChange={value => updateLine(index, 'discountPercent', value)} /></td>
                       <td className="grid-cell"><NumberInput value={line.manualAddLess} onChange={value => updateLine(index, 'manualAddLess', value)} /></td>
                       <td className="grid-cell"><NumberInput value={line.gstRate} onChange={value => updateLine(index, 'gstRate', value)} /></td>
+                      <td className="grid-cell bg-slate-100 text-right font-bold">{money(num(line.sgstRate)).toFixed(2)}</td>
                       <td className="grid-cell bg-slate-100 text-right font-bold">{money(num(line.taxAmount)).toFixed(2)}</td>
-                      <td className="grid-cell bg-indigo-50 text-right font-black">{money(num(line.totalAmount)).toFixed(2)}</td>
                       <td className="grid-cell">
                         <button type="button" onClick={() => setLineItems(prev => prev.length === 1 ? [{ ...blankLine(), gstRate: defaultGstRate, hsnCode: defaultHsnCode }] : prev.filter((_, row) => row !== index))} className="rounded bg-red-50 p-1.5 text-red-700"><Trash2 className="h-4 w-4" /></button>
                       </td>
@@ -557,9 +588,8 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack }) => {
                     <td className="grid-cell text-right">{totals.mts}</td>
                     <td className="grid-cell" />
                     <td className="grid-cell text-right">{totals.gross.toFixed(2)}</td>
-                    <td colSpan={3} className="grid-cell text-right">Taxable {totals.taxable.toFixed(2)}</td>
+                    <td colSpan={5} className="grid-cell text-right">Taxable {totals.taxable.toFixed(2)}</td>
                     <td className="grid-cell text-right">{totals.tax.toFixed(2)}</td>
-                    <td className="grid-cell text-right text-indigo-800">{totals.net.toFixed(2)}</td>
                     <td className="grid-cell" />
                   </tr>
                 </tfoot>
@@ -646,4 +676,8 @@ const Field: React.FC<{ label: string; children: React.ReactNode }> = ({ label, 
 
 const NumberInput: React.FC<{ value?: number; onChange: (value: number) => void }> = ({ value, onChange }) => (
   <input className="grid-input text-right" type="number" step="any" value={value || ''} onChange={e => onChange(num(e.target.value))} />
+);
+
+const NumberField: React.FC<{ value?: number; onChange: (value: number) => void }> = ({ value, onChange }) => (
+  <input className="entry-input text-right" type="number" step="any" value={value || ''} onChange={e => onChange(num(e.target.value))} />
 );

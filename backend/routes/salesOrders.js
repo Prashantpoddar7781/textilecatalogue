@@ -314,7 +314,8 @@ router.get('/report', authenticateToken, requireActiveSubscription, async (req, 
     if (partyName) where.partyName = { contains: partyName, mode: 'insensitive' };
     if (brokerName) where.brokerName = { contains: brokerName, mode: 'insensitive' };
     if (haste) where.haste = { contains: haste, mode: 'insensitive' };
-    if (status && status !== 'all') where.status = status;
+    if (status === 'pending') where.status = { in: ['open', 'partial'] };
+    else if (status && status !== 'all') where.status = status;
     if (fromDate || toDateValue) {
       where.orderDate = {};
       if (fromDate) where.orderDate.gte = toDate(fromDate);
@@ -412,8 +413,8 @@ router.get('/finish-report', authenticateToken, requireActiveSubscription, async
         date: bill.orderDate || bill.createdAt,
         partyName: bill.buyerName,
         voucherNo: bill.typeBillNumber,
-        billNo: bill.typeBillNumber || bill.invoiceNumber,
-        lrNo: lines[0]?.lrNo || '',
+        billNo: bill.invoiceNumber || bill.typeBillNumber,
+        lrNo: bill.lrNo || lines[0]?.lrNo || '',
         transportName: bill.transportName,
         orderRef: bill.sourceSalesOrder?.orderNo || bill.orderNumber,
         pcs,
@@ -527,7 +528,15 @@ async function saveBill(req, res, existing = null) {
       expectedDate: req.body.expectedDate ? toDate(req.body.expectedDate, null) : null,
       haste: optionalString(req.body.haste),
       station: optionalString(req.body.station),
-      sourceSalesOrderId: sourceOrder?.id || null
+      sourceSalesOrderId: sourceOrder?.id || null,
+      challanNo: optionalString(req.body.challanNo),
+      gstType: optionalString(req.body.gstType),
+      lrNo: optionalString(req.body.lrNo),
+      hasteGstin: optionalString(req.body.hasteGstin),
+      vehicleNo: optionalString(req.body.vehicleNo),
+      dhara: optionalNumber(req.body.dhara),
+      grace: optionalNumber(req.body.grace),
+      screenSeries: optionalString(req.body.screenSeries)
     };
     let bill;
     if (existing) {
@@ -630,6 +639,12 @@ async function saveSalesOrder(req, res, existing = null) {
     transportName: optionalString(req.body.transportName),
     vehicleNo: optionalString(req.body.vehicleNo),
     lrNo: optionalString(req.body.lrNo),
+    challanNo: optionalString(req.body.challanNo),
+    gstType: optionalString(req.body.gstType),
+    hasteGstin: optionalString(req.body.hasteGstin),
+    dhara: optionalNumber(req.body.dhara),
+    grace: optionalNumber(req.body.grace),
+    screenSeries: optionalString(req.body.screenSeries),
     orderDate: toDate(req.body.orderDate),
     expectedDate: req.body.expectedDate ? toDate(req.body.expectedDate, null) : null,
     haste: optionalString(req.body.haste),

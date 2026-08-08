@@ -175,6 +175,14 @@ export interface Order {
   station?: string | null;
   sourceSalesOrderId?: string | null;
   sourceSalesOrder?: SalesOrder | null;
+  challanNo?: string | null;
+  gstType?: string | null;
+  lrNo?: string | null;
+  hasteGstin?: string | null;
+  vehicleNo?: string | null;
+  dhara?: number | null;
+  grace?: number | null;
+  screenSeries?: string | null;
   createdAt: string;
   customer?: Customer | null;
   design?: TextileDesign;
@@ -231,6 +239,12 @@ export interface SalesOrder {
   transportName?: string | null;
   vehicleNo?: string | null;
   lrNo?: string | null;
+  challanNo?: string | null;
+  gstType?: string | null;
+  hasteGstin?: string | null;
+  dhara?: number | null;
+  grace?: number | null;
+  screenSeries?: string | null;
   orderNo: number;
   orderDate: string;
   expectedDate?: string | null;

@@ -264,6 +264,14 @@ model Order {
   station            String?
   sourceSalesOrderId String?
   sourceSalesOrder   SalesOrder?    @relation(fields: [sourceSalesOrderId], references: [id], onDelete: SetNull)
+  challanNo          String?
+  gstType            String?
+  lrNo               String?
+  hasteGstin         String?
+  vehicleNo          String?
+  dhara              Float?
+  grace              Float?
+  screenSeries       String?
   salesInvoices      SalesInvoice[]
   createdAt          DateTime       @default(now())
 
@@ -294,6 +302,12 @@ model SalesOrder {
   transportName  String?
   vehicleNo      String?
   lrNo           String?
+  challanNo      String?
+  gstType        String?
+  hasteGstin     String?
+  dhara          Float?
+  grace          Float?
+  screenSeries   String?
   orderNo        Int
   orderDate      DateTime  @default(now())
   expectedDate   DateTime?
