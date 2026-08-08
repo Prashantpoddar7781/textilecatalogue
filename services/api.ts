@@ -526,6 +526,85 @@ export const purchasesApi = {
   },
 };
 
+export const salesOrdersApi = {
+  getMeta: async () => {
+    return request<{
+      companyName: string;
+      businessState: string;
+      defaultHsnCode: string;
+      defaultGstRate: number;
+      nextOrderNo: number;
+      customers: Customer[];
+      items: import('../types').SalesItemMaster[];
+    }>('/sales-orders/meta');
+  },
+  getById: async (id: string) => {
+    return request<{ order: import('../types').SalesOrder; pending: import('../types').SalesOrder }>(`/sales-orders/${id}`);
+  },
+  create: async (body: Record<string, unknown>) => {
+    return request<{ order: import('../types').SalesOrder }>('/sales-orders', {
+      method: 'POST',
+      body: JSON.stringify(body)
+    });
+  },
+  update: async (id: string, body: Record<string, unknown>) => {
+    return request<{ order: import('../types').SalesOrder }>(`/sales-orders/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(body)
+    });
+  },
+  getPending: async (params: { partyName?: string; customerId?: string }) => {
+    const query = new URLSearchParams();
+    if (params.customerId) query.set('customerId', params.customerId);
+    if (params.partyName) query.set('partyName', params.partyName);
+    return request<{ entries: import('../types').SalesOrder[] }>(`/sales-orders/pending?${query.toString()}`);
+  },
+  getBill: async (id: string) => {
+    return request<{ bill: Order }>(`/sales-orders/bills/${id}`);
+  },
+  createBill: async (body: Record<string, unknown>) => {
+    return request<{ bill: Order; totals: Record<string, number> }>('/sales-orders/bills', {
+      method: 'POST',
+      body: JSON.stringify(body)
+    });
+  },
+  updateBill: async (id: string, body: Record<string, unknown>) => {
+    return request<{ bill: Order; totals: Record<string, number> }>(`/sales-orders/bills/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(body)
+    });
+  },
+  getItems: async () => {
+    return request<{ items: import('../types').SalesItemMaster[] }>('/sales-orders/items');
+  },
+  createItem: async (body: Record<string, unknown>) => {
+    return request<{ item: import('../types').SalesItemMaster }>('/sales-orders/items', {
+      method: 'POST',
+      body: JSON.stringify(body)
+    });
+  },
+  updateItem: async (id: string, body: Record<string, unknown>) => {
+    return request<{ item: import('../types').SalesItemMaster }>(`/sales-orders/items/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(body)
+    });
+  },
+  getReport: async (params: Record<string, string | undefined>) => {
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => { if (value) query.set(key, value); });
+    return request<{ rows: Array<Record<string, any>>; totals: Record<string, number> }>(
+      `/sales-orders/report?${query.toString()}`
+    );
+  },
+  getFinishReport: async (params: Record<string, string | undefined>) => {
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => { if (value) query.set(key, value); });
+    return request<{ rows: Array<Record<string, any>>; totals: Record<string, number> }>(
+      `/sales-orders/finish-report?${query.toString()}`
+    );
+  }
+};
+
 // ERP Sales / Purchase entries
 export const erpApi = {
   createSalesEntry: async (body: {

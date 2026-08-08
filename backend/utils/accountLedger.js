@@ -37,7 +37,11 @@ function withRunningBalance(entries, balanceMode, initialRunning = 0) {
 export async function getCustomerLedgerParties(prisma, userId) {
   const [orders, invoices, bankEntries, notes, customers] = await Promise.all([
     prisma.order.findMany({
-      where: { userId, status: 'completed' },
+      where: {
+        userId,
+        status: 'completed',
+        OR: [{ transactionType: null }, { transactionType: { not: 'SALES ORDERS' } }]
+      },
       include: { customer: true }
     }),
     prisma.salesInvoice.findMany({
@@ -429,7 +433,11 @@ export async function buildUnifiedPartyLedger(prisma, userId, { partyName, suppl
 export async function buildCustomerLedger(prisma, userId, partyName) {
   const [orders, invoices, bankEntries, notes] = await Promise.all([
     prisma.order.findMany({
-      where: { userId, status: 'completed' },
+      where: {
+        userId,
+        status: 'completed',
+        OR: [{ transactionType: null }, { transactionType: { not: 'SALES ORDERS' } }]
+      },
       include: { customer: true },
       orderBy: [{ orderDate: 'asc' }, { createdAt: 'asc' }]
     }),
@@ -958,6 +966,8 @@ export async function getLedgerEntryDetail(prisma, userId, sourceType, sourceId)
       subtitle: getOrderPartyName(order),
       sourceType,
       sourceId,
+      canEdit: order.manualType === 'erp_sales',
+      editPath: order.manualType === 'erp_sales' ? `/erp/sales?edit=${order.id}&kind=bill` : undefined,
       fields: buildDetailFields([
         { label: 'Date', value: toIsoDate(order.orderDate || order.createdAt) },
         { label: 'Order No.', value: order.orderNumber || '-' },

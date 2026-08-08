@@ -11,46 +11,48 @@ datasource db {
 }
 
 model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  name      String?
-  firmName  String?
-  password  String
-  trialEndsAt DateTime?
-  subscriptionStatus String?
-  subscriptionPlan String?
-  subscriptionStartedAt DateTime?
-  subscriptionEndsAt DateTime?
-  subscriptionSource String?
-  razorpayCustomerId String?
-  razorpaySubscriptionId String?
-  googlePlayProductId String?
+  id                      String                @id @default(cuid())
+  email                   String                @unique
+  name                    String?
+  firmName                String?
+  password                String
+  trialEndsAt             DateTime?
+  subscriptionStatus      String?
+  subscriptionPlan        String?
+  subscriptionStartedAt   DateTime?
+  subscriptionEndsAt      DateTime?
+  subscriptionSource      String?
+  razorpayCustomerId      String?
+  razorpaySubscriptionId  String?
+  googlePlayProductId     String?
   googlePlayPurchaseToken String?
-  freeOverride Boolean @default(false)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  designs   Design[]
-  catalogues Catalogue[]
-  contacts  Contact[]
-  customers Customer[]
-  shareLinks ShareLink[]
-  orders    Order[]
-  orderDrafts OrderDraft[]
-  otpCodes OtpCode[]
-  subscriptionInvoices SubscriptionInvoice[]
-  businessProfile BusinessProfile?
-  salesInvoices SalesInvoice[]
-  suppliers Supplier[]
-  purchaseBills PurchaseBill[]
-  bankEntries BankEntry[]
-  creditDebitNotes CreditDebitNote[]
-  erpUsers ErpUser[]
-  greyPurchases GreyPurchase[]
-  greyDispatches GreyDispatch[]
-  greyPurchaseReturns GreyPurchaseReturn[]
-  millReceipts MillReceipt[]
-  workDespatches WorkDespatch[]
-  workReceipts WorkReceipt[]
+  freeOverride            Boolean               @default(false)
+  createdAt               DateTime              @default(now())
+  updatedAt               DateTime              @updatedAt
+  designs                 Design[]
+  catalogues              Catalogue[]
+  contacts                Contact[]
+  customers               Customer[]
+  shareLinks              ShareLink[]
+  orders                  Order[]
+  orderDrafts             OrderDraft[]
+  otpCodes                OtpCode[]
+  subscriptionInvoices    SubscriptionInvoice[]
+  businessProfile         BusinessProfile?
+  salesInvoices           SalesInvoice[]
+  suppliers               Supplier[]
+  purchaseBills           PurchaseBill[]
+  bankEntries             BankEntry[]
+  creditDebitNotes        CreditDebitNote[]
+  erpUsers                ErpUser[]
+  greyPurchases           GreyPurchase[]
+  greyDispatches          GreyDispatch[]
+  greyPurchaseReturns     GreyPurchaseReturn[]
+  millReceipts            MillReceipt[]
+  workDespatches          WorkDespatch[]
+  workReceipts            WorkReceipt[]
+  salesOrders             SalesOrder[]
+  salesItemMasters        SalesItemMaster[]
 }
 
 model ErpUser {
@@ -70,16 +72,16 @@ model ErpUser {
 }
 
 model OtpCode {
-  id          String    @id @default(cuid())
-  userId      String?
-  user        User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  email       String
-  purpose     String
-  codeHash    String
-  attempts    Int       @default(0)
-  expiresAt   DateTime
-  consumedAt  DateTime?
-  createdAt   DateTime  @default(now())
+  id         String    @id @default(cuid())
+  userId     String?
+  user       User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  email      String
+  purpose    String
+  codeHash   String
+  attempts   Int       @default(0)
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
 
   @@index([email])
   @@index([purpose])
@@ -100,33 +102,33 @@ model Catalogue {
 }
 
 model Design {
-  id            String   @id @default(cuid())
-  userId        String
-  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  catalogueId   String?
-  catalogue     Catalogue? @relation(fields: [catalogueId], references: [id], onDelete: SetNull)
-  name          String?  // Design name (optional for backward compatibility)
-  image         String   // Base64 or URL
-  designCode    String?  // Optional design code for AI matching
-  color         String?  // Optional color
-  stockQuantity Int?     @default(1000) // Stock quantity
-  stockUnit     String?  @default("pcs") // "pcs" or "mtrs"
-  pcsPerParcel  Int?     // How many pieces in one parcel
-  moq           Int?     // Minimum order quantity (optional)
-  basePrice     Float?   // Base price (replaces wholesalePrice/retailPrice) - nullable for migration
-  additionalPrices Json?  // Additional price types: [{name: "WSP", type: "percentage|fixed", value: 5}]
-  costingDetails Json?    // Optional costing calculator data (materials, jobs, other costs)
-  wholesalePrice Float   @default(0) // Kept for backward compatibility
-  retailPrice    Float   @default(0) // Kept for backward compatibility
-  fabric         String
-  description    String?
-  aiModels       Json?    // Optional: base64 images from AI modelling (model wearing design)
-  shareLinks     ShareLink[]
-  shareLinkDesigns ShareLinkDesign[]
+  id                   String                @id @default(cuid())
+  userId               String
+  user                 User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  catalogueId          String?
+  catalogue            Catalogue?            @relation(fields: [catalogueId], references: [id], onDelete: SetNull)
+  name                 String? // Design name (optional for backward compatibility)
+  image                String // Base64 or URL
+  designCode           String? // Optional design code for AI matching
+  color                String? // Optional color
+  stockQuantity        Int?                  @default(1000) // Stock quantity
+  stockUnit            String?               @default("pcs") // "pcs" or "mtrs"
+  pcsPerParcel         Int? // How many pieces in one parcel
+  moq                  Int? // Minimum order quantity (optional)
+  basePrice            Float? // Base price (replaces wholesalePrice/retailPrice) - nullable for migration
+  additionalPrices     Json? // Additional price types: [{name: "WSP", type: "percentage|fixed", value: 5}]
+  costingDetails       Json? // Optional costing calculator data (materials, jobs, other costs)
+  wholesalePrice       Float                 @default(0) // Kept for backward compatibility
+  retailPrice          Float                 @default(0) // Kept for backward compatibility
+  fabric               String
+  description          String?
+  aiModels             Json? // Optional: base64 images from AI modelling (model wearing design)
+  shareLinks           ShareLink[]
+  shareLinkDesigns     ShareLinkDesign[]
   shareLinkDesignViews ShareLinkDesignView[]
-  orders         Order[]
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  orders               Order[]
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
 
   @@index([userId])
   @@index([catalogueId])
@@ -135,25 +137,25 @@ model Design {
 }
 
 model Contact {
-  id          String   @id @default(cuid())
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  name        String
-  phoneNumber String
-  isSaved     Boolean  @default(false) // Whether this contact has saved user's number
-  lastShared  DateTime?
+  id             String    @id @default(cuid())
+  userId         String
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name           String
+  phoneNumber    String
+  isSaved        Boolean   @default(false) // Whether this contact has saved user's number
+  lastShared     DateTime?
   deliveryStatus String? // 'delivered', 'undelivered', 'unknown'
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
-  @@index([userId])
   @@unique([userId, phoneNumber])
+  @@index([userId])
 }
 
 model Customer {
-  id                String   @id @default(cuid())
+  id                String         @id @default(cuid())
   userId            String
-  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user              User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   organizationName  String
   gstNumber         String?
   panNumber         String?
@@ -167,8 +169,9 @@ model Customer {
   discountRate      Float?
   orders            Order[]
   salesInvoices     SalesInvoice[]
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  salesOrders       SalesOrder[]
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
 
   @@index([userId])
   @@index([organizationName])
@@ -177,24 +180,24 @@ model Customer {
 }
 
 model ShareLink {
-  id          String   @id @default(cuid())
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  designId    String?
-  design      Design?   @relation(fields: [designId], references: [id], onDelete: Cascade)
-  designs     ShareLinkDesign[]
-  orders      Order[]
-  opens       ShareLinkOpen[]
-  designViews ShareLinkDesignView[]
-  token       String   @unique // Unique token for the shareable link
-  expiresAt   DateTime? // Optional expiration date
-  isActive    Boolean  @default(true) // Can be disabled by user
+  id                String                @id @default(cuid())
+  userId            String
+  user              User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  designId          String?
+  design            Design?               @relation(fields: [designId], references: [id], onDelete: Cascade)
+  designs           ShareLinkDesign[]
+  orders            Order[]
+  opens             ShareLinkOpen[]
+  designViews       ShareLinkDesignView[]
+  token             String                @unique // Unique token for the shareable link
+  expiresAt         DateTime? // Optional expiration date
+  isActive          Boolean               @default(true) // Can be disabled by user
   selectedPriceType String? // Which price type to show (base, or name of additional price)
-  securityMode String @default("normal") // normal | device_locked
+  securityMode      String                @default("normal") // normal | device_locked
   lockedDeviceToken String? // first viewer device token for secured links
-  lockedAt DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  lockedAt          DateTime?
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
 
   @@index([userId])
   @@index([designId])
@@ -204,24 +207,24 @@ model ShareLink {
 }
 
 model ShareLinkOpen {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   shareLinkId String
   shareLink   ShareLink @relation(fields: [shareLinkId], references: [id], onDelete: Cascade)
-  sessionId   String?   // Client session to avoid double-counting same visitor
-  openedAt    DateTime @default(now())
+  sessionId   String? // Client session to avoid double-counting same visitor
+  openedAt    DateTime  @default(now())
 
   @@index([shareLinkId])
   @@index([openedAt])
 }
 
 model ShareLinkDesignView {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   shareLinkId String
   designId    String
   shareLink   ShareLink @relation(fields: [shareLinkId], references: [id], onDelete: Cascade)
   design      Design    @relation(fields: [designId], references: [id], onDelete: Cascade)
   sessionId   String?
-  viewedAt    DateTime @default(now())
+  viewedAt    DateTime  @default(now())
 
   @@index([shareLinkId])
   @@index([designId])
@@ -229,38 +232,40 @@ model ShareLinkDesignView {
 }
 
 model Order {
-  id          String   @id @default(cuid())
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  shareLinkId String?
-  shareLink   ShareLink? @relation(fields: [shareLinkId], references: [id], onDelete: Cascade)
-  customerId  String?
-  customer    Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
-  designId    String?
-  design      Design?   @relation(fields: [designId], references: [id], onDelete: Cascade)
-  buyerName   String
-  buyerPhone  String
-  quantity    Int
-  orderLines  Json?
-  status      String   @default("pending")
-  remarks     String? // seller notes on manual orders
-  manualType  String? // open | design; null for share-link orders
-  manualBatchId String? // groups design lines from one manual submit
-  priceCategory String?
-  orderNumber String?
-  invoiceNumber Int?
-  transactionType String?
-  typeBillNumber Int?
-  agentName String?
-  transportName String?
-  discountRate Float?
-  shippingCharge Float?
-  orderDate DateTime?
-  expectedDate DateTime?
-  haste String?
-  station String?
-  salesInvoices SalesInvoice[]
-  createdAt   DateTime @default(now())
+  id                 String         @id @default(cuid())
+  userId             String
+  user               User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  shareLinkId        String?
+  shareLink          ShareLink?     @relation(fields: [shareLinkId], references: [id], onDelete: Cascade)
+  customerId         String?
+  customer           Customer?      @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  designId           String?
+  design             Design?        @relation(fields: [designId], references: [id], onDelete: Cascade)
+  buyerName          String
+  buyerPhone         String
+  quantity           Int
+  orderLines         Json?
+  status             String         @default("pending")
+  remarks            String? // seller notes on manual orders
+  manualType         String? // open | design; null for share-link orders
+  manualBatchId      String? // groups design lines from one manual submit
+  priceCategory      String?
+  orderNumber        String?
+  invoiceNumber      Int?
+  transactionType    String?
+  typeBillNumber     Int?
+  agentName          String?
+  transportName      String?
+  discountRate       Float?
+  shippingCharge     Float?
+  orderDate          DateTime?
+  expectedDate       DateTime?
+  haste              String?
+  station            String?
+  sourceSalesOrderId String?
+  sourceSalesOrder   SalesOrder?    @relation(fields: [sourceSalesOrderId], references: [id], onDelete: SetNull)
+  salesInvoices      SalesInvoice[]
+  createdAt          DateTime       @default(now())
 
   @@index([userId])
   @@index([shareLinkId])
@@ -271,101 +276,175 @@ model Order {
   @@index([createdAt])
   @@index([manualBatchId])
   @@index([transactionType])
+  @@index([sourceSalesOrderId])
+}
+
+model SalesOrder {
+  id             String    @id @default(cuid())
+  userId         String
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  customerId     String?
+  customer       Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  companyName    String?
+  partyName      String
+  partyGstin     String?
+  state          String?
+  station        String?
+  brokerName     String?
+  transportName  String?
+  vehicleNo      String?
+  lrNo           String?
+  orderNo        Int
+  orderDate      DateTime  @default(now())
+  expectedDate   DateTime?
+  haste          String?
+  remarks        String?
+  hsnCode        String?   @default("5407")
+  lineItems      Json
+  totalBundles   Float     @default(0)
+  totalPcs       Float     @default(0)
+  totalMts       Float     @default(0)
+  grossAmount    Float     @default(0)
+  discountAmount Float     @default(0)
+  taxableAmount  Float     @default(0)
+  totalTaxAmount Float     @default(0)
+  netAmount      Float     @default(0)
+  status         String    @default("open")
+  bills          Order[]
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@unique([userId, orderNo])
+  @@index([userId])
+  @@index([customerId])
+  @@index([partyName])
+  @@index([orderDate])
+  @@index([status])
+}
+
+model SalesItemMaster {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name         String
+  mainScreen   String
+  packing      String?  @default("NAKED")
+  cut          Float    @default(0)
+  greyQuality  String?
+  finishType   String?  @default("FINISH")
+  itemType     String?  @default("SAREE")
+  screenSeries String?
+  category     String?
+  unit         String?  @default("PCS")
+  sellingRate  Float    @default(0)
+  rate2        Float    @default(0)
+  rate3        Float    @default(0)
+  workCut      Float    @default(0)
+  hsnSac       String?
+  gstRate      Float    @default(0)
+  remark       String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([userId, name, mainScreen])
+  @@index([userId])
+  @@index([mainScreen])
+  @@index([name])
 }
 
 model OrderDraft {
-  id          String   @id @default(cuid())
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  sourceText  String
-  draftJson   Json
-  status      String   @default("draft")
-  createdAt   DateTime @default(now())
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sourceText String
+  draftJson  Json
+  status     String   @default("draft")
+  createdAt  DateTime @default(now())
 
   @@index([userId])
   @@index([createdAt])
 }
 
 model ShareLinkDesign {
-  id         String   @id @default(cuid())
+  id          String    @id @default(cuid())
   shareLinkId String
-  designId   String
-  shareLink  ShareLink @relation(fields: [shareLinkId], references: [id], onDelete: Cascade)
-  design     Design    @relation(fields: [designId], references: [id], onDelete: Cascade)
-  createdAt  DateTime @default(now())
+  designId    String
+  shareLink   ShareLink @relation(fields: [shareLinkId], references: [id], onDelete: Cascade)
+  design      Design    @relation(fields: [designId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
 
+  @@unique([shareLinkId, designId])
   @@index([shareLinkId])
   @@index([designId])
-  @@unique([shareLinkId, designId])
 }
 
 model BusinessProfile {
-  id            String   @id @default(cuid())
-  userId        String   @unique
-  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  legalName     String?
-  tradeName     String?
-  companyCode   String?
-  companyType   String?
-  companyGroup  String?
-  gstNumber     String?
-  panNumber     String?
-  udyamNumber   String?
-  tdsAccountNumber String?
-  msmeType      String?
-  addressLine1  String?
-  addressLine2  String?
-  city          String?
-  state         String?
-  pincode       String?
-  phone         String?
-  mobileNumber  String?
-  fax           String?
-  email         String?
-  bankName      String?
-  bankAccount   String?
-  bankIfsc      String?
-  rtgsAccount   String?
+  id                  String   @id @default(cuid())
+  userId              String   @unique
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  legalName           String?
+  tradeName           String?
+  companyCode         String?
+  companyType         String?
+  companyGroup        String?
+  gstNumber           String?
+  panNumber           String?
+  udyamNumber         String?
+  tdsAccountNumber    String?
+  msmeType            String?
+  addressLine1        String?
+  addressLine2        String?
+  city                String?
+  state               String?
+  pincode             String?
+  phone               String?
+  mobileNumber        String?
+  fax                 String?
+  email               String?
+  bankName            String?
+  bankAccount         String?
+  bankIfsc            String?
+  rtgsAccount         String?
   businessDescription String?
-  proprietor    String?
-  invoicePrefix String  @default("TX")
-  defaultHsnCode String?
-  defaultGstRate Float   @default(5)
-  terms         String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  proprietor          String?
+  invoicePrefix       String   @default("TX")
+  defaultHsnCode      String?
+  defaultGstRate      Float    @default(5)
+  terms               String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
   @@index([userId])
 }
 
 model SalesInvoice {
-  id              String   @id @default(cuid())
-  userId          String
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  orderId         String
-  order           Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  customerId      String?
-  customer        Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
-  invoiceNumber   String
-  invoiceDate     DateTime @default(now())
-  status          String   @default("unpaid")
-  sellerSnapshot  Json
-  buyerSnapshot   Json
-  lineItems       Json
-  placeOfSupply   String?
-  taxableAmount   Float    @default(0)
-  discountAmount  Float    @default(0)
-  shippingCharge  Float    @default(0)
-  cgstAmount      Float    @default(0)
-  sgstAmount      Float    @default(0)
-  igstAmount      Float    @default(0)
-  totalTaxAmount  Float    @default(0)
-  grandTotal      Float    @default(0)
-  amountPaid      Float    @default(0)
-  amountDue       Float    @default(0)
-  notes           String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id             String    @id @default(cuid())
+  userId         String
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orderId        String
+  order          Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  customerId     String?
+  customer       Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  invoiceNumber  String
+  invoiceDate    DateTime  @default(now())
+  status         String    @default("unpaid")
+  sellerSnapshot Json
+  buyerSnapshot  Json
+  lineItems      Json
+  placeOfSupply  String?
+  taxableAmount  Float     @default(0)
+  discountAmount Float     @default(0)
+  shippingCharge Float     @default(0)
+  cgstAmount     Float     @default(0)
+  sgstAmount     Float     @default(0)
+  igstAmount     Float     @default(0)
+  totalTaxAmount Float     @default(0)
+  grandTotal     Float     @default(0)
+  amountPaid     Float     @default(0)
+  amountDue      Float     @default(0)
+  notes          String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   @@unique([userId, invoiceNumber])
   @@unique([orderId])
@@ -376,23 +455,23 @@ model SalesInvoice {
 }
 
 model Supplier {
-  id               String   @id @default(cuid())
-  userId           String
-  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  name             String
-  gstNumber        String?
-  panNumber        String?
-  mobileNumber     String?
-  address          String?
-  city             String?
-  state            String?
-  pincode          String?
-  msmeType         String?
-  udyamNumber      String?
-  purchaseBills    PurchaseBill[]
-  greyPurchases    GreyPurchase[]
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  id            String         @id @default(cuid())
+  userId        String
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name          String
+  gstNumber     String?
+  panNumber     String?
+  mobileNumber  String?
+  address       String?
+  city          String?
+  state         String?
+  pincode       String?
+  msmeType      String?
+  udyamNumber   String?
+  purchaseBills PurchaseBill[]
+  greyPurchases GreyPurchase[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
 
   @@index([userId])
   @@index([name])
@@ -400,61 +479,61 @@ model Supplier {
 }
 
 model GreyPurchase {
-  id                 String   @id @default(cuid())
-  userId             String
-  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  supplierId         String?
-  supplier           Supplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull)
-  companyName        String?
-  partyName          String
-  partyGstin         String?
-  partyMsme          String?
-  quality            String?
-  srNo               Int?
-  orderNo            String?
-  hsnCode            String?
-  billNo             String?
-  brokerName         String?
-  billDate           DateTime @default(now())
-  checkerName        String?
-  transactionType    String   @default("GREY PURCHASE")
-  typeBillNumber     Int?
-  recTaka            Float    @default(0)
-  recMts             Float    @default(0)
-  purRate            Float    @default(0)
-  takaDetails        Json?
-  lineItems          Json
-  grossAmount        Float    @default(0)
-  discountPercent    Float    @default(0)
-  discountAmount     Float    @default(0)
-  taxableAmount      Float    @default(0)
-  otherAddBefore     Float    @default(0)
-  otherLessBefore    Float    @default(0)
-  placeOfSupply      String?
-  stateCode          String?
-  gstType            String?
-  gstRate            Float    @default(5)
-  cgstRate           Float    @default(0)
-  cgstAmount         Float    @default(0)
-  sgstRate           Float    @default(0)
-  sgstAmount         Float    @default(0)
-  igstRate           Float    @default(0)
-  igstAmount         Float    @default(0)
-  totalTaxAmount     Float    @default(0)
-  payableAmount      Float    @default(0)
-  otherAddAfter      Float    @default(0)
-  otherLessAfter     Float    @default(0)
-  netAmount          Float    @default(0)
-  paid               Boolean  @default(false)
-  paidDate           DateTime?
-  despatchMts        Float    @default(0)
-  remarks            String?
-  status             String   @default("posted")
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
-  greyDispatches     GreyDispatch[]
+  id                  String               @id @default(cuid())
+  userId              String
+  user                User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  supplierId          String?
+  supplier            Supplier?            @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  companyName         String?
+  partyName           String
+  partyGstin          String?
+  partyMsme           String?
+  quality             String?
+  srNo                Int?
+  orderNo             String?
+  hsnCode             String?
+  billNo              String?
+  brokerName          String?
+  billDate            DateTime             @default(now())
+  checkerName         String?
+  transactionType     String               @default("GREY PURCHASE")
+  typeBillNumber      Int?
+  recTaka             Float                @default(0)
+  recMts              Float                @default(0)
+  purRate             Float                @default(0)
+  takaDetails         Json?
+  lineItems           Json
+  grossAmount         Float                @default(0)
+  discountPercent     Float                @default(0)
+  discountAmount      Float                @default(0)
+  taxableAmount       Float                @default(0)
+  otherAddBefore      Float                @default(0)
+  otherLessBefore     Float                @default(0)
+  placeOfSupply       String?
+  stateCode           String?
+  gstType             String?
+  gstRate             Float                @default(5)
+  cgstRate            Float                @default(0)
+  cgstAmount          Float                @default(0)
+  sgstRate            Float                @default(0)
+  sgstAmount          Float                @default(0)
+  igstRate            Float                @default(0)
+  igstAmount          Float                @default(0)
+  totalTaxAmount      Float                @default(0)
+  payableAmount       Float                @default(0)
+  otherAddAfter       Float                @default(0)
+  otherLessAfter      Float                @default(0)
+  netAmount           Float                @default(0)
+  paid                Boolean              @default(false)
+  paidDate            DateTime?
+  despatchMts         Float                @default(0)
+  remarks             String?
+  status              String               @default("posted")
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  greyDispatches      GreyDispatch[]
   greyPurchaseReturns GreyPurchaseReturn[]
-  millReceipts       MillReceipt[]
+  millReceipts        MillReceipt[]
 
   @@index([userId])
   @@index([supplierId])
@@ -465,62 +544,62 @@ model GreyPurchase {
 }
 
 model GreyPurchaseReturn {
-  id               String        @id @default(cuid())
-  userId           String
-  user             User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  greyPurchaseId   String
-  greyPurchase     GreyPurchase  @relation(fields: [greyPurchaseId], references: [id], onDelete: Restrict)
-  greyDispatchId   String?       @unique
-  companyName      String?
-  entryType        String        @default("GREY PURCHASE")
-  greyType         String        @default("GREY")
-  voucherNo        Int?
-  saleAccount      String        @default("GREY PURCHASE RETURN")
-  purSr            Int?
-  quality          String?
-  hsnCode          String?
-  partyName        String
-  partyGstin       String?
-  placeOfSupply    String?
-  stateCode        String?
-  gstType          String?
-  billNo           String?
-  returnDate       DateTime      @default(now())
-  refBillNo        String?
-  refBillDate      DateTime?
-  brokerName       String?
-  challanNo        String?
-  station          String?
-  transport        String?
-  vehicleNo        String?
-  ewayBillNo       String?
-  lrNo             String?
-  checkerName      String?
-  pcs              Float         @default(0)
-  mts              Float         @default(0)
-  rate             Float         @default(0)
-  grossAmount      Float         @default(0)
-  discountPercent  Float         @default(0)
-  discountAmount   Float         @default(0)
-  otherLess        Float         @default(0)
-  otherAdd         Float         @default(0)
-  taxableAmount    Float         @default(0)
-  gstRate          Float         @default(5)
-  cgstRate         Float         @default(0)
-  cgstAmount       Float         @default(0)
-  sgstRate         Float         @default(0)
-  sgstAmount       Float         @default(0)
-  igstRate         Float         @default(0)
-  igstAmount       Float         @default(0)
-  netAmount        Float         @default(0)
-  paidAmount       Float         @default(0)
-  paid             Boolean       @default(false)
-  adjustBillNo     String?
-  remarks          String?
-  takaDetails      Json?
-  status           String        @default("posted")
-  createdAt        DateTime      @default(now())
-  updatedAt        DateTime      @updatedAt
+  id              String       @id @default(cuid())
+  userId          String
+  user            User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  greyPurchaseId  String
+  greyPurchase    GreyPurchase @relation(fields: [greyPurchaseId], references: [id], onDelete: Restrict)
+  greyDispatchId  String?      @unique
+  companyName     String?
+  entryType       String       @default("GREY PURCHASE")
+  greyType        String       @default("GREY")
+  voucherNo       Int?
+  saleAccount     String       @default("GREY PURCHASE RETURN")
+  purSr           Int?
+  quality         String?
+  hsnCode         String?
+  partyName       String
+  partyGstin      String?
+  placeOfSupply   String?
+  stateCode       String?
+  gstType         String?
+  billNo          String?
+  returnDate      DateTime     @default(now())
+  refBillNo       String?
+  refBillDate     DateTime?
+  brokerName      String?
+  challanNo       String?
+  station         String?
+  transport       String?
+  vehicleNo       String?
+  ewayBillNo      String?
+  lrNo            String?
+  checkerName     String?
+  pcs             Float        @default(0)
+  mts             Float        @default(0)
+  rate            Float        @default(0)
+  grossAmount     Float        @default(0)
+  discountPercent Float        @default(0)
+  discountAmount  Float        @default(0)
+  otherLess       Float        @default(0)
+  otherAdd        Float        @default(0)
+  taxableAmount   Float        @default(0)
+  gstRate         Float        @default(5)
+  cgstRate        Float        @default(0)
+  cgstAmount      Float        @default(0)
+  sgstRate        Float        @default(0)
+  sgstAmount      Float        @default(0)
+  igstRate        Float        @default(0)
+  igstAmount      Float        @default(0)
+  netAmount       Float        @default(0)
+  paidAmount      Float        @default(0)
+  paid            Boolean      @default(false)
+  adjustBillNo    String?
+  remarks         String?
+  takaDetails     Json?
+  status          String       @default("posted")
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
 
   @@index([userId])
   @@index([greyPurchaseId])
@@ -531,41 +610,41 @@ model GreyPurchaseReturn {
 }
 
 model GreyDispatch {
-  id               String        @id @default(cuid())
-  userId           String
-  user             User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  greyPurchaseId   String
-  greyPurchase     GreyPurchase  @relation(fields: [greyPurchaseId], references: [id], onDelete: Restrict)
-  companyName      String?
-  transactionType  String        @default("PROCESS")
-  challanNo        String?
-  dispatchDate     DateTime      @default(now())
-  millLotNo        String?
-  purSr            Int?
-  millName         String
-  ourMarka         String?
-  purBillNo        String?
-  purDate          DateTime?
-  weaverName       String?
-  quality          String?
-  cut              Float         @default(0)
-  weight           Float         @default(0)
-  rate             Float         @default(0)
-  despTaka         Float         @default(0)
-  despMts          Float         @default(0)
-  takaDetails      Json?
-  remark           String?
-  brokerName       String?
-  orderNo          String?
-  checkerName      String?
-  vehicleNo        String?
-  ewayBillNo       String?
-  srNo             Int?
-  status           String        @default("posted")
-  createdAt        DateTime      @default(now())
-  updatedAt        DateTime      @updatedAt
+  id              String       @id @default(cuid())
+  userId          String
+  user            User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  greyPurchaseId  String
+  greyPurchase    GreyPurchase @relation(fields: [greyPurchaseId], references: [id], onDelete: Restrict)
+  companyName     String?
+  transactionType String       @default("PROCESS")
+  challanNo       String?
+  dispatchDate    DateTime     @default(now())
+  millLotNo       String?
+  purSr           Int?
+  millName        String
+  ourMarka        String?
+  purBillNo       String?
+  purDate         DateTime?
+  weaverName      String?
+  quality         String?
+  cut             Float        @default(0)
+  weight          Float        @default(0)
+  rate            Float        @default(0)
+  despTaka        Float        @default(0)
+  despMts         Float        @default(0)
+  takaDetails     Json?
+  remark          String?
+  brokerName      String?
+  orderNo         String?
+  checkerName     String?
+  vehicleNo       String?
+  ewayBillNo      String?
+  srNo            Int?
+  status          String       @default("posted")
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
 
-  millReceipts     MillReceipt[]
+  millReceipts MillReceipt[]
 
   @@index([userId])
   @@index([greyPurchaseId])
@@ -576,64 +655,64 @@ model GreyDispatch {
 }
 
 model MillReceipt {
-  id               String        @id @default(cuid())
-  userId           String
-  user             User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  greyDispatchId   String
-  greyDispatch     GreyDispatch  @relation(fields: [greyDispatchId], references: [id], onDelete: Restrict)
-  greyPurchaseId   String?
-  greyPurchase     GreyPurchase? @relation(fields: [greyPurchaseId], references: [id], onDelete: SetNull)
-  companyName      String?
-  millName         String
-  millGstin        String?
-  partyMsme        String?
-  entryType        String        @default("JOB WORK")
-  processType      String        @default("FINISH") // FINISH | RETURN (mill reprocess / unfinished return)
-  hsnCode          String?       @default("9988")
-  voucherNo        Int?
-  receiptDate      DateTime      @default(now())
-  billNo           String?
-  placeOfSupply    String?
-  stateCode        String?
-  gstType          String?
-  lotNo            String
-  despNo           String?
-  recChallan       String?
-  marka            String?
-  quality          String?
-  printStyle       String?
-  recTaka          Float         @default(0)
-  recMts           Float         @default(0)
-  greyMts          Float         @default(0)
-  shortMts         Float         @default(0)
-  shortPct         Float         @default(0)
-  jobRate          Float         @default(0)
-  jobAmount        Float         @default(0)
-  rdPerMtr         Float         @default(0)
-  rdLessAddAmt     Float         @default(0)
-  discountPercent  Float         @default(0)
-  discountAmount   Float         @default(0)
-  otherLess        Float         @default(0)
-  otherAdd         Float         @default(0)
-  taxableAmount    Float         @default(0)
-  gstRate          Float         @default(5)
-  cgstRate         Float         @default(0)
-  cgstAmount       Float         @default(0)
-  sgstRate         Float         @default(0)
-  sgstAmount       Float         @default(0)
-  igstRate         Float         @default(0)
-  igstAmount       Float         @default(0)
-  grossAmount      Float         @default(0)
-  invoiceValue     Float         @default(0)
-  tdsOnAmt         Float         @default(0)
-  tdsPercent       Float         @default(0)
-  tdsAmount        Float         @default(0)
-  netAfterTds      Float         @default(0)
-  remarks          String?
-  takaDetails      Json?
-  status           String        @default("posted")
-  createdAt        DateTime      @default(now())
-  updatedAt        DateTime      @updatedAt
+  id              String        @id @default(cuid())
+  userId          String
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  greyDispatchId  String
+  greyDispatch    GreyDispatch  @relation(fields: [greyDispatchId], references: [id], onDelete: Restrict)
+  greyPurchaseId  String?
+  greyPurchase    GreyPurchase? @relation(fields: [greyPurchaseId], references: [id], onDelete: SetNull)
+  companyName     String?
+  millName        String
+  millGstin       String?
+  partyMsme       String?
+  entryType       String        @default("JOB WORK")
+  processType     String        @default("FINISH") // FINISH | RETURN (mill reprocess / unfinished return)
+  hsnCode         String?       @default("9988")
+  voucherNo       Int?
+  receiptDate     DateTime      @default(now())
+  billNo          String?
+  placeOfSupply   String?
+  stateCode       String?
+  gstType         String?
+  lotNo           String
+  despNo          String?
+  recChallan      String?
+  marka           String?
+  quality         String?
+  printStyle      String?
+  recTaka         Float         @default(0)
+  recMts          Float         @default(0)
+  greyMts         Float         @default(0)
+  shortMts        Float         @default(0)
+  shortPct        Float         @default(0)
+  jobRate         Float         @default(0)
+  jobAmount       Float         @default(0)
+  rdPerMtr        Float         @default(0)
+  rdLessAddAmt    Float         @default(0)
+  discountPercent Float         @default(0)
+  discountAmount  Float         @default(0)
+  otherLess       Float         @default(0)
+  otherAdd        Float         @default(0)
+  taxableAmount   Float         @default(0)
+  gstRate         Float         @default(5)
+  cgstRate        Float         @default(0)
+  cgstAmount      Float         @default(0)
+  sgstRate        Float         @default(0)
+  sgstAmount      Float         @default(0)
+  igstRate        Float         @default(0)
+  igstAmount      Float         @default(0)
+  grossAmount     Float         @default(0)
+  invoiceValue    Float         @default(0)
+  tdsOnAmt        Float         @default(0)
+  tdsPercent      Float         @default(0)
+  tdsAmount       Float         @default(0)
+  netAfterTds     Float         @default(0)
+  remarks         String?
+  takaDetails     Json?
+  status          String        @default("posted")
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
 
   @@index([userId])
   @@index([greyDispatchId])
@@ -647,40 +726,40 @@ model MillReceipt {
 }
 
 model WorkDespatch {
-  id              String   @id @default(cuid())
+  id              String        @id @default(cuid())
   userId          String
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   companyName     String?
-  transactionType String   @default("WORK DESP.SUIT CHALLAN")
+  transactionType String        @default("WORK DESP.SUIT CHALLAN")
   partyName       String
   partyGstin      String?
   placeOfSupply   String?
   stateCode       String?
   gstType         String?
   challanNo       String?
-  despatchDate    DateTime @default(now())
+  despatchDate    DateTime      @default(now())
   brokerName      String?
   vehicleNo       String?
   workType        String?
-  hsnCode         String?  @default("5407")
+  hsnCode         String?       @default("5407")
   remarks         String?
   receivedBy      String?
-  deliveryDays    Int      @default(0)
+  deliveryDays    Int           @default(0)
   deliveryDueDate DateTime?
   lrNo            String?
   ewayBillNo      String?
-  dhara           Float    @default(0)
-  grace           Float    @default(0)
-  rateInChallan   Boolean  @default(false)
+  dhara           Float         @default(0)
+  grace           Float         @default(0)
+  rateInChallan   Boolean       @default(false)
   srNo            Int?
   lineItems       Json
-  totalBundles    Float    @default(0)
-  totalPcs        Float    @default(0)
-  totalMts        Float    @default(0)
-  totalAmount     Float    @default(0)
-  status          String   @default("posted")
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  totalBundles    Float         @default(0)
+  totalPcs        Float         @default(0)
+  totalMts        Float         @default(0)
+  totalAmount     Float         @default(0)
+  status          String        @default("posted")
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
   workReceipts    WorkReceipt[]
 
   @@index([userId])
@@ -747,11 +826,11 @@ model WorkReceipt {
 }
 
 model PurchaseBill {
-  id              String   @id @default(cuid())
+  id              String    @id @default(cuid())
   userId          String
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   supplierId      String
-  supplier        Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  supplier        Supplier  @relation(fields: [supplierId], references: [id], onDelete: Cascade)
   billNumber      String?
   billDate        DateTime?
   voucherNumber   String?
@@ -759,18 +838,18 @@ model PurchaseBill {
   extractedText   String?
   extractionJson  Json?
   lineItems       Json
-  taxableAmount   Float    @default(0)
-  discountAmount  Float    @default(0)
-  cgstAmount      Float    @default(0)
-  sgstAmount      Float    @default(0)
-  igstAmount      Float    @default(0)
-  totalTaxAmount  Float    @default(0)
-  grandTotal      Float    @default(0)
+  taxableAmount   Float     @default(0)
+  discountAmount  Float     @default(0)
+  cgstAmount      Float     @default(0)
+  sgstAmount      Float     @default(0)
+  igstAmount      Float     @default(0)
+  totalTaxAmount  Float     @default(0)
+  grandTotal      Float     @default(0)
   transactionType String?
   typeBillNumber  Int?
-  status          String   @default("posted")
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  status          String    @default("posted")
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   @@index([userId])
   @@index([supplierId])
@@ -780,36 +859,36 @@ model PurchaseBill {
 }
 
 model BankEntry {
-  id              String   @id @default(cuid())
-  userId          String
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  entryType       String   // payment | receipt
-  transactionType String?
-  entryDate       DateTime @default(now())
-  voucherNumber   String?
-  companyName     String?
-  bankName        String?
-  accountName     String?
-  partyType       String?  // customer | supplier | other
-  partyName       String
-  linkedType      String?  // sales_invoice | purchase_bill | none
-  linkedId        String?
-  amount          Float
-  paymentMode     String?
-  referenceNumber String?
-  chequeNumber    String?
-  chequeDate      DateTime?
-  slipNumber      String?
-  billNumber      String?
-  billAllocations Json?
-  grossAmount     Float    @default(0)
-  adjustPending   Float    @default(0)
-  netBillAmount   Float    @default(0)
-  adjustAdd       Float    @default(0)
-  taxableValuePaidBills Float @default(0)
-  remarks         String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id                    String    @id @default(cuid())
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  entryType             String // payment | receipt
+  transactionType       String?
+  entryDate             DateTime  @default(now())
+  voucherNumber         String?
+  companyName           String?
+  bankName              String?
+  accountName           String?
+  partyType             String? // customer | supplier | other
+  partyName             String
+  linkedType            String? // sales_invoice | purchase_bill | none
+  linkedId              String?
+  amount                Float
+  paymentMode           String?
+  referenceNumber       String?
+  chequeNumber          String?
+  chequeDate            DateTime?
+  slipNumber            String?
+  billNumber            String?
+  billAllocations       Json?
+  grossAmount           Float     @default(0)
+  adjustPending         Float     @default(0)
+  netBillAmount         Float     @default(0)
+  adjustAdd             Float     @default(0)
+  taxableValuePaidBills Float     @default(0)
+  remarks               String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 
   @@index([userId])
   @@index([entryType])
@@ -819,16 +898,16 @@ model BankEntry {
 }
 
 model CreditDebitNote {
-  id                String   @id @default(cuid())
+  id                String    @id @default(cuid())
   userId            String
-  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  noteKind          String   // credit | debit
-  noteSide          String   // sales | purchase
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  noteKind          String // credit | debit
+  noteSide          String // sales | purchase
   companyName       String?
   voucherNumber     Int?
   noteNumber        String?
-  noteDate          DateTime @default(now())
-  partyType         String   // customer | supplier
+  noteDate          DateTime  @default(now())
+  partyType         String // customer | supplier
   partyName         String
   customerId        String?
   supplierId        String?
@@ -839,37 +918,37 @@ model CreditDebitNote {
   challanNumber     String?
   saleAccount       String?
   purchaseType      String?
-  pieces            Float    @default(0)
-  quantity          Float    @default(0)
-  grossAmount       Float    @default(0)
-  discountPercent   Float    @default(0)
-  discountAmount    Float    @default(0)
-  otherLess         Float    @default(0)
-  addAmount         Float    @default(0)
-  returnGoods       Float    @default(0)
+  pieces            Float     @default(0)
+  quantity          Float     @default(0)
+  grossAmount       Float     @default(0)
+  discountPercent   Float     @default(0)
+  discountAmount    Float     @default(0)
+  otherLess         Float     @default(0)
+  addAmount         Float     @default(0)
+  returnGoods       Float     @default(0)
   hsnSac            String?
-  taxableAmount     Float    @default(0)
-  gstRate           Float    @default(0)
-  cgstRate          Float    @default(0)
-  cgstAmount        Float    @default(0)
-  sgstRate          Float    @default(0)
-  sgstAmount        Float    @default(0)
-  igstRate          Float    @default(0)
-  igstAmount        Float    @default(0)
-  totalTaxAmount    Float    @default(0)
-  tcsRate           Float    @default(0)
-  tcsAmount         Float    @default(0)
-  netAmount         Float    @default(0)
-  netAmountAfterTds Float    @default(0)
-  paidAmount        Float    @default(0)
-  isPaid            Boolean  @default(false)
+  taxableAmount     Float     @default(0)
+  gstRate           Float     @default(0)
+  cgstRate          Float     @default(0)
+  cgstAmount        Float     @default(0)
+  sgstRate          Float     @default(0)
+  sgstAmount        Float     @default(0)
+  igstRate          Float     @default(0)
+  igstAmount        Float     @default(0)
+  totalTaxAmount    Float     @default(0)
+  tcsRate           Float     @default(0)
+  tcsAmount         Float     @default(0)
+  netAmount         Float     @default(0)
+  netAmountAfterTds Float     @default(0)
+  paidAmount        Float     @default(0)
+  isPaid            Boolean   @default(false)
   adjustBillNumber  String?
   adjustBillId      String?
   remarks           String?
-  isTally           Boolean  @default(false)
-  status            String   @default("posted")
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  isTally           Boolean   @default(false)
+  status            String    @default("posted")
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   @@index([userId])
   @@index([noteKind, noteSide])
@@ -879,26 +958,25 @@ model CreditDebitNote {
 }
 
 model SubscriptionInvoice {
-  id                 String   @id @default(cuid())
+  id                 String    @id @default(cuid())
   userId             String
-  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  invoiceNumber      String   @unique
+  user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  invoiceNumber      String    @unique
   firmName           String?
   customerName       String?
   customerEmail      String
   plan               String
   planName           String
   amount             Float
-  currency           String   @default("INR")
+  currency           String    @default("INR")
   billingPeriodStart DateTime?
   billingPeriodEnd   DateTime?
   paymentSource      String
   externalReference  String
-  paidAt             DateTime @default(now())
-  createdAt          DateTime @default(now())
+  paidAt             DateTime  @default(now())
+  createdAt          DateTime  @default(now())
 
   @@unique([userId, externalReference])
   @@index([userId])
   @@index([createdAt])
 }
-

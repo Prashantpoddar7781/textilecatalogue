@@ -158,7 +158,7 @@ export interface Order {
   }> | null;
   status: 'waiting_approval' | 'pending' | 'completed' | string;
   remarks?: string | null;
-  manualType?: 'open' | 'design' | null;
+  manualType?: 'open' | 'design' | 'erp_sales' | null;
   manualBatchId?: string | null;
   priceCategory?: string | null;
   orderNumber?: string | null;
@@ -173,10 +173,111 @@ export interface Order {
   expectedDate?: string | null;
   haste?: string | null;
   station?: string | null;
+  sourceSalesOrderId?: string | null;
+  sourceSalesOrder?: SalesOrder | null;
   createdAt: string;
   customer?: Customer | null;
   design?: TextileDesign;
   shareLink?: ShareLink;
+}
+
+export interface SalesLineItem {
+  lineNo?: number;
+  sourceLineNo?: number;
+  itemMasterId?: string | null;
+  itemName: string;
+  bundles: number;
+  mainScreen: string;
+  screenName?: string | null;
+  packing: string;
+  unit: string;
+  pcs: number;
+  cut: number;
+  mtsQty: number;
+  rate: number;
+  amount: number;
+  rd?: number;
+  discountPercent?: number;
+  discountAmount?: number;
+  manualAddLess?: number;
+  gstRate?: number;
+  cgstRate?: number;
+  cgstAmount?: number;
+  sgstRate?: number;
+  sgstAmount?: number;
+  igstRate?: number;
+  igstAmount?: number;
+  taxAmount?: number;
+  taxableAmount?: number;
+  totalAmount?: number;
+  hsnCode?: string | null;
+  soldPcs?: number;
+  soldMts?: number;
+  pendingPcs?: number;
+  pendingMts?: number;
+}
+
+export interface SalesOrder {
+  id: string;
+  userId: string;
+  customerId?: string | null;
+  customer?: Customer | null;
+  companyName?: string | null;
+  partyName: string;
+  partyGstin?: string | null;
+  state?: string | null;
+  station?: string | null;
+  brokerName?: string | null;
+  transportName?: string | null;
+  vehicleNo?: string | null;
+  lrNo?: string | null;
+  orderNo: number;
+  orderDate: string;
+  expectedDate?: string | null;
+  haste?: string | null;
+  remarks?: string | null;
+  hsnCode?: string | null;
+  lineItems: SalesLineItem[];
+  pendingLines?: SalesLineItem[];
+  totalBundles: number;
+  totalPcs: number;
+  totalMts: number;
+  soldPcs?: number;
+  soldMts?: number;
+  pendingPcs?: number;
+  pendingMts?: number;
+  grossAmount: number;
+  discountAmount: number;
+  taxableAmount: number;
+  totalTaxAmount: number;
+  netAmount: number;
+  status: 'open' | 'partial' | 'closed' | string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SalesItemMaster {
+  id: string;
+  userId: string;
+  name: string;
+  mainScreen: string;
+  packing?: string | null;
+  cut: number;
+  greyQuality?: string | null;
+  finishType?: string | null;
+  itemType?: string | null;
+  screenSeries?: string | null;
+  category?: string | null;
+  unit?: string | null;
+  sellingRate: number;
+  rate2: number;
+  rate3: number;
+  workCut: number;
+  hsnSac?: string | null;
+  gstRate: number;
+  remark?: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface BusinessProfile {

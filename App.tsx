@@ -33,6 +33,8 @@ import { WorkDespatchPage } from './components/WorkDespatchPage';
 import { WorkReceiptPage } from './components/WorkReceiptPage';
 import { WorkDespatchReportPage } from './components/WorkDespatchReportPage';
 import { WorkReceiptReportPage } from './components/WorkReceiptReportPage';
+import { SalesOrderReportPage } from './components/SalesOrderReportPage';
+import { FinishSalesReportPage } from './components/FinishSalesReportPage';
 import { CreditDebitNotePage } from './components/CreditDebitNotePage';
 import { parseNoteTypeFromPath } from './constants/creditDebitNoteTypes';
 import { BankEntriesPage } from './components/BankEntriesPage';
@@ -77,13 +79,15 @@ const App: React.FC = () => {
   const erpMillReceiptReportMatch = pathname.match(/^\/erp\/reports\/mill-receipt\/?$/);
   const erpWorkDespatchReportMatch = pathname.match(/^\/erp\/reports\/work-despatch\/?$/);
   const erpWorkReceiptReportMatch = pathname.match(/^\/erp\/reports\/work-receipt\/?$/);
+  const erpSalesOrderReportMatch = pathname.match(/^\/erp\/reports\/sales-order\/?$/);
+  const erpFinishSalesReportMatch = pathname.match(/^\/erp\/reports\/finish-sales\/?$/);
   const erpNotesMatch = pathname.match(/^\/erp\/notes\/([^/]+)\/?$/);
   const isErpRoute = Boolean(
     erpMatch || erpBankMatch || erpSalesMatch || erpPurchaseMatch || erpLedgerMatch
     || erpUtilitiesMatch || erpUsersMatch || erpCompanyMatch || erpGreyPurchaseMatch || erpGreyDispatchMatch || erpGreyPurchaseReturnMatch
     || erpMillReceiptMatch || erpWorkDespatchMatch || erpWorkReceiptMatch
     || erpGodownReportMatch || erpMillDispatchReportMatch || erpMillReceiptReportMatch
-    || erpWorkDespatchReportMatch || erpWorkReceiptReportMatch
+    || erpWorkDespatchReportMatch || erpWorkReceiptReportMatch || erpSalesOrderReportMatch || erpFinishSalesReportMatch
     || erpNotesMatch || supplierLedgerMatch
   );
   const shareStatsMatch = pathname.match(/^\/share-stats\/?$/);
@@ -818,6 +822,14 @@ const App: React.FC = () => {
         onBack={() => { window.location.href = '/erp'; }}
       />
     );
+  }
+
+  if (erpSalesOrderReportMatch) {
+    return <SalesOrderReportPage onBack={() => { window.location.href = '/erp'; }} />;
+  }
+
+  if (erpFinishSalesReportMatch) {
+    return <FinishSalesReportPage onBack={() => { window.location.href = '/erp'; }} />;
   }
 
   if (erpLedgerMatch) {

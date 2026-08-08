@@ -14,10 +14,24 @@ interface Props {
 const sections = [
   {
     title: 'Sales',
-    description: 'Sales entries with type heads, customer billing, and outstanding.',
+    description: 'Sales Orders and Finish Sales conversion with partial fulfilment and accounting bills.',
     icon: ReceiptText,
     href: '/erp/sales',
-    status: 'Demo ready'
+    status: 'Ready'
+  },
+  {
+    title: 'Sales Order Report',
+    description: 'Ordered, sold, and pending quantities with party, item, broker, haste, and status filters.',
+    icon: FileText,
+    href: '/erp/reports/sales-order',
+    status: 'Ready'
+  },
+  {
+    title: 'Finish Sales Register',
+    description: 'Accounting sales register with bill, transport, order reference, taxable, GST, and invoice values.',
+    icon: ReceiptText,
+    href: '/erp/reports/finish-sales',
+    status: 'Ready'
   },
   {
     title: 'Purchase',
