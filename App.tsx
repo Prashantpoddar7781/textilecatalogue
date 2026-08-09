@@ -827,12 +827,7 @@ const App: React.FC = () => {
   }
 
   if (erpSalesOrderMatch) {
-    return (
-      <SalesOrderPage
-        erpSession={erpSession}
-        onBack={() => { window.location.href = '/erp'; }}
-      />
-    );
+    return <SalesOrderPage />;
   }
 
   if (erpSalesOrderReportMatch) {
@@ -845,7 +840,12 @@ const App: React.FC = () => {
   }
 
   if (erpFinishSalesReportMatch) {
-    return <FinishSalesReportPage onBack={() => { window.location.href = '/erp'; }} />;
+    return (
+      <FinishSalesReportPage
+        erpSession={erpSession}
+        onBack={() => { window.location.href = '/erp'; }}
+      />
+    );
   }
 
   if (erpLedgerMatch) {
@@ -863,7 +863,12 @@ const App: React.FC = () => {
   }
 
   if (erpSalesMatch) {
-    return <ErpSalesPage onBack={() => { window.location.href = '/erp'; }} />;
+    return (
+      <ErpSalesPage
+        erpSession={erpSession}
+        onBack={() => { window.location.href = '/erp'; }}
+      />
+    );
   }
 
   if (erpPurchaseMatch) {

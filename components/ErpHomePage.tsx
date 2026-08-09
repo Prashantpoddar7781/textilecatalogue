@@ -14,23 +14,9 @@ interface Props {
 const sections = [
   {
     title: 'Sales',
-    description: 'Sales entry with type heads. Choose SALES ORDERS to open the Sales Order form.',
+    description: 'Sales Order and Finish Sales in one entry — switch using Type. Reports are under Reports menu.',
     icon: ReceiptText,
     href: '/erp/sales',
-    status: 'Ready'
-  },
-  {
-    title: 'Sales Order',
-    description: 'Sales Order entry — party, main screen, packing, cut, GST. No ledger effect.',
-    icon: FileText,
-    href: '/erp/sales-order',
-    status: 'Ready'
-  },
-  {
-    title: 'Sales Order Report',
-    description: 'Ordered, sold, and pending quantities by party — click row to edit.',
-    icon: FileText,
-    href: '/erp/reports/sales-order',
     status: 'Ready'
   },
   {

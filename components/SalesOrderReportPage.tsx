@@ -74,27 +74,32 @@ export const SalesOrderReportPage: React.FC<Props> = ({ onBack, erpSession }) =>
           <button type="button" onClick={onBack} className="inline-flex items-center gap-2 text-sm font-bold text-gray-600">
             <ArrowLeft className="h-4 w-4" /> Back to ERP
           </button>
-          <button type="button" onClick={() => { window.location.href = '/erp/sales-order'; }} className="rounded-xl bg-indigo-700 px-3 py-2 text-xs font-black uppercase text-white">
+          <button type="button" onClick={() => { window.location.href = '/erp/sales?type=SALES%20ORDERS'; }} className="rounded-xl bg-indigo-700 px-3 py-2 text-xs font-black uppercase text-white">
             New Sales Order
           </button>
         </div>
 
         <section className="mb-4 rounded-2xl border bg-white p-4 shadow-sm">
+          <div className="mb-3">
+            <p className="text-[10px] font-black uppercase tracking-widest text-indigo-700">Report View Options</p>
+            <p className="mt-1 text-xs text-gray-500">Pending party-wise, all orders, or closed — with date / party / main screen filters.</p>
+          </div>
           <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+            <label className="md:col-span-2">
+              <span className="mb-1 block text-[10px] font-black uppercase text-gray-500">View</span>
+              <select className="w-full rounded-lg border px-2.5 py-2 text-sm font-semibold" value={status} onChange={e => setStatus(e.target.value)}>
+                <option value="pending">Pending Orders Party-Wise Date-Wise</option>
+                <option value="all">All Orders Date-Wise</option>
+                <option value="partial">Partial Orders</option>
+                <option value="closed">Closed Orders</option>
+              </select>
+            </label>
             <label><span className="mb-1 block text-[10px] font-black uppercase text-gray-500">From</span><input type="date" className="w-full rounded-lg border px-2.5 py-2 text-sm font-semibold" value={fromDate} onChange={e => setFromDate(e.target.value)} /></label>
             <label><span className="mb-1 block text-[10px] font-black uppercase text-gray-500">To</span><input type="date" className="w-full rounded-lg border px-2.5 py-2 text-sm font-semibold" value={toDate} onChange={e => setToDate(e.target.value)} /></label>
             <label><span className="mb-1 block text-[10px] font-black uppercase text-gray-500">Party</span><input className="w-full rounded-lg border px-2.5 py-2 text-sm font-semibold" value={partyName} onChange={e => setPartyName(e.target.value)} /></label>
             <label><span className="mb-1 block text-[10px] font-black uppercase text-gray-500">Main Screen</span><input className="w-full rounded-lg border px-2.5 py-2 text-sm font-semibold" value={mainScreen} onChange={e => setMainScreen(e.target.value)} /></label>
-            <label>
-              <span className="mb-1 block text-[10px] font-black uppercase text-gray-500">Status</span>
-              <select className="w-full rounded-lg border px-2.5 py-2 text-sm font-semibold" value={status} onChange={e => setStatus(e.target.value)}>
-                <option value="pending">Pending Items</option>
-                <option value="all">All</option>
-                <option value="closed">Closed</option>
-              </select>
-            </label>
             <div className="flex items-end">
-              <button type="button" onClick={() => void load()} className="w-full rounded-xl bg-indigo-600 px-4 py-2.5 text-xs font-black uppercase text-white">Show</button>
+              <button type="button" onClick={() => void load()} className="w-full rounded-xl bg-indigo-600 px-4 py-2.5 text-xs font-black uppercase text-white">Show Report</button>
             </div>
           </div>
         </section>
@@ -129,7 +134,7 @@ export const SalesOrderReportPage: React.FC<Props> = ({ onBack, erpSession }) =>
                     {group.rows.map(row => (
                       <tr
                         key={row.id}
-                        onClick={() => { window.location.href = `/erp/sales-order?edit=${row.salesOrderId}`; }}
+                        onClick={() => { window.location.href = `/erp/sales?edit=${row.salesOrderId}&kind=order`; }}
                         className="cursor-pointer border-b hover:bg-indigo-50"
                       >
                         <td className="px-2 py-2">{formatDate(row.date)}</td>

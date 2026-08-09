@@ -378,6 +378,10 @@ router.get('/finish-report', authenticateToken, requireActiveSubscription, async
     const partyName = optionalString(req.query.partyName);
     const brokerName = optionalString(req.query.brokerName);
     const transportName = optionalString(req.query.transportName);
+    const station = optionalString(req.query.station);
+    const haste = optionalString(req.query.haste);
+    const mainScreen = optionalString(req.query.mainScreen);
+    const view = (optionalString(req.query.view) || 'register').toLowerCase();
     const where = {
       userId: req.user.userId,
       manualType: 'erp_sales',
@@ -387,6 +391,8 @@ router.get('/finish-report', authenticateToken, requireActiveSubscription, async
     if (partyName) where.buyerName = { contains: partyName, mode: 'insensitive' };
     if (brokerName) where.agentName = { contains: brokerName, mode: 'insensitive' };
     if (transportName) where.transportName = { contains: transportName, mode: 'insensitive' };
+    if (station) where.station = { contains: station, mode: 'insensitive' };
+    if (haste) where.haste = { contains: haste, mode: 'insensitive' };
     if (fromDate || toDateValue) {
       where.orderDate = {};
       if (fromDate) where.orderDate.gte = toDate(fromDate);
@@ -401,6 +407,44 @@ router.get('/finish-report', authenticateToken, requireActiveSubscription, async
       include: { sourceSalesOrder: { select: { orderNo: true } } },
       orderBy: [{ orderDate: 'asc' }, { createdAt: 'asc' }]
     });
+
+    if (view === 'detailed') {
+      const rows = [];
+      for (const bill of bills) {
+        const lines = Array.isArray(bill.orderLines) ? bill.orderLines : [];
+        for (const [index, line] of lines.entries()) {
+          const lineMain = line.mainScreen || line.designNo || '';
+          const lineName = line.itemName || line.screenName || line.description || '';
+          if (mainScreen && !String(lineMain).toLowerCase().includes(mainScreen.toLowerCase())
+            && !String(lineName).toLowerCase().includes(mainScreen.toLowerCase())) continue;
+          rows.push({
+            id: `${bill.id}-${index}`,
+            billId: bill.id,
+            date: bill.orderDate || bill.createdAt,
+            partyName: bill.buyerName,
+            billNo: bill.typeBillNumber || bill.invoiceNumber,
+            mainScreen: lineMain,
+            itemName: lineName,
+            packing: line.packing || '',
+            pcs: Number(line.pcs ?? line.quantity) || 0,
+            cut: Number(line.cut) || 0,
+            mts: Number(line.mtsQty) || 0,
+            rate: Number(line.rate) || 0,
+            grossAmount: Number(line.amount) || 0,
+            haste: bill.haste || '',
+            brokerName: bill.agentName || '',
+            station: bill.station || '',
+            transportName: bill.transportName || ''
+          });
+        }
+      }
+      const totals = rows.reduce((acc, row) => {
+        for (const key of ['pcs', 'mts', 'grossAmount']) acc[key] = roundMoney(acc[key] + (Number(row[key]) || 0));
+        return acc;
+      }, { pcs: 0, mts: 0, grossAmount: 0 });
+      return res.json({ view: 'detailed', rows, totals });
+    }
+
     const rows = bills.map(bill => {
       const lines = Array.isArray(bill.orderLines) ? bill.orderLines : [];
       const pcs = roundMoney(lines.reduce((sum, line) => sum + (Number(line.pcs ?? line.quantity) || 0), 0));
@@ -410,10 +454,11 @@ router.get('/finish-report', authenticateToken, requireActiveSubscription, async
       const invoiceValue = roundMoney(lines.reduce((sum, line) => sum + (Number(line.totalAmount) || 0), 0));
       return {
         id: bill.id,
+        billId: bill.id,
         date: bill.orderDate || bill.createdAt,
         partyName: bill.buyerName,
         voucherNo: bill.typeBillNumber,
-        billNo: bill.invoiceNumber || bill.typeBillNumber,
+        billNo: bill.typeBillNumber || bill.invoiceNumber,
         lrNo: bill.lrNo || lines[0]?.lrNo || '',
         transportName: bill.transportName,
         orderRef: bill.sourceSalesOrder?.orderNo || bill.orderNumber,
@@ -423,7 +468,9 @@ router.get('/finish-report', authenticateToken, requireActiveSubscription, async
         taxableAmount: taxable,
         ledgerAmount: invoiceValue,
         invoiceValue,
-        brokerName: bill.agentName
+        brokerName: bill.agentName,
+        haste: bill.haste || '',
+        station: bill.station || ''
       };
     });
     const totals = rows.reduce((acc, row) => {
@@ -432,7 +479,7 @@ router.get('/finish-report', authenticateToken, requireActiveSubscription, async
       }
       return acc;
     }, { pcs: 0, mts: 0, grossAmount: 0, taxableAmount: 0, ledgerAmount: 0, invoiceValue: 0 });
-    res.json({ rows, totals });
+    res.json({ view: 'register', rows, totals });
   } catch (error) {
     next(error);
   }
