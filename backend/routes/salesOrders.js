@@ -278,13 +278,19 @@ router.get('/pending', authenticateToken, requireActiveSubscription, async (req,
   try {
     const partyName = optionalString(req.query.partyName);
     const customerId = optionalString(req.query.customerId);
+    // Finish Sales must pick party first — never list all parties' orders.
+    if (!customerId && !partyName) {
+      return res.json({ entries: [] });
+    }
+    // Prefer exact party name when provided so Ord/Ref always matches the selected party text.
+    const partyFilter = partyName
+      ? { partyName: { equals: partyName, mode: 'insensitive' } }
+      : { customerId };
     const orders = await prisma.salesOrder.findMany({
       where: {
         userId: req.user.userId,
         status: { in: ['open', 'partial'] },
-        ...(customerId
-          ? { customerId }
-          : partyName ? { partyName: { equals: partyName, mode: 'insensitive' } } : {})
+        ...partyFilter
       },
       orderBy: [{ orderDate: 'desc' }, { createdAt: 'desc' }]
     });

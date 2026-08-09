@@ -128,6 +128,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [items, setItems] = useState<SalesItemMaster[]>([]);
   const [pendingOrders, setPendingOrders] = useState<SalesOrder[]>([]);
+  const [pendingLoading, setPendingLoading] = useState(false);
   const [customerId, setCustomerId] = useState('');
   const [partyName, setPartyName] = useState('');
   const [partyGstin, setPartyGstin] = useState('');
@@ -222,15 +223,18 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
   }, [transactionType, isSalesOrder]);
 
   useEffect(() => {
-    if (isSalesOrder || (!customerId && !partyName.trim())) {
+    if (isSalesOrder || !partyName.trim()) {
       setPendingOrders([]);
+      setPendingLoading(false);
       return;
     }
+    setPendingLoading(true);
     const timer = window.setTimeout(() => {
-      void salesOrdersApi.getPending({ customerId: customerId || undefined, partyName: partyName || undefined })
+      void salesOrdersApi.getPending({ customerId: customerId || undefined, partyName: partyName.trim() })
         .then(({ entries }) => setPendingOrders(entries || []))
-        .catch(() => setPendingOrders([]));
-    }, 200);
+        .catch(() => setPendingOrders([]))
+        .finally(() => setPendingLoading(false));
+    }, 250);
     return () => window.clearTimeout(timer);
   }, [customerId, partyName, isSalesOrder]);
 
@@ -295,20 +299,38 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
     }, companyState, bill.customer?.state || '')) : [blankLine(1, gstRate, hsn)]);
   };
 
+  const clearLinkedOrder = () => {
+    setSourceSalesOrderId('');
+    setOrderNo('');
+    if (!isSalesOrder) {
+      setLineItems([blankLine(1, defaultGstRate, defaultHsnCode)]);
+    }
+  };
+
   const chooseCustomer = (id: string) => {
-    setCustomerId(id);
     const customer = customers.find(row => row.id === id);
     if (!customer) return;
+    const partyChanged = customer.organizationName.trim().toLowerCase() !== partyName.trim().toLowerCase();
+    setCustomerId(id);
     setPartyName(customer.organizationName);
     setPartyGstin(customer.gstNumber || '');
     setState(customer.state || '');
     setStation(customer.city || '');
     setBrokerName(customer.agentName || '');
+    if (partyChanged && !isSalesOrder) clearLinkedOrder();
   };
 
   const applyPartyByName = (name: string) => {
     const customer = customers.find(row => row.organizationName.toLowerCase() === name.trim().toLowerCase());
-    if (customer) chooseCustomer(customer.id);
+    if (customer) {
+      chooseCustomer(customer.id);
+      return;
+    }
+    // Typed party with no master match — still allow Ord/Ref by name.
+    if (!isSalesOrder && name.trim().toLowerCase() !== partyName.trim().toLowerCase()) {
+      setCustomerId('');
+      clearLinkedOrder();
+    }
   };
 
   const updateLine = (index: number, key: keyof SalesLineItem, value: string | number) => {
@@ -351,35 +373,56 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
   };
 
   const applyPendingOrder = (id: string) => {
-    setSourceSalesOrderId(id);
+    if (!id) {
+      clearLinkedOrder();
+      return;
+    }
+    if (!partyName.trim()) {
+      setError('Select Party first, then choose Ord / Ref.');
+      return;
+    }
     const order = pendingOrders.find(row => row.id === id);
     if (!order) return;
+    setSourceSalesOrderId(id);
+    setError('');
     setCustomerId(order.customerId || customerId);
     setPartyName(order.partyName);
-    setPartyGstin(order.partyGstin || '');
-    setState(order.state || '');
-    setStation(order.station || '');
-    setBrokerName(order.brokerName || '');
-    setTransportName(order.transportName || '');
-    setVehicleNo(order.vehicleNo || '');
-    setHaste(order.haste || '');
-    setHasteGstin(order.hasteGstin || '');
-    setDhara(String(order.dhara ?? 0));
-    setGrace(String(order.grace ?? 0));
-    setScreenSeries(order.screenSeries || '');
+    setPartyGstin(order.partyGstin || partyGstin);
+    setState(order.state || state);
+    setStation(order.station || station);
+    setBrokerName(order.brokerName || brokerName);
+    setTransportName(order.transportName || transportName);
+    setVehicleNo(order.vehicleNo || vehicleNo);
+    setHaste(order.haste || haste);
+    setHasteGstin(order.hasteGstin || hasteGstin);
+    setDhara(String(order.dhara ?? dhara));
+    setGrace(String(order.grace ?? grace));
+    setScreenSeries(order.screenSeries || screenSeries);
     setOrderNo(String(order.orderNo));
-    setRemarks(order.remarks || '');
-    setLineItems((order.pendingLines || [])
+    setRemarks(order.remarks || remarks);
+    setHsnCode(order.hsnCode || hsnCode);
+    const filled = (order.pendingLines || [])
       .filter(line => toNum(line.pendingPcs) > 0 || toNum(line.pendingMts) > 0)
       .map((line, index) => calcLine({
+        ...blankLine(index + 1, defaultGstRate, defaultHsnCode),
         ...line,
         lineNo: index + 1,
         sourceLineNo: line.lineNo || index + 1,
         pcs: toNum(line.pendingPcs),
         mtsQty: toNum(line.pendingMts),
+        cut: toNum(line.cut),
+        rate: toNum(line.rate),
+        bundles: toNum(line.bundles),
+        packing: line.packing || 'NAKED',
+        unit: line.unit || 'PCS',
         itemName: line.itemName || line.screenName || '',
-        mainScreen: line.mainScreen || ''
-      }, businessState, order.state || state)));
+        screenName: line.screenName || line.itemName || '',
+        mainScreen: line.mainScreen || '',
+        gstRate: toNum(line.gstRate) || defaultGstRate,
+        hsnCode: line.hsnCode || defaultHsnCode
+      }, businessState, order.state || state));
+    setLineItems(filled.length ? filled : [blankLine(1, defaultGstRate, defaultHsnCode)]);
+    setSuccess(`Sales Order #${order.orderNo} loaded. All items are editable.`);
   };
 
   const saveItemMaster = async () => {
@@ -541,6 +584,8 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
                   onChange={e => {
                     setTransactionType(e.target.value);
                     setSourceSalesOrderId('');
+                    setOrderNo('');
+                    setPendingOrders([]);
                     setLineItems([blankLine(1, defaultGstRate, defaultHsnCode)]);
                   }}
                 >
@@ -553,35 +598,61 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
                 <span className={labelClass}>{isSalesOrder ? 'Order No.' : 'Bill / Voucher No.'}</span>
                 <input className={readonlyClass} value={isSalesOrder ? (orderNo || nextOrderNo) : (typeBillNumber ?? '—')} readOnly />
               </label>
-              {!isSalesOrder && (
-                <label>
-                  <span className={labelClass}>Ord / Ref</span>
-                  <select className={`${inputClass} border-amber-300 bg-amber-50`} value={sourceSalesOrderId} onChange={e => applyPendingOrder(e.target.value)}>
-                    <option value="">Direct bill / select Sales Order</option>
-                    {sourceSalesOrderId && !pendingOrders.some(order => order.id === sourceSalesOrderId) && (
-                      <option value={sourceSalesOrderId}>SO {orderNo || 'linked'}</option>
-                    )}
-                    {pendingOrders.map(order => (
-                      <option key={order.id} value={order.id}>SO {order.orderNo} · {order.pendingPcs} PCS pending</option>
-                    ))}
-                  </select>
-                </label>
-              )}
               <label><span className={labelClass}>Date</span><input type="date" className={inputClass} value={orderDate} onChange={e => setOrderDate(e.target.value)} /></label>
               <label><span className={labelClass}>GST Type</span><input className={readonlyClass} value={gstType} readOnly /></label>
               <label className="md:col-span-2">
-                <span className={labelClass}>Party</span>
+                <span className={labelClass}>{isFinishSales ? '1. Party (required first)' : 'Party'}</span>
                 <input
-                  className={inputClass}
+                  className={`${inputClass} ${isFinishSales ? 'border-amber-400 bg-amber-50' : ''}`}
                   list="erp-sales-parties"
                   value={partyName}
-                  onChange={e => setPartyName(e.target.value)}
+                  placeholder={isFinishSales ? 'Select or type party name first' : ''}
+                  onChange={e => {
+                    const next = e.target.value;
+                    const changed = next.trim().toLowerCase() !== partyName.trim().toLowerCase();
+                    setPartyName(next);
+                    if (!isSalesOrder && changed) {
+                      // Drop old customerId so Ord/Ref queries by the typed party name.
+                      setCustomerId('');
+                      clearLinkedOrder();
+                    }
+                    if (!next.trim()) setCustomerId('');
+                  }}
                   onBlur={e => applyPartyByName(e.target.value)}
                 />
                 <datalist id="erp-sales-parties">
                   {customers.map(customer => <option key={customer.id} value={customer.organizationName} />)}
                 </datalist>
               </label>
+              {!isSalesOrder && (
+                <label className="md:col-span-2">
+                  <span className={labelClass}>2. Ord / Ref (Sales Orders of this party)</span>
+                  <select
+                    className={`${inputClass} border-amber-300 bg-amber-50 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400`}
+                    value={sourceSalesOrderId}
+                    disabled={!partyName.trim() || pendingLoading}
+                    onChange={e => applyPendingOrder(e.target.value)}
+                  >
+                    <option value="">
+                      {!partyName.trim()
+                        ? 'Select Party first…'
+                        : pendingLoading
+                          ? 'Loading party orders…'
+                          : pendingOrders.length
+                            ? 'Select Sales Order to prefill items'
+                            : 'No pending Sales Orders for this party'}
+                    </option>
+                    {sourceSalesOrderId && !pendingOrders.some(order => order.id === sourceSalesOrderId) && (
+                      <option value={sourceSalesOrderId}>SO {orderNo || 'linked'}</option>
+                    )}
+                    {pendingOrders.map(order => (
+                      <option key={order.id} value={order.id}>
+                        SO {order.orderNo} · {new Date(order.orderDate).toLocaleDateString('en-IN')} · {order.pendingPcs} PCS / {order.pendingMts} MTS pending
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
               <label><span className={labelClass}>State</span><input className={inputClass} value={state} onChange={e => setState(e.target.value)} /></label>
               <label><span className={labelClass}>Haste</span><input className={inputClass} value={haste} onChange={e => setHaste(e.target.value)} /></label>
               <label><span className={labelClass}>Broker</span><input className={inputClass} value={brokerName} onChange={e => setBrokerName(e.target.value)} /></label>
@@ -605,7 +676,11 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
               <p className="text-[10px] font-black uppercase tracking-widest text-indigo-800">
                 {isSalesOrder
                   ? 'Particulars · Main Screen · Screen Name · Amount = PCS × Rate'
-                  : 'Particulars · Item · Design No · Prefill from Ord/Ref · Amount = PCS × Rate'}
+                  : partyName.trim()
+                    ? (sourceSalesOrderId
+                      ? `Items from Sales Order #${orderNo || ''} — all fields editable`
+                      : 'Select Ord / Ref above to load this party\'s Sales Order items (editable)')
+                    : 'Select Party first, then choose Ord / Ref to load Sales Order items'}
               </p>
               <button
                 type="button"
