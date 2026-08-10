@@ -26,6 +26,15 @@ const money = (v: number) => Number(v || 0).toLocaleString('en-IN', {
 const formatDate = (v?: string | null) => (v ? new Date(v).toLocaleDateString('en-IN') : '-');
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
+const DETAIL_COL_COUNT = 15;
+const SUMMARY_COL_COUNT = 10;
+
+const thClass = 'border border-amber-200 bg-amber-50 px-2 py-2 text-center text-[10px] font-black uppercase tracking-wide text-amber-950';
+const tdClass = 'border border-slate-200 px-2 py-1.5 align-middle';
+const tdNum = `${tdClass} text-right tabular-nums`;
+const tdBucket = `${tdClass} min-w-[88px] text-center tabular-nums`;
+const thBucket = `${thClass} min-w-[88px] bg-amber-100`;
+
 export const OutstandingPaymentReportPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const params = new URLSearchParams(window.location.search);
   const [loading, setLoading] = useState(true);
@@ -213,89 +222,154 @@ export const OutstandingPaymentReportPage: React.FC<Props> = ({ onBack, erpSessi
           </div>
           <div className="overflow-x-auto">
             {view === 'summary' ? (
-              <table className="min-w-[1200px] w-full text-left text-xs">
-                <thead className="border-b bg-gray-50 text-[10px] uppercase text-gray-500">
+              <table className="w-full min-w-[1100px] border-collapse text-xs" style={{ tableLayout: 'fixed' }}>
+                <colgroup>
+                  <col style={{ width: '18%' }} />
+                  <col style={{ width: '6%' }} />
+                  <col style={{ width: '10%' }} />
+                  <col style={{ width: '10%' }} />
+                  <col style={{ width: '10%' }} />
+                  {AGING_BUCKETS.map(bucket => <col key={bucket} style={{ width: '9.2%' }} />)}
+                </colgroup>
+                <thead>
                   <tr>
-                    {['Party', 'Bills', 'Bill Amt', 'Received', 'Balance', ...bucketHeaders].map(head => (
-                      <th key={head} className="px-2 py-2 font-black">{head}</th>
+                    <th className={thClass}>Party</th>
+                    <th className={thClass}>Bills</th>
+                    <th className={thClass}>Bill Amt</th>
+                    <th className={thClass}>Received</th>
+                    <th className={thClass}>Balance</th>
+                    {bucketHeaders.map(bucket => (
+                      <th key={bucket} className={thBucket}>{bucket}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {loading && <tr><td colSpan={10} className="p-10 text-center"><Loader2 className="mx-auto h-6 w-6 animate-spin text-amber-600" /></td></tr>}
+                  {loading && (
+                    <tr>
+                      <td colSpan={SUMMARY_COL_COUNT} className={`${tdClass} p-10 text-center`}>
+                        <Loader2 className="mx-auto h-6 w-6 animate-spin text-amber-600" />
+                      </td>
+                    </tr>
+                  )}
                   {!loading && parties.length === 0 && (
-                    <tr><td colSpan={10} className="p-10 text-center font-bold text-gray-400">No outstanding bills found.</td></tr>
+                    <tr>
+                      <td colSpan={SUMMARY_COL_COUNT} className={`${tdClass} p-10 text-center font-bold text-gray-400`}>
+                        No outstanding bills found.
+                      </td>
+                    </tr>
                   )}
                   {!loading && parties.map(party => (
                     <React.Fragment key={party.partyName}>
-                      <tr className="border-b bg-amber-50/60">
-                        <td className="px-2 py-2 font-black text-amber-950">{party.partyName}</td>
-                        <td className="px-2 py-2 text-right">{party.billCount}</td>
-                        <td className="px-2 py-2 text-right">{money(party.billAmount)}</td>
-                        <td className="px-2 py-2 text-right">{money(party.paidAmount)}</td>
-                        <td className="px-2 py-2 text-right font-black text-rose-700">{money(party.pendingAmount)}</td>
+                      <tr className="bg-amber-50/80">
+                        <td className={`${tdClass} font-black text-amber-950`}>{party.partyName}</td>
+                        <td className={`${tdNum} font-bold`}>{party.billCount}</td>
+                        <td className={tdNum}>{money(party.billAmount)}</td>
+                        <td className={tdNum}>{money(party.paidAmount)}</td>
+                        <td className={`${tdNum} font-black text-rose-700`}>{money(party.pendingAmount)}</td>
                         {bucketHeaders.map(bucket => (
-                          <td key={bucket} className="px-2 py-2 text-right font-semibold">{money(party[bucket])}</td>
+                          <td key={bucket} className={`${tdBucket} font-semibold ${Number(party[bucket]) > 0 ? 'bg-amber-50 text-amber-950' : 'text-slate-400'}`}>
+                            {money(party[bucket])}
+                          </td>
                         ))}
                       </tr>
                       {(party.rows || []).map((row: Record<string, any>) => (
                         <tr
                           key={row.id}
                           onClick={() => openBill(row)}
-                          className={`border-b ${row.editPath ? 'cursor-pointer hover:bg-amber-50' : ''}`}
+                          className={row.editPath ? 'cursor-pointer hover:bg-amber-50/70' : ''}
                           title={row.editPath ? 'Open bill' : undefined}
                         >
-                          <td className="px-2 py-1.5 pl-6 text-gray-700">
+                          <td className={`${tdClass} pl-5 text-gray-700`}>
                             Bill {row.billNumber} · {formatDate(row.billDate)} · {row.days}d ({row.agingBucket})
                           </td>
-                          <td className="px-2 py-1.5 text-right">1</td>
-                          <td className="px-2 py-1.5 text-right">{money(row.billAmount)}</td>
-                          <td className="px-2 py-1.5 text-right">{money(row.paidAmount)}</td>
-                          <td className="px-2 py-1.5 text-right font-bold text-rose-700">{money(row.pendingAmount)}</td>
-                          {bucketHeaders.map(bucket => (
-                            <td key={bucket} className="px-2 py-1.5 text-right">{money(row.buckets?.[bucket])}</td>
-                          ))}
+                          <td className={tdNum}>1</td>
+                          <td className={tdNum}>{money(row.billAmount)}</td>
+                          <td className={tdNum}>{money(row.paidAmount)}</td>
+                          <td className={`${tdNum} font-bold text-rose-700`}>{money(row.pendingAmount)}</td>
+                          {bucketHeaders.map(bucket => {
+                            const value = Number(row.buckets?.[bucket]) || 0;
+                            const active = row.agingBucket === bucket && value > 0;
+                            return (
+                              <td
+                                key={bucket}
+                                className={`${tdBucket} ${active ? 'bg-amber-200 font-black text-amber-950' : 'text-slate-400'}`}
+                              >
+                                {money(value)}
+                              </td>
+                            );
+                          })}
                         </tr>
                       ))}
                     </React.Fragment>
                   ))}
                 </tbody>
-                <tfoot className="bg-amber-900 font-black text-white">
-                  <tr>
-                    <td className="px-2 py-2 text-right">Grand Total</td>
-                    <td className="px-2 py-2 text-right">{rows.length}</td>
-                    <td className="px-2 py-2 text-right">{money(totals.billAmount)}</td>
-                    <td className="px-2 py-2 text-right">{money(totals.paidAmount)}</td>
-                    <td className="px-2 py-2 text-right">{money(totals.pendingAmount)}</td>
+                <tfoot>
+                  <tr className="bg-amber-900 text-white">
+                    <td className={`${tdClass} border-amber-800 text-right font-black`}>Grand Total</td>
+                    <td className={`${tdNum} border-amber-800 font-black`}>{rows.length}</td>
+                    <td className={`${tdNum} border-amber-800 font-black`}>{money(totals.billAmount)}</td>
+                    <td className={`${tdNum} border-amber-800 font-black`}>{money(totals.paidAmount)}</td>
+                    <td className={`${tdNum} border-amber-800 font-black`}>{money(totals.pendingAmount)}</td>
                     {bucketHeaders.map(bucket => (
-                      <td key={bucket} className="px-2 py-2 text-right">{money(totals[bucket])}</td>
+                      <td key={bucket} className={`${tdBucket} border-amber-800 font-black`}>
+                        {money(totals[bucket])}
+                      </td>
                     ))}
                   </tr>
                 </tfoot>
               </table>
             ) : (
-              <table className="min-w-[1400px] w-full text-left text-xs">
-                <thead className="border-b bg-gray-50 text-[10px] uppercase text-gray-500">
+              <table className="w-full min-w-[1280px] border-collapse text-xs" style={{ tableLayout: 'fixed' }}>
+                <colgroup>
+                  <col style={{ width: '12%' }} />
+                  <col style={{ width: '8%' }} />
+                  <col style={{ width: '6%' }} />
+                  <col style={{ width: '5%' }} />
+                  <col style={{ width: '7%' }} />
+                  <col style={{ width: '8%' }} />
+                  <col style={{ width: '8%' }} />
+                  <col style={{ width: '8%' }} />
+                  {AGING_BUCKETS.map(bucket => <col key={bucket} style={{ width: '6.2%' }} />)}
+                  <col style={{ width: '8%' }} />
+                  <col style={{ width: '7%' }} />
+                </colgroup>
+                <thead>
                   <tr>
-                    {[
-                      'Party', 'Bill Date', 'Bill No.', 'Days', 'Bucket',
-                      'Bill Amt', 'Received', 'Balance',
-                      ...bucketHeaders, 'Broker', 'Station'
-                    ].map(head => (
-                      <th key={head} className="px-2 py-2 font-black">{head}</th>
+                    <th className={thClass}>Party</th>
+                    <th className={thClass}>Bill Date</th>
+                    <th className={thClass}>Bill No.</th>
+                    <th className={thClass}>Days</th>
+                    <th className={thClass}>Bucket</th>
+                    <th className={thClass}>Bill Amt</th>
+                    <th className={thClass}>Received</th>
+                    <th className={thClass}>Balance</th>
+                    {bucketHeaders.map(bucket => (
+                      <th key={bucket} className={thBucket}>{bucket}</th>
                     ))}
+                    <th className={thClass}>Broker</th>
+                    <th className={thClass}>Station</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {loading && <tr><td colSpan={15} className="p-10 text-center"><Loader2 className="mx-auto h-6 w-6 animate-spin text-amber-600" /></td></tr>}
+                  {loading && (
+                    <tr>
+                      <td colSpan={DETAIL_COL_COUNT} className={`${tdClass} p-10 text-center`}>
+                        <Loader2 className="mx-auto h-6 w-6 animate-spin text-amber-600" />
+                      </td>
+                    </tr>
+                  )}
                   {!loading && rows.length === 0 && (
-                    <tr><td colSpan={15} className="p-10 text-center font-bold text-gray-400">No outstanding bills found.</td></tr>
+                    <tr>
+                      <td colSpan={DETAIL_COL_COUNT} className={`${tdClass} p-10 text-center font-bold text-gray-400`}>
+                        No outstanding bills found.
+                      </td>
+                    </tr>
                   )}
                   {!loading && grouped.map(([group, groupRows]) => (
                     <React.Fragment key={group}>
                       {(view === 'party-ageing' || view === 'broker-wise' || view === 'station-wise') && (
-                        <tr className="bg-amber-50/80">
-                          <td colSpan={15} className="px-2 py-2 text-sm font-black text-amber-950">
+                        <tr className="bg-amber-100">
+                          <td colSpan={DETAIL_COL_COUNT} className={`${tdClass} border-amber-200 bg-amber-100 text-sm font-black text-amber-950`}>
                             {group}
                             <span className="ml-3 text-xs font-bold text-amber-800">
                               {groupRows.length} bill{groupRows.length === 1 ? '' : 's'} · Balance {money(groupRows.reduce((s, r) => s + (Number(r.pendingAmount) || 0), 0))}
@@ -307,39 +381,49 @@ export const OutstandingPaymentReportPage: React.FC<Props> = ({ onBack, erpSessi
                         <tr
                           key={row.id}
                           onClick={() => openBill(row)}
-                          className={`border-b ${row.editPath ? 'cursor-pointer hover:bg-amber-50' : ''}`}
+                          className={row.editPath ? 'cursor-pointer hover:bg-amber-50/80' : ''}
                           title={row.editPath ? 'Open bill' : undefined}
                         >
-                          <td className="px-2 py-2 font-bold">{row.partyName}</td>
-                          <td className="px-2 py-2">{formatDate(row.billDate)}</td>
-                          <td className="px-2 py-2 font-black text-indigo-800">{row.billNumber}</td>
-                          <td className="px-2 py-2 text-right">{row.days}</td>
-                          <td className="px-2 py-2 font-semibold text-amber-800">{row.agingBucket}</td>
-                          <td className="px-2 py-2 text-right">{money(row.billAmount)}</td>
-                          <td className="px-2 py-2 text-right">{money(row.paidAmount)}</td>
-                          <td className="px-2 py-2 text-right font-black text-rose-700">{money(row.pendingAmount)}</td>
-                          {bucketHeaders.map(bucket => (
-                            <td key={bucket} className={`px-2 py-2 text-right ${row.agingBucket === bucket ? 'font-black text-amber-900' : 'text-gray-400'}`}>
-                              {money(row.buckets?.[bucket])}
-                            </td>
-                          ))}
-                          <td className="px-2 py-2">{row.brokerName || '-'}</td>
-                          <td className="px-2 py-2">{row.station || '-'}</td>
+                          <td className={`${tdClass} font-bold`}>{row.partyName}</td>
+                          <td className={`${tdClass} text-center`}>{formatDate(row.billDate)}</td>
+                          <td className={`${tdClass} text-center font-black text-indigo-800`}>{row.billNumber}</td>
+                          <td className={`${tdNum}`}>{row.days}</td>
+                          <td className={`${tdClass} text-center font-semibold text-amber-800`}>{row.agingBucket}</td>
+                          <td className={tdNum}>{money(row.billAmount)}</td>
+                          <td className={tdNum}>{money(row.paidAmount)}</td>
+                          <td className={`${tdNum} font-black text-rose-700`}>{money(row.pendingAmount)}</td>
+                          {bucketHeaders.map(bucket => {
+                            const value = Number(row.buckets?.[bucket]) || 0;
+                            const active = row.agingBucket === bucket && value > 0;
+                            return (
+                              <td
+                                key={bucket}
+                                className={`${tdBucket} ${active ? 'bg-amber-200 font-black text-amber-950 ring-1 ring-inset ring-amber-400' : 'text-slate-400'}`}
+                              >
+                                {money(value)}
+                              </td>
+                            );
+                          })}
+                          <td className={`${tdClass} text-center`}>{row.brokerName || '-'}</td>
+                          <td className={`${tdClass} text-center`}>{row.station || '-'}</td>
                         </tr>
                       ))}
                     </React.Fragment>
                   ))}
                 </tbody>
-                <tfoot className="bg-amber-900 font-black text-white">
-                  <tr>
-                    <td colSpan={5} className="px-2 py-2 text-right">Grand Total</td>
-                    <td className="px-2 py-2 text-right">{money(totals.billAmount)}</td>
-                    <td className="px-2 py-2 text-right">{money(totals.paidAmount)}</td>
-                    <td className="px-2 py-2 text-right">{money(totals.pendingAmount)}</td>
+                <tfoot>
+                  <tr className="bg-amber-900 text-white">
+                    <td colSpan={5} className={`${tdClass} border-amber-800 text-right font-black`}>Grand Total</td>
+                    <td className={`${tdNum} border-amber-800 font-black`}>{money(totals.billAmount)}</td>
+                    <td className={`${tdNum} border-amber-800 font-black`}>{money(totals.paidAmount)}</td>
+                    <td className={`${tdNum} border-amber-800 font-black`}>{money(totals.pendingAmount)}</td>
                     {bucketHeaders.map(bucket => (
-                      <td key={bucket} className="px-2 py-2 text-right">{money(totals[bucket])}</td>
+                      <td key={bucket} className={`${tdBucket} border-amber-800 font-black`}>
+                        {money(totals[bucket])}
+                      </td>
                     ))}
-                    <td colSpan={2} />
+                    <td className={`${tdClass} border-amber-800`} />
+                    <td className={`${tdClass} border-amber-800`} />
                   </tr>
                 </tfoot>
               </table>
