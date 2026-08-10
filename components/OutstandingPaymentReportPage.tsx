@@ -13,6 +13,7 @@ const AGING_BUCKETS = ['0-15', '16-30', '31-45', '46-60', 'Above 60'] as const;
 
 const VIEW_OPTIONS = [
   { value: 'party-ageing', label: 'Party - Wise Ageing (Bill detail)' },
+  { value: 'date-wise', label: 'Date - Wise (Latest bill first)' },
   { value: 'bill-wise', label: 'Bill - Wise Outstanding' },
   { value: 'broker-wise', label: 'Broker - Wise Party - Wise' },
   { value: 'station-wise', label: 'Station - Wise Outstanding' },
@@ -94,18 +95,47 @@ export const OutstandingPaymentReportPage: React.FC<Props> = ({ onBack, erpSessi
 
   const grouped = useMemo(() => {
     if (view === 'summary') return [];
+
+    const byDateDesc = (a: Record<string, any>, b: Record<string, any>) => {
+      const dateA = new Date(a.billDate).getTime() || 0;
+      const dateB = new Date(b.billDate).getTime() || 0;
+      if (dateB !== dateA) return dateB - dateA;
+      return String(b.billNumber || '').localeCompare(String(a.billNumber || ''), undefined, { numeric: true });
+    };
+
+    if (view === 'bill-wise') {
+      return [['All Bills', [...rows].sort(byDateDesc)] as [string, Array<Record<string, any>>]];
+    }
+
     const keyFn = (row: Record<string, any>) => {
+      if (view === 'date-wise') {
+        const d = row.billDate ? new Date(row.billDate) : null;
+        if (!d || Number.isNaN(d.getTime())) return 'No Date';
+        return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+      }
       if (view === 'broker-wise') return row.brokerName || 'No Broker';
       if (view === 'station-wise') return row.station || 'No Station';
       return row.partyName || 'Unknown';
     };
+
     const map = new Map<string, Array<Record<string, any>>>();
-    rows.forEach(row => {
+    const sortedRows = view === 'date-wise' ? [...rows].sort(byDateDesc) : rows;
+    sortedRows.forEach(row => {
       const key = keyFn(row);
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(row);
     });
-    return Array.from(map.entries());
+
+    const entries = Array.from(map.entries()).map(([key, groupRows]) => (
+      [key, [...groupRows].sort(byDateDesc)] as [string, Array<Record<string, any>>]
+    ));
+
+    if (view === 'date-wise') {
+      // Keep date groups in latest-first order (insertion order from sortedRows).
+      return entries;
+    }
+
+    return entries;
   }, [rows, view]);
 
   const bucketHeaders = AGING_BUCKETS;
@@ -140,7 +170,7 @@ export const OutstandingPaymentReportPage: React.FC<Props> = ({ onBack, erpSessi
           <div className="mb-3">
             <p className="text-[10px] font-black uppercase tracking-widest text-amber-700">Report View Options</p>
             <p className="mt-1 text-xs text-gray-500">
-              Ageing buckets show unpaid balance. Click any bill row to open that entry.
+              Use Date - Wise to group by bill date with the latest bills on top. Click any bill row to open that entry.
             </p>
           </div>
           <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-4">
@@ -367,10 +397,10 @@ export const OutstandingPaymentReportPage: React.FC<Props> = ({ onBack, erpSessi
                   )}
                   {!loading && grouped.map(([group, groupRows]) => (
                     <React.Fragment key={group}>
-                      {(view === 'party-ageing' || view === 'broker-wise' || view === 'station-wise') && (
+                      {(view === 'party-ageing' || view === 'date-wise' || view === 'broker-wise' || view === 'station-wise') && (
                         <tr className="bg-amber-100">
                           <td colSpan={DETAIL_COL_COUNT} className={`${tdClass} border-amber-200 bg-amber-100 text-sm font-black text-amber-950`}>
-                            {group}
+                            {view === 'date-wise' ? `Date: ${group}` : group}
                             <span className="ml-3 text-xs font-bold text-amber-800">
                               {groupRows.length} bill{groupRows.length === 1 ? '' : 's'} · Balance {money(groupRows.reduce((s, r) => s + (Number(r.pendingAmount) || 0), 0))}
                             </span>

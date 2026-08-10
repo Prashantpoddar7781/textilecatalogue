@@ -538,9 +538,18 @@ router.get('/outstanding-report', authenticateToken, requireActiveSubscription, 
     });
 
     rows.sort((a, b) => {
+      const dateA = new Date(a.billDate).getTime() || 0;
+      const dateB = new Date(b.billDate).getTime() || 0;
+      // Date-wise / bill-wise: latest bill on top.
+      if (view === 'date-wise' || view === 'bill-wise') {
+        if (dateB !== dateA) return dateB - dateA;
+        return String(b.billNumber || '').localeCompare(String(a.billNumber || ''), undefined, { numeric: true });
+      }
       const partyCmp = String(a.partyName || '').localeCompare(String(b.partyName || ''));
       if (partyCmp !== 0) return partyCmp;
-      return new Date(a.billDate).getTime() - new Date(b.billDate).getTime();
+      // Within a party, still show newest bills first.
+      if (dateB !== dateA) return dateB - dateA;
+      return String(b.billNumber || '').localeCompare(String(a.billNumber || ''), undefined, { numeric: true });
     });
 
     const enriched = rows.map(row => {
@@ -588,6 +597,14 @@ router.get('/outstanding-report', authenticateToken, requireActiveSubscription, 
       bumpBucket(current, row.agingBucket, Number(row.pendingAmount) || 0);
       current.rows.push(row);
       partyMap.set(key, current);
+    }
+    for (const party of partyMap.values()) {
+      party.rows.sort((a, b) => {
+        const dateA = new Date(a.billDate).getTime() || 0;
+        const dateB = new Date(b.billDate).getTime() || 0;
+        if (dateB !== dateA) return dateB - dateA;
+        return String(b.billNumber || '').localeCompare(String(a.billNumber || ''), undefined, { numeric: true });
+      });
     }
     const parties = Array.from(partyMap.values()).sort((a, b) => a.partyName.localeCompare(b.partyName));
 
