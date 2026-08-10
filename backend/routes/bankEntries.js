@@ -5,6 +5,8 @@ import { authenticateToken } from '../middleware/auth.js';
 import { requireActiveSubscription } from '../middleware/subscription.js';
 import {
   OPENING_BANK_BALANCE,
+  AGING_BUCKETS,
+  agingBucket,
   daysSince,
   getOrderPartyName,
   getPaidAmountsByBillType,
@@ -414,6 +416,189 @@ router.get('/pending-bills', authenticateToken, requireActiveSubscription, async
       notes,
       noteCount: notes.length,
       billCount: bills.length
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/outstanding-report', authenticateToken, requireActiveSubscription, async (req, res, next) => {
+  try {
+    const userId = req.user.userId;
+    const partyType = PARTY_TYPES.includes(req.query.partyType) ? req.query.partyType : 'customer';
+    const view = (optionalString(req.query.view) || 'party-ageing').toLowerCase();
+    const partyName = optionalString(req.query.partyName);
+    const brokerName = optionalString(req.query.brokerName);
+    const station = optionalString(req.query.station);
+    const haste = optionalString(req.query.haste);
+    const transportName = optionalString(req.query.transportName);
+    const transactionType = optionalString(req.query.transactionType);
+    const agingFilter = optionalString(req.query.agingBucket);
+    const fromDate = optionalDate(req.query.fromDate);
+    const toDateValue = optionalDate(req.query.toDate);
+    const asOf = optionalDate(req.query.asOnDate) || new Date();
+    asOf.setHours(23, 59, 59, 999);
+    const includeSettled = String(req.query.includeSettled || '').toLowerCase() === 'true';
+
+    const contains = (source, needle) => {
+      if (!needle) return true;
+      return String(source || '').toLowerCase().includes(needle.toLowerCase());
+    };
+
+    const emptyBucketTotals = () => Object.fromEntries(AGING_BUCKETS.map(key => [key, 0]));
+    const bumpBucket = (target, bucket, amount) => {
+      target[bucket] = roundMoneyLocal((target[bucket] || 0) + amount);
+    };
+
+    let rows = [];
+
+    if (partyType === 'supplier') {
+      const [bills, paidByBillId] = await Promise.all([
+        getPurchaseBillRecords(userId),
+        getPaidAmountsByBillType(prisma, userId, 'purchase_bill')
+      ]);
+      rows = bills
+        .map(bill => mapPurchaseBillToPendingBill(bill, paidByBillId, asOf))
+        .filter(bill => includeSettled || bill.pendingAmount > 0.001);
+    } else {
+      const [orders, paidByOrderId, paidByInvoiceId] = await Promise.all([
+        getCompletedOrders(userId),
+        getPaidAmountsByOrderId(prisma, userId),
+        getPaidAmountsByBillType(prisma, userId, 'sales_invoice')
+      ]);
+      const normalizedType = transactionType ? normalizeTransactionType(transactionType) : null;
+      const orderRows = orders
+        .filter(order => !normalizedType
+          || normalizeTransactionType(order.transactionType, DEFAULT_SALES_TRANSACTION_TYPE) === normalizedType)
+        .map(order => mapOrderToPendingBill(order, paidByOrderId, asOf))
+        .filter(bill => includeSettled || bill.pendingAmount > 0.001);
+
+      const coveredOrderIds = new Set(orders.map(order => order.id));
+      const invoices = await prisma.salesInvoice.findMany({
+        where: { userId },
+        include: { customer: true, order: { select: { id: true, orderNumber: true } } },
+        orderBy: [{ invoiceDate: 'asc' }, { createdAt: 'asc' }]
+      });
+      const invoiceRows = invoices
+        .filter(invoice => !coveredOrderIds.has(invoice.orderId))
+        .map(invoice => {
+          const paidAmount = (invoice.amountPaid || 0) + (paidByInvoiceId.get(invoice.id) || 0);
+          const billAmount = roundMoney(invoice.grandTotal);
+          const pendingAmount = roundMoney(Math.max(billAmount - paidAmount, 0));
+          const billDate = invoice.invoiceDate || invoice.createdAt;
+          const days = daysSince(billDate, asOf);
+          const buyerSnapshot = invoice.buyerSnapshot && typeof invoice.buyerSnapshot === 'object'
+            ? invoice.buyerSnapshot
+            : {};
+          return {
+            billId: invoice.id,
+            billType: 'sales_invoice',
+            billNumber: invoice.invoiceNumber,
+            voucherNumber: invoice.order?.orderNumber || invoice.invoiceNumber,
+            billDate,
+            days,
+            agingBucket: agingBucket(days),
+            grace: 0,
+            billAmount,
+            paidAmount: roundMoney(paidAmount),
+            pendingAmount,
+            taxableAmount: roundMoney(invoice.taxableAmount),
+            partyName: invoice.customer?.organizationName || buyerSnapshot.name || '',
+            brokerName: buyerSnapshot.agentName || '',
+            station: buyerSnapshot.city || buyerSnapshot.station || '',
+            haste: '',
+            transportName: '',
+            transactionType: 'SALES INVOICE',
+            editPath: undefined
+          };
+        })
+        .filter(bill => includeSettled || bill.pendingAmount > 0.001);
+
+      rows = [...orderRows, ...invoiceRows];
+    }
+
+    rows = rows.filter(row => {
+      if (partyName && !contains(row.partyName, partyName)) return false;
+      if (brokerName && !contains(row.brokerName, brokerName)) return false;
+      if (station && !contains(row.station, station)) return false;
+      if (haste && !contains(row.haste, haste)) return false;
+      if (transportName && !contains(row.transportName, transportName)) return false;
+      if (agingFilter && row.agingBucket !== agingFilter) return false;
+      if (fromDate || toDateValue) {
+        const date = new Date(row.billDate);
+        if (Number.isNaN(date.getTime())) return false;
+        if (fromDate && date < fromDate) return false;
+        if (toDateValue) {
+          const end = new Date(toDateValue);
+          end.setHours(23, 59, 59, 999);
+          if (date > end) return false;
+        }
+      }
+      return true;
+    });
+
+    rows.sort((a, b) => {
+      const partyCmp = String(a.partyName || '').localeCompare(String(b.partyName || ''));
+      if (partyCmp !== 0) return partyCmp;
+      return new Date(a.billDate).getTime() - new Date(b.billDate).getTime();
+    });
+
+    const enriched = rows.map(row => {
+      const pending = roundMoneyLocal(row.pendingAmount);
+      const buckets = emptyBucketTotals();
+      buckets[row.agingBucket] = pending;
+      return {
+        ...row,
+        id: `${row.billType}-${row.billId}`,
+        buckets,
+        editPath: row.editPath
+          || (row.billType === 'order' ? `/erp/sales?edit=${row.billId}&kind=bill` : undefined)
+      };
+    });
+
+    const totals = {
+      billAmount: 0,
+      paidAmount: 0,
+      pendingAmount: 0,
+      ...emptyBucketTotals()
+    };
+    for (const row of enriched) {
+      totals.billAmount = roundMoneyLocal(totals.billAmount + (Number(row.billAmount) || 0));
+      totals.paidAmount = roundMoneyLocal(totals.paidAmount + (Number(row.paidAmount) || 0));
+      totals.pendingAmount = roundMoneyLocal(totals.pendingAmount + (Number(row.pendingAmount) || 0));
+      bumpBucket(totals, row.agingBucket, Number(row.pendingAmount) || 0);
+    }
+
+    const partyMap = new Map();
+    for (const row of enriched) {
+      const key = (row.partyName || 'Unknown').trim() || 'Unknown';
+      const current = partyMap.get(key) || {
+        partyName: key,
+        billCount: 0,
+        billAmount: 0,
+        paidAmount: 0,
+        pendingAmount: 0,
+        ...emptyBucketTotals(),
+        rows: []
+      };
+      current.billCount += 1;
+      current.billAmount = roundMoneyLocal(current.billAmount + (Number(row.billAmount) || 0));
+      current.paidAmount = roundMoneyLocal(current.paidAmount + (Number(row.paidAmount) || 0));
+      current.pendingAmount = roundMoneyLocal(current.pendingAmount + (Number(row.pendingAmount) || 0));
+      bumpBucket(current, row.agingBucket, Number(row.pendingAmount) || 0);
+      current.rows.push(row);
+      partyMap.set(key, current);
+    }
+    const parties = Array.from(partyMap.values()).sort((a, b) => a.partyName.localeCompare(b.partyName));
+
+    res.json({
+      view,
+      partyType,
+      asOnDate: asOf.toISOString(),
+      agingBuckets: AGING_BUCKETS,
+      rows: enriched,
+      parties,
+      totals
     });
   } catch (error) {
     next(error);

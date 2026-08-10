@@ -764,6 +764,21 @@ export const bankEntriesApi = {
     if (params.transactionType) queryParams.set('transactionType', params.transactionType);
     return request<{ bills: BankPendingBill[]; notes?: BankPendingBill[]; noteCount?: number; billCount?: number }>(`/bank-entries/pending-bills?${queryParams.toString()}`);
   },
+  getOutstandingReport: async (params: Record<string, string | undefined>) => {
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value) query.set(key, value);
+    });
+    return request<{
+      view: string;
+      partyType: string;
+      asOnDate: string;
+      agingBuckets: string[];
+      rows: Array<Record<string, any>>;
+      parties: Array<Record<string, any>>;
+      totals: Record<string, number>;
+    }>(`/bank-entries/outstanding-report?${query.toString()}`);
+  },
   getBankAccounts: async () => {
     return request<{ accounts: Array<{ name: string; balance: number }> }>('/bank-entries/bank-accounts');
   },

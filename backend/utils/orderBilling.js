@@ -45,12 +45,40 @@ export function calculateOrderGrandTotal(order) {
   return roundMoney(subtotal - discountAmount + shippingCharge);
 }
 
-export function daysSince(dateValue) {
+export function daysSince(dateValue, asOfValue = Date.now()) {
   if (!dateValue) return 0;
   const date = new Date(dateValue);
   if (Number.isNaN(date.getTime())) return 0;
-  const diff = Date.now() - date.getTime();
+  const asOf = asOfValue instanceof Date ? asOfValue : new Date(asOfValue);
+  if (Number.isNaN(asOf.getTime())) return 0;
+  const diff = asOf.getTime() - date.getTime();
   return Math.max(0, Math.floor(diff / (1000 * 60 * 60 * 24)));
+}
+
+export const AGING_BUCKETS = ['0-15', '16-30', '31-45', '46-60', 'Above 60'];
+
+export function agingBucket(days) {
+  const value = Math.max(0, Number(days) || 0);
+  if (value <= 15) return '0-15';
+  if (value <= 30) return '16-30';
+  if (value <= 45) return '31-45';
+  if (value <= 60) return '46-60';
+  return 'Above 60';
+}
+
+/** Prefer ERP line totals when present; fall back to catalogue order formula. */
+export function resolveBillAmount(order) {
+  const lines = normalizeOrderLines(order.orderLines);
+  const lineTotal = lines.reduce((sum, line) => {
+    const total = Number(line.totalAmount);
+    if (Number.isFinite(total) && total > 0) return sum + total;
+    const amount = Number(line.amount);
+    const tax = Number(line.taxAmount) || 0;
+    if (Number.isFinite(amount) && amount > 0) return sum + amount + tax;
+    return sum;
+  }, 0);
+  if (lineTotal > 0) return roundMoney(lineTotal);
+  return calculateOrderGrandTotal(order);
 }
 
 export async function allocateNextInvoiceNumber(tx, userId) {
@@ -95,7 +123,7 @@ export function matchesSupplierName(supplierName, partyName) {
   return source === target || source.includes(target) || target.includes(source);
 }
 
-export function mapPurchaseBillToPendingBill(bill, paidByBillId) {
+export function mapPurchaseBillToPendingBill(bill, paidByBillId, asOfValue = Date.now()) {
   const billAmount = roundMoney(bill.grandTotal);
   const paidAmount = paidByBillId.get(bill.id) || 0;
   const pendingAmount = roundMoney(Math.max(billAmount - paidAmount, 0));
@@ -103,6 +131,8 @@ export function mapPurchaseBillToPendingBill(bill, paidByBillId) {
   const displayNumber = bill.typeBillNumber != null
     ? String(bill.typeBillNumber)
     : (bill.billNumber || bill.voucherNumber || bill.id.slice(-6).toUpperCase());
+  const days = daysSince(billDate, asOfValue);
+  const bucket = agingBucket(days);
 
   return {
     billId: bill.id,
@@ -111,17 +141,25 @@ export function mapPurchaseBillToPendingBill(bill, paidByBillId) {
     transactionType: bill.transactionType || null,
     voucherNumber: bill.voucherNumber || bill.billNumber || '-',
     billDate,
-    days: daysSince(billDate),
+    days,
+    agingBucket: bucket,
     grace: 0,
     adatDisc: roundMoney(bill.discountAmount),
     billAmount,
+    paidAmount: roundMoney(paidAmount),
     pendingAmount,
     taxableAmount: roundMoney(bill.taxableAmount),
-    adjustAmount: 0
+    adjustAmount: 0,
+    partyName: bill.supplier?.organizationName || bill.supplierName || '',
+    brokerName: bill.agentName || '',
+    station: bill.station || '',
+    haste: bill.haste || '',
+    transportName: bill.transportName || '',
+    editPath: undefined
   };
 }
 
-export function mapOrderToPendingBill(order, paidByOrderId) {
+export function mapOrderToPendingBill(order, paidByOrderId, asOfValue = Date.now()) {
   const lines = normalizeOrderLines(order.orderLines);
   const subtotal = lines.length > 0
     ? lines.reduce((sum, line) => {
@@ -132,13 +170,15 @@ export function mapOrderToPendingBill(order, paidByOrderId) {
     : 0;
   const discountRate = Number(order.discountRate) || 0;
   const discountAmount = subtotal * (discountRate / 100);
-  const billAmount = calculateOrderGrandTotal(order);
+  const billAmount = resolveBillAmount(order);
   const paidAmount = paidByOrderId.get(order.id) || 0;
   const pendingAmount = roundMoney(Math.max(billAmount - paidAmount, 0));
   const billDate = order.orderDate || order.createdAt;
   const displayNumber = order.typeBillNumber != null
     ? String(order.typeBillNumber)
     : String(order.invoiceNumber || order.orderNumber || order.id.slice(-6));
+  const days = daysSince(billDate, asOfValue);
+  const bucket = agingBucket(days);
 
   return {
     billId: order.id,
@@ -147,12 +187,23 @@ export function mapOrderToPendingBill(order, paidByOrderId) {
     transactionType: order.transactionType || null,
     voucherNumber: order.orderNumber || String(order.invoiceNumber || '-'),
     billDate,
-    days: daysSince(billDate),
-    grace: 0,
+    days,
+    agingBucket: bucket,
+    grace: Number(order.grace) || 0,
     adatDisc: roundMoney(discountAmount),
     billAmount,
+    paidAmount: roundMoney(paidAmount),
     pendingAmount,
     taxableAmount: billAmount,
-    adjustAmount: 0
+    adjustAmount: 0,
+    partyName: getOrderPartyName(order),
+    brokerName: order.agentName || '',
+    station: order.station || '',
+    haste: order.haste || '',
+    transportName: order.transportName || '',
+    manualType: order.manualType || null,
+    editPath: order.manualType === 'erp_sales'
+      ? `/erp/sales?edit=${order.id}&kind=bill`
+      : undefined
   };
 }
