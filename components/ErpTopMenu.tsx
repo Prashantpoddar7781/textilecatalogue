@@ -194,19 +194,11 @@ export const ErpTopMenu: React.FC<Props> = ({
                 </button>
                 <button
                   type="button"
-                  onClick={() => { window.location.href = '/erp/reports/finish-sales?view=register'; }}
+                  onClick={() => { window.location.href = '/erp/reports/finish-sales'; }}
                   className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-gray-800 hover:bg-indigo-50 hover:text-indigo-700"
                 >
                   <FileBarChart className="h-4 w-4" />
-                  Sales Register
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { window.location.href = '/erp/reports/finish-sales?view=detailed'; }}
-                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-gray-800 hover:bg-indigo-50 hover:text-indigo-700"
-                >
-                  <FileBarChart className="h-4 w-4" />
-                  Finish Sales Detailed
+                  Finish Sales Report
                 </button>
                 <button
                   type="button"

@@ -99,7 +99,9 @@ export const FinishSalesReportPage: React.FC<Props> = ({ onBack, erpSession }) =
         <section className="mb-4 rounded-2xl border bg-white p-4 shadow-sm">
           <div className="mb-3">
             <p className="text-[10px] font-black uppercase tracking-widest text-fuchsia-700">Report View Options</p>
-            <p className="mt-1 text-xs text-gray-500">Choose how to view the Finish Sales report, then apply filters.</p>
+            <p className="mt-1 text-xs text-gray-500">
+              Sales Register and Finish Sales Detailed are in one place — switch using View below.
+            </p>
           </div>
           <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-4">
             <label className="md:col-span-2">
