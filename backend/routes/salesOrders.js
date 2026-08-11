@@ -126,6 +126,8 @@ async function soldBySalesOrder(salesOrderId, excludeBillId = null, client = pri
     where: {
       sourceSalesOrderId: salesOrderId,
       status: 'completed',
+      // Goods returns must not inflate sold qty against a Sales Order.
+      NOT: { transactionType: { equals: 'SALES GOODS RETURN', mode: 'insensitive' } },
       ...(excludeBillId ? { id: { not: excludeBillId } } : {})
     },
     select: { orderLines: true }
@@ -388,12 +390,23 @@ router.get('/finish-report', authenticateToken, requireActiveSubscription, async
     const haste = optionalString(req.query.haste);
     const mainScreen = optionalString(req.query.mainScreen);
     const view = (optionalString(req.query.view) || 'register').toLowerCase();
+    const docType = (optionalString(req.query.docType) || 'finish').toLowerCase();
+    // finish | return | both — club Finish Sales + Sales Goods Return in one report.
     const where = {
       userId: req.user.userId,
       manualType: 'erp_sales',
-      status: 'completed',
-      transactionType: { startsWith: 'FINISH SALES', mode: 'insensitive' }
+      status: 'completed'
     };
+    if (docType === 'return') {
+      where.transactionType = { equals: 'SALES GOODS RETURN', mode: 'insensitive' };
+    } else if (docType === 'both') {
+      where.OR = [
+        { transactionType: { startsWith: 'FINISH SALES', mode: 'insensitive' } },
+        { transactionType: { equals: 'SALES GOODS RETURN', mode: 'insensitive' } }
+      ];
+    } else {
+      where.transactionType = { startsWith: 'FINISH SALES', mode: 'insensitive' };
+    }
     if (partyName) where.buyerName = { contains: partyName, mode: 'insensitive' };
     if (brokerName) where.agentName = { contains: brokerName, mode: 'insensitive' };
     if (transportName) where.transportName = { contains: transportName, mode: 'insensitive' };
@@ -411,7 +424,7 @@ router.get('/finish-report', authenticateToken, requireActiveSubscription, async
     const bills = await prisma.order.findMany({
       where,
       include: { sourceSalesOrder: { select: { orderNo: true } } },
-      orderBy: [{ orderDate: 'asc' }, { createdAt: 'asc' }]
+      orderBy: [{ orderDate: 'desc' }, { createdAt: 'desc' }]
     });
 
     if (view === 'detailed') {
@@ -429,6 +442,7 @@ router.get('/finish-report', authenticateToken, requireActiveSubscription, async
             date: bill.orderDate || bill.createdAt,
             partyName: bill.buyerName,
             billNo: bill.typeBillNumber || bill.invoiceNumber,
+            transactionType: bill.transactionType || '',
             mainScreen: lineMain,
             itemName: lineName,
             packing: line.packing || '',
@@ -448,7 +462,7 @@ router.get('/finish-report', authenticateToken, requireActiveSubscription, async
         for (const key of ['pcs', 'mts', 'grossAmount']) acc[key] = roundMoney(acc[key] + (Number(row[key]) || 0));
         return acc;
       }, { pcs: 0, mts: 0, grossAmount: 0 });
-      return res.json({ view: 'detailed', rows, totals });
+      return res.json({ view: 'detailed', docType, rows, totals });
     }
 
     const rows = bills.map(bill => {
@@ -463,6 +477,7 @@ router.get('/finish-report', authenticateToken, requireActiveSubscription, async
         billId: bill.id,
         date: bill.orderDate || bill.createdAt,
         partyName: bill.buyerName,
+        transactionType: bill.transactionType || '',
         voucherNo: bill.typeBillNumber,
         billNo: bill.typeBillNumber || bill.invoiceNumber,
         lrNo: bill.lrNo || lines[0]?.lrNo || '',
@@ -485,7 +500,7 @@ router.get('/finish-report', authenticateToken, requireActiveSubscription, async
       }
       return acc;
     }, { pcs: 0, mts: 0, grossAmount: 0, taxableAmount: 0, ledgerAmount: 0, invoiceValue: 0 });
-    res.json({ view: 'register', rows, totals });
+    res.json({ view: 'register', docType, rows, totals });
   } catch (error) {
     next(error);
   }
@@ -516,7 +531,10 @@ async function saveBill(req, res, existing = null) {
   });
   if (!customer) return res.status(400).json({ error: 'Customer is required' });
 
-  const sourceSalesOrderId = optionalString(req.body.sourceSalesOrderId);
+  const transactionType = optionalString(req.body.transactionType) || 'FINISH SALES';
+  const goodsReturn = String(transactionType).toUpperCase() === 'SALES GOODS RETURN';
+  // Goods returns do not consume Sales Order pending qty.
+  const sourceSalesOrderId = goodsReturn ? null : optionalString(req.body.sourceSalesOrderId);
   let sourceOrder = null;
   if (sourceSalesOrderId) {
     sourceOrder = await prisma.salesOrder.findFirst({ where: { id: sourceSalesOrderId, userId } });
@@ -559,7 +577,6 @@ async function saveBill(req, res, existing = null) {
     completedAt: new Date().toISOString(),
     lrNo: optionalString(req.body.lrNo)
   }));
-  const transactionType = optionalString(req.body.transactionType) || 'FINISH SALES';
 
   const saved = await prisma.$transaction(async (tx) => {
     const data = {

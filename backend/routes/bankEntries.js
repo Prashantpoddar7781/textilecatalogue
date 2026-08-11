@@ -11,6 +11,7 @@ import {
   getOrderPartyName,
   getPaidAmountsByBillType,
   getPaidAmountsByOrderId,
+  isSalesGoodsReturn,
   mapOrderToPendingBill,
   mapPurchaseBillToPendingBill,
   matchesPartyName,
@@ -188,6 +189,7 @@ async function getPendingOrderBills(userId, partyName, transactionType) {
 
   const orderBills = orders
     .filter(order => matchesPartyName(order, partyName))
+    .filter(order => !isSalesGoodsReturn(order.transactionType))
     .filter(order => !normalizedType || normalizeTransactionType(order.transactionType, DEFAULT_SALES_TRANSACTION_TYPE) === normalizedType)
     .map(order => mapOrderToPendingBill(order, paidByOrderId))
     .filter(bill => bill.pendingAmount > 0);
@@ -468,10 +470,27 @@ router.get('/outstanding-report', authenticateToken, requireActiveSubscription, 
       ]);
       const normalizedType = transactionType ? normalizeTransactionType(transactionType) : null;
       const orderRows = orders
+        .filter(order => !isSalesGoodsReturn(order.transactionType))
         .filter(order => !normalizedType
           || normalizeTransactionType(order.transactionType, DEFAULT_SALES_TRANSACTION_TYPE) === normalizedType)
         .map(order => mapOrderToPendingBill(order, paidByOrderId, asOf))
         .filter(bill => includeSettled || bill.pendingAmount > 0.001);
+
+      // Goods returns credit the party — include as negative outstanding rows.
+      const returnRows = orders
+        .filter(order => isSalesGoodsReturn(order.transactionType))
+        .map(order => {
+          const mapped = mapOrderToPendingBill(order, new Map(), asOf);
+          const amount = roundMoney(mapped.billAmount);
+          return {
+            ...mapped,
+            billAmount: -amount,
+            paidAmount: 0,
+            pendingAmount: -amount,
+            transactionType: 'SALES GOODS RETURN'
+          };
+        })
+        .filter(bill => Math.abs(bill.pendingAmount) > 0.001);
 
       const coveredOrderIds = new Set(orders.map(order => order.id));
       const invoices = await prisma.salesInvoice.findMany({
@@ -514,7 +533,7 @@ router.get('/outstanding-report', authenticateToken, requireActiveSubscription, 
         })
         .filter(bill => includeSettled || bill.pendingAmount > 0.001);
 
-      rows = [...orderRows, ...invoiceRows];
+      rows = [...orderRows, ...returnRows, ...invoiceRows];
     }
 
     rows = rows.filter(row => {

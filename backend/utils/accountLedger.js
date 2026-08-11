@@ -1,6 +1,7 @@
 import {
   calculateOrderGrandTotal,
   getOrderPartyName,
+  isSalesGoodsReturn,
   matchesPartyName,
   matchesSupplierName,
   normalizeBillAllocations,
@@ -465,6 +466,7 @@ export async function buildCustomerLedger(prisma, userId, partyName) {
     const amount = calculateOrderGrandTotal(order);
     if (amount <= 0) continue;
     const billNo = order.typeBillNumber != null ? String(order.typeBillNumber) : (order.orderNumber || order.invoiceNumber || order.id.slice(-6));
+    const goodsReturn = isSalesGoodsReturn(order.transactionType);
     rawEntries.push({
       id: `order-${order.id}`,
       sourceType: 'order',
@@ -473,9 +475,9 @@ export async function buildCustomerLedger(prisma, userId, partyName) {
       voucherNumber: order.orderNumber || String(order.invoiceNumber || '-'),
       billNumber: billNo,
       account: order.transactionType || 'SALES',
-      particulars: `Sales bill / order #${billNo}`,
-      debitAmount: amount,
-      creditAmount: 0
+      particulars: goodsReturn ? `Sales goods return #${billNo}` : `Sales bill / order #${billNo}`,
+      debitAmount: goodsReturn ? 0 : amount,
+      creditAmount: goodsReturn ? amount : 0
     });
   }
 
@@ -961,8 +963,9 @@ export async function getLedgerEntryDetail(prisma, userId, sourceType, sourceId)
       ? String(order.typeBillNumber)
       : (order.orderNumber || order.invoiceNumber || order.id.slice(-6));
 
+    const goodsReturn = isSalesGoodsReturn(order.transactionType);
     return {
-      title: `Sales Bill #${billNo}`,
+      title: goodsReturn ? `Sales Goods Return #${billNo}` : `Sales Bill #${billNo}`,
       subtitle: getOrderPartyName(order),
       sourceType,
       sourceId,

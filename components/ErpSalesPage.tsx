@@ -113,6 +113,8 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
   );
   const isSalesOrder = transactionType === 'SALES ORDERS';
   const isFinishSales = transactionType.startsWith('FINISH SALES');
+  const isGoodsReturn = transactionType === 'SALES GOODS RETURN';
+  const isBillEntry = !isSalesOrder;
   const isEditMode = Boolean(editId);
 
   const [loading, setLoading] = useState(true);
@@ -223,7 +225,8 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
   }, [transactionType, isSalesOrder]);
 
   useEffect(() => {
-    if (isSalesOrder || !partyName.trim()) {
+    // Sales Goods Return does not consume Sales Order pending — skip Ord/Ref SO list.
+    if (isSalesOrder || isGoodsReturn || !partyName.trim()) {
       setPendingOrders([]);
       setPendingLoading(false);
       return;
@@ -236,7 +239,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
         .finally(() => setPendingLoading(false));
     }, 250);
     return () => window.clearTimeout(timer);
-  }, [customerId, partyName, isSalesOrder]);
+  }, [customerId, partyName, isSalesOrder, isGoodsReturn]);
 
   const applyOrderDoc = (order: SalesOrder, companyState: string, gstRate: number, hsn: string) => {
     setCustomerId(order.customerId || '');
@@ -505,14 +508,18 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
       } else {
         const body = {
           ...payload,
-          sourceSalesOrderId: sourceSalesOrderId || undefined,
+          sourceSalesOrderId: isGoodsReturn ? undefined : (sourceSalesOrderId || undefined),
           orderNumber: orderNo || undefined
         };
         const result = editId && editKind === 'bill'
           ? await salesOrdersApi.updateBill(editId, body)
           : await salesOrdersApi.createBill(body);
         const no = result.bill.typeBillNumber || result.bill.invoiceNumber || '-';
-        setSuccess(`${transactionType} bill #${no} ${isEditMode ? 'updated' : 'saved'}. Posted to ledger.`);
+        setSuccess(
+          isGoodsReturn
+            ? `Sales Goods Return #${no} ${isEditMode ? 'updated' : 'saved'}. Credited to party ledger.`
+            : `${transactionType} bill #${no} ${isEditMode ? 'updated' : 'saved'}. Posted to ledger.`
+        );
         if (!isEditMode) {
           setLineItems([blankLine(1, defaultGstRate, defaultHsnCode)]);
           setSourceSalesOrderId('');
@@ -551,7 +558,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
               Sales Order Report
             </button>
             <button type="button" onClick={() => { window.location.href = '/erp/reports/finish-sales'; }} className="rounded-xl border bg-white px-3 py-2 text-xs font-black uppercase text-fuchsia-800">
-              Finish Sales Report
+              Sales Register / Return
             </button>
           </div>
         </div>
@@ -563,13 +570,17 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
           <section className="rounded-2xl border border-indigo-200 bg-indigo-50/40 p-4 shadow-sm">
             <div className="mb-3 flex items-center justify-between gap-3">
               <h1 className="text-lg font-black uppercase tracking-wide text-gray-900">
-                {isSalesOrder ? 'Sales Orders' : isFinishSales ? 'Finish Sales' : transactionType}
+                {isSalesOrder ? 'Sales Orders' : isGoodsReturn ? 'Sales Goods Return' : isFinishSales ? 'Finish Sales' : transactionType}
                 {isEditMode ? ' · Edit' : ' · Add Mode'}
               </h1>
               <span className={`rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-widest ${
-                isSalesOrder ? 'bg-indigo-100 text-indigo-800' : 'bg-fuchsia-100 text-fuchsia-800'
+                isSalesOrder
+                  ? 'bg-indigo-100 text-indigo-800'
+                  : isGoodsReturn
+                    ? 'bg-amber-100 text-amber-900'
+                    : 'bg-fuchsia-100 text-fuchsia-800'
               }`}>
-                {isSalesOrder ? 'Order form · No ledger' : 'Bill · Posts to ledger'}
+                {isSalesOrder ? 'Order form · No ledger' : isGoodsReturn ? 'Return · Credits ledger' : 'Bill · Posts to ledger'}
               </span>
             </div>
 
@@ -601,12 +612,12 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
               <label><span className={labelClass}>Date</span><input type="date" className={inputClass} value={orderDate} onChange={e => setOrderDate(e.target.value)} /></label>
               <label><span className={labelClass}>GST Type</span><input className={readonlyClass} value={gstType} readOnly /></label>
               <label className="md:col-span-2">
-                <span className={labelClass}>{isFinishSales ? '1. Party (required first)' : 'Party'}</span>
+                <span className={labelClass}>{(isFinishSales || isGoodsReturn) ? '1. Party (required first)' : 'Party'}</span>
                 <input
-                  className={`${inputClass} ${isFinishSales ? 'border-amber-400 bg-amber-50' : ''}`}
+                  className={`${inputClass} ${(isFinishSales || isGoodsReturn) ? 'border-amber-400 bg-amber-50' : ''}`}
                   list="erp-sales-parties"
                   value={partyName}
-                  placeholder={isFinishSales ? 'Select or type party name first' : ''}
+                  placeholder={(isFinishSales || isGoodsReturn) ? 'Select or type party name first' : ''}
                   onChange={e => {
                     const next = e.target.value;
                     const changed = next.trim().toLowerCase() !== partyName.trim().toLowerCase();
@@ -624,7 +635,21 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
                   {customers.map(customer => <option key={customer.id} value={customer.organizationName} />)}
                 </datalist>
               </label>
-              {!isSalesOrder && (
+              {isGoodsReturn && (
+                <label className="md:col-span-2">
+                  <span className={labelClass}>2. Ref / Original Bill (optional)</span>
+                  <input
+                    className={`${inputClass} border-amber-300 bg-amber-50`}
+                    value={orderNo}
+                    onChange={e => {
+                      setOrderNo(e.target.value);
+                      setSourceSalesOrderId('');
+                    }}
+                    placeholder="Original bill / challan reference"
+                  />
+                </label>
+              )}
+              {isBillEntry && !isGoodsReturn && (
                 <label className="md:col-span-2">
                   <span className={labelClass}>2. Ord / Ref (Sales Orders of this party)</span>
                   <select
@@ -676,11 +701,13 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
               <p className="text-[10px] font-black uppercase tracking-widest text-indigo-800">
                 {isSalesOrder
                   ? 'Particulars · Main Screen · Screen Name · Amount = PCS × Rate'
-                  : partyName.trim()
-                    ? (sourceSalesOrderId
-                      ? `Items from Sales Order #${orderNo || ''} — all fields editable`
-                      : 'Select Ord / Ref above to load this party\'s Sales Order items (editable)')
-                    : 'Select Party first, then choose Ord / Ref to load Sales Order items'}
+                  : isGoodsReturn
+                    ? 'Return items · editable lines · amount credits party ledger'
+                    : partyName.trim()
+                      ? (sourceSalesOrderId
+                        ? `Items from Sales Order #${orderNo || ''} — all fields editable`
+                        : 'Select Ord / Ref above to load this party\'s Sales Order items (editable)')
+                      : 'Select Party first, then choose Ord / Ref to load Sales Order items'}
               </p>
               <button
                 type="button"
@@ -821,8 +848,8 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
           <ErpSaveButton
             saving={saving}
             label={isEditMode
-              ? (isSalesOrder ? 'Update Sales Order' : 'Update Finish Sales')
-              : (isSalesOrder ? 'Save Sales Order' : 'Save Finish Sales')}
+              ? (isSalesOrder ? 'Update Sales Order' : isGoodsReturn ? 'Update Sales Goods Return' : 'Update Finish Sales')
+              : (isSalesOrder ? 'Save Sales Order' : isGoodsReturn ? 'Save Sales Goods Return' : 'Save Finish Sales')}
             savingLabel="Saving..."
             className="mt-5 flex w-full items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-4 py-3 text-sm font-black text-white disabled:opacity-60"
           />

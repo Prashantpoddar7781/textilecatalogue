@@ -15,6 +15,10 @@ export function getOrderPartyName(order) {
   return (order.customer?.organizationName || order.buyerName || '').trim();
 }
 
+export function isSalesGoodsReturn(transactionType) {
+  return String(transactionType || '').trim().toUpperCase() === 'SALES GOODS RETURN';
+}
+
 export function matchesPartyName(order, partyName) {
   if (!partyName) return false;
   const target = partyName.trim().toLowerCase();
