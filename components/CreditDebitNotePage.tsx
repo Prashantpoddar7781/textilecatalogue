@@ -5,6 +5,7 @@ import { CreditDebitNoteType, INDIAN_STATES } from '../constants/creditDebitNote
 import { Customer, Supplier } from '../types';
 import { ErpFormShell } from './ErpFormShell';
 import { ErpSaveButton } from './ErpSaveButton';
+import { isInterStateSupply } from '../utils/gstState';
 
 interface Props {
   noteType: CreditDebitNoteType;
@@ -142,7 +143,7 @@ export const CreditDebitNotePage: React.FC<Props> = ({ noteType, onBack }) => {
 
   const gstHint = useMemo(() => {
     if (!placeOfSupply || !businessState) return 'Select place of supply to apply GST.';
-    if (placeOfSupply.trim().toLowerCase() === businessState.trim().toLowerCase()) {
+    if (!isInterStateSupply(placeOfSupply, businessState)) {
       return 'Same state → CGST + SGST applied.';
     }
     return 'Different state → IGST applied.';

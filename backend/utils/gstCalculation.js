@@ -53,6 +53,36 @@ export const GST_STATE_CODES = {
 
 const normalizeState = (value) => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
 
+/** Resolve "24", "24 Gujarat", "Gujarat", etc. to a comparable GST state code. */
+export function resolveStateKey(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+
+  const codeOnly = raw.replace(/\D/g, '');
+  if (/^\d{1,2}$/.test(raw) || (/^\d{1,2}$/.test(codeOnly) && raw.length <= 3)) {
+    const code = codeOnly.padStart(2, '0').slice(-2);
+    if (GST_STATE_CODES[code]) return code;
+  }
+
+  const prefix = raw.match(/^(\d{1,2})(?:\s*[-:/]?\s*|\s+)/);
+  if (prefix) {
+    const code = prefix[1].padStart(2, '0');
+    if (GST_STATE_CODES[code]) return code;
+  }
+
+  const fromName = getStateCodeFromName(raw);
+  if (fromName) return fromName;
+
+  // Strip leading code then try remaining name ("24 Gujarat" already handled; "GJ Gujarat" fallback)
+  const withoutCode = raw.replace(/^\d{1,2}\s*[-:/]?\s*/, '').trim();
+  if (withoutCode && withoutCode !== raw) {
+    const nested = getStateCodeFromName(withoutCode);
+    if (nested) return nested;
+  }
+
+  return normalizeState(raw);
+}
+
 export function getStateFromGstin(gstin) {
   const code = String(gstin || '').replace(/[^0-9A-Za-z]/g, '').slice(0, 2);
   if (!code || !GST_STATE_CODES[code]) return { stateCode: code || '', stateName: '' };
@@ -67,8 +97,8 @@ export function getStateCodeFromName(stateName) {
 }
 
 export function isInterStateSupply(placeOfSupply, businessState) {
-  const supply = normalizeState(placeOfSupply);
-  const business = normalizeState(businessState);
+  const supply = resolveStateKey(placeOfSupply);
+  const business = resolveStateKey(businessState);
   if (!supply || !business) return false;
   return supply !== business;
 }

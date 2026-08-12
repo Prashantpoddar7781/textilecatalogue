@@ -6,6 +6,7 @@ import { DEFAULT_PURCHASE_TRANSACTION_TYPE, ERP_TRANSACTION_TYPES } from '../con
 import { ErpFormShell } from './ErpFormShell';
 import { ErpSaveButton } from './ErpSaveButton';
 import { ErpTopMenu } from './ErpTopMenu';
+import { gstTypeLabel, isInterStateSupply } from '../utils/gstState';
 
 interface Props {
   onBack: () => void;
@@ -56,11 +57,7 @@ function calcLine(input: SalesLineItem, businessState: string, partyState: strin
   const taxableAmount = round2(amount - discountAmount + toNum(input.manualAddLess));
   const gstRate = toNum(input.gstRate);
   const taxAmount = round2(taxableAmount * gstRate / 100);
-  const interState = Boolean(
-    businessState.trim()
-    && partyState.trim()
-    && businessState.trim().toLowerCase() !== partyState.trim().toLowerCase()
-  );
+  const interState = isInterStateSupply(partyState, businessState);
   return {
     ...input,
     pcs,
@@ -125,9 +122,7 @@ export const ErpPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [hsnCode, setHsnCode] = useState('5407');
   const [lineItems, setLineItems] = useState<SalesLineItem[]>([blankLine()]);
 
-  const gstType = businessState.trim() && state.trim() && businessState.trim().toLowerCase() !== state.trim().toLowerCase()
-    ? 'Inter-State Tax Inv.'
-    : 'Local Tax Inv.';
+  const gstType = gstTypeLabel(state, businessState);
 
   const totals = useMemo(() => lineItems.reduce((acc, line) => ({
     pcs: round2(acc.pcs + toNum(line.pcs)),

@@ -9,7 +9,7 @@ import { allocateNextTypeBillNumber } from '../utils/transactionBilling.js';
 import { buildSupplierLedger } from '../utils/accountLedger.js';
 import { roundMoney } from '../utils/orderBilling.js';
 import { aggregateErpLines, isPurchaseReturn, normalizeErpLines } from '../utils/erpLineItems.js';
-import { getStateFromGstin } from '../utils/gstCalculation.js';
+import { getStateFromGstin, isInterStateSupply } from '../utils/gstCalculation.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -407,7 +407,7 @@ function buildManualBillData(req, supplier, ctx, lines, totals, typeBillNumber) 
   const partyGstin = optionalString(req.body.partyGstin) || supplier.gstNumber;
   const placeOfSupply = optionalString(req.body.state) || supplier.state || getStateFromGstin(partyGstin).stateName;
   const gstType = optionalString(req.body.gstType)
-    || (ctx.businessState && placeOfSupply && ctx.businessState.toLowerCase() !== String(placeOfSupply).toLowerCase()
+    || (ctx.businessState && placeOfSupply && isInterStateSupply(placeOfSupply, ctx.businessState)
       ? 'Inter-State Tax Inv.'
       : 'Local Tax Inv.');
 
