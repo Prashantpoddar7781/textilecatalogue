@@ -8,6 +8,7 @@ import {
   normalizeOrderLines,
   roundMoney
 } from './orderBilling.js';
+import { isPurchaseReturn } from './erpLineItems.js';
 import { matchesNoteParty } from './creditDebitNotes.js';
 
 const sortByDate = (a, b) => {
@@ -595,6 +596,7 @@ export async function buildSupplierLedger(prisma, userId, supplierId) {
   for (const bill of supplier.purchaseBills) {
     const amount = roundMoney(bill.grandTotal);
     if (amount <= 0) continue;
+    const purchaseReturn = isPurchaseReturn(bill.transactionType);
     rawEntries.push({
       id: `bill-${bill.id}`,
       sourceType: 'purchase_bill',
@@ -603,9 +605,11 @@ export async function buildSupplierLedger(prisma, userId, supplierId) {
       voucherNumber: bill.voucherNumber || '-',
       billNumber: bill.billNumber || String(bill.typeBillNumber || '-'),
       account: bill.transactionType || 'FINISH PURCHASE',
-      particulars: `Purchase bill #${bill.billNumber || bill.typeBillNumber || '-'}`,
-      debitAmount: 0,
-      creditAmount: amount,
+      particulars: purchaseReturn
+        ? `Purchase return #${bill.billNumber || bill.typeBillNumber || '-'}`
+        : `Purchase bill #${bill.billNumber || bill.typeBillNumber || '-'}`,
+      debitAmount: purchaseReturn ? amount : 0,
+      creditAmount: purchaseReturn ? 0 : amount,
       lineCount: Array.isArray(bill.lineItems) ? bill.lineItems.length : 0
     });
   }
@@ -1063,14 +1067,20 @@ export async function getLedgerEntryDetail(prisma, userId, sourceType, sourceId)
     const lineItems = Array.isArray(bill.lineItems) ? bill.lineItems : [];
 
     return {
-      title: `Purchase Bill #${billNo}`,
+      title: isPurchaseReturn(bill.transactionType)
+        ? `Purchase Return #${billNo}`
+        : `Purchase Bill #${billNo}`,
       subtitle: bill.supplier?.name || '',
       sourceType,
       sourceId,
+      canEdit: true,
+      editPath: `/erp/purchase?edit=${bill.id}`,
       fields: buildDetailFields([
         { label: 'Date', value: toIsoDate(bill.billDate || bill.createdAt) },
         { label: 'Voucher', value: bill.voucherNumber },
         { label: 'Transaction Type', value: bill.transactionType },
+        { label: 'Broker', value: bill.agentName },
+        { label: 'Station', value: bill.station },
         { label: 'Status', value: bill.status },
         { label: 'Taxable', value: bill.taxableAmount, isMoney: true },
         { label: 'Discount', value: bill.discountAmount, isMoney: true },

@@ -12,6 +12,7 @@ import {
   getPaidAmountsByBillType,
   getPaidAmountsByOrderId,
   isSalesGoodsReturn,
+  isPurchaseReturn,
   mapOrderToPendingBill,
   mapPurchaseBillToPendingBill,
   matchesPartyName,
@@ -258,13 +259,16 @@ async function getPurchaseBillParties(userId) {
     const name = bill.supplier?.name?.trim();
     if (!name) continue;
     const pendingBill = mapPurchaseBillToPendingBill(bill, paidByBillId);
+    const signedPending = isPurchaseReturn(bill.transactionType)
+      ? -roundMoneyLocal(pendingBill.billAmount)
+      : pendingBill.pendingAmount;
     const current = partyMap.get(name.toLowerCase()) || {
       name,
       billCount: 0,
       pendingAmount: 0
     };
     current.billCount += 1;
-    current.pendingAmount = roundMoneyLocal(current.pendingAmount + pendingBill.pendingAmount);
+    current.pendingAmount = roundMoneyLocal(current.pendingAmount + signedPending);
     partyMap.set(name.toLowerCase(), current);
   }
 
@@ -459,9 +463,28 @@ router.get('/outstanding-report', authenticateToken, requireActiveSubscription, 
         getPurchaseBillRecords(userId),
         getPaidAmountsByBillType(prisma, userId, 'purchase_bill')
       ]);
-      rows = bills
+      const purchaseRows = bills
+        .filter(bill => !isPurchaseReturn(bill.transactionType))
         .map(bill => mapPurchaseBillToPendingBill(bill, paidByBillId, asOf))
         .filter(bill => includeSettled || bill.pendingAmount > 0.001);
+
+      // Purchase returns debit the supplier — include as negative outstanding rows.
+      const purchaseReturnRows = bills
+        .filter(bill => isPurchaseReturn(bill.transactionType))
+        .map(bill => {
+          const mapped = mapPurchaseBillToPendingBill(bill, new Map(), asOf);
+          const amount = roundMoney(mapped.billAmount);
+          return {
+            ...mapped,
+            billAmount: -amount,
+            paidAmount: 0,
+            pendingAmount: -amount,
+            transactionType: bill.transactionType || 'FINISH PURCHASE RETURN'
+          };
+        })
+        .filter(bill => Math.abs(bill.pendingAmount) > 0.001);
+
+      rows = [...purchaseRows, ...purchaseReturnRows];
     } else {
       const [orders, paidByOrderId, paidByInvoiceId] = await Promise.all([
         getCompletedOrders(userId),

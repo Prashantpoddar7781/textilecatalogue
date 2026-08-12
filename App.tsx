@@ -36,6 +36,7 @@ import { WorkReceiptReportPage } from './components/WorkReceiptReportPage';
 import { SalesOrderPage } from './components/SalesOrderPage';
 import { SalesOrderReportPage } from './components/SalesOrderReportPage';
 import { FinishSalesReportPage } from './components/FinishSalesReportPage';
+import { FinishPurchaseReportPage } from './components/FinishPurchaseReportPage';
 import { OutstandingPaymentReportPage } from './components/OutstandingPaymentReportPage';
 import { CreditDebitNotePage } from './components/CreditDebitNotePage';
 import { parseNoteTypeFromPath } from './constants/creditDebitNoteTypes';
@@ -67,6 +68,7 @@ const App: React.FC = () => {
   const erpSalesMatch = pathname.match(/^\/erp\/sales\/?$/);
   const erpSalesOrderMatch = pathname.match(/^\/erp\/sales-order\/?$/);
   const erpPurchaseMatch = pathname.match(/^\/erp\/purchase\/?$/);
+  const erpPurchaseScanMatch = pathname.match(/^\/erp\/purchase\/scan\/?$/);
   const erpLedgerMatch = pathname.match(/^\/erp\/ledger\/?$/);
   const erpUtilitiesMatch = pathname.match(/^\/erp\/utilities\/?$/);
   const erpUsersMatch = pathname.match(/^\/erp\/utilities\/users\/?$/);
@@ -84,14 +86,16 @@ const App: React.FC = () => {
   const erpWorkReceiptReportMatch = pathname.match(/^\/erp\/reports\/work-receipt\/?$/);
   const erpSalesOrderReportMatch = pathname.match(/^\/erp\/reports\/sales-order\/?$/);
   const erpFinishSalesReportMatch = pathname.match(/^\/erp\/reports\/finish-sales\/?$/);
+  const erpFinishPurchaseReportMatch = pathname.match(/^\/erp\/reports\/finish-purchase\/?$/);
   const erpOutstandingReportMatch = pathname.match(/^\/erp\/reports\/outstanding\/?$/);
   const erpNotesMatch = pathname.match(/^\/erp\/notes\/([^/]+)\/?$/);
   const isErpRoute = Boolean(
-    erpMatch || erpBankMatch || erpSalesMatch || erpSalesOrderMatch || erpPurchaseMatch || erpLedgerMatch
+    erpMatch || erpBankMatch || erpSalesMatch || erpSalesOrderMatch || erpPurchaseMatch || erpPurchaseScanMatch || erpLedgerMatch
     || erpUtilitiesMatch || erpUsersMatch || erpCompanyMatch || erpGreyPurchaseMatch || erpGreyDispatchMatch || erpGreyPurchaseReturnMatch
     || erpMillReceiptMatch || erpWorkDespatchMatch || erpWorkReceiptMatch
     || erpGodownReportMatch || erpMillDispatchReportMatch || erpMillReceiptReportMatch
     || erpWorkDespatchReportMatch || erpWorkReceiptReportMatch || erpSalesOrderReportMatch || erpFinishSalesReportMatch
+    || erpFinishPurchaseReportMatch
     || erpOutstandingReportMatch
     || erpNotesMatch || supplierLedgerMatch
   );
@@ -851,6 +855,15 @@ const App: React.FC = () => {
     );
   }
 
+  if (erpFinishPurchaseReportMatch) {
+    return (
+      <FinishPurchaseReportPage
+        erpSession={erpSession}
+        onBack={() => { window.location.href = '/erp'; }}
+      />
+    );
+  }
+
   if (erpOutstandingReportMatch) {
     return (
       <OutstandingPaymentReportPage
@@ -884,7 +897,22 @@ const App: React.FC = () => {
   }
 
   if (erpPurchaseMatch) {
-    return <ErpPurchasePage onBack={() => { window.location.href = '/erp'; }} />;
+    return (
+      <ErpPurchasePage
+        erpSession={erpSession}
+        onBack={() => { window.location.href = '/erp'; }}
+      />
+    );
+  }
+
+  if (erpPurchaseScanMatch) {
+    return (
+      <ScanPurchaseBillPage
+        onBack={() => { window.location.href = '/erp/purchase'; }}
+        moduleTitle="Scan Purchase Bill"
+        erpMode
+      />
+    );
   }
 
   if (erpNotesMatch) {

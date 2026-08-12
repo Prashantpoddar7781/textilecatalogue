@@ -19,6 +19,10 @@ export function isSalesGoodsReturn(transactionType) {
   return String(transactionType || '').trim().toUpperCase() === 'SALES GOODS RETURN';
 }
 
+export function isPurchaseReturn(transactionType) {
+  return String(transactionType || '').toUpperCase().includes('PURCHASE RETURN');
+}
+
 export function matchesPartyName(order, partyName) {
   if (!partyName) return false;
   const target = partyName.trim().toLowerCase();
@@ -154,12 +158,12 @@ export function mapPurchaseBillToPendingBill(bill, paidByBillId, asOfValue = Dat
     pendingAmount,
     taxableAmount: roundMoney(bill.taxableAmount),
     adjustAmount: 0,
-    partyName: bill.supplier?.organizationName || bill.supplierName || '',
+    partyName: bill.supplier?.name || bill.supplierName || '',
     brokerName: bill.agentName || '',
     station: bill.station || '',
     haste: bill.haste || '',
     transportName: bill.transportName || '',
-    editPath: undefined
+    editPath: `/erp/purchase?edit=${bill.id}`
   };
 }
 

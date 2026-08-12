@@ -515,6 +515,35 @@ export const purchasesApi = {
       body: JSON.stringify({ extraction, imageDataUrl, transactionType })
     });
   },
+  getMeta: async () => {
+    return request<{
+      companyName: string;
+      businessState: string;
+      defaultHsnCode: string;
+      defaultGstRate: number;
+      suppliers: Supplier[];
+      items: import('../types').SalesItemMaster[];
+    }>('/purchases/meta');
+  },
+  createEntry: async (body: Record<string, unknown>) => {
+    return request<{ bill: PurchaseBill; supplier: Supplier; totals: Record<string, number> }>('/purchases/entries', {
+      method: 'POST',
+      body: JSON.stringify(body)
+    });
+  },
+  updateEntry: async (id: string, body: Record<string, unknown>) => {
+    return request<{ bill: PurchaseBill; supplier: Supplier; totals: Record<string, number> }>(`/purchases/entries/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(body)
+    });
+  },
+  getFinishReport: async (params: Record<string, string | undefined>) => {
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => { if (value) query.set(key, value); });
+    return request<{ rows: Array<Record<string, any>>; totals: Record<string, number> }>(
+      `/purchases/finish-report?${query.toString()}`
+    );
+  },
   getSuppliers: async () => {
     return request<{ suppliers: Supplier[] }>('/purchases/suppliers');
   },

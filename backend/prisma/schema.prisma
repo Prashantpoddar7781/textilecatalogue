@@ -861,6 +861,24 @@ model PurchaseBill {
   grandTotal      Float     @default(0)
   transactionType String?
   typeBillNumber  Int?
+  companyName     String?
+  partyGstin      String?
+  partyMsme       String?
+  station         String?
+  agentName       String?
+  haste           String?
+  hasteGstin      String?
+  transportName   String?
+  lrNo            String?
+  vehicleNo       String?
+  gstType         String?
+  dhara           Float?
+  grace           Float?
+  screenSeries    String?
+  remarks         String?
+  challanNo       String?
+  orderRef        String?
+  supplierBillNo  String?
   status          String    @default("posted")
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
@@ -870,6 +888,8 @@ model PurchaseBill {
   @@index([billDate])
   @@index([createdAt])
   @@index([transactionType])
+  @@index([agentName])
+  @@index([station])
 }
 
 model BankEntry {
