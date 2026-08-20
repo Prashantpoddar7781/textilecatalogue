@@ -2,7 +2,11 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Loader2, Plus, Trash2 } from 'lucide-react';
 import { bankEntriesApi, purchasesApi } from '../services/api';
 import { ErpSession, PurchaseBill, SalesItemMaster, SalesLineItem, Supplier } from '../types';
-import { DEFAULT_EXPENSE_TRANSACTION_TYPE, EXPENSE_TRANSACTION_TYPES } from '../constants/erpTransactionTypes';
+import {
+  DEFAULT_EXPENSE_TRANSACTION_TYPE,
+  EXPENSE_TRANSACTION_TYPES,
+  getGstDefaultsForTransactionType
+} from '../constants/erpTransactionTypes';
 import { ErpFormShell } from './ErpFormShell';
 import { ErpSaveButton } from './ErpSaveButton';
 import { ErpTopMenu } from './ErpTopMenu';
@@ -106,8 +110,14 @@ export const ErpExpensesPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [success, setSuccess] = useState('');
   const [companyName, setCompanyName] = useState('');
   const [businessState, setBusinessState] = useState('');
-  const [defaultHsnCode, setDefaultHsnCode] = useState('5407');
-  const [defaultGstRate, setDefaultGstRate] = useState(5);
+  const [companyHsnCode, setCompanyHsnCode] = useState('5407');
+  const [companyGstRate, setCompanyGstRate] = useState(5);
+  const [defaultHsnCode, setDefaultHsnCode] = useState(
+    () => getGstDefaultsForTransactionType(typeFromUrl || DEFAULT_EXPENSE_TRANSACTION_TYPE).hsnCode
+  );
+  const [defaultGstRate, setDefaultGstRate] = useState(
+    () => getGstDefaultsForTransactionType(typeFromUrl || DEFAULT_EXPENSE_TRANSACTION_TYPE).gstRate
+  );
   const [typeBillNumber, setTypeBillNumber] = useState<number | null>(null);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [items, setItems] = useState<SalesItemMaster[]>([]);
@@ -129,8 +139,21 @@ export const ErpExpensesPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [screenSeries, setScreenSeries] = useState('');
   const [billDate, setBillDate] = useState(today());
   const [remarks, setRemarks] = useState('');
-  const [hsnCode, setHsnCode] = useState('5407');
-  const [lineItems, setLineItems] = useState<SalesLineItem[]>([blankLine()]);
+  const [hsnCode, setHsnCode] = useState(
+    () => getGstDefaultsForTransactionType(typeFromUrl || DEFAULT_EXPENSE_TRANSACTION_TYPE).hsnCode
+  );
+  const [lineItems, setLineItems] = useState<SalesLineItem[]>(() => {
+    const d = getGstDefaultsForTransactionType(typeFromUrl || DEFAULT_EXPENSE_TRANSACTION_TYPE);
+    return [blankLine(1, d.gstRate, d.hsnCode)];
+  });
+
+  const applyTypeGstDefaults = (type: string) => {
+    const d = getGstDefaultsForTransactionType(type, companyGstRate, companyHsnCode);
+    setDefaultGstRate(d.gstRate);
+    setDefaultHsnCode(d.hsnCode);
+    setHsnCode(d.hsnCode);
+    return d;
+  };
 
   const gstType = gstTypeLabel(state, businessState);
 
@@ -193,17 +216,23 @@ export const ErpExpensesPage: React.FC<Props> = ({ onBack, erpSession }) => {
         if (cancelled) return;
         setCompanyName(meta.companyName || '');
         setBusinessState(meta.businessState || '');
-        setDefaultHsnCode(meta.defaultHsnCode || '5407');
-        setDefaultGstRate(meta.defaultGstRate || 5);
-        setHsnCode(meta.defaultHsnCode || '5407');
+        const companyGst = meta.defaultGstRate || 5;
+        const companyHsn = meta.defaultHsnCode || '5407';
+        setCompanyGstRate(companyGst);
+        setCompanyHsnCode(companyHsn);
         setSuppliers(meta.suppliers || []);
         setItems(meta.items || []);
         if (!editId) {
-          setLineItems([blankLine(1, meta.defaultGstRate || 5, meta.defaultHsnCode || '5407')]);
+          const d = getGstDefaultsForTransactionType(transactionType, companyGst, companyHsn);
+          setDefaultGstRate(d.gstRate);
+          setDefaultHsnCode(d.hsnCode);
+          setHsnCode(d.hsnCode);
+          setLineItems([blankLine(1, d.gstRate, d.hsnCode)]);
         } else {
           const { bill } = await purchasesApi.getBill(editId);
           if (cancelled) return;
-          applyBillDoc(bill, meta.businessState || '', meta.defaultGstRate || 5, meta.defaultHsnCode || '5407');
+          // Keep saved GST on existing bills; company defaults only fill missing fields.
+          applyBillDoc(bill, meta.businessState || '', companyGst, companyHsn);
         }
       } catch (err: any) {
         if (!cancelled) setError(err.message || 'Could not load expense entry.');
@@ -395,8 +424,10 @@ export const ErpExpensesPage: React.FC<Props> = ({ onBack, erpSession }) => {
                   value={transactionType}
                   disabled={isEditMode}
                   onChange={e => {
-                    setTransactionType(e.target.value);
-                    setLineItems([blankLine(1, defaultGstRate, defaultHsnCode)]);
+                    const next = e.target.value;
+                    setTransactionType(next);
+                    const d = applyTypeGstDefaults(next);
+                    setLineItems([blankLine(1, d.gstRate, d.hsnCode)]);
                   }}
                 >
                   {EXPENSE_TRANSACTION_TYPES.map(type => (

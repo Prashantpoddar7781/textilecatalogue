@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertCircle, ArrowLeft, ListOrdered, Loader2 } from 'lucide-react';
 import { GREY_QUALITY_OPTIONS } from '../constants/greyQualities';
+import { getGstDefaultsForTransactionType } from '../constants/erpTransactionTypes';
 import { greyPurchasesApi, purchasesApi } from '../services/api';
 import { isWrongGstNumber, normalizeGstNumber } from '../services/gstValidation';
 import { ErpSession, GreyPurchaseLine, GreyTakaDetailRow, Supplier } from '../types';
@@ -125,8 +126,15 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
         setStates(meta.states || []);
         setStateCodes(meta.stateCodes || []);
         if (!isEditMode) setSrNo(String(meta.nextSrNo || 1));
-        setHsnCode(meta.defaultHsnCode || '');
-        setGstRate(String(meta.defaultGstRate ?? 5));
+        if (!isEditMode) {
+          const d = getGstDefaultsForTransactionType(
+            'GREY PURCHASE',
+            meta.defaultGstRate ?? 5,
+            meta.defaultHsnCode || '5407'
+          );
+          setHsnCode(d.hsnCode);
+          setGstRate(String(d.gstRate));
+        }
         setPlaceOfSupply(meta.businessState || '');
         setSuppliers(suppliersRes.suppliers || []);
 

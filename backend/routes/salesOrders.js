@@ -7,6 +7,7 @@ import { resolveCustomerForEntry } from '../utils/partyMaster.js';
 import { roundMoney, allocateNextInvoiceNumber } from '../utils/orderBilling.js';
 import { allocateNextTypeBillNumber } from '../utils/transactionBilling.js';
 import { getStateFromGstin, calculateGstBreakup } from '../utils/gstCalculation.js';
+import { getGstDefaultsForTransactionType } from '../constants/erpTransactionTypes.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -542,9 +543,14 @@ async function saveBill(req, res, existing = null) {
   }
   const partyGstin = optionalString(req.body.partyGstin) || customer.gstNumber;
   const placeOfSupply = optionalString(req.body.state) || customer.state || getStateFromGstin(partyGstin).stateName;
+  const typeGst = getGstDefaultsForTransactionType(
+    transactionType,
+    ctx.defaultGstRate,
+    ctx.defaultHsnCode || '5407'
+  );
   const lines = normalizeSalesLines(req.body.lineItems, {
-    defaultGstRate: ctx.defaultGstRate,
-    defaultHsnCode: ctx.defaultHsnCode,
+    defaultGstRate: typeGst.gstRate,
+    defaultHsnCode: typeGst.hsnCode,
     placeOfSupply,
     businessState: ctx.businessState
   });
@@ -674,9 +680,15 @@ async function saveSalesOrder(req, res, existing = null) {
   if (!customer) return res.status(400).json({ error: 'Customer is required' });
   const partyGstin = optionalString(req.body.partyGstin) || customer.gstNumber;
   const state = optionalString(req.body.state) || customer.state || getStateFromGstin(partyGstin).stateName;
+  const orderType = optionalString(req.body.transactionType) || 'SALES ORDERS';
+  const typeGst = getGstDefaultsForTransactionType(
+    orderType,
+    ctx.defaultGstRate,
+    ctx.defaultHsnCode || '5407'
+  );
   const lines = normalizeSalesLines(req.body.lineItems, {
-    defaultGstRate: ctx.defaultGstRate,
-    defaultHsnCode: ctx.defaultHsnCode,
+    defaultGstRate: typeGst.gstRate,
+    defaultHsnCode: typeGst.hsnCode,
     placeOfSupply: state,
     businessState: ctx.businessState
   });

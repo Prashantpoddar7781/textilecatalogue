@@ -3,7 +3,7 @@ import { PrismaClient } from '@prisma/client';
 import { body, validationResult } from 'express-validator';
 import { authenticateToken } from '../middleware/auth.js';
 import { requireActiveSubscription } from '../middleware/subscription.js';
-import { normalizeTransactionType, DEFAULT_PURCHASE_TRANSACTION_TYPE, EXPENSE_TRANSACTION_TYPES, isExpensePurchaseType } from '../constants/erpTransactionTypes.js';
+import { normalizeTransactionType, DEFAULT_PURCHASE_TRANSACTION_TYPE, EXPENSE_TRANSACTION_TYPES, isExpensePurchaseType, getGstDefaultsForTransactionType } from '../constants/erpTransactionTypes.js';
 import { findOrCreateSupplier, resolveSupplierForEntry } from '../utils/partyMaster.js';
 import { allocateNextTypeBillNumber } from '../utils/transactionBilling.js';
 import { buildSupplierLedger } from '../utils/accountLedger.js';
@@ -463,18 +463,23 @@ async function saveManualBill(req, res, existing = null) {
 
   const partyGstin = optionalString(req.body.partyGstin) || supplier.gstNumber;
   const placeOfSupply = optionalString(req.body.state) || supplier.state || getStateFromGstin(partyGstin).stateName;
+  const transactionType = normalizeTransactionType(
+    req.body.transactionType,
+    DEFAULT_PURCHASE_TRANSACTION_TYPE
+  );
+  const typeGst = getGstDefaultsForTransactionType(
+    transactionType,
+    ctx.defaultGstRate,
+    ctx.defaultHsnCode || '5407'
+  );
   const lines = normalizeErpLines(req.body.lineItems, {
-    defaultGstRate: ctx.defaultGstRate,
-    defaultHsnCode: ctx.defaultHsnCode,
+    defaultGstRate: typeGst.gstRate,
+    defaultHsnCode: typeGst.hsnCode,
     placeOfSupply,
     businessState: ctx.businessState
   });
   if (!lines.length) return res.status(400).json({ error: 'Add at least one purchase line' });
   const totals = aggregateErpLines(lines);
-  const transactionType = normalizeTransactionType(
-    req.body.transactionType,
-    DEFAULT_PURCHASE_TRANSACTION_TYPE
-  );
 
   const bill = await prisma.$transaction(async (tx) => {
     if (existing) {

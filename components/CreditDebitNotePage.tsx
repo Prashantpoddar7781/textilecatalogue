@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { bankEntriesApi, creditDebitNotesApi, customersApi, purchasesApi } from '../services/api';
 import { CreditDebitNoteType, INDIAN_STATES } from '../constants/creditDebitNoteTypes';
+import { getGstDefaultsForTransactionType } from '../constants/erpTransactionTypes';
 import { Customer, Supplier } from '../types';
 import { ErpFormShell } from './ErpFormShell';
 import { ErpSaveButton } from './ErpSaveButton';
@@ -41,9 +42,9 @@ export const CreditDebitNotePage: React.FC<Props> = ({ noteType, onBack }) => {
   const [otherLess, setOtherLess] = useState('');
   const [addAmount, setAddAmount] = useState('');
   const [returnGoods, setReturnGoods] = useState('');
-  const [hsnSac, setHsnSac] = useState('');
+  const [hsnSac, setHsnSac] = useState(() => getGstDefaultsForTransactionType(noteType.value).hsnCode);
   const [taxableAmount, setTaxableAmount] = useState('');
-  const [gstRate, setGstRate] = useState('5');
+  const [gstRate, setGstRate] = useState(() => String(getGstDefaultsForTransactionType(noteType.value).gstRate));
   const [cgstRate, setCgstRate] = useState('');
   const [cgstAmount, setCgstAmount] = useState('');
   const [sgstRate, setSgstRate] = useState('');
@@ -82,12 +83,15 @@ export const CreditDebitNotePage: React.FC<Props> = ({ noteType, onBack }) => {
 
   useEffect(() => {
     void loadMaster();
+    const d = getGstDefaultsForTransactionType(noteType.value);
+    setGstRate(String(d.gstRate));
+    setHsnSac(d.hsnCode);
     if (noteType.partyType === 'customer') {
       void customersApi.getAll().then(r => setCustomers(r.customers || [])).catch(() => setCustomers([]));
     } else {
       void purchasesApi.getSuppliers().then(r => setSuppliers(r.suppliers || [])).catch(() => setSuppliers([]));
     }
-  }, [loadMaster, noteType.partyType]);
+  }, [loadMaster, noteType.partyType, noteType.value]);
 
   const recalculate = useCallback(async () => {
     try {

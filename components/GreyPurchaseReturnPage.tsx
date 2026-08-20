@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, ListOrdered, Loader2 } from 'lucide-react';
 import { greyDispatchesApi, greyPurchaseReturnsApi } from '../services/api';
+import { getGstDefaultsForTransactionType } from '../constants/erpTransactionTypes';
 import { ErpSession, GreyReceiptSummary, GreyTakaDetailRow } from '../types';
 import { DispatchTakaSelectModal } from './DispatchTakaSelectModal';
 import { ErpFormShell } from './ErpFormShell';
@@ -137,8 +138,13 @@ export const GreyPurchaseReturnPage: React.FC<Props> = ({ onBack, erpSession }) 
         setCompanyName(meta.companyName || '');
         setVoucherNo(String(meta.nextVoucherNo || 1));
         setChallanNo(String(meta.nextChallanNo || 1));
-        setHsnCode(meta.defaultHsnCode || '5407');
-        setGstRate(String(meta.defaultGstRate ?? 5));
+        const d = getGstDefaultsForTransactionType(
+          'GREY PURCHASE RETURN',
+          meta.defaultGstRate ?? 5,
+          meta.defaultHsnCode || '5407'
+        );
+        setHsnCode(d.hsnCode);
+        setGstRate(String(d.gstRate));
       } catch (err: any) {
         if (!cancelled) setError(err.message || 'Could not load grey purchase return.');
       } finally {

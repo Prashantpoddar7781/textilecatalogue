@@ -2,7 +2,11 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Loader2, Plus, Trash2, X } from 'lucide-react';
 import { bankEntriesApi, salesOrdersApi } from '../services/api';
 import { Customer, ErpSession, Order, SalesItemMaster, SalesLineItem, SalesOrder } from '../types';
-import { DEFAULT_SALES_TRANSACTION_TYPE, ERP_TRANSACTION_TYPES } from '../constants/erpTransactionTypes';
+import {
+  DEFAULT_SALES_TRANSACTION_TYPE,
+  ERP_TRANSACTION_TYPES,
+  getGstDefaultsForTransactionType
+} from '../constants/erpTransactionTypes';
 import { ErpFormShell } from './ErpFormShell';
 import { ErpSaveButton } from './ErpSaveButton';
 import { ErpTopMenu } from './ErpTopMenu';
@@ -120,8 +124,18 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [success, setSuccess] = useState('');
   const [companyName, setCompanyName] = useState('');
   const [businessState, setBusinessState] = useState('');
-  const [defaultHsnCode, setDefaultHsnCode] = useState('5407');
-  const [defaultGstRate, setDefaultGstRate] = useState(5);
+  const [companyHsnCode, setCompanyHsnCode] = useState('5407');
+  const [companyGstRate, setCompanyGstRate] = useState(5);
+  const [defaultHsnCode, setDefaultHsnCode] = useState(
+    () => getGstDefaultsForTransactionType(
+      typeFromUrl || (editKind === 'order' ? 'SALES ORDERS' : DEFAULT_SALES_TRANSACTION_TYPE)
+    ).hsnCode
+  );
+  const [defaultGstRate, setDefaultGstRate] = useState(
+    () => getGstDefaultsForTransactionType(
+      typeFromUrl || (editKind === 'order' ? 'SALES ORDERS' : DEFAULT_SALES_TRANSACTION_TYPE)
+    ).gstRate
+  );
   const [nextOrderNo, setNextOrderNo] = useState(1);
   const [typeBillNumber, setTypeBillNumber] = useState<number | null>(null);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -147,12 +161,29 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [orderDate, setOrderDate] = useState(today());
   const [expectedDate, setExpectedDate] = useState('');
   const [remarks, setRemarks] = useState('');
-  const [hsnCode, setHsnCode] = useState('5407');
-  const [lineItems, setLineItems] = useState<SalesLineItem[]>([blankLine()]);
+  const [hsnCode, setHsnCode] = useState(
+    () => getGstDefaultsForTransactionType(
+      typeFromUrl || (editKind === 'order' ? 'SALES ORDERS' : DEFAULT_SALES_TRANSACTION_TYPE)
+    ).hsnCode
+  );
+  const [lineItems, setLineItems] = useState<SalesLineItem[]>(() => {
+    const d = getGstDefaultsForTransactionType(
+      typeFromUrl || (editKind === 'order' ? 'SALES ORDERS' : DEFAULT_SALES_TRANSACTION_TYPE)
+    );
+    return [blankLine(1, d.gstRate, d.hsnCode)];
+  });
   const [itemModalOpen, setItemModalOpen] = useState(false);
   const [itemModalRow, setItemModalRow] = useState<number | null>(null);
   const [itemSaving, setItemSaving] = useState(false);
   const [itemForm, setItemForm] = useState(itemDefaults());
+
+  const applyTypeGstDefaults = (type: string) => {
+    const d = getGstDefaultsForTransactionType(type, companyGstRate, companyHsnCode);
+    setDefaultGstRate(d.gstRate);
+    setDefaultHsnCode(d.hsnCode);
+    setHsnCode(d.hsnCode);
+    return d;
+  };
 
   const gstType = gstTypeLabel(state, businessState);
 
@@ -177,26 +208,31 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
         if (cancelled) return;
         setCompanyName(meta.companyName || '');
         setBusinessState(meta.businessState || '');
-        setDefaultHsnCode(meta.defaultHsnCode || '5407');
-        setDefaultGstRate(meta.defaultGstRate || 5);
-        setHsnCode(meta.defaultHsnCode || '5407');
+        const companyGst = meta.defaultGstRate || 5;
+        const companyHsn = meta.defaultHsnCode || '5407';
+        setCompanyGstRate(companyGst);
+        setCompanyHsnCode(companyHsn);
         setNextOrderNo(meta.nextOrderNo || 1);
         setCustomers(meta.customers || []);
         setItems(meta.items || []);
         if (!editId) {
+          const d = getGstDefaultsForTransactionType(transactionType, companyGst, companyHsn);
+          setDefaultGstRate(d.gstRate);
+          setDefaultHsnCode(d.hsnCode);
+          setHsnCode(d.hsnCode);
           setOrderNo(String(meta.nextOrderNo || 1));
-          setLineItems([blankLine(1, meta.defaultGstRate || 5, meta.defaultHsnCode || '5407')]);
+          setLineItems([blankLine(1, d.gstRate, d.hsnCode)]);
         }
 
         if (editId && (editKind === 'order' || transactionType === 'SALES ORDERS')) {
           const { order } = await salesOrdersApi.getById(editId);
           if (cancelled) return;
           setTransactionType('SALES ORDERS');
-          applyOrderDoc(order, meta.businessState || '', meta.defaultGstRate || 5, meta.defaultHsnCode || '5407');
+          applyOrderDoc(order, meta.businessState || '', companyGst, companyHsn);
         } else if (editId && editKind === 'bill') {
           const { bill } = await salesOrdersApi.getBill(editId);
           if (cancelled) return;
-          applyBillDoc(bill, meta.businessState || '', meta.defaultGstRate || 5, meta.defaultHsnCode || '5407');
+          applyBillDoc(bill, meta.businessState || '', companyGst, companyHsn);
         }
       } catch (err: any) {
         if (!cancelled) setError(err.message || 'Could not load sales entry.');
@@ -588,11 +624,13 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
                   value={transactionType}
                   disabled={isEditMode}
                   onChange={e => {
-                    setTransactionType(e.target.value);
+                    const next = e.target.value;
+                    setTransactionType(next);
                     setSourceSalesOrderId('');
                     setOrderNo('');
                     setPendingOrders([]);
-                    setLineItems([blankLine(1, defaultGstRate, defaultHsnCode)]);
+                    const d = applyTypeGstDefaults(next);
+                    setLineItems([blankLine(1, d.gstRate, d.hsnCode)]);
                   }}
                 >
                   {ERP_TRANSACTION_TYPES.filter(type => type.category === 'sales').map(type => (
