@@ -36,6 +36,18 @@ export const ERP_TRANSACTION_TYPES = [
 
 export const DEFAULT_SALES_TRANSACTION_TYPE = 'FINISH SALES';
 export const DEFAULT_PURCHASE_TRANSACTION_TYPE = 'FINISH PURCHASE';
+export const DEFAULT_EXPENSE_TRANSACTION_TYPE = 'PURCHASE (GST CAPITAL GOODS)';
+
+export const EXPENSE_TRANSACTION_TYPES = [
+  'PURCHASE (GST CAPITAL GOODS)',
+  'PURCHASE (GST GENERAL GOODS)',
+  'PURCHASE (GST INPUT SERVICES)'
+];
+
+export function isExpensePurchaseType(transactionType) {
+  const value = String(transactionType || '').trim().toUpperCase();
+  return EXPENSE_TRANSACTION_TYPES.some(type => type === value);
+}
 
 export function normalizeTransactionType(value, fallback = DEFAULT_SALES_TRANSACTION_TYPE) {
   const text = String(value || '').trim();

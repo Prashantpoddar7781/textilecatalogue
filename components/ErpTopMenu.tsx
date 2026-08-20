@@ -127,6 +127,14 @@ export const ErpTopMenu: React.FC<Props> = ({
                   <BookOpen className="h-4 w-4" />
                   Account Ledger
                 </button>
+                <button
+                  type="button"
+                  onClick={() => { window.location.href = '/erp/expenses'; }}
+                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-gray-800 hover:bg-indigo-50 hover:text-indigo-700"
+                >
+                  <Package className="h-4 w-4" />
+                  Expenses
+                </button>
               </div>
             )}
           </div>
@@ -207,6 +215,14 @@ export const ErpTopMenu: React.FC<Props> = ({
                 >
                   <FileBarChart className="h-4 w-4" />
                   Finish Purchase / Purchase Return
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { window.location.href = '/erp/reports/expenses'; }}
+                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-gray-800 hover:bg-indigo-50 hover:text-indigo-700"
+                >
+                  <FileBarChart className="h-4 w-4" />
+                  Expenses Report
                 </button>
                 <button
                   type="button"

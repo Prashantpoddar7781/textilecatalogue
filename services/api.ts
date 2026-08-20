@@ -544,6 +544,13 @@ export const purchasesApi = {
       `/purchases/finish-report?${query.toString()}`
     );
   },
+  getExpenseReport: async (params: Record<string, string | undefined>) => {
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => { if (value) query.set(key, value); });
+    return request<{ rows: Array<Record<string, any>>; totals: Record<string, number> }>(
+      `/purchases/expense-report?${query.toString()}`
+    );
+  },
   getSuppliers: async () => {
     return request<{ suppliers: Supplier[] }>('/purchases/suppliers');
   },

@@ -27,6 +27,13 @@ const sections = [
     status: 'Demo ready'
   },
   {
+    title: 'Expenses',
+    description: 'GST capital / general goods / input services with Pur A/C and party ledger.',
+    icon: ReceiptText,
+    href: '/erp/expenses',
+    status: 'Ready'
+  },
+  {
     title: 'Bank Payment / Receipts',
     description: 'Enter bank payments and receipts, then link them to bills and notes.',
     icon: Banknote,

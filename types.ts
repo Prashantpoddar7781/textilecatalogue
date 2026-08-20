@@ -463,6 +463,7 @@ export interface PurchaseBill {
   challanNo?: string | null;
   orderRef?: string | null;
   supplierBillNo?: string | null;
+  purchaseAccount?: string | null;
   status: string;
   createdAt: string;
   updatedAt: string;

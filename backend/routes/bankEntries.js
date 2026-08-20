@@ -23,7 +23,8 @@ import {
   ERP_TRANSACTION_TYPES,
   normalizeTransactionType,
   DEFAULT_SALES_TRANSACTION_TYPE,
-  DEFAULT_PURCHASE_TRANSACTION_TYPE
+  DEFAULT_PURCHASE_TRANSACTION_TYPE,
+  isExpensePurchaseType
 } from '../constants/erpTransactionTypes.js';
 import { allocateNextTypeBillNumber } from '../utils/transactionBilling.js';
 import { getPendingCreditDebitNotes, mergePendingBillsWithNotes } from '../utils/creditDebitNotes.js';

@@ -3,7 +3,7 @@ import { PrismaClient } from '@prisma/client';
 import { body, validationResult } from 'express-validator';
 import { authenticateToken } from '../middleware/auth.js';
 import { requireActiveSubscription } from '../middleware/subscription.js';
-import { normalizeTransactionType, DEFAULT_PURCHASE_TRANSACTION_TYPE } from '../constants/erpTransactionTypes.js';
+import { normalizeTransactionType, DEFAULT_PURCHASE_TRANSACTION_TYPE, EXPENSE_TRANSACTION_TYPES, isExpensePurchaseType } from '../constants/erpTransactionTypes.js';
 import { findOrCreateSupplier, resolveSupplierForEntry } from '../utils/partyMaster.js';
 import { allocateNextTypeBillNumber } from '../utils/transactionBilling.js';
 import { buildSupplierLedger } from '../utils/accountLedger.js';
@@ -436,6 +436,7 @@ function buildManualBillData(req, supplier, ctx, lines, totals, typeBillNumber) 
     remarks: optionalString(req.body.remarks),
     challanNo: optionalString(req.body.challanNo),
     orderRef: optionalString(req.body.orderRef || req.body.orderNumber),
+    purchaseAccount: optionalString(req.body.purchaseAccount || req.body.purAccount),
     lineItems: lines,
     taxableAmount: totals.taxableAmount,
     discountAmount: totals.discountAmount,
@@ -663,6 +664,128 @@ router.get('/finish-report', authenticateToken, requireActiveSubscription, async
       return acc;
     }, { pcs: 0, mts: 0, grossAmount: 0, taxableAmount: 0, ledgerAmount: 0, invoiceValue: 0, discountAmount: 0 });
     res.json({ view: 'register', docType, rows, totals });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/expense-report', authenticateToken, requireActiveSubscription, async (req, res, next) => {
+  try {
+    const fromDate = optionalString(req.query.fromDate);
+    const toDateValue = optionalString(req.query.toDate);
+    const partyName = optionalString(req.query.partyName);
+    const brokerName = optionalString(req.query.brokerName);
+    const transportName = optionalString(req.query.transportName);
+    const station = optionalString(req.query.station);
+    const purchaseAccount = optionalString(req.query.purchaseAccount);
+    const mainScreen = optionalString(req.query.mainScreen);
+    const view = (optionalString(req.query.view) || 'register').toLowerCase();
+    const docType = optionalString(req.query.docType);
+
+    const where = {
+      userId: req.user.userId,
+      status: 'posted',
+      transactionType: docType && isExpensePurchaseType(docType)
+        ? docType
+        : { in: [...EXPENSE_TRANSACTION_TYPES] }
+    };
+    if (brokerName) where.agentName = { contains: brokerName, mode: 'insensitive' };
+    if (transportName) where.transportName = { contains: transportName, mode: 'insensitive' };
+    if (station) where.station = { contains: station, mode: 'insensitive' };
+    if (purchaseAccount) where.purchaseAccount = { contains: purchaseAccount, mode: 'insensitive' };
+    if (fromDate || toDateValue) {
+      where.billDate = {};
+      if (fromDate) where.billDate.gte = optionalDate(fromDate);
+      if (toDateValue) {
+        const end = optionalDate(toDateValue) || new Date();
+        end.setHours(23, 59, 59, 999);
+        where.billDate.lte = end;
+      }
+    }
+
+    const bills = await prisma.purchaseBill.findMany({
+      where,
+      include: { supplier: true },
+      orderBy: [{ billDate: 'desc' }, { createdAt: 'desc' }]
+    });
+
+    const filtered = partyName
+      ? bills.filter(bill => String(bill.supplier?.name || '').toLowerCase().includes(partyName.toLowerCase()))
+      : bills;
+
+    if (view === 'detailed') {
+      const rows = [];
+      for (const bill of filtered) {
+        const lines = Array.isArray(bill.lineItems) ? bill.lineItems : [];
+        for (const [index, line] of lines.entries()) {
+          const lineMain = line.mainScreen || line.category || '';
+          const lineName = line.itemName || line.screenName || line.description || '';
+          if (mainScreen
+            && !String(lineMain).toLowerCase().includes(mainScreen.toLowerCase())
+            && !String(lineName).toLowerCase().includes(mainScreen.toLowerCase())) continue;
+          rows.push({
+            id: `${bill.id}-${index}`,
+            billId: bill.id,
+            date: bill.billDate || bill.createdAt,
+            partyName: bill.supplier?.name || '',
+            billNo: bill.typeBillNumber || bill.billNumber,
+            transactionType: bill.transactionType || '',
+            purchaseAccount: bill.purchaseAccount || '',
+            mainScreen: lineMain,
+            itemName: lineName,
+            pcs: Number(line.pcs ?? line.quantity) || 0,
+            cut: Number(line.cut) || 0,
+            mts: Number(line.mtsQty) || 0,
+            rate: Number(line.rate) || 0,
+            grossAmount: Number(line.amount) || 0,
+            brokerName: bill.agentName || '',
+            station: bill.station || '',
+            transportName: bill.transportName || ''
+          });
+        }
+      }
+      const totals = rows.reduce((acc, row) => {
+        for (const key of ['pcs', 'mts', 'grossAmount']) acc[key] = roundMoney(acc[key] + (Number(row[key]) || 0));
+        return acc;
+      }, { pcs: 0, mts: 0, grossAmount: 0 });
+      return res.json({ view: 'detailed', rows, totals });
+    }
+
+    const rows = filtered.map(bill => {
+      const lines = Array.isArray(bill.lineItems) ? bill.lineItems : [];
+      const pcs = roundMoney(lines.reduce((sum, line) => sum + (Number(line.pcs ?? line.quantity) || 0), 0));
+      const mts = roundMoney(lines.reduce((sum, line) => sum + (Number(line.mtsQty) || 0), 0));
+      const gross = roundMoney(lines.reduce((sum, line) => sum + (Number(line.amount) || 0), 0));
+      return {
+        id: bill.id,
+        billId: bill.id,
+        date: bill.billDate || bill.createdAt,
+        partyName: bill.supplier?.name || '',
+        transactionType: bill.transactionType || '',
+        purchaseAccount: bill.purchaseAccount || '',
+        voucherNo: bill.typeBillNumber || bill.voucherNumber,
+        billNo: bill.supplierBillNo || bill.billNumber || bill.typeBillNumber,
+        lrNo: bill.lrNo || '',
+        transportName: bill.transportName || '',
+        orderRef: bill.orderRef || '',
+        pcs,
+        mts,
+        grossAmount: gross,
+        taxableAmount: bill.taxableAmount,
+        ledgerAmount: bill.grandTotal,
+        invoiceValue: bill.grandTotal,
+        discountAmount: bill.discountAmount,
+        brokerName: bill.agentName || '',
+        station: bill.station || ''
+      };
+    });
+    const totals = rows.reduce((acc, row) => {
+      for (const key of ['pcs', 'mts', 'grossAmount', 'taxableAmount', 'ledgerAmount', 'invoiceValue', 'discountAmount']) {
+        acc[key] = roundMoney(acc[key] + (Number(row[key]) || 0));
+      }
+      return acc;
+    }, { pcs: 0, mts: 0, grossAmount: 0, taxableAmount: 0, ledgerAmount: 0, invoiceValue: 0, discountAmount: 0 });
+    res.json({ view: 'register', rows, totals });
   } catch (error) {
     next(error);
   }

@@ -42,6 +42,18 @@ export const ERP_TRANSACTION_TYPES: ErpTransactionType[] = [
 
 export const DEFAULT_SALES_TRANSACTION_TYPE = 'FINISH SALES';
 export const DEFAULT_PURCHASE_TRANSACTION_TYPE = 'FINISH PURCHASE';
+export const DEFAULT_EXPENSE_TRANSACTION_TYPE = 'PURCHASE (GST CAPITAL GOODS)';
+
+export const EXPENSE_TRANSACTION_TYPES = [
+  'PURCHASE (GST CAPITAL GOODS)',
+  'PURCHASE (GST GENERAL GOODS)',
+  'PURCHASE (GST INPUT SERVICES)'
+] as const;
+
+export function isExpensePurchaseType(transactionType?: string | null) {
+  const value = String(transactionType || '').trim().toUpperCase();
+  return (EXPENSE_TRANSACTION_TYPES as readonly string[]).some(type => type === value);
+}
 
 export function getTransactionTypesForCategory(category: 'sales' | 'purchase' | 'all') {
   if (category === 'all') return ERP_TRANSACTION_TYPES;

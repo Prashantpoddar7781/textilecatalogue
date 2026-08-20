@@ -9,6 +9,7 @@ import {
   roundMoney
 } from './orderBilling.js';
 import { isPurchaseReturn } from './erpLineItems.js';
+import { isExpensePurchaseType } from '../constants/erpTransactionTypes.js';
 import { matchesNoteParty } from './creditDebitNotes.js';
 
 const sortByDate = (a, b) => {
@@ -604,10 +605,12 @@ export async function buildSupplierLedger(prisma, userId, supplierId) {
       date: bill.billDate || bill.createdAt,
       voucherNumber: bill.voucherNumber || '-',
       billNumber: bill.billNumber || String(bill.typeBillNumber || '-'),
-      account: bill.transactionType || 'FINISH PURCHASE',
+      account: bill.purchaseAccount || bill.transactionType || 'FINISH PURCHASE',
       particulars: purchaseReturn
         ? `Purchase return #${bill.billNumber || bill.typeBillNumber || '-'}`
-        : `Purchase bill #${bill.billNumber || bill.typeBillNumber || '-'}`,
+        : isExpensePurchaseType(bill.transactionType)
+          ? `Expense ${bill.transactionType || ''} #${bill.billNumber || bill.typeBillNumber || '-'}${bill.purchaseAccount ? ` · ${bill.purchaseAccount}` : ''}`
+          : `Purchase bill #${bill.billNumber || bill.typeBillNumber || '-'}`,
       debitAmount: purchaseReturn ? amount : 0,
       creditAmount: purchaseReturn ? 0 : amount,
       lineCount: Array.isArray(bill.lineItems) ? bill.lineItems.length : 0
@@ -1069,16 +1072,21 @@ export async function getLedgerEntryDetail(prisma, userId, sourceType, sourceId)
     return {
       title: isPurchaseReturn(bill.transactionType)
         ? `Purchase Return #${billNo}`
-        : `Purchase Bill #${billNo}`,
+        : isExpensePurchaseType(bill.transactionType)
+          ? `Expense #${billNo}`
+          : `Purchase Bill #${billNo}`,
       subtitle: bill.supplier?.name || '',
       sourceType,
       sourceId,
       canEdit: true,
-      editPath: `/erp/purchase?edit=${bill.id}`,
+      editPath: isExpensePurchaseType(bill.transactionType)
+        ? `/erp/expenses?edit=${bill.id}`
+        : `/erp/purchase?edit=${bill.id}`,
       fields: buildDetailFields([
         { label: 'Date', value: toIsoDate(bill.billDate || bill.createdAt) },
         { label: 'Voucher', value: bill.voucherNumber },
         { label: 'Transaction Type', value: bill.transactionType },
+        { label: 'Pur A/C', value: bill.purchaseAccount },
         { label: 'Broker', value: bill.agentName },
         { label: 'Station', value: bill.station },
         { label: 'Status', value: bill.status },

@@ -1,3 +1,5 @@
+import { isExpensePurchaseType } from '../constants/erpTransactionTypes.js';
+
 export const OPENING_BANK_BALANCE = 1000000;
 
 export const roundMoney = (value) => Math.round((Number(value) || 0) * 100) / 100;
@@ -163,7 +165,9 @@ export function mapPurchaseBillToPendingBill(bill, paidByBillId, asOfValue = Dat
     station: bill.station || '',
     haste: bill.haste || '',
     transportName: bill.transportName || '',
-    editPath: `/erp/purchase?edit=${bill.id}`
+    editPath: isExpensePurchaseType(bill.transactionType)
+      ? `/erp/expenses?edit=${bill.id}`
+      : `/erp/purchase?edit=${bill.id}`
   };
 }
 
