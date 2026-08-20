@@ -670,6 +670,26 @@ export const ledgerApi = {
   getParties: async (partyType: 'customer' | 'supplier' | 'all' = 'all') => {
     return request<{ partyType: string; parties: AccountLedgerParty[] }>(`/ledger/parties?partyType=${partyType}`);
   },
+  getFinalAccounts: async (params: Record<string, string | undefined>) => {
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => { if (value) query.set(key, value); });
+    return request<{
+      view: string;
+      period: { fromDate?: string | null; toDate?: string | null; asOnDate?: string | null };
+      summary: Record<string, number>;
+      rows?: Array<Record<string, any>>;
+      assets?: Array<Record<string, any>>;
+      liabilities?: Array<Record<string, any>>;
+      trading?: { rows?: Array<Record<string, any>>; totals?: Record<string, number> };
+      pl?: { rows?: Array<Record<string, any>>; totals?: Record<string, number> };
+      balance?: {
+        assets?: Array<Record<string, any>>;
+        liabilities?: Array<Record<string, any>>;
+        totals?: Record<string, number>;
+      };
+      totals: Record<string, number>;
+    }>(`/ledger/final-accounts?${query.toString()}`);
+  },
   getAccountLedger: async (params: {
     partyName: string;
     supplierId?: string | null;

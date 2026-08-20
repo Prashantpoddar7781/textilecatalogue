@@ -38,6 +38,7 @@ import { SalesOrderReportPage } from './components/SalesOrderReportPage';
 import { FinishSalesReportPage } from './components/FinishSalesReportPage';
 import { FinishPurchaseReportPage } from './components/FinishPurchaseReportPage';
 import { ExpensesReportPage } from './components/ExpensesReportPage';
+import { FinalAccountsReportPage } from './components/FinalAccountsReportPage';
 import { OutstandingPaymentReportPage } from './components/OutstandingPaymentReportPage';
 import { ErpExpensesPage } from './components/ErpExpensesPage';
 import { CreditDebitNotePage } from './components/CreditDebitNotePage';
@@ -91,6 +92,7 @@ const App: React.FC = () => {
   const erpFinishSalesReportMatch = pathname.match(/^\/erp\/reports\/finish-sales\/?$/);
   const erpFinishPurchaseReportMatch = pathname.match(/^\/erp\/reports\/finish-purchase\/?$/);
   const erpExpensesReportMatch = pathname.match(/^\/erp\/reports\/expenses\/?$/);
+  const erpFinalAccountsReportMatch = pathname.match(/^\/erp\/reports\/final-accounts\/?$/);
   const erpOutstandingReportMatch = pathname.match(/^\/erp\/reports\/outstanding\/?$/);
   const erpNotesMatch = pathname.match(/^\/erp\/notes\/([^/]+)\/?$/);
   const isErpRoute = Boolean(
@@ -99,7 +101,7 @@ const App: React.FC = () => {
     || erpMillReceiptMatch || erpWorkDespatchMatch || erpWorkReceiptMatch
     || erpGodownReportMatch || erpMillDispatchReportMatch || erpMillReceiptReportMatch
     || erpWorkDespatchReportMatch || erpWorkReceiptReportMatch || erpSalesOrderReportMatch || erpFinishSalesReportMatch
-    || erpFinishPurchaseReportMatch || erpExpensesReportMatch
+    || erpFinishPurchaseReportMatch || erpExpensesReportMatch || erpFinalAccountsReportMatch
     || erpOutstandingReportMatch
     || erpNotesMatch || supplierLedgerMatch
   );
@@ -871,6 +873,15 @@ const App: React.FC = () => {
   if (erpExpensesReportMatch) {
     return (
       <ExpensesReportPage
+        erpSession={erpSession}
+        onBack={() => { window.location.href = '/erp'; }}
+      />
+    );
+  }
+
+  if (erpFinalAccountsReportMatch) {
+    return (
+      <FinalAccountsReportPage
         erpSession={erpSession}
         onBack={() => { window.location.href = '/erp'; }}
       />
