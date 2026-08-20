@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowLeft, Loader2 } from 'lucide-react';
+import { ArrowLeft, ChevronRight, Loader2 } from 'lucide-react';
 import { ledgerApi } from '../services/api';
 import { ErpSession } from '../types';
 import { ErpTopMenu } from './ErpTopMenu';
@@ -29,6 +29,7 @@ const labelText = 'mb-1 block text-[10px] font-black uppercase tracking-wide tex
 const thClass = 'border border-slate-300 bg-slate-100 px-2 py-2 text-center text-[10px] font-black uppercase tracking-wide text-slate-900';
 const tdClass = 'border border-slate-200 px-2 py-1.5 align-middle';
 const tdNum = `${tdClass} text-right tabular-nums`;
+const clickRow = 'cursor-pointer hover:bg-indigo-50';
 
 type StatementBlock = {
   rows?: Array<Record<string, any>>;
@@ -37,9 +38,18 @@ type StatementBlock = {
   totals?: Record<string, number>;
 };
 
+type DrillState = {
+  drillKey: string;
+  level: 'parties' | 'bills';
+  partyName?: string;
+  account?: string;
+  title: string;
+};
+
 export const FinalAccountsReportPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const params = new URLSearchParams(window.location.search);
   const [loading, setLoading] = useState(true);
+  const [drillLoading, setDrillLoading] = useState(false);
   const [error, setError] = useState('');
   const [view, setView] = useState(params.get('view') || 'all');
   const [fromDate, setFromDate] = useState('');
@@ -55,15 +65,26 @@ export const FinalAccountsReportPage: React.FC<Props> = ({ onBack, erpSession })
   const [pl, setPl] = useState<StatementBlock | null>(null);
   const [balance, setBalance] = useState<StatementBlock | null>(null);
 
+  const [drill, setDrill] = useState<DrillState | null>(null);
+  const [drillRows, setDrillRows] = useState<Array<Record<string, any>>>([]);
+  const [drillTotals, setDrillTotals] = useState<Record<string, number>>({});
+  const [drillTitle, setDrillTitle] = useState('');
+
+  const dateParams = () => ({
+    fromDate: fromDate || undefined,
+    toDate: toDate || undefined,
+    asOnDate: asOnDate || undefined
+  });
+
   const load = async () => {
     setLoading(true);
     setError('');
+    setDrill(null);
+    setDrillRows([]);
     try {
       const result = await ledgerApi.getFinalAccounts({
         view,
-        fromDate: fromDate || undefined,
-        toDate: toDate || undefined,
-        asOnDate: asOnDate || undefined
+        ...dateParams()
       });
       setPeriod(result.period || {});
       setSummary(result.summary || {});
@@ -81,7 +102,78 @@ export const FinalAccountsReportPage: React.FC<Props> = ({ onBack, erpSession })
     }
   };
 
+  const loadDrill = async (next: DrillState) => {
+    setDrillLoading(true);
+    setError('');
+    try {
+      const result = await ledgerApi.getFinalAccountsDrill({
+        drillKey: next.drillKey,
+        level: next.level,
+        partyName: next.partyName,
+        account: next.account,
+        ...dateParams()
+      });
+      setDrill(next);
+      setDrillTitle(result.title || next.title);
+      setDrillRows(result.rows || []);
+      setDrillTotals(result.totals || {});
+    } catch (err: any) {
+      setError(err.message || 'Could not load drill-down.');
+    } finally {
+      setDrillLoading(false);
+    }
+  };
+
   useEffect(() => { void load(); }, [view]);
+
+  const openStatementLine = (row: Record<string, any>) => {
+    if (!row.clickable || !row.drillKey) return;
+    if (row.drillKey === 'sundry_creditors' || row.drillKey === 'sundry_debtors') {
+      void loadDrill({
+        drillKey: row.drillKey,
+        level: 'parties',
+        title: row.particular
+      });
+      return;
+    }
+    // Fixed asset / P&L expense / trading → bills directly
+    void loadDrill({
+      drillKey: row.drillKey,
+      level: 'bills',
+      account: row.account || undefined,
+      title: row.particular
+    });
+  };
+
+  const openParty = (partyName: string) => {
+    if (!drill) return;
+    void loadDrill({
+      drillKey: drill.drillKey,
+      level: 'bills',
+      partyName,
+      title: partyName
+    });
+  };
+
+  const openBill = (row: Record<string, any>) => {
+    if (row.editPath) {
+      window.location.href = row.editPath;
+    }
+  };
+
+  const drillBack = () => {
+    if (!drill) return;
+    if (drill.level === 'bills' && (drill.drillKey === 'sundry_creditors' || drill.drillKey === 'sundry_debtors') && drill.partyName) {
+      void loadDrill({
+        drillKey: drill.drillKey,
+        level: 'parties',
+        title: drill.drillKey === 'sundry_creditors' ? 'Sundry Creditors' : 'Sundry Debtors'
+      });
+      return;
+    }
+    setDrill(null);
+    setDrillRows([]);
+  };
 
   const renderDrCrTable = (title: string, statementRows: Array<Record<string, any>>, statementTotals?: Record<string, number>, hint?: string) => (
     <section className="overflow-hidden rounded-2xl border bg-white shadow-sm">
@@ -103,9 +195,16 @@ export const FinalAccountsReportPage: React.FC<Props> = ({ onBack, erpSession })
               <tr><td colSpan={3} className={`${tdClass} p-8 text-center font-bold text-gray-400`}>No rows.</td></tr>
             )}
             {statementRows.map(row => (
-              <tr key={`${title}-${row.side}-${row.particular}`}>
+              <tr
+                key={`${title}-${row.side}-${row.particular}`}
+                className={row.clickable ? clickRow : undefined}
+                onClick={() => openStatementLine(row)}
+              >
                 <td className={`${tdClass} font-bold`}>
-                  {row.particular}
+                  <span className="inline-flex items-center gap-1">
+                    {row.particular}
+                    {row.clickable && <ChevronRight className="h-3.5 w-3.5 text-indigo-500" />}
+                  </span>
                   {row.note && <span className="ml-2 text-[10px] font-semibold uppercase text-gray-400">{row.note}</span>}
                 </td>
                 <td className={tdNum}>{row.side === 'debit' ? money(row.amount) : ''}</td>
@@ -130,7 +229,7 @@ export const FinalAccountsReportPage: React.FC<Props> = ({ onBack, erpSession })
       <div className="border-b bg-slate-100 px-4 py-3">
         <p className="text-[10px] font-black uppercase tracking-widest text-slate-800">Balance Sheet</p>
         <p className="mt-1 text-xs text-gray-500">
-          Fixed assets from GST Capital Goods (by Pur A/C). Debtors, creditors, and bank as on date.
+          Click Sundry Creditors / Debtors or Fixed Assets to drill into parties and bills.
         </p>
       </div>
       <div className="grid gap-0 lg:grid-cols-2">
@@ -147,8 +246,17 @@ export const FinalAccountsReportPage: React.FC<Props> = ({ onBack, erpSession })
               <tr><td colSpan={2} className={`${tdClass} p-8 text-center font-bold text-gray-400`}>No liability rows.</td></tr>
             )}
             {liabilityRows.map(row => (
-              <tr key={`liab-${row.particular}`}>
-                <td className={tdClass}>{row.particular}</td>
+              <tr
+                key={`liab-${row.particular}`}
+                className={row.clickable ? clickRow : undefined}
+                onClick={() => openStatementLine(row)}
+              >
+                <td className={tdClass}>
+                  <span className="inline-flex items-center gap-1 font-bold">
+                    {row.particular}
+                    {row.clickable && <ChevronRight className="h-3.5 w-3.5 text-indigo-500" />}
+                  </span>
+                </td>
                 <td className={tdNum}>{money(row.amount)}</td>
               </tr>
             ))}
@@ -173,9 +281,16 @@ export const FinalAccountsReportPage: React.FC<Props> = ({ onBack, erpSession })
               <tr><td colSpan={2} className={`${tdClass} p-8 text-center font-bold text-gray-400`}>No asset rows.</td></tr>
             )}
             {assetRows.map(row => (
-              <tr key={`asset-${row.particular}`}>
+              <tr
+                key={`asset-${row.particular}`}
+                className={row.clickable ? clickRow : undefined}
+                onClick={() => openStatementLine(row)}
+              >
                 <td className={tdClass}>
-                  {row.particular}
+                  <span className="inline-flex items-center gap-1 font-bold">
+                    {row.particular}
+                    {row.clickable && <ChevronRight className="h-3.5 w-3.5 text-indigo-500" />}
+                  </span>
                   {row.note && <span className="ml-2 text-[10px] font-semibold uppercase text-gray-400">{row.note}</span>}
                 </td>
                 <td className={tdNum}>{money(row.amount)}</td>
@@ -192,6 +307,115 @@ export const FinalAccountsReportPage: React.FC<Props> = ({ onBack, erpSession })
       </div>
     </section>
   );
+
+  const renderDrillPanel = () => {
+    if (!drill) return null;
+    const isParties = drill.level === 'parties';
+    return (
+      <section className="overflow-hidden rounded-2xl border border-indigo-200 bg-white shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-indigo-50 px-4 py-3">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-widest text-indigo-800">
+              Drill-down · {drillTitle}
+            </p>
+            <p className="mt-1 text-xs text-indigo-700/80">
+              {isParties
+                ? 'Click a party to see their bills.'
+                : 'Click a bill to open the entry in edit mode.'}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={drillBack}
+            className="rounded-xl border border-indigo-200 bg-white px-3 py-2 text-xs font-black uppercase text-indigo-800"
+          >
+            Back
+          </button>
+        </div>
+        {drillLoading ? (
+          <div className="flex items-center justify-center p-12">
+            <Loader2 className="h-6 w-6 animate-spin text-indigo-700" />
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[720px] border-collapse text-xs">
+              <thead>
+                <tr>
+                  {isParties ? (
+                    <>
+                      <th className={thClass}>Party</th>
+                      <th className={thClass}>Bills</th>
+                      <th className={thClass}>Amount</th>
+                    </>
+                  ) : (
+                    <>
+                      <th className={thClass}>Date</th>
+                      <th className={thClass}>Bill / Voucher</th>
+                      <th className={thClass}>Type</th>
+                      <th className={thClass}>Party</th>
+                      <th className={thClass}>Pur A/C</th>
+                      <th className={thClass}>Amount</th>
+                    </>
+                  )}
+                </tr>
+              </thead>
+              <tbody>
+                {drillRows.length === 0 && (
+                  <tr>
+                    <td colSpan={isParties ? 3 : 6} className={`${tdClass} p-10 text-center font-bold text-gray-400`}>
+                      No records found.
+                    </td>
+                  </tr>
+                )}
+                {isParties
+                  ? drillRows.map(row => (
+                    <tr
+                      key={row.partyName}
+                      className={clickRow}
+                      onClick={() => openParty(row.partyName)}
+                    >
+                      <td className={`${tdClass} font-bold`}>
+                        <span className="inline-flex items-center gap-1">
+                          {row.partyName}
+                          <ChevronRight className="h-3.5 w-3.5 text-indigo-500" />
+                        </span>
+                      </td>
+                      <td className={tdNum}>{row.billCount || '-'}</td>
+                      <td className={`${tdNum} font-black`}>{money(row.amount)}</td>
+                    </tr>
+                  ))
+                  : drillRows.map(row => (
+                    <tr
+                      key={`${row.id}-${row.billNo}`}
+                      className={row.clickable && row.editPath ? clickRow : undefined}
+                      onClick={() => openBill(row)}
+                    >
+                      <td className={tdClass}>{formatDate(row.date)}</td>
+                      <td className={`${tdClass} font-bold`}>
+                        <span className="inline-flex items-center gap-1">
+                          {row.billNo || '-'}
+                          {row.editPath && <ChevronRight className="h-3.5 w-3.5 text-indigo-500" />}
+                        </span>
+                      </td>
+                      <td className={tdClass}>{row.transactionType || '-'}</td>
+                      <td className={tdClass}>{row.partyName || '-'}</td>
+                      <td className={tdClass}>{row.purchaseAccount || '-'}</td>
+                      <td className={`${tdNum} font-black`}>{money(row.amount)}</td>
+                    </tr>
+                  ))}
+              </tbody>
+              <tfoot>
+                <tr className="bg-indigo-900 text-white">
+                  <td colSpan={isParties ? 2 : 5} className={`${tdClass} border-indigo-800 text-right font-black`}>Total</td>
+                  <td className={`${tdNum} border-indigo-800 font-black`}>{money(drillTotals.amount)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        )}
+      </section>
+    );
+  };
 
   return (
     <div className="min-h-screen bg-[#F6F7FB]">
@@ -210,8 +434,7 @@ export const FinalAccountsReportPage: React.FC<Props> = ({ onBack, erpSession })
           <div className="mb-3">
             <p className="text-[10px] font-black uppercase tracking-widest text-slate-700">Final Accounts</p>
             <p className="mt-1 text-xs text-gray-500">
-              Trading (sales / finish &amp; grey purchase) · P&amp;L (GST General Goods &amp; Input Services by Pur A/C) ·
-              B/S (GST Capital Goods as fixed assets).
+              Click statement lines to drill: Creditors/Debtors → party list → bills → open entry.
             </p>
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
@@ -265,6 +488,8 @@ export const FinalAccountsReportPage: React.FC<Props> = ({ onBack, erpSession })
           Period {formatDate(period.fromDate)} – {formatDate(period.toDate)} · B/S as on {formatDate(period.asOnDate)}
         </div>
 
+        {drill && <div className="mb-4">{renderDrillPanel()}</div>}
+
         {loading ? (
           <div className="flex items-center justify-center rounded-2xl border bg-white p-16 shadow-sm">
             <Loader2 className="h-7 w-7 animate-spin text-slate-700" />
@@ -275,14 +500,14 @@ export const FinalAccountsReportPage: React.FC<Props> = ({ onBack, erpSession })
               'Trading Account',
               (trading?.rows || (view === 'trading' ? rows : [])) as Array<Record<string, any>>,
               trading?.totals || (view === 'trading' ? totals : undefined),
-              'Finish / grey purchases and sales. Capital goods and general/input expenses are excluded.'
+              'Click a line to open related bills.'
             )}
 
             {(view === 'all' || view === 'pl') && renderDrCrTable(
               'Profit & Loss Account',
               (pl?.rows || (view === 'pl' ? rows : [])) as Array<Record<string, any>>,
               pl?.totals || (view === 'pl' ? totals : undefined),
-              'Indirect expenses from GST General Goods and GST Input Services (Pur A/C wise — packing, stationery, etc.).'
+              'Click an expense Pur A/C to see its bills.'
             )}
 
             {(view === 'all' || view === 'balance') && renderBalanceSheet(

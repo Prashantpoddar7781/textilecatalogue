@@ -690,6 +690,20 @@ export const ledgerApi = {
       totals: Record<string, number>;
     }>(`/ledger/final-accounts?${query.toString()}`);
   },
+  getFinalAccountsDrill: async (params: Record<string, string | undefined>) => {
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => { if (value) query.set(key, value); });
+    return request<{
+      drillKey: string;
+      level: string;
+      title?: string;
+      partyName?: string | null;
+      account?: string | null;
+      period: { fromDate?: string | null; toDate?: string | null; asOnDate?: string | null };
+      rows: Array<Record<string, any>>;
+      totals: Record<string, number>;
+    }>(`/ledger/final-accounts/drill?${query.toString()}`);
+  },
   getAccountLedger: async (params: {
     partyName: string;
     supplierId?: string | null;

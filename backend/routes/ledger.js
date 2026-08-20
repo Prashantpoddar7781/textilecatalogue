@@ -11,7 +11,7 @@ import {
   getLedgerEntryDetail,
   getSupplierLedgerParties
 } from '../utils/accountLedger.js';
-import { buildFinalAccounts } from '../utils/finalAccounts.js';
+import { buildFinalAccounts, buildFinalAccountsDrill } from '../utils/finalAccounts.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -42,6 +42,23 @@ router.get('/final-accounts', authenticateToken, requireActiveSubscription, asyn
     const view = String(req.query.view || 'all').toLowerCase();
     const result = await buildFinalAccounts(prisma, req.user.userId, {
       view: ['trial', 'trading', 'pl', 'balance', 'all'].includes(view) ? view : 'all',
+      fromDate: req.query.fromDate ? String(req.query.fromDate) : null,
+      toDate: req.query.toDate ? String(req.query.toDate) : null,
+      asOnDate: req.query.asOnDate ? String(req.query.asOnDate) : null
+    });
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/final-accounts/drill', authenticateToken, requireActiveSubscription, async (req, res, next) => {
+  try {
+    const result = await buildFinalAccountsDrill(prisma, req.user.userId, {
+      drillKey: req.query.drillKey ? String(req.query.drillKey) : null,
+      level: req.query.level ? String(req.query.level) : 'parties',
+      partyName: req.query.partyName ? String(req.query.partyName) : null,
+      account: req.query.account ? String(req.query.account) : null,
       fromDate: req.query.fromDate ? String(req.query.fromDate) : null,
       toDate: req.query.toDate ? String(req.query.toDate) : null,
       asOnDate: req.query.asOnDate ? String(req.query.asOnDate) : null
