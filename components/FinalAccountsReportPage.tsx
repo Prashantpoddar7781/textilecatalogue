@@ -43,6 +43,7 @@ type DrillState = {
   level: 'parties' | 'bills';
   partyName?: string;
   account?: string;
+  accountType?: string;
   title: string;
 };
 
@@ -52,6 +53,7 @@ export const FinalAccountsReportPage: React.FC<Props> = ({ onBack, erpSession })
   const [drillLoading, setDrillLoading] = useState(false);
   const [error, setError] = useState('');
   const [view, setView] = useState(params.get('view') || 'all');
+  const [presentation, setPresentation] = useState(params.get('presentation') || 'normal');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
   const [asOnDate, setAsOnDate] = useState(params.get('asOnDate') || todayIso());
@@ -84,6 +86,7 @@ export const FinalAccountsReportPage: React.FC<Props> = ({ onBack, erpSession })
     try {
       const result = await ledgerApi.getFinalAccounts({
         view,
+        presentation,
         ...dateParams()
       });
       setPeriod(result.period || {});
@@ -111,6 +114,7 @@ export const FinalAccountsReportPage: React.FC<Props> = ({ onBack, erpSession })
         level: next.level,
         partyName: next.partyName,
         account: next.account,
+        accountType: next.accountType,
         ...dateParams()
       });
       setDrill(next);
@@ -124,7 +128,7 @@ export const FinalAccountsReportPage: React.FC<Props> = ({ onBack, erpSession })
     }
   };
 
-  useEffect(() => { void load(); }, [view]);
+  useEffect(() => { void load(); }, [view, presentation]);
 
   const openStatementLine = (row: Record<string, any>) => {
     if (!row.clickable || !row.drillKey) return;
@@ -132,6 +136,7 @@ export const FinalAccountsReportPage: React.FC<Props> = ({ onBack, erpSession })
       void loadDrill({
         drillKey: row.drillKey,
         level: 'parties',
+        accountType: row.accountType || undefined,
         title: row.particular
       });
       return;
@@ -151,6 +156,7 @@ export const FinalAccountsReportPage: React.FC<Props> = ({ onBack, erpSession })
       drillKey: drill.drillKey,
       level: 'bills',
       partyName,
+      accountType: drill.accountType,
       title: partyName
     });
   };
@@ -167,7 +173,9 @@ export const FinalAccountsReportPage: React.FC<Props> = ({ onBack, erpSession })
       void loadDrill({
         drillKey: drill.drillKey,
         level: 'parties',
-        title: drill.drillKey === 'sundry_creditors' ? 'Sundry Creditors' : 'Sundry Debtors'
+        accountType: drill.accountType,
+        title: drill.accountType
+          || (drill.drillKey === 'sundry_creditors' ? 'Sundry Creditors' : 'Sundry Debtors')
       });
       return;
     }
@@ -434,14 +442,21 @@ export const FinalAccountsReportPage: React.FC<Props> = ({ onBack, erpSession })
           <div className="mb-3">
             <p className="text-[10px] font-black uppercase tracking-widest text-slate-700">Final Accounts</p>
             <p className="mt-1 text-xs text-gray-500">
-              Click statement lines to drill: Creditors/Debtors → party list → bills → open entry.
+              Normal keeps Sundry Creditors/Debtors. Dynamic splits by A/C Type (Creditors for Goods, Emb Job, etc.).
             </p>
           </div>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-6">
             <label className="block">
               <span className={labelText}>View</span>
               <select className={inputClass} value={view} onChange={e => setView(e.target.value)}>
                 {VIEW_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+            </label>
+            <label className="block">
+              <span className={labelText}>B/S Presentation</span>
+              <select className={inputClass} value={presentation} onChange={e => setPresentation(e.target.value)}>
+                <option value="normal">Normal View</option>
+                <option value="dynamic">Dynamic View</option>
               </select>
             </label>
             <label className="block">

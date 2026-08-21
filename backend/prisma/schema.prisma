@@ -163,6 +163,12 @@ model Customer {
   mobileNumber      String?
   agentName         String?
   category          String?
+  accountType       String?
+  accountGroup      String?
+  address           String?
+  addressLine2      String?
+  graceDays         Int?
+  remark            String?
   state             String?
   city              String?
   pincode           String?
@@ -177,6 +183,7 @@ model Customer {
   @@index([organizationName])
   @@index([mobileNumber])
   @@index([gstNumber])
+  @@index([accountType])
 }
 
 model ShareLink {
@@ -469,27 +476,35 @@ model SalesInvoice {
 }
 
 model Supplier {
-  id            String         @id @default(cuid())
-  userId        String
-  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  name          String
-  gstNumber     String?
-  panNumber     String?
-  mobileNumber  String?
-  address       String?
-  city          String?
-  state         String?
-  pincode       String?
-  msmeType      String?
-  udyamNumber   String?
-  purchaseBills PurchaseBill[]
-  greyPurchases GreyPurchase[]
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  id                String         @id @default(cuid())
+  userId            String
+  user              User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name              String
+  gstNumber         String?
+  panNumber         String?
+  mobileNumber      String?
+  address           String?
+  addressLine2      String?
+  city              String?
+  state             String?
+  pincode           String?
+  msmeType          String?
+  udyamNumber       String?
+  accountType       String?
+  accountGroup      String?
+  graceDays         Int?
+  brokerName        String?
+  contactPersonName String?
+  remark            String?
+  purchaseBills     PurchaseBill[]
+  greyPurchases     GreyPurchase[]
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
 
   @@index([userId])
   @@index([name])
   @@index([gstNumber])
+  @@index([accountType])
 }
 
 model GreyPurchase {

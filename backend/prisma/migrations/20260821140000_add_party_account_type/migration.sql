@@ -1,0 +1,15 @@
+-- Party A/C TYPE for Accounts Information Manager + Final Accounts Dynamic view
+ALTER TABLE "Customer" ADD COLUMN IF NOT EXISTS "accountType" TEXT;
+ALTER TABLE "Customer" ADD COLUMN IF NOT EXISTS "accountGroup" TEXT;
+ALTER TABLE "Customer" ADD COLUMN IF NOT EXISTS "address" TEXT;
+ALTER TABLE "Customer" ADD COLUMN IF NOT EXISTS "addressLine2" TEXT;
+ALTER TABLE "Customer" ADD COLUMN IF NOT EXISTS "graceDays" INTEGER;
+ALTER TABLE "Customer" ADD COLUMN IF NOT EXISTS "remark" TEXT;
+
+ALTER TABLE "Supplier" ADD COLUMN IF NOT EXISTS "accountType" TEXT;
+ALTER TABLE "Supplier" ADD COLUMN IF NOT EXISTS "accountGroup" TEXT;
+ALTER TABLE "Supplier" ADD COLUMN IF NOT EXISTS "addressLine2" TEXT;
+ALTER TABLE "Supplier" ADD COLUMN IF NOT EXISTS "graceDays" INTEGER;
+ALTER TABLE "Supplier" ADD COLUMN IF NOT EXISTS "brokerName" TEXT;
+ALTER TABLE "Supplier" ADD COLUMN IF NOT EXISTS "contactPersonName" TEXT;
+ALTER TABLE "Supplier" ADD COLUMN IF NOT EXISTS "remark" TEXT;

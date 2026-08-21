@@ -7,10 +7,12 @@ import {
   ERP_TRANSACTION_TYPES,
   getGstDefaultsForTransactionType
 } from '../constants/erpTransactionTypes';
+import { AccountsInformationDialog, AddPartyConfirmDialog } from './AccountsInformationDialog';
 import { ErpFormShell } from './ErpFormShell';
 import { ErpSaveButton } from './ErpSaveButton';
 import { ErpTopMenu } from './ErpTopMenu';
 import { gstTypeLabel, isInterStateSupply } from '../utils/gstState';
+import { AccountParty } from '../types';
 
 interface Props {
   onBack: () => void;
@@ -136,6 +138,9 @@ export const ErpPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
     const d = getGstDefaultsForTransactionType(typeFromUrl || DEFAULT_PURCHASE_TRANSACTION_TYPE);
     return [blankLine(1, d.gstRate, d.hsnCode)];
   });
+  const [pendingNewParty, setPendingNewParty] = useState('');
+  const [showAddConfirm, setShowAddConfirm] = useState(false);
+  const [showAccountsDialog, setShowAccountsDialog] = useState(false);
 
   const applyTypeGstDefaults = (type: string) => {
     const d = getGstDefaultsForTransactionType(type, companyGstRate, companyHsnCode);
@@ -255,12 +260,49 @@ export const ErpPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
   };
 
   const applyPartyByName = (name: string) => {
-    const supplier = suppliers.find(row => row.name.toLowerCase() === name.trim().toLowerCase());
+    const trimmed = name.trim();
+    if (!trimmed) {
+      setSupplierId('');
+      return;
+    }
+    const supplier = suppliers.find(row => row.name.toLowerCase() === trimmed.toLowerCase());
     if (supplier) {
       chooseSupplier(supplier.id);
       return;
     }
     setSupplierId('');
+    setPendingNewParty(trimmed);
+    setShowAddConfirm(true);
+  };
+
+  const onPartySaved = (party: AccountParty) => {
+    setSuppliers(prev => {
+      if (prev.some(row => row.id === party.id)) return prev;
+      return [...prev, {
+        id: party.id,
+        userId: '',
+        name: party.name,
+        gstNumber: party.gstNumber,
+        panNumber: party.panNumber,
+        mobileNumber: party.mobileNumber,
+        address: party.address,
+        city: party.city,
+        state: party.state,
+        pincode: party.pincode,
+        msmeType: party.msmeType,
+        accountType: party.accountType,
+        createdAt: '',
+        updatedAt: ''
+      }];
+    });
+    setSupplierId(party.id);
+    setPartyName(party.name);
+    setPartyGstin(party.gstNumber || '');
+    setPartyMsme(party.msmeType || '');
+    setState(party.state || '');
+    setStation(party.city || '');
+    if (party.brokerName) setBrokerName(party.brokerName);
+    setLineItems(prev => prev.map(line => calcLine(line, businessState, party.state || '')));
   };
 
   const updateLine = (index: number, key: keyof SalesLineItem, value: string | number) => {
@@ -612,6 +654,23 @@ export const ErpPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
           />
         </ErpFormShell>
       </main>
+
+      <AddPartyConfirmDialog
+        open={showAddConfirm}
+        partyName={pendingNewParty}
+        onNo={() => setShowAddConfirm(false)}
+        onYes={() => {
+          setShowAddConfirm(false);
+          setShowAccountsDialog(true);
+        }}
+      />
+      <AccountsInformationDialog
+        open={showAccountsDialog}
+        initialName={pendingNewParty}
+        context="purchase"
+        onClose={() => setShowAccountsDialog(false)}
+        onSaved={onPartySaved}
+      />
     </div>
   );
 };

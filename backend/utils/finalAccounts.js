@@ -5,6 +5,11 @@ import {
   OPENING_BANK_BALANCE,
   roundMoney
 } from './orderBilling.js';
+import {
+  DEFAULT_CREDITOR_ACCOUNT_TYPE,
+  DEFAULT_DEBTOR_ACCOUNT_TYPE,
+  getAccountType
+} from '../constants/accountTypes.js';
 
 const optionalDate = (value) => {
   if (!value) return null;
@@ -61,6 +66,7 @@ const mapToRows = (map, field = 'debit') => Array.from(map.values())
  */
 export async function buildFinalAccounts(prisma, userId, {
   view = 'all',
+  presentation = 'normal',
   fromDate: fromRaw,
   toDate: toRaw,
   asOnDate: asOnRaw
@@ -87,7 +93,9 @@ export async function buildFinalAccounts(prisma, userId, {
     greyReturns,
     bankEntries,
     salesNotes,
-    purchaseNotes
+    purchaseNotes,
+    suppliers,
+    customers
   ] = await Promise.all([
     prisma.order.findMany({
       where: {
@@ -113,8 +121,25 @@ export async function buildFinalAccounts(prisma, userId, {
     }),
     prisma.creditDebitNote.findMany({
       where: { userId, noteSide: 'purchase', status: { not: 'cancelled' } }
-    })
+    }),
+    prisma.supplier.findMany({ where: { userId }, select: { name: true, accountType: true } }),
+    prisma.customer.findMany({ where: { userId }, select: { organizationName: true, accountType: true } })
   ]);
+
+  const partyAccountType = new Map();
+  for (const row of suppliers) {
+    const name = String(row.name || '').trim().toLowerCase();
+    if (name) partyAccountType.set(name, row.accountType || DEFAULT_CREDITOR_ACCOUNT_TYPE);
+  }
+  for (const row of customers) {
+    const name = String(row.organizationName || '').trim().toLowerCase();
+    if (name) partyAccountType.set(name, row.accountType || DEFAULT_DEBTOR_ACCOUNT_TYPE);
+  }
+
+  const resolvePartyAccountType = (partyName, fallback) => {
+    const key = String(partyName || '').trim().toLowerCase();
+    return partyAccountType.get(key) || fallback;
+  };
 
   let sales = 0;
   let salesReturn = 0;
@@ -406,6 +431,71 @@ export async function buildFinalAccounts(prisma, userId, {
   };
 
   const buildBalance = () => {
+    const mode = String(presentation || 'normal').toLowerCase() === 'dynamic' ? 'dynamic' : 'normal';
+
+    let debtorRows;
+    let creditorRows;
+
+    if (mode === 'dynamic') {
+      const debtorGroups = [];
+      const creditorGroups = [];
+      for (const [partyName, row] of debtorsAsOn.entries()) {
+        const net = roundMoney((row.debit || 0) - (row.credit || 0));
+        if (net <= 0.001) continue;
+        const accountType = resolvePartyAccountType(partyName, DEFAULT_DEBTOR_ACCOUNT_TYPE);
+        const current = debtorGroups.find(g => g.accountType === accountType)
+          || (() => { const g = { accountType, amount: 0 }; debtorGroups.push(g); return g; })();
+        current.amount = roundMoney(current.amount + net);
+      }
+      for (const [partyName, row] of creditorsAsOn.entries()) {
+        const net = roundMoney((row.credit || 0) - (row.debit || 0));
+        if (net <= 0.001) continue;
+        const accountType = resolvePartyAccountType(partyName, DEFAULT_CREDITOR_ACCOUNT_TYPE);
+        const current = creditorGroups.find(g => g.accountType === accountType)
+          || (() => { const g = { accountType, amount: 0 }; creditorGroups.push(g); return g; })();
+        current.amount = roundMoney(current.amount + net);
+      }
+      debtorRows = debtorGroups
+        .filter(g => g.amount > 0.001)
+        .sort((a, b) => a.accountType.localeCompare(b.accountType))
+        .map(g => ({
+          side: 'asset',
+          particular: g.accountType,
+          amount: g.amount,
+          note: getAccountType(g.accountType)?.effectOn || 'BALANCE SHEET',
+          drillKey: 'sundry_debtors',
+          accountType: g.accountType,
+          clickable: true
+        }));
+      creditorRows = creditorGroups
+        .filter(g => g.amount > 0.001)
+        .sort((a, b) => a.accountType.localeCompare(b.accountType))
+        .map(g => ({
+          side: 'liability',
+          particular: g.accountType,
+          amount: g.amount,
+          note: getAccountType(g.accountType)?.effectOn || 'BALANCE SHEET',
+          drillKey: 'sundry_creditors',
+          accountType: g.accountType,
+          clickable: true
+        }));
+    } else {
+      debtorRows = [{
+        side: 'asset',
+        particular: 'Sundry Debtors',
+        amount: debtorTotal,
+        drillKey: 'sundry_debtors',
+        clickable: true
+      }];
+      creditorRows = [{
+        side: 'liability',
+        particular: 'Sundry Creditors',
+        amount: creditorTotal,
+        drillKey: 'sundry_creditors',
+        clickable: true
+      }];
+    }
+
     const assetRows = [
       ...mapToRows(fixedAssetsAsOn).map(row => ({
         side: 'asset',
@@ -416,23 +506,11 @@ export async function buildFinalAccounts(prisma, userId, {
         account: row.account,
         clickable: true
       })),
-      {
-        side: 'asset',
-        particular: 'Sundry Debtors',
-        amount: debtorTotal,
-        drillKey: 'sundry_debtors',
-        clickable: true
-      },
+      ...debtorRows,
       { side: 'asset', particular: 'Cash / Bank', amount: Math.max(bankBalance, 0), clickable: false }
     ];
     const liabilityRows = [
-      {
-        side: 'liability',
-        particular: 'Sundry Creditors',
-        amount: creditorTotal,
-        drillKey: 'sundry_creditors',
-        clickable: true
-      },
+      ...creditorRows,
       ...(bankBalance < 0
         ? [{ side: 'liability', particular: 'Bank Overdraft', amount: Math.abs(bankBalance), clickable: false }]
         : []),
@@ -461,6 +539,7 @@ export async function buildFinalAccounts(prisma, userId, {
 
     return {
       view: 'balance',
+      presentation: mode,
       assets: assetRows.filter(r => r.amount > 0.001),
       liabilities: liabilityRows.filter(r => r.amount > 0.001),
       fixedAssetAccounts: mapToRows(fixedAssetsAsOn),
@@ -526,6 +605,7 @@ export async function buildFinalAccountsDrill(prisma, userId, {
   level = 'parties',
   partyName = null,
   account = null,
+  accountType = null,
   fromDate: fromRaw,
   toDate: toRaw,
   asOnDate: asOnRaw
@@ -558,7 +638,9 @@ export async function buildFinalAccountsDrill(prisma, userId, {
     purchaseBills,
     greyPurchases,
     greyReturns,
-    bankEntries
+    bankEntries,
+    suppliers,
+    customers
   ] = await Promise.all([
     prisma.order.findMany({
       where: {
@@ -585,8 +667,27 @@ export async function buildFinalAccountsDrill(prisma, userId, {
     prisma.bankEntry.findMany({
       where: { userId },
       orderBy: [{ entryDate: 'desc' }, { createdAt: 'desc' }]
-    })
+    }),
+    prisma.supplier.findMany({ where: { userId }, select: { name: true, accountType: true } }),
+    prisma.customer.findMany({ where: { userId }, select: { organizationName: true, accountType: true } })
   ]);
+
+  const partyAccountType = new Map();
+  for (const row of suppliers) {
+    const name = String(row.name || '').trim().toLowerCase();
+    if (name) partyAccountType.set(name, row.accountType || DEFAULT_CREDITOR_ACCOUNT_TYPE);
+  }
+  for (const row of customers) {
+    const name = String(row.organizationName || '').trim().toLowerCase();
+    if (name) partyAccountType.set(name, row.accountType || DEFAULT_DEBTOR_ACCOUNT_TYPE);
+  }
+  const typeFilter = String(accountType || '').trim().toUpperCase();
+  const matchesAccountType = (partyNameValue, fallback) => {
+    if (!typeFilter) return true;
+    const keyName = String(partyNameValue || '').trim().toLowerCase();
+    const resolved = String(partyAccountType.get(keyName) || fallback).toUpperCase();
+    return resolved === typeFilter;
+  };
 
   const creditorBalances = new Map();
   const debtorBalances = new Map();
@@ -646,12 +747,13 @@ export async function buildFinalAccountsDrill(prisma, userId, {
   if (key === 'sundry_creditors' && level === 'parties') {
     const rows = Array.from(creditorBalances.values())
       .map(row => ({ ...row, amount: Math.max(row.amount, 0), clickable: true }))
-      .filter(row => row.amount > 0.001)
+      .filter(row => row.amount > 0.001 && matchesAccountType(row.partyName, DEFAULT_CREDITOR_ACCOUNT_TYPE))
       .sort((a, b) => a.partyName.localeCompare(b.partyName));
     return {
       drillKey: key,
       level: 'parties',
-      title: 'Sundry Creditors',
+      title: typeFilter || 'Sundry Creditors',
+      accountType: accountType || null,
       period,
       rows,
       totals: { amount: roundMoney(rows.reduce((s, r) => s + r.amount, 0)) }
@@ -661,12 +763,13 @@ export async function buildFinalAccountsDrill(prisma, userId, {
   if (key === 'sundry_debtors' && level === 'parties') {
     const rows = Array.from(debtorBalances.values())
       .map(row => ({ ...row, amount: Math.max(row.amount, 0), clickable: true }))
-      .filter(row => row.amount > 0.001)
+      .filter(row => row.amount > 0.001 && matchesAccountType(row.partyName, DEFAULT_DEBTOR_ACCOUNT_TYPE))
       .sort((a, b) => a.partyName.localeCompare(b.partyName));
     return {
       drillKey: key,
       level: 'parties',
-      title: 'Sundry Debtors',
+      title: typeFilter || 'Sundry Debtors',
+      accountType: accountType || null,
       period,
       rows,
       totals: { amount: roundMoney(rows.reduce((s, r) => s + r.amount, 0)) }

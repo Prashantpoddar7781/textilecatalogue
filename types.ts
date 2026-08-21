@@ -122,10 +122,17 @@ export interface Customer {
   id: string;
   organizationName: string;
   gstNumber?: string | null;
+  panNumber?: string | null;
   contactPersonName?: string | null;
   mobileNumber?: string | null;
   agentName?: string | null;
   category?: string | null;
+  accountType?: string | null;
+  accountGroup?: string | null;
+  address?: string | null;
+  addressLine2?: string | null;
+  graceDays?: number | null;
+  remark?: string | null;
   state?: string | null;
   city?: string | null;
   pincode?: string | null;
@@ -413,15 +420,46 @@ export interface Supplier {
   panNumber?: string | null;
   mobileNumber?: string | null;
   address?: string | null;
+  addressLine2?: string | null;
   city?: string | null;
   state?: string | null;
   pincode?: string | null;
   msmeType?: string | null;
   udyamNumber?: string | null;
+  accountType?: string | null;
+  accountGroup?: string | null;
+  graceDays?: number | null;
+  brokerName?: string | null;
+  contactPersonName?: string | null;
+  remark?: string | null;
   billCount?: number;
   runningBalance?: number;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface AccountParty {
+  id: string;
+  role: 'supplier' | 'customer';
+  name: string;
+  organizationName?: string;
+  gstNumber?: string | null;
+  panNumber?: string | null;
+  mobileNumber?: string | null;
+  contactPersonName?: string | null;
+  brokerName?: string | null;
+  agentName?: string | null;
+  accountType?: string | null;
+  accountGroup?: string | null;
+  address?: string | null;
+  addressLine2?: string | null;
+  city?: string | null;
+  state?: string | null;
+  pincode?: string | null;
+  graceDays?: number | null;
+  remark?: string | null;
+  msmeType?: string | null;
+  udyamNumber?: string | null;
 }
 
 export interface PurchaseBill {

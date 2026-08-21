@@ -102,6 +102,14 @@ export const ErpTopMenu: React.FC<Props> = ({
                   <Building2 className="h-4 w-4" />
                   Company
                 </button>
+                <button
+                  type="button"
+                  onClick={() => { window.location.href = '/erp/masters/accounts'; }}
+                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-gray-800 hover:bg-indigo-50 hover:text-indigo-700"
+                >
+                  <BookOpen className="h-4 w-4" />
+                  Accounts Info Manager
+                </button>
               </div>
             )}
           </div>

@@ -42,6 +42,7 @@ router.get('/final-accounts', authenticateToken, requireActiveSubscription, asyn
     const view = String(req.query.view || 'all').toLowerCase();
     const result = await buildFinalAccounts(prisma, req.user.userId, {
       view: ['trial', 'trading', 'pl', 'balance', 'all'].includes(view) ? view : 'all',
+      presentation: String(req.query.presentation || 'normal').toLowerCase() === 'dynamic' ? 'dynamic' : 'normal',
       fromDate: req.query.fromDate ? String(req.query.fromDate) : null,
       toDate: req.query.toDate ? String(req.query.toDate) : null,
       asOnDate: req.query.asOnDate ? String(req.query.asOnDate) : null
@@ -59,6 +60,7 @@ router.get('/final-accounts/drill', authenticateToken, requireActiveSubscription
       level: req.query.level ? String(req.query.level) : 'parties',
       partyName: req.query.partyName ? String(req.query.partyName) : null,
       account: req.query.account ? String(req.query.account) : null,
+      accountType: req.query.accountType ? String(req.query.accountType) : null,
       fromDate: req.query.fromDate ? String(req.query.fromDate) : null,
       toDate: req.query.toDate ? String(req.query.toDate) : null,
       asOnDate: req.query.asOnDate ? String(req.query.asOnDate) : null

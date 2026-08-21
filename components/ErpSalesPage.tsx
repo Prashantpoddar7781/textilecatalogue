@@ -1,12 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Loader2, Plus, Trash2, X } from 'lucide-react';
 import { bankEntriesApi, salesOrdersApi } from '../services/api';
-import { Customer, ErpSession, Order, SalesItemMaster, SalesLineItem, SalesOrder } from '../types';
+import { AccountParty, Customer, ErpSession, Order, SalesItemMaster, SalesLineItem, SalesOrder } from '../types';
 import {
   DEFAULT_SALES_TRANSACTION_TYPE,
   ERP_TRANSACTION_TYPES,
   getGstDefaultsForTransactionType
 } from '../constants/erpTransactionTypes';
+import { AccountsInformationDialog, AddPartyConfirmDialog } from './AccountsInformationDialog';
 import { ErpFormShell } from './ErpFormShell';
 import { ErpSaveButton } from './ErpSaveButton';
 import { ErpTopMenu } from './ErpTopMenu';
@@ -176,6 +177,9 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [itemModalRow, setItemModalRow] = useState<number | null>(null);
   const [itemSaving, setItemSaving] = useState(false);
   const [itemForm, setItemForm] = useState(itemDefaults());
+  const [pendingNewParty, setPendingNewParty] = useState('');
+  const [showAddConfirm, setShowAddConfirm] = useState(false);
+  const [showAccountsDialog, setShowAccountsDialog] = useState(false);
 
   const applyTypeGstDefaults = (type: string) => {
     const d = getGstDefaultsForTransactionType(type, companyGstRate, companyHsnCode);
@@ -355,16 +359,50 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
   };
 
   const applyPartyByName = (name: string) => {
-    const customer = customers.find(row => row.organizationName.toLowerCase() === name.trim().toLowerCase());
+    const trimmed = name.trim();
+    if (!trimmed) {
+      setCustomerId('');
+      return;
+    }
+    const customer = customers.find(row => row.organizationName.toLowerCase() === trimmed.toLowerCase());
     if (customer) {
       chooseCustomer(customer.id);
       return;
     }
-    // Typed party with no master match — still allow Ord/Ref by name.
-    if (!isSalesOrder && name.trim().toLowerCase() !== partyName.trim().toLowerCase()) {
+    if (!isSalesOrder && trimmed.toLowerCase() !== partyName.trim().toLowerCase()) {
       setCustomerId('');
       clearLinkedOrder();
+    } else {
+      setCustomerId('');
     }
+    setPendingNewParty(trimmed);
+    setShowAddConfirm(true);
+  };
+
+  const onPartySaved = (party: AccountParty) => {
+    setCustomers(prev => {
+      if (prev.some(row => row.id === party.id)) return prev;
+      return [...prev, {
+        id: party.id,
+        organizationName: party.name,
+        gstNumber: party.gstNumber,
+        panNumber: party.panNumber,
+        contactPersonName: party.contactPersonName,
+        mobileNumber: party.mobileNumber,
+        agentName: party.brokerName || party.agentName,
+        accountType: party.accountType,
+        state: party.state,
+        city: party.city,
+        pincode: party.pincode
+      }];
+    });
+    setCustomerId(party.id);
+    setPartyName(party.name);
+    setPartyGstin(party.gstNumber || '');
+    setState(party.state || '');
+    setStation(party.city || '');
+    setBrokerName(party.brokerName || party.agentName || '');
+    setLineItems(prev => prev.map(line => calcLine(line, businessState, party.state || '')));
   };
 
   const updateLine = (index: number, key: keyof SalesLineItem, value: string | number) => {
@@ -931,6 +969,23 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
           </div>
         </div>
       )}
+
+      <AddPartyConfirmDialog
+        open={showAddConfirm}
+        partyName={pendingNewParty}
+        onNo={() => setShowAddConfirm(false)}
+        onYes={() => {
+          setShowAddConfirm(false);
+          setShowAccountsDialog(true);
+        }}
+      />
+      <AccountsInformationDialog
+        open={showAccountsDialog}
+        initialName={pendingNewParty}
+        context="sales"
+        onClose={() => setShowAccountsDialog(false)}
+        onSaved={onPartySaved}
+      />
     </div>
   );
 };

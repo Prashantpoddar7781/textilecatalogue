@@ -1,10 +1,17 @@
 import { getStateFromGstin } from './gstCalculation.js';
 import { extractPanFromGstin, normalizePan, resolvePartyPan } from './tds.js';
+import { defaultAccountTypeForRole, normalizeAccountType } from '../constants/accountTypes.js';
 
 const optionalString = (value) => {
   if (value === undefined || value === null) return null;
   const text = String(value).trim();
   return text || null;
+};
+
+const optionalInt = (value) => {
+  if (value === undefined || value === null || value === '') return null;
+  const num = Number(value);
+  return Number.isFinite(num) ? Math.trunc(num) : null;
 };
 
 function normalizeName(value) {
@@ -55,10 +62,20 @@ export async function findOrCreateSupplier(prisma, userId, payload = {}) {
     panNumber,
     mobileNumber: optionalString(payload.mobileNumber),
     address: optionalString(payload.address),
+    addressLine2: optionalString(payload.addressLine2),
     city: optionalString(payload.city),
     state: optionalString(payload.state) || fromGst.stateName || null,
     pincode: optionalString(payload.pincode),
-    msmeType: optionalString(payload.msmeType)
+    msmeType: optionalString(payload.msmeType),
+    udyamNumber: optionalString(payload.udyamNumber),
+    accountType: optionalString(payload.accountType)
+      ? normalizeAccountType(payload.accountType, defaultAccountTypeForRole('supplier'))
+      : null,
+    accountGroup: optionalString(payload.accountGroup),
+    graceDays: optionalInt(payload.graceDays),
+    brokerName: optionalString(payload.brokerName),
+    contactPersonName: optionalString(payload.contactPersonName),
+    remark: optionalString(payload.remark)
   };
 
   if (existing) {
@@ -70,10 +87,18 @@ export async function findOrCreateSupplier(prisma, userId, payload = {}) {
         panNumber: data.panNumber || existing.panNumber || extractPanFromGstin(data.gstNumber || existing.gstNumber) || null,
         mobileNumber: data.mobileNumber || existing.mobileNumber,
         address: data.address || existing.address,
+        addressLine2: data.addressLine2 || existing.addressLine2,
         city: data.city || existing.city,
         state: data.state || existing.state,
         pincode: data.pincode || existing.pincode,
-        msmeType: data.msmeType || existing.msmeType
+        msmeType: data.msmeType || existing.msmeType,
+        udyamNumber: data.udyamNumber || existing.udyamNumber,
+        accountType: data.accountType || existing.accountType || defaultAccountTypeForRole('supplier'),
+        accountGroup: data.accountGroup || existing.accountGroup,
+        graceDays: data.graceDays ?? existing.graceDays,
+        brokerName: data.brokerName || existing.brokerName,
+        contactPersonName: data.contactPersonName || existing.contactPersonName,
+        remark: data.remark || existing.remark
       }
     });
   }
@@ -81,7 +106,8 @@ export async function findOrCreateSupplier(prisma, userId, payload = {}) {
   return prisma.supplier.create({
     data: {
       userId,
-      ...data
+      ...data,
+      accountType: data.accountType || defaultAccountTypeForRole('supplier')
     }
   });
 }
@@ -105,8 +131,16 @@ export async function findOrCreateCustomer(prisma, userId, payload = {}) {
     panNumber,
     contactPersonName: optionalString(payload.contactPersonName),
     mobileNumber: optionalString(payload.mobileNumber),
-    agentName: optionalString(payload.agentName),
+    agentName: optionalString(payload.agentName) || optionalString(payload.brokerName),
     category: optionalString(payload.category),
+    accountType: optionalString(payload.accountType)
+      ? normalizeAccountType(payload.accountType, defaultAccountTypeForRole('customer'))
+      : null,
+    accountGroup: optionalString(payload.accountGroup),
+    address: optionalString(payload.address),
+    addressLine2: optionalString(payload.addressLine2),
+    graceDays: optionalInt(payload.graceDays),
+    remark: optionalString(payload.remark),
     state: optionalString(payload.state),
     city: optionalString(payload.city),
     pincode: optionalString(payload.pincode),
@@ -124,6 +158,12 @@ export async function findOrCreateCustomer(prisma, userId, payload = {}) {
         mobileNumber: data.mobileNumber || existing.mobileNumber,
         agentName: data.agentName || existing.agentName,
         category: data.category || existing.category,
+        accountType: data.accountType || existing.accountType || defaultAccountTypeForRole('customer'),
+        accountGroup: data.accountGroup || existing.accountGroup,
+        address: data.address || existing.address,
+        addressLine2: data.addressLine2 || existing.addressLine2,
+        graceDays: data.graceDays ?? existing.graceDays,
+        remark: data.remark || existing.remark,
         state: data.state || existing.state,
         city: data.city || existing.city,
         pincode: data.pincode || existing.pincode,
@@ -135,7 +175,8 @@ export async function findOrCreateCustomer(prisma, userId, payload = {}) {
   return prisma.customer.create({
     data: {
       userId,
-      ...data
+      ...data,
+      accountType: data.accountType || defaultAccountTypeForRole('customer')
     }
   });
 }

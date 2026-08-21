@@ -287,6 +287,35 @@ export const customersApi = {
   },
 };
 
+// Accounts Information Manager / parties
+export const partiesApi = {
+  getAccountTypes: async () => {
+    return request<{ accountTypes: Array<Record<string, any>> }>('/parties/account-types');
+  },
+  list: async (params?: { role?: string; q?: string }) => {
+    const query = new URLSearchParams();
+    if (params?.role) query.set('role', params.role);
+    if (params?.q) query.set('q', params.q);
+    const suffix = query.toString() ? `?${query.toString()}` : '';
+    return request<{ parties: import('../types').AccountParty[]; accountTypes: Array<Record<string, any>> }>(`/parties${suffix}`);
+  },
+  get: async (id: string, role: 'supplier' | 'customer' = 'supplier') => {
+    return request<{ party: import('../types').AccountParty }>(`/parties/${id}?role=${role}`);
+  },
+  create: async (payload: Record<string, any>) => {
+    return request<{ party: import('../types').AccountParty }>('/parties', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+  update: async (id: string, payload: Record<string, any>) => {
+    return request<{ party: import('../types').AccountParty }>(`/parties/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    });
+  }
+};
+
 // Share Links API
 export const shareLinksApi = {
   create: async (data: {

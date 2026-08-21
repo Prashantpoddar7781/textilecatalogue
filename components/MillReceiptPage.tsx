@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, ListOrdered, Loader2 } from 'lucide-react';
 import { millReceiptsApi } from '../services/api';
-import { ErpSession, MillPendingDispatch, MillReceiptTakaRow } from '../types';
+import { AccountParty, ErpSession, MillPendingDispatch, MillReceiptTakaRow } from '../types';
+import { AccountsInformationDialog, AddPartyConfirmDialog } from './AccountsInformationDialog';
 import { ErpFormShell } from './ErpFormShell';
 import { ErpSaveButton } from './ErpSaveButton';
 import { ErpTopMenu } from './ErpTopMenu';
@@ -306,13 +307,36 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
     return () => { cancelled = true; };
   }, [editId, isEditMode]);
 
+  const [pendingNewParty, setPendingNewParty] = useState('');
+  const [showAddConfirm, setShowAddConfirm] = useState(false);
+  const [showAccountsDialog, setShowAccountsDialog] = useState(false);
+
   const applyMillPartyDefaults = (name: string) => {
-    const match = millParties.find(m => m.name.toLowerCase() === name.trim().toLowerCase());
-    if (!match) return;
-    if (match.gstNumber && !millGstin) setMillGstin(match.gstNumber);
-    if (!tdsPercentTouched && match.suggestedTdsPercent != null) {
-      setTdsPercent(String(match.suggestedTdsPercent));
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const match = millParties.find(m => m.name.toLowerCase() === trimmed.toLowerCase());
+    if (match) {
+      if (match.gstNumber && !millGstin) setMillGstin(match.gstNumber);
+      if (!tdsPercentTouched && match.suggestedTdsPercent != null) {
+        setTdsPercent(String(match.suggestedTdsPercent));
+      }
+      return;
     }
+    setPendingNewParty(trimmed);
+    setShowAddConfirm(true);
+  };
+
+  const onPartySaved = (party: AccountParty) => {
+    setMillName(party.name);
+    if (party.gstNumber) setMillGstin(party.gstNumber);
+    setMillParties(prev => {
+      if (prev.some(row => row.name.toLowerCase() === party.name.toLowerCase())) return prev;
+      return [...prev, {
+        name: party.name,
+        gstNumber: party.gstNumber || undefined,
+        suggestedTdsPercent: undefined
+      } as any];
+    });
   };
 
   const resetLine = () => {
@@ -965,6 +989,23 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
         mode={processType}
         onClose={() => setTakaModalOpen(false)}
         onApply={applyTakas}
+      />
+
+      <AddPartyConfirmDialog
+        open={showAddConfirm}
+        partyName={pendingNewParty}
+        onNo={() => setShowAddConfirm(false)}
+        onYes={() => {
+          setShowAddConfirm(false);
+          setShowAccountsDialog(true);
+        }}
+      />
+      <AccountsInformationDialog
+        open={showAccountsDialog}
+        initialName={pendingNewParty}
+        context="mill"
+        onClose={() => setShowAccountsDialog(false)}
+        onSaved={onPartySaved}
       />
     </div>
   );

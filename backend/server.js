@@ -17,6 +17,7 @@ import purchaseRoutes from './routes/purchases.js';
 import bankEntryRoutes from './routes/bankEntries.js';
 import creditDebitNoteRoutes from './routes/creditDebitNotes.js';
 import ledgerRoutes from './routes/ledger.js';
+import partyRoutes from './routes/parties.js';
 import erpUserRoutes from './routes/erpUsers.js';
 import erpAuthRoutes from './routes/erpAuth.js';
 import greyPurchaseRoutes from './routes/greyPurchases.js';
@@ -183,6 +184,7 @@ try {
   app.use('/api/bank-entries', bankEntryRoutes);
   app.use('/api/credit-debit-notes', creditDebitNoteRoutes);
   app.use('/api/ledger', ledgerRoutes);
+  app.use('/api/parties', partyRoutes);
   app.use('/api/erp-users', erpUserRoutes);
   app.use('/api/erp-auth', erpAuthRoutes);
   app.use('/api/grey-purchases', greyPurchaseRoutes);
