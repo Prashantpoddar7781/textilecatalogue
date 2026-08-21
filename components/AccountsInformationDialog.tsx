@@ -156,8 +156,8 @@ export const AccountsInformationDialog: React.FC<Props> = ({
               <span className={labelClass}>A/C Type</span>
               <select className={inputClass} value={accountType} onChange={e => setAccountType(e.target.value)}>
                 {ERP_ACCOUNT_TYPES.map(type => (
-                  <option key={type.value} value={type.value}>
-                    {type.label} — {type.effectOn}
+                  <option key={type.code} value={type.value}>
+                    {type.code}. {type.label} — {type.effectOn}
                   </option>
                 ))}
               </select>
