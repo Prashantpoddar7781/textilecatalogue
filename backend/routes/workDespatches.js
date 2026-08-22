@@ -358,7 +358,8 @@ router.post('/', authenticateToken, requireActiveSubscription, [
     await resolveSupplierForEntry(prisma, userId, {
       partyName,
       partyGstin: optionalString(req.body.partyGstin),
-      placeOfSupply: optionalString(req.body.placeOfSupply)
+      placeOfSupply: optionalString(req.body.placeOfSupply),
+      transactionType: 'WORK DESP CHALLAN'
     });
 
     const entry = await prisma.workDespatch.create({
@@ -422,7 +423,8 @@ router.put('/:id', authenticateToken, requireActiveSubscription, [
     await resolveSupplierForEntry(prisma, userId, {
       partyName,
       partyGstin: optionalString(req.body.partyGstin),
-      placeOfSupply: optionalString(req.body.placeOfSupply)
+      placeOfSupply: optionalString(req.body.placeOfSupply),
+      transactionType: 'WORK DESP CHALLAN'
     });
 
     const entry = await prisma.workDespatch.update({

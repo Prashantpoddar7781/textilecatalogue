@@ -710,7 +710,8 @@ router.post('/', authenticateToken, requireActiveSubscription, [
       partyName: millName,
       partyGstin: millGstin,
       placeOfSupply: totals.placeOfSupply || placeOfSupply,
-      partyMsme: optionalString(req.body.partyMsme)
+      partyMsme: optionalString(req.body.partyMsme),
+      accountType: 'CREDITORS FOR JOBWORK'
     });
 
     const effectiveRecMts = isReturn ? greyMts : recMts;
@@ -929,7 +930,8 @@ router.put('/:id', authenticateToken, requireActiveSubscription, [
       partyName: millName,
       partyGstin: millGstin,
       placeOfSupply: totals.placeOfSupply || placeOfSupply,
-      partyMsme: optionalString(req.body.partyMsme) || existing.partyMsme
+      partyMsme: optionalString(req.body.partyMsme) || existing.partyMsme,
+      accountType: 'CREDITORS FOR JOBWORK'
     });
 
     const effectiveRecMts = isReturn ? greyMts : recMts;

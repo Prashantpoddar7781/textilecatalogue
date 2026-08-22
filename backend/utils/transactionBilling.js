@@ -1,6 +1,9 @@
-export function formatTypeBillNumber(typeBillNumber) {
+import { formatSeriesBillNumber } from '../constants/erpTransactionPostingRules.js';
+
+export function formatTypeBillNumber(typeBillNumber, transactionType = null) {
   if (typeBillNumber == null) return null;
-  return String(typeBillNumber);
+  if (!transactionType) return String(typeBillNumber);
+  return formatSeriesBillNumber(transactionType, typeBillNumber) || String(typeBillNumber);
 }
 
 export async function allocateNextTypeBillNumber(tx, userId, transactionType, source) {
@@ -24,7 +27,7 @@ export async function allocateNextTypeBillNumber(tx, userId, transactionType, so
 
 export function resolveBillDisplayNumber(record) {
   if (record.typeBillNumber != null) {
-    return formatTypeBillNumber(record.typeBillNumber);
+    return formatTypeBillNumber(record.typeBillNumber, record.transactionType);
   }
   if (record.invoiceNumber != null) {
     return String(record.invoiceNumber);

@@ -1,6 +1,7 @@
 import { getStateFromGstin } from './gstCalculation.js';
 import { extractPanFromGstin, normalizePan, resolvePartyPan } from './tds.js';
 import { defaultAccountTypeForRole, normalizeAccountType } from '../constants/accountTypes.js';
+import { postingPartyAccountType } from '../constants/erpTransactionPostingRules.js';
 
 const optionalString = (value) => {
   if (value === undefined || value === null) return null;
@@ -199,7 +200,9 @@ export async function resolveSupplierForEntry(prisma, userId, input = {}) {
     gstNumber: partyGstin,
     panNumber: optionalString(input.panNumber),
     state: optionalString(input.placeOfSupply) || fromGst.stateName || null,
-    msmeType: optionalString(input.partyMsme)
+    msmeType: optionalString(input.partyMsme),
+    // Transaction Types master decides the control account for a party created by a voucher.
+    accountType: optionalString(input.accountType) || postingPartyAccountType(input.transactionType)
   });
 }
 
@@ -220,7 +223,9 @@ export async function resolveCustomerForEntry(prisma, userId, input = {}) {
     gstNumber: optionalString(input.gstNumber),
     state: optionalString(input.state),
     agentName: optionalString(input.agentName),
-    mobileNumber: optionalString(input.mobileNumber)
+    mobileNumber: optionalString(input.mobileNumber),
+    // Transaction Types master decides the control account for a party created by a voucher.
+    accountType: optionalString(input.accountType) || postingPartyAccountType(input.transactionType)
   });
 }
 

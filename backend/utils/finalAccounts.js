@@ -10,6 +10,75 @@ import {
   DEFAULT_DEBTOR_ACCOUNT_TYPE,
   getAccountType
 } from '../constants/accountTypes.js';
+import {
+  formatSeriesBillNumber,
+  getGstDocumentType,
+  postingPartyAccountType,
+  postingSaleOrPurchaseAccount
+} from '../constants/erpTransactionPostingRules.js';
+
+/** Generic role defaults: a party sitting on one of these was never classified deliberately. */
+const UNCLASSIFIED_ACCOUNT_TYPES = new Set([
+  DEFAULT_CREDITOR_ACCOUNT_TYPE.toUpperCase(),
+  DEFAULT_DEBTOR_ACCOUNT_TYPE.toUpperCase()
+]);
+
+/**
+ * A/C Type each party's own vouchers imply, via the Transaction Types master.
+ * A party is grouped under the account type carrying the largest share of their
+ * postings, so grey suppliers land in Creditors for Grey even when nobody set
+ * the field on the party master.
+ */
+function buildPostedAccountTypeMap({ purchaseBills = [], greyPurchases = [], greyReturns = [], orders = [] }) {
+  const weights = new Map();
+  const add = (name, accountType, amount) => {
+    const key = String(name || '').trim().toLowerCase();
+    const type = String(accountType || '').trim();
+    const value = Math.abs(Number(amount) || 0);
+    if (!key || !type || value <= 0) return;
+    const byType = weights.get(key) || new Map();
+    byType.set(type, roundMoney((byType.get(type) || 0) + value));
+    weights.set(key, byType);
+  };
+
+  for (const bill of purchaseBills) {
+    add(bill.supplier?.name, postingPartyAccountType(bill.transactionType), bill.grandTotal);
+  }
+  for (const grey of greyPurchases) {
+    add(grey.partyName, postingPartyAccountType('GREY PURCHASE'), grey.netAmount);
+  }
+  for (const ret of greyReturns) {
+    add(ret.partyName, postingPartyAccountType('GREY PURCHASE RETURN'), ret.netAmount);
+  }
+  for (const order of orders) {
+    const party = order.customer?.organizationName || order.buyerName;
+    add(party, postingPartyAccountType(order.transactionType), calculateOrderGrandTotal(order));
+  }
+
+  const dominant = new Map();
+  for (const [key, byType] of weights.entries()) {
+    let best = null;
+    for (const [type, amount] of byType.entries()) {
+      if (!best || amount > best.amount) best = { type, amount };
+    }
+    if (best) dominant.set(key, best.type);
+  }
+  return dominant;
+}
+
+/**
+ * Grouping precedence: a deliberately chosen A/C Type on the party master wins,
+ * otherwise the posting rule decides, otherwise the plain role default.
+ */
+function makeAccountTypeResolver(masterMap, postedMap) {
+  return (partyName, fallback) => {
+    const key = String(partyName || '').trim().toLowerCase();
+    const master = masterMap.get(key) || null;
+    const posted = postedMap.get(key) || null;
+    if (master && !UNCLASSIFIED_ACCOUNT_TYPES.has(master.toUpperCase())) return master;
+    return posted || master || fallback;
+  };
+}
 
 const optionalDate = (value) => {
   if (!value) return null;
@@ -129,17 +198,20 @@ export async function buildFinalAccounts(prisma, userId, {
   const partyAccountType = new Map();
   for (const row of suppliers) {
     const name = String(row.name || '').trim().toLowerCase();
-    if (name) partyAccountType.set(name, row.accountType || DEFAULT_CREDITOR_ACCOUNT_TYPE);
+    if (name && row.accountType) partyAccountType.set(name, row.accountType);
   }
   for (const row of customers) {
     const name = String(row.organizationName || '').trim().toLowerCase();
-    if (name) partyAccountType.set(name, row.accountType || DEFAULT_DEBTOR_ACCOUNT_TYPE);
+    if (name && row.accountType) partyAccountType.set(name, row.accountType);
   }
 
-  const resolvePartyAccountType = (partyName, fallback) => {
-    const key = String(partyName || '').trim().toLowerCase();
-    return partyAccountType.get(key) || fallback;
-  };
+  const postedAccountType = buildPostedAccountTypeMap({
+    purchaseBills,
+    greyPurchases,
+    greyReturns,
+    orders
+  });
+  const resolvePartyAccountType = makeAccountTypeResolver(partyAccountType, postedAccountType);
 
   let sales = 0;
   let salesReturn = 0;
@@ -192,7 +264,10 @@ export async function buildFinalAccounts(prisma, userId, {
     const amount = roundMoney(bill.grandTotal);
     if (amount <= 0) continue;
     const party = bill.supplier?.name || 'Supplier';
-    const account = bill.purchaseAccount || bill.transactionType || 'Purchase';
+    const account = bill.purchaseAccount
+      || postingSaleOrPurchaseAccount(bill.transactionType)
+      || bill.transactionType
+      || 'Purchase';
 
     if (inRange(date, null, asOn)) {
       if (isPurchaseReturn(bill.transactionType)) {
@@ -675,17 +750,23 @@ export async function buildFinalAccountsDrill(prisma, userId, {
   const partyAccountType = new Map();
   for (const row of suppliers) {
     const name = String(row.name || '').trim().toLowerCase();
-    if (name) partyAccountType.set(name, row.accountType || DEFAULT_CREDITOR_ACCOUNT_TYPE);
+    if (name && row.accountType) partyAccountType.set(name, row.accountType);
   }
   for (const row of customers) {
     const name = String(row.organizationName || '').trim().toLowerCase();
-    if (name) partyAccountType.set(name, row.accountType || DEFAULT_DEBTOR_ACCOUNT_TYPE);
+    if (name && row.accountType) partyAccountType.set(name, row.accountType);
   }
+  const postedAccountType = buildPostedAccountTypeMap({
+    purchaseBills,
+    greyPurchases,
+    greyReturns,
+    orders
+  });
+  const resolvePartyAccountType = makeAccountTypeResolver(partyAccountType, postedAccountType);
   const typeFilter = String(accountType || '').trim().toUpperCase();
   const matchesAccountType = (partyNameValue, fallback) => {
     if (!typeFilter) return true;
-    const keyName = String(partyNameValue || '').trim().toLowerCase();
-    const resolved = String(partyAccountType.get(keyName) || fallback).toUpperCase();
+    const resolved = String(resolvePartyAccountType(partyNameValue, fallback) || '').toUpperCase();
     return resolved === typeFilter;
   };
 
@@ -787,7 +868,9 @@ export async function buildFinalAccountsDrill(prisma, userId, {
       rows.push({
         id: bill.id,
         date,
-        billNo: bill.typeBillNumber || bill.billNumber || bill.voucherNumber,
+        billNo: formatSeriesBillNumber(bill.transactionType, bill.typeBillNumber)
+          || bill.billNumber || bill.voucherNumber,
+        gstDocumentType: getGstDocumentType(bill.transactionType),
         transactionType: bill.transactionType || 'Purchase',
         purchaseAccount: bill.purchaseAccount || '',
         amount: isPurchaseReturn(bill.transactionType) ? -amount : amount,
@@ -855,7 +938,9 @@ export async function buildFinalAccountsDrill(prisma, userId, {
       rows.push({
         id: order.id,
         date,
-        billNo: order.typeBillNumber || order.invoiceNumber || order.orderNumber,
+        billNo: formatSeriesBillNumber(order.transactionType, order.typeBillNumber)
+          || order.invoiceNumber || order.orderNumber,
+        gstDocumentType: getGstDocumentType(order.transactionType),
         transactionType: order.transactionType || 'FINISH SALES',
         amount: isSalesGoodsReturn(order.transactionType) ? -amount : amount,
         partyName: party,
@@ -887,7 +972,10 @@ export async function buildFinalAccountsDrill(prisma, userId, {
       if (!inWindow) continue;
       const amount = roundMoney(bill.grandTotal);
       if (amount <= 0) continue;
-      const billAccount = bill.purchaseAccount || bill.transactionType || '';
+      const billAccount = bill.purchaseAccount
+        || postingSaleOrPurchaseAccount(bill.transactionType)
+        || bill.transactionType
+        || '';
       if (key === 'fixed_asset') {
         if (!isCapitalGoodsPurchase(bill.transactionType) || isPurchaseReturn(bill.transactionType)) continue;
       } else if (!isPlExpensePurchase(bill.transactionType) || isPurchaseReturn(bill.transactionType)) {
@@ -900,7 +988,9 @@ export async function buildFinalAccountsDrill(prisma, userId, {
       rows.push({
         id: bill.id,
         date,
-        billNo: bill.typeBillNumber || bill.billNumber || bill.voucherNumber,
+        billNo: formatSeriesBillNumber(bill.transactionType, bill.typeBillNumber)
+          || bill.billNumber || bill.voucherNumber,
+        gstDocumentType: getGstDocumentType(bill.transactionType),
         transactionType: bill.transactionType || '',
         purchaseAccount: billAccount,
         amount,
@@ -938,7 +1028,9 @@ export async function buildFinalAccountsDrill(prisma, userId, {
       tradingBillRows.push({
         id: bill.id,
         date,
-        billNo: bill.typeBillNumber || bill.billNumber || bill.voucherNumber,
+        billNo: formatSeriesBillNumber(bill.transactionType, bill.typeBillNumber)
+          || bill.billNumber || bill.voucherNumber,
+        gstDocumentType: getGstDocumentType(bill.transactionType),
         transactionType: bill.transactionType || 'FINISH PURCHASE',
         amount: isRet ? -amount : amount,
         partyName: bill.supplier?.name || '',
@@ -960,7 +1052,9 @@ export async function buildFinalAccountsDrill(prisma, userId, {
       tradingBillRows.push({
         id: order.id,
         date,
-        billNo: order.typeBillNumber || order.invoiceNumber || order.orderNumber,
+        billNo: formatSeriesBillNumber(order.transactionType, order.typeBillNumber)
+          || order.invoiceNumber || order.orderNumber,
+        gstDocumentType: getGstDocumentType(order.transactionType),
         transactionType: order.transactionType || 'FINISH SALES',
         amount: isRet ? -amount : amount,
         partyName: (order.customer?.organizationName || order.buyerName || '').trim(),

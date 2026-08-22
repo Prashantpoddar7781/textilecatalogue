@@ -7,6 +7,15 @@ import {
   EXPENSE_TRANSACTION_TYPES,
   getGstDefaultsForTransactionType
 } from '../constants/erpTransactionTypes';
+import {
+  ERP_SALE_PURCHASE_ACCOUNTS,
+  formatSeriesBillNumber,
+  getGstDocumentType,
+  gstReturnSection,
+  postingPartyAccountType,
+  postingSaleOrPurchaseAccount,
+  postingSummary
+} from '../constants/erpTransactionPostingRules';
 import { AccountsInformationDialog, AddPartyConfirmDialog } from './AccountsInformationDialog';
 import { ErpFormShell } from './ErpFormShell';
 import { ErpSaveButton } from './ErpSaveButton';
@@ -25,7 +34,8 @@ const inputClass = 'w-full rounded-lg border border-gray-200 bg-white px-2.5 py-
 const readonlyClass = 'w-full rounded-lg border border-gray-200 bg-gray-100 px-2.5 py-2 text-sm font-semibold';
 const labelClass = 'mb-1 block text-[10px] font-black uppercase tracking-wide text-gray-500';
 
-const PURCHASE_ACCOUNT_SUGGESTIONS = [
+const PURCHASE_ACCOUNT_SUGGESTIONS = Array.from(new Set([
+  ...ERP_SALE_PURCHASE_ACCOUNTS,
   'CAR ACCOUNT',
   'RENT A/C',
   'ELECTRICITY A/C',
@@ -33,7 +43,7 @@ const PURCHASE_ACCOUNT_SUGGESTIONS = [
   'OFFICE EXP A/C',
   'TRANSPORT A/C',
   'REPAIR A/C'
-];
+])).sort((a, b) => a.localeCompare(b));
 
 const blankLine = (lineNo = 1, gstRate = 5, hsnCode = '5407'): SalesLineItem => ({
   lineNo,
@@ -159,7 +169,15 @@ export const ErpExpensesPage: React.FC<Props> = ({ onBack, erpSession }) => {
     return d;
   };
 
+  /** Pur A/C comes from the Transaction Types master; still editable per entry. */
+  const applyTypePostingDefaults = (type: string) => {
+    const account = postingSaleOrPurchaseAccount(type);
+    if (account) setPurchaseAccount(account);
+  };
+
   const gstType = gstTypeLabel(state, businessState);
+  const gstDocumentType = getGstDocumentType(transactionType);
+  const gstReturn = gstReturnSection(transactionType);
 
   const totals = useMemo(() => lineItems.reduce((acc, line) => ({
     pcs: round2(acc.pcs + toNum(line.pcs)),
@@ -232,6 +250,8 @@ export const ErpExpensesPage: React.FC<Props> = ({ onBack, erpSession }) => {
           setDefaultHsnCode(d.hsnCode);
           setHsnCode(d.hsnCode);
           setLineItems([blankLine(1, d.gstRate, d.hsnCode)]);
+          const account = postingSaleOrPurchaseAccount(transactionType);
+          if (account) setPurchaseAccount(account);
         } else {
           const { bill } = await purchasesApi.getBill(editId);
           if (cancelled) return;
@@ -398,7 +418,8 @@ export const ErpExpensesPage: React.FC<Props> = ({ onBack, erpSession }) => {
       const result = editId
         ? await purchasesApi.updateEntry(editId, payload)
         : await purchasesApi.createEntry(payload);
-      const no = result.bill.typeBillNumber || result.bill.voucherNumber || result.bill.billNumber || '-';
+      const no = formatSeriesBillNumber(transactionType, result.bill.typeBillNumber)
+        || result.bill.voucherNumber || result.bill.billNumber || '-';
       setSuccess(`Expense #${no} ${isEditMode ? 'updated' : 'saved'}. Credited supplier ledger.`);
       if (!isEditMode) {
         setLineItems([blankLine(1, defaultGstRate, defaultHsnCode)]);
@@ -407,7 +428,7 @@ export const ErpExpensesPage: React.FC<Props> = ({ onBack, erpSession }) => {
         setRemarks('');
         setLrNo('');
         setVehicleNo('');
-        setPurchaseAccount('');
+        setPurchaseAccount(postingSaleOrPurchaseAccount(transactionType) || '');
         void bankEntriesApi.getNextTypeBillNumber({ transactionType, source: 'purchase_bill' })
           .then(resultBill => setTypeBillNumber(resultBill.typeBillNumber));
       }
@@ -467,6 +488,7 @@ export const ErpExpensesPage: React.FC<Props> = ({ onBack, erpSession }) => {
                     const next = e.target.value;
                     setTransactionType(next);
                     const d = applyTypeGstDefaults(next);
+                    applyTypePostingDefaults(next);
                     setLineItems([blankLine(1, d.gstRate, d.hsnCode)]);
                   }}
                 >
@@ -522,13 +544,25 @@ export const ErpExpensesPage: React.FC<Props> = ({ onBack, erpSession }) => {
               <label><span className={labelClass}>Transport</span><input className={inputClass} value={transportName} onChange={e => setTransportName(e.target.value)} /></label>
               <label>
                 <span className={labelClass}>Voucher</span>
-                <input className={readonlyClass} value={typeBillNumber ?? '—'} readOnly />
+                <input
+                  className={readonlyClass}
+                  value={formatSeriesBillNumber(transactionType, typeBillNumber) || '—'}
+                  readOnly
+                />
               </label>
               <label><span className={labelClass}>Bill no</span><input className={inputClass} value={supplierBillNo} onChange={e => setSupplierBillNo(e.target.value)} /></label>
               <label><span className={labelClass}>Ord/Ref</span><input className={inputClass} value={orderRef} onChange={e => setOrderRef(e.target.value)} placeholder="Order / reference" /></label>
               <label><span className={labelClass}>Date</span><input type="date" className={inputClass} value={billDate} onChange={e => setBillDate(e.target.value)} /></label>
               <label><span className={labelClass}>LR No</span><input className={inputClass} value={lrNo} onChange={e => setLrNo(e.target.value)} /></label>
               <label><span className={labelClass}>GST Type</span><input className={readonlyClass} value={gstType} readOnly /></label>
+              <label className="md:col-span-2">
+                <span className={labelClass}>GST Document{gstReturn !== 'NONE' ? ` · ${gstReturn}` : ''}</span>
+                <input className={readonlyClass} value={gstDocumentType || '—'} readOnly />
+              </label>
+              <label className="md:col-span-2">
+                <span className={labelClass}>Posts To</span>
+                <input className={readonlyClass} value={postingSummary(transactionType)} readOnly />
+              </label>
               <label><span className={labelClass}>Vehicle No</span><input className={inputClass} value={vehicleNo} onChange={e => setVehicleNo(e.target.value)} /></label>
               <label><span className={labelClass}>Screen Series</span><input className={inputClass} value={screenSeries} onChange={e => setScreenSeries(e.target.value)} /></label>
               <label><span className={labelClass}>Party GSTIN</span><input className={inputClass} value={partyGstin} onChange={e => setPartyGstin(e.target.value)} /></label>
@@ -663,6 +697,7 @@ export const ErpExpensesPage: React.FC<Props> = ({ onBack, erpSession }) => {
         open={showAccountsDialog}
         initialName={pendingNewParty}
         context="expenses"
+        suggestedAccountType={postingPartyAccountType(transactionType) || undefined}
         onClose={() => setShowAccountsDialog(false)}
         onSaved={onPartySaved}
       />

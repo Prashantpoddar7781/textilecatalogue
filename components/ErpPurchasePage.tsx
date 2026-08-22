@@ -7,6 +7,13 @@ import {
   ERP_TRANSACTION_TYPES,
   getGstDefaultsForTransactionType
 } from '../constants/erpTransactionTypes';
+import {
+  formatSeriesBillNumber,
+  getGstDocumentType,
+  gstReturnSection,
+  postingPartyAccountType,
+  postingSummary
+} from '../constants/erpTransactionPostingRules';
 import { AccountsInformationDialog, AddPartyConfirmDialog } from './AccountsInformationDialog';
 import { ErpFormShell } from './ErpFormShell';
 import { ErpSaveButton } from './ErpSaveButton';
@@ -151,6 +158,8 @@ export const ErpPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
   };
 
   const gstType = gstTypeLabel(state, businessState);
+  const gstDocumentType = getGstDocumentType(transactionType);
+  const gstReturn = gstReturnSection(transactionType);
 
   const totals = useMemo(() => lineItems.reduce((acc, line) => ({
     pcs: round2(acc.pcs + toNum(line.pcs)),
@@ -387,7 +396,8 @@ export const ErpPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
       const result = editId
         ? await purchasesApi.updateEntry(editId, payload)
         : await purchasesApi.createEntry(payload);
-      const no = result.bill.typeBillNumber || result.bill.voucherNumber || result.bill.billNumber || '-';
+      const no = formatSeriesBillNumber(transactionType, result.bill.typeBillNumber)
+        || result.bill.voucherNumber || result.bill.billNumber || '-';
       setSuccess(
         isPurchaseReturn
           ? `Purchase Return #${no} ${isEditMode ? 'updated' : 'saved'}. Debited supplier ledger.`
@@ -477,10 +487,22 @@ export const ErpPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
               </label>
               <label>
                 <span className={labelClass}>Bill / Voucher No.</span>
-                <input className={readonlyClass} value={typeBillNumber ?? '—'} readOnly />
+                <input
+                  className={readonlyClass}
+                  value={formatSeriesBillNumber(transactionType, typeBillNumber) || '—'}
+                  readOnly
+                />
               </label>
               <label><span className={labelClass}>Date</span><input type="date" className={inputClass} value={billDate} onChange={e => setBillDate(e.target.value)} /></label>
               <label><span className={labelClass}>GST Type</span><input className={readonlyClass} value={gstType} readOnly /></label>
+              <label className="md:col-span-2">
+                <span className={labelClass}>GST Document{gstReturn !== 'NONE' ? ` · ${gstReturn}` : ''}</span>
+                <input className={readonlyClass} value={gstDocumentType || '—'} readOnly />
+              </label>
+              <label className="md:col-span-2">
+                <span className={labelClass}>Posts To</span>
+                <input className={readonlyClass} value={postingSummary(transactionType)} readOnly />
+              </label>
               <label className="md:col-span-2">
                 <span className={labelClass}>{isPurchaseReturn ? '1. Party (required first)' : 'Party'}</span>
                 <input
@@ -668,6 +690,7 @@ export const ErpPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
         open={showAccountsDialog}
         initialName={pendingNewParty}
         context="purchase"
+        suggestedAccountType={postingPartyAccountType(transactionType) || undefined}
         onClose={() => setShowAccountsDialog(false)}
         onSaved={onPartySaved}
       />

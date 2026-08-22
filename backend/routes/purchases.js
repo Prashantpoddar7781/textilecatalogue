@@ -4,6 +4,12 @@ import { body, validationResult } from 'express-validator';
 import { authenticateToken } from '../middleware/auth.js';
 import { requireActiveSubscription } from '../middleware/subscription.js';
 import { normalizeTransactionType, DEFAULT_PURCHASE_TRANSACTION_TYPE, EXPENSE_TRANSACTION_TYPES, isExpensePurchaseType, getGstDefaultsForTransactionType } from '../constants/erpTransactionTypes.js';
+import {
+  formatSeriesBillNumber,
+  getGstDocumentType,
+  getStockType,
+  postingSaleOrPurchaseAccount
+} from '../constants/erpTransactionPostingRules.js';
 import { findOrCreateSupplier, resolveSupplierForEntry } from '../utils/partyMaster.js';
 import { allocateNextTypeBillNumber } from '../utils/transactionBilling.js';
 import { buildSupplierLedger } from '../utils/accountLedger.js';
@@ -436,7 +442,8 @@ function buildManualBillData(req, supplier, ctx, lines, totals, typeBillNumber) 
     remarks: optionalString(req.body.remarks),
     challanNo: optionalString(req.body.challanNo),
     orderRef: optionalString(req.body.orderRef || req.body.orderNumber),
-    purchaseAccount: optionalString(req.body.purchaseAccount || req.body.purAccount),
+    purchaseAccount: optionalString(req.body.purchaseAccount || req.body.purAccount)
+      || postingSaleOrPurchaseAccount(normalizeTransactionType(req.body.transactionType, DEFAULT_PURCHASE_TRANSACTION_TYPE)),
     lineItems: lines,
     taxableAmount: totals.taxableAmount,
     discountAmount: totals.discountAmount,
@@ -452,21 +459,22 @@ function buildManualBillData(req, supplier, ctx, lines, totals, typeBillNumber) 
 async function saveManualBill(req, res, existing = null) {
   const userId = req.user.userId;
   const ctx = await getCompanyContext(userId);
+  const transactionType = normalizeTransactionType(
+    req.body.transactionType,
+    DEFAULT_PURCHASE_TRANSACTION_TYPE
+  );
   const supplier = await resolveSupplierForEntry(prisma, userId, {
     supplierId: req.body.supplierId,
     partyName: req.body.partyName || req.body.supplierName,
     partyGstin: req.body.partyGstin,
     placeOfSupply: req.body.state,
-    partyMsme: req.body.partyMsme
+    partyMsme: req.body.partyMsme,
+    transactionType
   });
   if (!supplier) return res.status(400).json({ error: 'Party / supplier is required' });
 
   const partyGstin = optionalString(req.body.partyGstin) || supplier.gstNumber;
   const placeOfSupply = optionalString(req.body.state) || supplier.state || getStateFromGstin(partyGstin).stateName;
-  const transactionType = normalizeTransactionType(
-    req.body.transactionType,
-    DEFAULT_PURCHASE_TRANSACTION_TYPE
-  );
   const typeGst = getGstDefaultsForTransactionType(
     transactionType,
     ctx.defaultGstRate,
@@ -733,9 +741,13 @@ router.get('/expense-report', authenticateToken, requireActiveSubscription, asyn
             billId: bill.id,
             date: bill.billDate || bill.createdAt,
             partyName: bill.supplier?.name || '',
-            billNo: bill.typeBillNumber || bill.billNumber,
+            billNo: formatSeriesBillNumber(bill.transactionType, bill.typeBillNumber) || bill.billNumber,
             transactionType: bill.transactionType || '',
-            purchaseAccount: bill.purchaseAccount || '',
+            purchaseAccount: bill.purchaseAccount
+              || postingSaleOrPurchaseAccount(bill.transactionType)
+              || '',
+            gstDocumentType: getGstDocumentType(bill.transactionType),
+            stockType: getStockType(bill.transactionType),
             mainScreen: lineMain,
             itemName: lineName,
             pcs: Number(line.pcs ?? line.quantity) || 0,
@@ -767,8 +779,12 @@ router.get('/expense-report', authenticateToken, requireActiveSubscription, asyn
         date: bill.billDate || bill.createdAt,
         partyName: bill.supplier?.name || '',
         transactionType: bill.transactionType || '',
-        purchaseAccount: bill.purchaseAccount || '',
-        voucherNo: bill.typeBillNumber || bill.voucherNumber,
+        purchaseAccount: bill.purchaseAccount
+          || postingSaleOrPurchaseAccount(bill.transactionType)
+          || '',
+        gstDocumentType: getGstDocumentType(bill.transactionType),
+        stockType: getStockType(bill.transactionType),
+        voucherNo: formatSeriesBillNumber(bill.transactionType, bill.typeBillNumber) || bill.voucherNumber,
         billNo: bill.supplierBillNo || bill.billNumber || bill.typeBillNumber,
         lrNo: bill.lrNo || '',
         transportName: bill.transportName || '',

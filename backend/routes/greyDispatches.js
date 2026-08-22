@@ -597,7 +597,8 @@ router.post('/', authenticateToken, requireActiveSubscription, [
       partyName: optionalString(req.body.weaverName) || purchase.partyName,
       partyGstin: purchase.partyGstin,
       placeOfSupply: purchase.placeOfSupply,
-      partyMsme: purchase.partyMsme
+      partyMsme: purchase.partyMsme,
+      transactionType: 'GREY PURCHASE'
     });
 
     const entry = await prisma.$transaction(async (tx) => {

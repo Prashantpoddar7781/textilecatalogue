@@ -252,7 +252,8 @@ async function buildGreyPurchaseData(req, userId, isUpdate = false) {
       partyName,
       partyGstin,
       placeOfSupply: totals.placeOfSupply || placeOfSupply,
-      partyMsme: req.body.partyMsme
+      partyMsme: req.body.partyMsme,
+      transactionType: 'GREY PURCHASE'
     });
     if (supplier) supplierId = supplier.id;
   }

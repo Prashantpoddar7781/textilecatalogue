@@ -381,7 +381,8 @@ async function saveReceipt(req, res, existing = null) {
   await resolveSupplierForEntry(prisma, userId, {
     partyName,
     partyGstin: totals.partyGstin,
-    placeOfSupply: totals.placeOfSupply
+    placeOfSupply: totals.placeOfSupply,
+    transactionType: 'WORK REC. BILLS'
   });
 
   const data = {

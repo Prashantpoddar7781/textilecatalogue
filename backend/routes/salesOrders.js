@@ -523,16 +523,17 @@ router.get('/bills/:id', authenticateToken, requireActiveSubscription, async (re
 async function saveBill(req, res, existing = null) {
   const userId = req.user.userId;
   const ctx = await getCompanyContext(userId);
+  const transactionType = optionalString(req.body.transactionType) || 'FINISH SALES';
   const customer = await resolveCustomerForEntry(prisma, userId, {
     customerId: req.body.customerId,
     partyName: req.body.partyName || req.body.buyerName,
     gstNumber: req.body.partyGstin,
     state: req.body.state,
-    agentName: req.body.brokerName || req.body.agentName
+    agentName: req.body.brokerName || req.body.agentName,
+    transactionType
   });
   if (!customer) return res.status(400).json({ error: 'Customer is required' });
 
-  const transactionType = optionalString(req.body.transactionType) || 'FINISH SALES';
   const goodsReturn = String(transactionType).toUpperCase() === 'SALES GOODS RETURN';
   // Goods returns do not consume Sales Order pending qty.
   const sourceSalesOrderId = goodsReturn ? null : optionalString(req.body.sourceSalesOrderId);
@@ -675,7 +676,8 @@ async function saveSalesOrder(req, res, existing = null) {
     partyName: req.body.partyName,
     gstNumber: req.body.partyGstin,
     state: req.body.state,
-    agentName: req.body.brokerName
+    agentName: req.body.brokerName,
+    transactionType: optionalString(req.body.transactionType) || 'SALES ORDERS'
   });
   if (!customer) return res.status(400).json({ error: 'Customer is required' });
   const partyGstin = optionalString(req.body.partyGstin) || customer.gstNumber;

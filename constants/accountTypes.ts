@@ -134,9 +134,10 @@ export function getAccountType(value?: string | null): ErpAccountType | undefine
   return ERP_ACCOUNT_TYPES.find(row => row.value.toUpperCase() === key);
 }
 
-export function suggestedAccountTypeForContext(
-  context: 'purchase' | 'expenses' | 'grey' | 'mill' | 'work' | 'sales' | 'other'
-): string {
+/** Entry screen a party is being created from, when no transaction type is available. */
+export type PartyEntryContext = 'purchase' | 'expenses' | 'grey' | 'mill' | 'work' | 'sales' | 'other';
+
+export function suggestedAccountTypeForContext(context: string): string {
   switch (context) {
     case 'grey':
       return 'CREDITORS FOR GREY';

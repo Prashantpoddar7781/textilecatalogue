@@ -5,13 +5,14 @@ import {
   ERP_ACCOUNT_TYPES,
   getAccountType,
   partyRoleForAccountType,
-  suggestedAccountTypeForContext
+  suggestedAccountTypeForContext,
+  type PartyEntryContext
 } from '../constants/accountTypes';
 import { INDIAN_STATES } from '../constants/creditDebitNoteTypes';
 import { partiesApi } from '../services/api';
 import { AccountParty } from '../types';
 
-export type PartyEntryContext = 'purchase' | 'expenses' | 'grey' | 'mill' | 'work' | 'sales' | 'other';
+export type { PartyEntryContext };
 
 interface Props {
   open: boolean;
