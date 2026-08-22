@@ -711,7 +711,7 @@ router.post('/', authenticateToken, requireActiveSubscription, [
       partyGstin: millGstin,
       placeOfSupply: totals.placeOfSupply || placeOfSupply,
       partyMsme: optionalString(req.body.partyMsme),
-      accountType: 'CREDITORS FOR JOBWORK'
+      transactionType: 'MILL REC.CHALLAN'
     });
 
     const effectiveRecMts = isReturn ? greyMts : recMts;
@@ -931,7 +931,7 @@ router.put('/:id', authenticateToken, requireActiveSubscription, [
       partyGstin: millGstin,
       placeOfSupply: totals.placeOfSupply || placeOfSupply,
       partyMsme: optionalString(req.body.partyMsme) || existing.partyMsme,
-      accountType: 'CREDITORS FOR JOBWORK'
+      transactionType: 'MILL REC.CHALLAN'
     });
 
     const effectiveRecMts = isReturn ? greyMts : recMts;

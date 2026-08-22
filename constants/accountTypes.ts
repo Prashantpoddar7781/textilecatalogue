@@ -144,8 +144,9 @@ export function suggestedAccountTypeForContext(context: string): string {
     case 'expenses':
       return 'CREDITORS FOR EXPENSES';
     case 'mill':
+      return 'CREDITORS FOR DYEING JOB CHARG';
     case 'work':
-      return 'CREDITORS FOR JOBWORK';
+      return 'CREDITORS FOR EMB.JOB CHARGE';
     case 'sales':
       return DEFAULT_DEBTOR_ACCOUNT_TYPE;
     case 'purchase':

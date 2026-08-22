@@ -1,8 +1,9 @@
 /**
- * Transaction Types master (legacy AMAZE "TRANSACTION TYPES 2026-27").
+ * Transaction Types master (legacy AMAZE "TRANSACTION TYPES 2026-27"), all 53 series.
  *
  * One row per voucher series: numbering series, GST document class, print form,
- * the nominal ledger it hits (Sale/Pur A/C) and the party control account.
+ * the nominal ledger it hits (Sale/Pur A/C), the party control account, and the
+ * stock ledger it moves.
  *
  * `partyAccountType: null` means the master leaves it blank — fall back to the
  * party's own A/C Type from the Accounts Information Manager.
@@ -10,72 +11,389 @@
  * Keep in sync with constants/erpTransactionPostingRules.ts
  */
 
-const rule = (
-  series,
-  seriesCode,
-  gstDocumentType,
-  billSuffix,
-  billingForm,
-  saleOrPurchaseAccount,
-  partyAccountType,
-  stockType = null,
-  linkedSeries = null
-) => ({
-  series,
-  seriesCode,
-  gstDocumentType,
-  billSuffix,
-  billingForm,
-  saleOrPurchaseAccount,
-  partyAccountType,
-  stockType,
-  linkedSeries
+const rule = (seed) => ({
+  gstDocumentType: null,
+  billSuffix: null,
+  billingForm: null,
+  saleOrPurchaseAccount: null,
+  partyAccountType: null,
+  stockType: null,
+  linkedSeries: null,
+  billingAll: false,
+  singleRef: false,
+  ...seed
 });
 
+const INWARD = 'Inward Invoices (All Purchases)';
+const OUTWARD = 'Invoices for outward supply';
+const JOB_CHALLAN = 'Delivery Challan for job work';
+const APPROVAL_CHALLAN = 'Delivery Challan for supply on approval';
+
 export const ERP_POSTING_RULES = [
-  rule('WORK DESP CHALLAN', 'O5', 'Delivery Challan for job work', null, 'CHALLAN', null, 'CREDITORS FOR EMB.JOB CHARGE', 'WORK DESP CHALLAN'),
-  rule('WORK DESP RE ISSUE CHALLAN', 'O7', 'Delivery Challan for job work', 'ST', 'CHALLAN', null, 'CREDITORS FOR EMB.JOB CHARGE', 'WORK DESP RE-ISSUE'),
-  rule('REVERSE CHARGE SALES TO SELF', 'OR', 'Invoices for inward supply from unregistered person', null, 'CHALLAN', null, null),
-  rule('PURCHASES (ALL)', 'P', null, null, null, null, 'CREDITORS FOR GOODS'),
-  rule('GREY PURCHASE', 'P1', 'Inward Invoices (All Purchases)', null, 'PURBILL', 'GREY PURCHASE', 'CREDITORS FOR GREY', 'GREY'),
-  rule('VALUE ADDITION PURCHASE', 'P10', 'Inward Invoices (All Purchases)', null, 'CHALLAN', 'VALUE ADDITION PURCHASE', 'CREDITORS FOR GOODS', 'FINISH'),
-  rule('SALARY EXP A/C', 'P17', null, null, 'CHALLAN', null, 'P & L EXPENSES'),
-  rule('MATERIAL PURCHASE', 'P18', 'Inward Invoices (All Purchases)', null, 'CHALLAN', 'MATERIAL PURCHASE A/C', null),
-  rule('FINISH PURCHASE', 'P2', 'Inward Invoices (All Purchases)', null, 'CHALLAN', 'FINISH PURCHASE', 'CREDITORS FOR GOODS', 'FINISH'),
-  rule('SALES GOODS RETURN', 'P3', 'Credit Note', null, 'CHALLAN', 'SALES GOODS RETURN', 'SUNDRY DEBTORS', 'FINISH'),
-  rule('PACKING MATERIAL', 'P4', 'Inward Invoices (All Purchases)', null, 'CHALLAN', 'PACKING MATERIAL PURCHASE', 'CREDITORS FOR PACKING MAT.'),
-  rule('WORK REC. BILLS', 'P5', 'Inward Invoices (All Purchases)', null, 'CHALLAN', 'EMB JOB CHARGES', 'CREDITORS FOR EMB.JOB CHARGE', 'WORK DESP CHALLAN'),
-  rule('BOX PURCHASES', 'P6', 'Inward Invoices (All Purchases)', null, 'CHALLAN', 'PACKING MATERIAL PURCHASE', 'CREDITORS FOR PACKING MAT.'),
-  rule('WORK REC. RE ISSUE BILLS', 'P7', 'Inward Invoices (All Purchases)', null, 'CHALLAN', 'EMB JOB CHARGES', 'CREDITORS FOR EMB.JOB CHARGE', 'WORK DESP RE-ISSUE'),
-  rule('CREDIT NOTE (TCS)', 'P77', null, null, 'BILLSDR', null, null),
-  rule('GENERAL PURCHASES', 'P8', 'Inward Invoices (All Purchases)', null, 'CHALLAN', 'GENERAL PURCHASE', null),
-  rule('CREDIT NOTE (ON SALES)', 'P91', 'Credit Note', 'C', 'CHALLAN', 'DISCOUNT A/C SALES', 'SUNDRY DEBTORS'),
-  rule('CREDIT NOTE (ON PURCHASES)', 'P92', 'Credit Note (Inward)', null, 'CHALLAN', 'DISCOUNT A/C PURCHASE', null),
-  rule('PURCHASE (GST INPUT SERVICES)', 'P93', 'Inward Invoices (All Purchases)', null, 'CHALLAN', 'PURCHASE (SERVICES)', null),
-  rule('PURCHASE (GST CAPITAL GOODS)', 'P94', 'Inward Invoices (All Purchases)', null, 'CHALLAN', 'PURCHASE (CAPITAL GOODS)', null),
-  rule('PURCHASE (GST GENERAL GOODS)', 'P95', 'Inward Invoices (All Purchases)', null, 'CHALLAN', 'PURCHASE (GENERAL GOODS)', null),
-  rule('PURCHASE (COMM)', 'P99', 'Inward Invoices (All Purchases)', null, 'BILLSDR', 'COMMISSION PAYABLE A/C', 'BROKER/AGENT'),
-  rule('SALES', 'S', 'Invoices for outward supply', 'SG', 'BILLS', 'SALES A/C', 'SUNDRY DEBTORS', 'FINISH', 'SALES ORDERS'),
-  rule('FINISH SALES', 'S1', 'Invoices for outward supply', null, 'CHALLAN', 'SALES A/C', 'SUNDRY DEBTORS', 'FINISH'),
-  rule('FINISH SALES (GST)', 'S1', 'Invoices for outward supply', null, 'CHALLAN', 'SALES A/C', 'SUNDRY DEBTORS', 'FINISH'),
-  rule('FINISH SALES (EXPORT)', 'S11', 'Invoices for outward supply', 'EX', 'CHALLAN', 'EXPORT SALES A/C', 'SUNDRY DEBTORS'),
-  rule('JOB BILL (SALES)', 'S12', 'Invoices for outward supply', 'JOB', 'JOBBILL', 'EMB JOB CHARGES', 'SUNDRY DEBTORS'),
-  rule('GREY PURCHASE RETURN', 'S2', 'Debit Note (Inward)', null, 'CHALLAN', 'GREY PURCHASE RETURN', 'CREDITORS FOR GREY', 'GREY'),
-  rule('FINISH PURCHASE RETURN', 'S3', 'Debit Note (Inward)', null, 'CHALLAN', 'FINISH PURCHASE RETURN', 'CREDITORS FOR GOODS', 'FINISH'),
-  rule('CASH SALES', 'S4', 'Delivery Challan for supply on approval', 'CS', 'CHALLAN', 'SALES A/C', null, 'FINISH'),
-  rule('GREY SALES', 'S5', 'Invoices for outward supply', null, 'CHALLAN', 'GREY SALES A/C', 'SUNDRY DEBTORS', 'GREY'),
-  rule('FENT SALES', 'S6', 'Delivery Challan for supply on approval', 'ICS', 'CHALLAN', 'SALES A/C', null),
-  rule('DEBIT NOTE (TCS)', 'S27', null, null, 'BILLSDR', null, 'SUNDRY DEBTORS'),
-  rule('DEBIT NOTE (ON SALES)', 'S91', 'Debit Note', 'D', 'BILLSDR', 'DISCOUNT A/C SALES', 'SUNDRY DEBTORS'),
-  rule('DEBIT NOTE (ON PURCHASES)', 'S92', 'Debit Note (Inward)', null, 'BILLSDR', 'DISCOUNT A/C PURCHASE', null),
-  rule('TDS', 'T1', null, null, null, null, 'TDS'),
-  rule('VAT JV', 'V1', null, null, null, null, null),
-  rule('CLOSING ENTRIES (TRADING)', 'V2', null, null, null, null, null),
-  rule('CLOSING ENTRIES (P & L)', 'V3', null, null, null, null, null),
-  rule('VAT IV', 'V4', null, null, null, null, null),
-  rule('COMMISSION JVS', 'V5', null, null, null, 'COMMISSION PAYABLE A/C', 'BROKER/AGENT'),
-  rule('UNAD PAYMENT', 'XX', null, null, null, null, null),
-  rule('SALES ORDERS', 'S', null, null, null, null, 'SUNDRY DEBTORS', 'FINISH')
+  // Ledger-only vouchers: no GST document, no print form, no stock movement.
+  rule({ series: 'OPENING BALANCE', seriesCode: '00', saleOrPurchaseAccount: 'OPENING BALANCE', stockType: 'FINISH' }),
+  rule({ series: 'BANK RECEIPT', seriesCode: 'B1' }),
+  rule({ series: 'BANK PAYMENT', seriesCode: 'B2' }),
+  rule({ series: 'CASH RECEIPT', seriesCode: 'C1' }),
+  rule({ series: 'CASH PAYMENT', seriesCode: 'C2' }),
+  rule({ series: 'EXPENSES', seriesCode: 'E1' }),
+  rule({ series: 'JOB WORK', seriesCode: 'J1' }),
+  rule({
+    series: 'JOURNAL',
+    seriesCode: 'J2',
+    gstDocumentType: INWARD,
+    billingForm: 'JOBBILL',
+    saleOrPurchaseAccount: 'JOB CHARGES',
+    partyAccountType: 'CREDITORS FOR DYEING JOB CHARG',
+    billingAll: true,
+    singleRef: true
+  }),
+  rule({ series: 'WORK DESP ALL', seriesCode: 'O' }),
+  rule({
+    series: 'SALES ORDERS',
+    seriesCode: 'O1',
+    gstDocumentType: 'Sales Orders',
+    billingForm: 'CHALLAN',
+    partyAccountType: 'SUNDRY DEBTORS',
+    billingAll: true
+  }),
+  rule({
+    series: 'MILL REC.CHALLAN',
+    seriesCode: 'O3',
+    gstDocumentType: INWARD,
+    billingForm: 'CHALLAN',
+    partyAccountType: 'CREDITORS FOR DYEING JOB CHARG',
+    billingAll: true
+  }),
+  rule({ series: 'STOCK TRANSFER', seriesCode: 'O4', billingForm: 'STOCKTFR', billingAll: true }),
+  rule({
+    series: 'WORK DESP CHALLAN',
+    seriesCode: 'O5',
+    gstDocumentType: JOB_CHALLAN,
+    billingForm: 'CHALLAN',
+    partyAccountType: 'CREDITORS FOR EMB.JOB CHARGE',
+    stockType: 'WORK DESP CHALLAN',
+    billingAll: true
+  }),
+  rule({
+    series: 'WORK DESP RE ISSUE CHALLAN',
+    seriesCode: 'O7',
+    gstDocumentType: JOB_CHALLAN,
+    billSuffix: 'ST',
+    billingForm: 'CHALLAN',
+    partyAccountType: 'CREDITORS FOR EMB.JOB CHARGE',
+    stockType: 'WORK DESP RE-ISSUE',
+    billingAll: true
+  }),
+  rule({
+    series: 'REVERSE CHARGE SALES TO SELF',
+    seriesCode: 'OR',
+    gstDocumentType: 'Invoices for inward supply from unregistered person',
+    billingForm: 'CHALLAN',
+    billingAll: true
+  }),
+  rule({ series: 'PURCHASES (ALL)', seriesCode: 'P', partyAccountType: 'CREDITORS FOR GREY' }),
+  rule({
+    series: 'GREY PURCHASE',
+    seriesCode: 'P1',
+    gstDocumentType: INWARD,
+    billingForm: 'PURBILL',
+    saleOrPurchaseAccount: 'GREY PURCHASE',
+    partyAccountType: 'CREDITORS FOR GREY',
+    stockType: 'GREY',
+    billingAll: true,
+    singleRef: true
+  }),
+  rule({
+    series: 'VALUE ADDITION PURCHASE',
+    seriesCode: 'P10',
+    gstDocumentType: INWARD,
+    billingForm: 'CHALLAN',
+    saleOrPurchaseAccount: 'VALUE ADDITION PURCHASE',
+    partyAccountType: 'CREDITORS FOR GOODS',
+    stockType: 'FINISH',
+    billingAll: true,
+    singleRef: true
+  }),
+  rule({
+    series: 'SALARY EXP A/C',
+    seriesCode: 'P12',
+    billingForm: 'CHALLAN',
+    partyAccountType: 'P & L EXPENSES',
+    billingAll: true
+  }),
+  rule({
+    series: 'MATERIAL PURCHASE',
+    seriesCode: 'P18',
+    gstDocumentType: INWARD,
+    billingForm: 'CHALLAN',
+    saleOrPurchaseAccount: 'MATERIAL PURCHASE A/C',
+    billingAll: true,
+    singleRef: true
+  }),
+  rule({
+    series: 'FINISH PURCHASE',
+    seriesCode: 'P2',
+    gstDocumentType: INWARD,
+    billingForm: 'CHALLAN',
+    saleOrPurchaseAccount: 'FINISH PURCHASE',
+    partyAccountType: 'CREDITORS FOR GOODS',
+    stockType: 'FINISH',
+    billingAll: true,
+    singleRef: true
+  }),
+  rule({
+    series: 'SALES GOODS RETURN',
+    seriesCode: 'P3',
+    gstDocumentType: 'Credit Note',
+    billingForm: 'CHALLAN',
+    saleOrPurchaseAccount: 'SALES GOODS RETURN',
+    partyAccountType: 'SUNDRY DEBTORS',
+    stockType: 'FINISH',
+    billingAll: true,
+    singleRef: true
+  }),
+  rule({
+    series: 'PACKING MATERIAL',
+    seriesCode: 'P4',
+    gstDocumentType: INWARD,
+    billingForm: 'CHALLAN',
+    saleOrPurchaseAccount: 'PACKING MATERIAL PURCHASE',
+    partyAccountType: 'CREDITORS FOR PACKING MAT.',
+    billingAll: true,
+    singleRef: true
+  }),
+  rule({
+    series: 'WORK REC. BILLS',
+    seriesCode: 'P5',
+    gstDocumentType: INWARD,
+    billingForm: 'CHALLAN',
+    saleOrPurchaseAccount: 'EMB JOB CHARGES',
+    partyAccountType: 'CREDITORS FOR EMB.JOB CHARGE',
+    stockType: 'WORK DESP CHALLAN',
+    billingAll: true,
+    singleRef: true
+  }),
+  rule({
+    series: 'BOX PURCHASES',
+    seriesCode: 'P6',
+    gstDocumentType: INWARD,
+    billingForm: 'CHALLAN',
+    saleOrPurchaseAccount: 'PACKING MATERIAL PURCHASE',
+    partyAccountType: 'CREDITORS FOR PACKING MAT.',
+    billingAll: true,
+    singleRef: true
+  }),
+  rule({
+    series: 'WORK REC. RE ISSUE BILLS',
+    seriesCode: 'P7',
+    gstDocumentType: INWARD,
+    billingForm: 'CHALLAN',
+    saleOrPurchaseAccount: 'EMB JOB CHARGES',
+    partyAccountType: 'CREDITORS FOR EMB.JOB CHARGE',
+    stockType: 'WORK DESP RE-ISSUE',
+    billingAll: true,
+    singleRef: true
+  }),
+  rule({ series: 'CREDIT NOTE (TCS)', seriesCode: 'P77', billingForm: 'BILLSDR', singleRef: true }),
+  rule({
+    series: 'GENERAL PURCHASES',
+    seriesCode: 'P8',
+    gstDocumentType: INWARD,
+    billingForm: 'CHALLAN',
+    saleOrPurchaseAccount: 'GENERAL PURCHASE',
+    billingAll: true
+  }),
+  rule({
+    series: 'CREDIT NOTE (ON SALES)',
+    seriesCode: 'P91',
+    gstDocumentType: 'Credit Note',
+    billSuffix: 'C',
+    billingForm: 'CHALLAN',
+    saleOrPurchaseAccount: 'DISCOUNT A/C SALES',
+    partyAccountType: 'SUNDRY DEBTORS',
+    billingAll: true
+  }),
+  rule({
+    series: 'CREDIT NOTE (ON PURCHASES)',
+    seriesCode: 'P92',
+    gstDocumentType: 'Credit Note (Inward)',
+    billingForm: 'BILLSDR',
+    saleOrPurchaseAccount: 'DISCOUNT A/C PURCHASE',
+    billingAll: true
+  }),
+  rule({
+    series: 'PURCHASE (GST INPUT SERVICES)',
+    seriesCode: 'P93',
+    gstDocumentType: INWARD,
+    billingForm: 'CHALLAN',
+    saleOrPurchaseAccount: 'PURCHASE (SERVICES)',
+    billingAll: true
+  }),
+  rule({
+    series: 'PURCHASE (GST CAPITAL GOODS)',
+    seriesCode: 'P94',
+    gstDocumentType: INWARD,
+    billingForm: 'CHALLAN',
+    saleOrPurchaseAccount: 'PURCHASE (CAPITAL GOODS)',
+    billingAll: true
+  }),
+  rule({
+    series: 'PURCHASE (GST GENERAL GOODS)',
+    seriesCode: 'P95',
+    gstDocumentType: INWARD,
+    billingForm: 'CHALLAN',
+    saleOrPurchaseAccount: 'PURCHASE (GENERAL GOODS)',
+    billingAll: true
+  }),
+  rule({
+    series: 'PURCHASE (COMM)',
+    seriesCode: 'P99',
+    gstDocumentType: INWARD,
+    billingForm: 'BILLSDR',
+    saleOrPurchaseAccount: 'COMMISSION PAYABLE A/C',
+    partyAccountType: 'BROKER/AGENT',
+    billingAll: true
+  }),
+  rule({
+    series: 'SALES',
+    seriesCode: 'S',
+    gstDocumentType: OUTWARD,
+    billSuffix: 'SG',
+    billingForm: 'BILLS',
+    saleOrPurchaseAccount: 'SALES A/C',
+    partyAccountType: 'SUNDRY DEBTORS',
+    stockType: 'FINISH',
+    linkedSeries: 'SALES ORDERS',
+    billingAll: true
+  }),
+  rule({
+    series: 'FINISH SALES',
+    seriesCode: 'S1',
+    gstDocumentType: OUTWARD,
+    billingForm: 'CHALLAN',
+    saleOrPurchaseAccount: 'SALES A/C',
+    partyAccountType: 'SUNDRY DEBTORS',
+    stockType: 'FINISH',
+    billingAll: true
+  }),
+  // Alias used by our sales screen; same posting as FINISH SALES.
+  rule({
+    series: 'FINISH SALES (GST)',
+    seriesCode: 'S1',
+    gstDocumentType: OUTWARD,
+    billingForm: 'CHALLAN',
+    saleOrPurchaseAccount: 'SALES A/C',
+    partyAccountType: 'SUNDRY DEBTORS',
+    stockType: 'FINISH',
+    billingAll: true
+  }),
+  rule({
+    series: 'FINISH SALES (EXPORT)',
+    seriesCode: 'S11',
+    gstDocumentType: OUTWARD,
+    billSuffix: 'EX',
+    billingForm: 'CHALLAN',
+    saleOrPurchaseAccount: 'EXPORT SALES A/C',
+    partyAccountType: 'SUNDRY DEBTORS',
+    stockType: 'FINISH',
+    billingAll: true
+  }),
+  rule({
+    series: 'JOB BILL (SALES)',
+    seriesCode: 'S12',
+    gstDocumentType: OUTWARD,
+    billSuffix: 'JOB',
+    billingForm: 'CHALLAN',
+    saleOrPurchaseAccount: 'EMB JOB CHARGES',
+    partyAccountType: 'SUNDRY DEBTORS',
+    billingAll: true
+  }),
+  rule({
+    series: 'GREY PURCHASE RETURN',
+    seriesCode: 'S2',
+    gstDocumentType: 'Debit Note (Inward)',
+    billingForm: 'CHALLAN',
+    saleOrPurchaseAccount: 'GREY PURCHASE RETURN',
+    partyAccountType: 'CREDITORS FOR GREY',
+    stockType: 'GREY',
+    billingAll: true
+  }),
+  rule({
+    series: 'FINISH PURCHASE RETURN',
+    seriesCode: 'S3',
+    gstDocumentType: 'Debit Note (Inward)',
+    billingForm: 'CHALLAN',
+    saleOrPurchaseAccount: 'FINISH PURCHASE RETURN',
+    partyAccountType: 'CREDITORS FOR GOODS',
+    stockType: 'FINISH',
+    billingAll: true
+  }),
+  rule({
+    series: 'CASH SALES',
+    seriesCode: 'S4',
+    gstDocumentType: APPROVAL_CHALLAN,
+    billSuffix: 'CS',
+    billingForm: 'CHALLAN',
+    saleOrPurchaseAccount: 'SALES A/C',
+    stockType: 'FINISH',
+    billingAll: true
+  }),
+  rule({
+    series: 'GREY SALES',
+    seriesCode: 'S5',
+    gstDocumentType: OUTWARD,
+    billingForm: 'CHALLAN',
+    saleOrPurchaseAccount: 'GREY SALES A/C',
+    partyAccountType: 'SUNDRY DEBTORS',
+    stockType: 'GREY',
+    billingAll: true
+  }),
+  rule({
+    series: 'FENT SALES',
+    seriesCode: 'S6',
+    gstDocumentType: APPROVAL_CHALLAN,
+    billSuffix: 'ICS',
+    billingForm: 'CHALLAN',
+    saleOrPurchaseAccount: 'SALES A/C',
+    billingAll: true
+  }),
+  rule({
+    series: 'DEBIT NOTE (TCS)',
+    seriesCode: 'S77',
+    billingForm: 'BILLSDR',
+    partyAccountType: 'SUNDRY DEBTORS'
+  }),
+  rule({
+    series: 'DEBIT NOTE (ON SALES)',
+    seriesCode: 'S91',
+    gstDocumentType: 'Debit Note',
+    billSuffix: 'D',
+    billingForm: 'BILLSDR',
+    saleOrPurchaseAccount: 'DISCOUNT A/C SALES',
+    partyAccountType: 'SUNDRY DEBTORS',
+    billingAll: true
+  }),
+  rule({
+    series: 'DEBIT NOTE (ON PURCHASES)',
+    seriesCode: 'S92',
+    gstDocumentType: 'Debit Note (Inward)',
+    billingForm: 'BILLSDR',
+    saleOrPurchaseAccount: 'DISCOUNT A/C PURCHASE',
+    billingAll: true
+  }),
+  rule({ series: 'TDS', seriesCode: 'T1', billingForm: 'JOBBILL' }),
+  rule({ series: 'VAT JV', seriesCode: 'V1' }),
+  rule({ series: 'CLOSING ENTRIES (TRADING)', seriesCode: 'V2' }),
+  rule({ series: 'CLOSING ENTRIES (P & L)', seriesCode: 'V3' }),
+  rule({ series: 'VAT IV', seriesCode: 'V4' }),
+  rule({
+    series: 'COMMISSION JVS',
+    seriesCode: 'V5',
+    saleOrPurchaseAccount: 'COMMISSION PAYABLE A/C',
+    partyAccountType: 'BROKER/AGENT'
+  }),
+  rule({ series: 'UNAD PAYMENT', seriesCode: 'XX' })
 ];
 
 const RULE_BY_SERIES = new Map(ERP_POSTING_RULES.map(row => [row.series.toUpperCase(), row]));
@@ -91,6 +409,7 @@ function fallbackRule(upper) {
       ? 'WORK REC. RE ISSUE BILLS'
       : 'WORK REC. BILLS');
   }
+  if (upper.includes('MILL REC')) return RULE_BY_SERIES.get('MILL REC.CHALLAN');
   if (upper.startsWith('CREDIT_NOTE_SALES')) return RULE_BY_SERIES.get('CREDIT NOTE (ON SALES)');
   if (upper.startsWith('CREDIT_NOTE_PURCHASE')) return RULE_BY_SERIES.get('CREDIT NOTE (ON PURCHASES)');
   if (upper.startsWith('DEBIT_NOTE_SALES')) return RULE_BY_SERIES.get('DEBIT NOTE (ON SALES)');
@@ -118,6 +437,16 @@ export function getGstDocumentType(transactionType) {
 
 export function getStockType(transactionType) {
   return getPostingRule(transactionType)?.stockType || null;
+}
+
+/** True when one bill may draw on several pending reference documents. */
+export function allowsBillingAll(transactionType) {
+  return getPostingRule(transactionType)?.billingAll === true;
+}
+
+/** True when the series bills exactly one reference document at a time. */
+export function requiresSingleReference(transactionType) {
+  return getPostingRule(transactionType)?.singleRef === true;
 }
 
 const GSTR1_DOCUMENTS = new Set([
@@ -156,6 +485,18 @@ export function formatSeriesBillNumber(transactionType, counter, pad = 4) {
   const found = getPostingRule(transactionType);
   if (!found) return body;
   return [found.seriesCode, found.billSuffix, body].filter(Boolean).join('/');
+}
+
+/** One-line "where does this entry land" summary. */
+export function postingSummary(transactionType) {
+  const found = getPostingRule(transactionType);
+  if (!found) return '—';
+  const parts = [
+    found.saleOrPurchaseAccount,
+    found.partyAccountType,
+    found.stockType ? `Stock: ${found.stockType}` : null
+  ].filter(Boolean);
+  return parts.length ? parts.join(' · ') : '—';
 }
 
 export const ERP_SALE_PURCHASE_ACCOUNTS = Array.from(
