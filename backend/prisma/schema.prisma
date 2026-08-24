@@ -804,6 +804,10 @@ model WorkReceipt {
   user            User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   workDespatchId  String
   workDespatch    WorkDespatch @relation(fields: [workDespatchId], references: [id], onDelete: Restrict)
+  /// Every despatch this receipt draws on. workDespatchId stays the primary one so
+  /// existing relations and reports keep working; per-line sourceDespatchId in
+  /// lineItems says which despatch each line came from.
+  sourceDespatchIds String[]
   companyName     String?
   transactionType String       @default("WORK REC. CHALLAN")
   partyName       String

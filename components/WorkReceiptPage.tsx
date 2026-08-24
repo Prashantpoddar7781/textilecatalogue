@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, ListOrdered, Loader2 } from 'lucide-react';
-import { workDespatchesApi, workReceiptsApi } from '../services/api';
-import { ErpSession, WorkLineItem, WorkPendingDespatch } from '../types';
+import { workReceiptsApi } from '../services/api';
+import { ErpSession, LinkedSourceDocument, WorkLineItem } from '../types';
 import { ErpFormShell } from './ErpFormShell';
 import { ErpSaveButton } from './ErpSaveButton';
 import { ErpTopMenu } from './ErpTopMenu';
@@ -49,8 +49,10 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [hsnCode, setHsnCode] = useState('9988');
   const [remarks, setRemarks] = useState('');
   const [billNo, setBillNo] = useState('');
-  const [workDespatchId, setWorkDespatchId] = useState('');
-  const [pending, setPending] = useState<WorkPendingDespatch[]>([]);
+  // One bill may cover several despatch challans.
+  const [selectedSources, setSelectedSources] = useState<LinkedSourceDocument[]>([]);
+  const [pending, setPending] = useState<LinkedSourceDocument[]>([]);
+  const [checked, setChecked] = useState<Record<string, boolean>>({});
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pendingLoading, setPendingLoading] = useState(false);
   const [lines, setLines] = useState<WorkLineItem[]>([]);
@@ -89,8 +91,9 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
         setParties(meta.parties || []);
 
         if (isEditMode && editId) {
-          const { entry } = await workReceiptsApi.getById(editId);
+          const { entry, sources } = await workReceiptsApi.getById(editId);
           if (cancelled) return;
+          setSelectedSources(sources || []);
           setCompanyName(entry.companyName || meta.companyName || '');
           setTransactionType(entry.transactionType || 'WORK REC. BILL');
           setVoucherNo(String(entry.voucherNo ?? ''));
@@ -107,7 +110,6 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
           setHsnCode(entry.hsnCode || '9988');
           setRemarks(entry.remarks || '');
           setBillNo(entry.billNo || '');
-          setWorkDespatchId(entry.workDespatchId || '');
           setLines((entry.lineItems || []).map(row => {
             const pcs = toNum(row.pcs);
             const plain = toNum(row.plain);
@@ -182,10 +184,16 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
     setPendingLoading(true);
     setError('');
     try {
-      const { entries } = await workDespatchesApi.getPending(partyName.trim());
-      setPending(entries || []);
+      const { sources } = await workReceiptsApi.getPendingSources({
+        transactionType,
+        partyName: partyName.trim(),
+        excludeId: editId || undefined
+      });
+      setPending(sources || []);
+      // Pre-tick whatever this bill already covers so editing is additive.
+      setChecked(Object.fromEntries(selectedSources.map(source => [source.sourceId, true])));
       setPickerOpen(true);
-      if (!entries?.length) setError(`No pending work desp challans for ${partyName.trim()}.`);
+      if (!sources?.length) setError(`No pending work desp challans for ${partyName.trim()}.`);
     } catch (err: any) {
       setError(err.message || 'Could not load pending despatches.');
     } finally {
@@ -193,42 +201,72 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
     }
   };
 
-  const applyDespatch = (entry: WorkPendingDespatch) => {
-    setWorkDespatchId(entry.id);
-    setPartyName(entry.partyName || '');
-    setPartyGstin(entry.partyGstin || '');
-    setBrokerName(entry.brokerName || '');
-    setWorkType(entry.workType || '');
-    setChallanNo(entry.challanNo || '');
-    setLines((entry.pendingLines || []).map(row => {
-      const pcs = toNum(row.pendingPcs ?? row.pcs);
-      const cut = toNum(row.cut) || DEFAULT_CUT;
-      const mtsQty = toNum(row.pendingMts ?? row.mtsQty) || round2(pcs * cut);
-      const rate = toNum(row.rate);
-      const fresh = pcs;
-      const amount = round2(fresh * rate);
-      return {
-        lineNo: row.lineNo,
-        itemName: row.itemName,
-        bundles: row.bundles || 0,
-        jobType: row.jobType || 'HAND WORK',
-        unit: row.unit || 'PCS',
-        pcs,
-        cut,
-        mtsQty,
-        plain: 0,
-        sec: 0,
-        lost: 0,
-        lace: 0,
-        fresh,
-        rate,
-        amount,
-        fabricRate: row.fabricRate || 0,
-        taxableValue: amount
-      };
-    }));
-    setPickerOpen(false);
-    setError('');
+  const toggleChecked = (sourceId: string) => {
+    setChecked(prev => ({ ...prev, [sourceId]: !prev[sourceId] }));
+  };
+
+  const checkedCount = useMemo(() => Object.values(checked).filter(Boolean).length, [checked]);
+
+  /** Pulls the pending lines of every ticked challan into one bill. */
+  const applySelectedSources = async () => {
+    const ids = Object.entries(checked).filter(([, on]) => on).map(([id]) => id);
+    if (!ids.length) {
+      setError('Tick at least one challan.');
+      return;
+    }
+    setPendingLoading(true);
+    try {
+      const { sources, lineItems } = await workReceiptsApi.seedFromSources({
+        transactionType,
+        sourceDespatchIds: ids,
+        excludeId: editId || undefined
+      });
+      const primary = sources[0];
+      setSelectedSources(sources);
+      if (primary) {
+        setPartyName(primary.partyName || '');
+        setPartyGstin(primary.partyGstin || '');
+        setBrokerName(primary.brokerName || '');
+        setWorkType(primary.workType || '');
+      }
+      setChallanNo(sources.map(source => source.documentNo).filter(Boolean).join(', '));
+      setLines(lineItems.map(row => {
+        const pcs = toNum(row.pcs);
+        const cut = toNum(row.cut) || DEFAULT_CUT;
+        const mtsQty = toNum(row.mtsQty) || round2(pcs * cut);
+        const rate = toNum(row.rate);
+        const fresh = pcs;
+        const amount = round2(fresh * rate);
+        return {
+          lineNo: row.lineNo,
+          sourceDespatchId: row.sourceDespatchId,
+          sourceChallanNo: row.sourceChallanNo,
+          sourceLineNo: row.sourceLineNo,
+          itemName: row.itemName,
+          bundles: row.bundles || 0,
+          jobType: row.jobType || 'HAND WORK',
+          unit: row.unit || 'PCS',
+          pcs,
+          cut,
+          mtsQty,
+          plain: 0,
+          sec: 0,
+          lost: 0,
+          lace: 0,
+          fresh,
+          rate,
+          amount,
+          fabricRate: row.fabricRate || 0,
+          taxableValue: amount
+        };
+      }));
+      setPickerOpen(false);
+      setError('');
+    } catch (err: any) {
+      setError(err.message || 'Could not load the picked challans.');
+    } finally {
+      setPendingLoading(false);
+    }
   };
 
   const updateLine = (index: number, patch: Partial<WorkLineItem>) => {
@@ -340,7 +378,7 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
   }), [lines]);
 
   const buildPayload = () => ({
-    workDespatchId,
+    sourceDespatchIds: selectedSources.map(source => source.sourceId),
     companyName,
     transactionType,
     partyName: partyName.trim(),
@@ -374,7 +412,7 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
     setError('');
     setSuccess('');
     try {
-      if (!workDespatchId) throw new Error('Pick a work desp challan for this party.');
+      if (!selectedSources.length) throw new Error('Pick at least one work desp challan for this party.');
       if (!partyName.trim()) throw new Error('Party is required.');
       if (!lines.length) throw new Error('Add received lines.');
       if (isEditMode && editId) {
@@ -385,7 +423,8 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
         setSuccess('Work receipt saved. Ledger posted as EMB JOB CHARGES.');
         const meta = await workReceiptsApi.getMeta();
         setVoucherNo(String(meta.nextVoucherNo || 1));
-        setWorkDespatchId('');
+        setSelectedSources([]);
+        setChecked({});
         setChallanNo('');
         setLines([]);
         setRemarks('');
@@ -473,8 +512,10 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
                 </datalist>
               </label>
               <label>
-                <span className={labelClass}>Pick (Desp Challan)</span>
-                <button type="button" onClick={() => void loadPending()} className={`${inputClass} text-left text-fuchsia-800`}>
+                <span className={labelClass}>
+                  Pick (Desp Challan){selectedSources.length > 1 ? ` · ${selectedSources.length}` : ''}
+                </span>
+                <button type="button" onClick={() => void loadPending()} className={`${inputClass} truncate text-left text-fuchsia-800`}>
                   {challanNo || 'Select work desp challan…'}
                 </button>
               </label>
@@ -488,6 +529,28 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
               <label><span className={labelClass}>HSN</span><input className={inputClass} value={hsnCode} onChange={e => setHsnCode(e.target.value)} /></label>
               <label className="md:col-span-2"><span className={labelClass}>Remark</span><input className={inputClass} value={remarks} onChange={e => setRemarks(e.target.value)} /></label>
             </div>
+
+            {selectedSources.length > 1 && (
+              <div className="mt-3 rounded-xl border border-fuchsia-200 bg-white p-3">
+                <p className={labelClass}>This bill covers {selectedSources.length} desp challans</p>
+                <div className="flex flex-wrap gap-2">
+                  {selectedSources.map(source => {
+                    const billed = lines
+                      .filter(line => line.sourceDespatchId === source.sourceId)
+                      .reduce((sum, line) => sum + toNum(line.pcs), 0);
+                    return (
+                      <span
+                        key={source.sourceId}
+                        className="rounded-lg bg-fuchsia-50 px-2.5 py-1 text-[11px] font-bold text-fuchsia-900"
+                        title={`${source.pendingPcs} pcs pending on this challan`}
+                      >
+                        {source.documentNo || source.sourceId} · {round2(billed)} pcs
+                      </span>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </section>
 
           <section className="mt-4 overflow-hidden rounded-2xl border bg-white shadow-sm">
@@ -498,6 +561,7 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
               <table className="min-w-full text-left text-xs">
                 <thead className="border-b bg-gray-50 text-[10px] uppercase text-gray-500">
                   <tr>
+                    <th className="px-2 py-2">Challan</th>
                     <th className="px-2 py-2">Ref / Item</th>
                     <th className="px-2 py-2">Job Type</th>
                     <th className="px-2 py-2 text-right">Pcs</th>
@@ -514,10 +578,11 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
                 </thead>
                 <tbody>
                   {!lines.length && (
-                    <tr><td colSpan={12} className="px-4 py-8 text-center text-sm text-gray-500">Select party, then pick a work desp challan to load pcs / rate / cut / mts.</td></tr>
+                    <tr><td colSpan={13} className="px-4 py-8 text-center text-sm text-gray-500">Select party, then pick one or more work desp challans to load pcs / rate / cut / mts.</td></tr>
                   )}
                   {lines.map((line, index) => (
                     <tr key={index} className="border-b">
+                      <td className="px-2 py-2 text-[11px] font-bold text-fuchsia-800">{line.sourceChallanNo || '-'}</td>
                       <td className="px-2 py-2 font-semibold">{line.itemName}</td>
                       <td className="px-2 py-2">{line.jobType}</td>
                       <td className="px-2 py-2"><input className={inputClass} type="number" value={line.pcs || ''} onChange={e => updateLine(index, { pcs: toNum(e.target.value) })} /></td>
@@ -582,17 +647,34 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
           <div className="max-h-[85vh] w-full max-w-3xl overflow-hidden rounded-2xl bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b px-4 py-3">
-              <h3 className="text-sm font-black uppercase">Work Desp Challans · {partyName || 'All'}</h3>
+              <div>
+                <h3 className="text-sm font-black uppercase">Work Desp Challans · {partyName || 'All'}</h3>
+                <p className="text-[11px] font-semibold text-gray-500">
+                  Tick every challan this bill covers — one bill can cover several challans.
+                </p>
+              </div>
               <button type="button" onClick={() => setPickerOpen(false)} className="rounded-lg border px-3 py-1 text-xs font-bold">Close</button>
             </div>
-            <div className="max-h-[70vh] overflow-y-auto p-4">
+            <div className="max-h-[60vh] overflow-y-auto p-4">
               {pendingLoading ? (
                 <p className="py-8 text-center text-sm text-gray-500">Loading…</p>
               ) : (
                 <table className="min-w-full text-left text-sm">
                   <thead className="border-b text-[10px] uppercase text-gray-500">
                     <tr>
+                      <th className="p-2">
+                        <input
+                          type="checkbox"
+                          checked={pending.length > 0 && checkedCount === pending.length}
+                          onChange={e => setChecked(
+                            e.target.checked
+                              ? Object.fromEntries(pending.map(row => [row.sourceId, true]))
+                              : {}
+                          )}
+                        />
+                      </th>
                       <th className="p-2">Chal</th>
+                      <th className="p-2">Date</th>
                       <th className="p-2">Type</th>
                       <th className="p-2">Work</th>
                       <th className="p-2 text-right">Pend Pcs</th>
@@ -601,20 +683,47 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
                   </thead>
                   <tbody>
                     {pending.map(row => (
-                      <tr key={row.id} className="cursor-pointer border-b hover:bg-fuchsia-50" onClick={() => applyDespatch(row)}>
-                        <td className="p-2 font-bold">{row.challanNo}</td>
-                        <td className="p-2 text-xs">{row.transactionType || 'WORK DESP CHALLAN'}</td>
+                      <tr
+                        key={row.sourceId}
+                        className={`cursor-pointer border-b hover:bg-fuchsia-50 ${checked[row.sourceId] ? 'bg-fuchsia-50' : ''}`}
+                        onClick={() => toggleChecked(row.sourceId)}
+                      >
+                        <td className="p-2">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(checked[row.sourceId])}
+                            onChange={() => toggleChecked(row.sourceId)}
+                            onClick={e => e.stopPropagation()}
+                          />
+                        </td>
+                        <td className="p-2 font-bold">{row.documentNo}</td>
+                        <td className="p-2 text-xs">{row.documentDate ? String(row.documentDate).slice(0, 10) : '-'}</td>
+                        <td className="p-2 text-xs">{row.sourceSeries || 'WORK DESP CHALLAN'}</td>
                         <td className="p-2">{row.workType || '-'}</td>
                         <td className="p-2 text-right font-bold text-fuchsia-800">{row.pendingPcs}</td>
                         <td className="p-2 text-right font-bold text-fuchsia-800">{row.pendingMts.toFixed(2)}</td>
                       </tr>
                     ))}
                     {!pending.length && (
-                      <tr><td colSpan={5} className="p-8 text-center text-gray-500">No pending despatches for this party.</td></tr>
+                      <tr><td colSpan={7} className="p-8 text-center text-gray-500">No pending despatches for this party.</td></tr>
                     )}
                   </tbody>
                 </table>
               )}
+            </div>
+            <div className="flex items-center justify-between border-t bg-gray-50 px-4 py-3">
+              <span className="text-xs font-bold text-gray-600">
+                {checkedCount} challan{checkedCount === 1 ? '' : 's'} ticked ·{' '}
+                {round2(pending.filter(row => checked[row.sourceId]).reduce((sum, row) => sum + toNum(row.pendingPcs), 0))} pcs pending
+              </span>
+              <button
+                type="button"
+                disabled={!checkedCount || pendingLoading}
+                onClick={() => void applySelectedSources()}
+                className="rounded-xl bg-fuchsia-700 px-4 py-2 text-xs font-black uppercase text-white disabled:opacity-40"
+              >
+                Add to bill
+              </button>
             </div>
           </div>
         </div>

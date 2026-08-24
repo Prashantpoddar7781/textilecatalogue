@@ -5,6 +5,7 @@ import { authenticateToken } from '../middleware/auth.js';
 import { requireActiveSubscription } from '../middleware/subscription.js';
 import { ensureMillParty, resolveSupplierForEntry } from '../utils/partyMaster.js';
 import { roundMoney } from '../utils/orderBilling.js';
+import { linesForSource, sourceLineKey } from '../utils/documentLinkAttribution.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -67,6 +68,10 @@ export function normalizeWorkLines(raw, options = {}) {
       const taxableValue = roundMoney(row.taxableValue != null && row.taxableValue !== '' ? row.taxableValue : amount);
       return {
         lineNo: Number(row.lineNo) || index + 1,
+        // Set on receipt lines only: which despatch challan line this came from.
+        sourceDespatchId: optionalString(row.sourceDespatchId),
+        sourceChallanNo: optionalString(row.sourceChallanNo),
+        sourceLineNo: optionalNumber(row.sourceLineNo),
         itemName: String(row.itemName || '').trim(),
         bundles: roundMoney(row.bundles ?? 0),
         jobType: String(row.jobType || '').trim() || null,
@@ -97,24 +102,37 @@ function lineTotals(lines) {
   };
 }
 
+/**
+ * What has already been received against one despatch challan.
+ *
+ * A receipt may now cover several challans, so a receipt counts towards this
+ * despatch either because it is the primary link or because it lists the despatch
+ * in sourceDespatchIds. Within such a receipt only the lines tagged with this
+ * despatch are counted.
+ *
+ * Receipts saved before multi-challan billing carry no per-line tag at all; for
+ * those the whole receipt belongs to its primary despatch, exactly as before.
+ */
 async function getReceivedByDespatch(despatchId, excludeReceiptId = null) {
   const receipts = await prisma.workReceipt.findMany({
     where: {
-      workDespatchId: despatchId,
       status: { not: 'cancelled' },
+      OR: [
+        { workDespatchId: despatchId },
+        { sourceDespatchIds: { has: despatchId } }
+      ],
       ...(excludeReceiptId ? { id: { not: excludeReceiptId } } : {})
     },
-    select: { lineItems: true, totalPcs: true, totalMts: true }
+    select: { id: true, workDespatchId: true, lineItems: true, totalPcs: true, totalMts: true }
   });
   let pcs = 0;
   let mts = 0;
   const byLine = new Map();
   for (const receipt of receipts) {
-    pcs += Number(receipt.totalPcs) || 0;
-    mts += Number(receipt.totalMts) || 0;
-    const rows = Array.isArray(receipt.lineItems) ? receipt.lineItems : [];
-    for (const row of rows) {
-      const key = Number(row.lineNo) || String(row.itemName || '').toLowerCase();
+    for (const row of linesForSource(receipt, despatchId)) {
+      pcs += Number(row.pcs) || 0;
+      mts += Number(row.mtsQty) || 0;
+      const key = sourceLineKey(row);
       const cur = byLine.get(key) || { pcs: 0, mts: 0 };
       cur.pcs += Number(row.pcs) || 0;
       cur.mts += Number(row.mtsQty) || 0;

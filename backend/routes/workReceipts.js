@@ -11,7 +11,14 @@ import {
 } from '../utils/gstCalculation.js';
 import { ensureMillParty, resolveSupplierForEntry } from '../utils/partyMaster.js';
 import { roundMoney } from '../utils/orderBilling.js';
-import { buildDespatchPending, normalizeWorkLines } from './workDespatches.js';
+import { normalizeWorkLines } from './workDespatches.js';
+import {
+  attributeLinesToSources,
+  linkBehaviour,
+  listPendingSources,
+  loadSourcesByIds,
+  seedLinesFromSources
+} from '../services/documentLinkEngine.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -159,7 +166,53 @@ router.get('/meta', authenticateToken, requireActiveSubscription, async (req, re
       transactionTypes: REC_TYPES,
       states: INDIAN_STATES,
       parties,
-      defaultHsnCode: '9988'
+      defaultHsnCode: '9988',
+      linkBehaviourByType: REC_TYPES.reduce((acc, type) => {
+        acc[type] = linkBehaviour(type);
+        return acc;
+      }, {})
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * Pending source documents for this receipt, driven by the master's PREVIOUS LINK.
+ * Several may be picked for one bill.
+ */
+router.get('/pending-sources', authenticateToken, requireActiveSubscription, async (req, res, next) => {
+  try {
+    const transactionType = optionalString(req.query.transactionType) || REC_TYPES[0];
+    const result = await listPendingSources({
+      userId: req.user.userId,
+      targetSeries: transactionType,
+      partyName: optionalString(req.query.partyName),
+      excludeTargetId: optionalString(req.query.excludeId)
+    });
+    res.json({
+      ...result,
+      behaviour: linkBehaviour(transactionType)
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/** Seeds receipt lines from the picked challans, each line tagged with its source. */
+router.post('/seed-from-sources', authenticateToken, requireActiveSubscription, async (req, res, next) => {
+  try {
+    const transactionType = optionalString(req.body.transactionType) || REC_TYPES[0];
+    const ids = Array.isArray(req.body.sourceDespatchIds) ? req.body.sourceDespatchIds : [];
+    const sources = await loadSourcesByIds({
+      userId: req.user.userId,
+      targetSeries: transactionType,
+      ids,
+      excludeTargetId: optionalString(req.body.excludeId)
+    });
+    res.json({
+      sources,
+      lineItems: normalizeWorkLines(seedLinesFromSources(sources), { billOnFresh: true })
     });
   } catch (error) {
     next(error);
@@ -271,7 +324,8 @@ router.get('/report', authenticateToken, requireActiveSubscription, async (req, 
           date: receipt.receiptDate,
           billNo: receipt.billNo || receipt.voucherNo,
           challanNo: receipt.challanNo || receipt.workDespatch?.challanNo,
-          despChallan: receipt.workDespatch?.challanNo,
+          // A bill may cover several challans, so each line reports its own.
+          despChallan: line.sourceChallanNo || receipt.workDespatch?.challanNo,
           itemName: line.itemName || '-',
           jobType: line.jobType || receipt.workType || '-',
           recPcs: pcs,
@@ -345,65 +399,106 @@ router.get('/:id', authenticateToken, requireActiveSubscription, async (req, res
       include: { workDespatch: true }
     });
     if (!entry) return res.status(404).json({ error: 'Work receipt not found' });
-    res.json({ entry });
+
+    // Rehydrate every challan this bill covers so the edit screen can re-tick them,
+    // excluding this receipt's own consumption from their pending.
+    const ids = entry.sourceDespatchIds?.length ? entry.sourceDespatchIds : [entry.workDespatchId];
+    const sources = await loadSourcesByIds({
+      userId: req.user.userId,
+      targetSeries: entry.transactionType,
+      ids,
+      excludeTargetId: entry.id
+    });
+    res.json({ entry, sources });
   } catch (error) {
     next(error);
   }
 });
 
+/** Every despatch id this receipt claims, from the multi-select or the legacy single field. */
+function requestedSourceIds(reqBody) {
+  const many = Array.isArray(reqBody.sourceDespatchIds) ? reqBody.sourceDespatchIds : [];
+  const ids = many.map(id => optionalString(id)).filter(Boolean);
+  const single = optionalString(reqBody.workDespatchId);
+  if (single && !ids.includes(single)) ids.unshift(single);
+  return Array.from(new Set(ids));
+}
+
 async function saveReceipt(req, res, existing = null) {
   const userId = req.user.userId;
   const ctx = await getCompanyContext(userId);
-  const despatch = await prisma.workDespatch.findFirst({
-    where: { id: String(req.body.workDespatchId), userId, status: { not: 'cancelled' } }
-  });
-  if (!despatch) {
-    return res.status(404).json({ error: 'Work despatch not found' });
+  const transactionType = optionalString(req.body.transactionType) || REC_TYPES[0];
+  const ids = requestedSourceIds(req.body);
+  if (!ids.length) {
+    return res.status(400).json({ error: 'Pick at least one work desp challan.' });
   }
 
-  const pending = await buildDespatchPending(despatch, existing?.id || null);
+  const sources = await loadSourcesByIds({
+    userId,
+    targetSeries: transactionType,
+    ids,
+    excludeTargetId: existing?.id || null
+  });
+  if (sources.length !== ids.length) {
+    return res.status(404).json({ error: 'One or more work desp challans could not be found.' });
+  }
+
+  const parties = Array.from(new Set(sources.map(source => String(source.partyName || '').trim().toUpperCase())));
+  if (parties.length > 1) {
+    return res.status(400).json({
+      error: 'All picked challans must belong to the same party.'
+    });
+  }
+
+  const primary = sources[0];
   const lineItems = normalizeWorkLines(req.body.lineItems, { billOnFresh: true });
   if (!lineItems.length) {
     return res.status(400).json({ error: 'Add at least one received item line.' });
   }
 
-  const agg = lineAgg(lineItems);
-  if (agg.totalPcs > pending.pendingPcs + 0.01 || agg.totalMts > pending.pendingMts + 0.01) {
-    return res.status(400).json({
-      error: `Only ${pending.pendingPcs} pcs / ${pending.pendingMts} mts pending on this despatch.`
-    });
+  const attributed = attributeLinesToSources({ lines: lineItems, sources });
+  if (attributed.errors.length) {
+    return res.status(400).json({ error: attributed.errors.join(' ') });
   }
+  const taggedLines = attributed.lines;
 
-  const totals = computeReceiptTotals(req.body, lineItems, ctx, despatch);
-  const partyName = optionalString(req.body.partyName) || despatch.partyName;
+  const agg = lineAgg(taggedLines);
+  const totals = computeReceiptTotals(req.body, taggedLines, ctx, primary);
+  const partyName = optionalString(req.body.partyName) || primary.partyName;
 
   await ensureMillParty(prisma, userId, partyName);
   await resolveSupplierForEntry(prisma, userId, {
     partyName,
     partyGstin: totals.partyGstin,
     placeOfSupply: totals.placeOfSupply,
-    transactionType: 'WORK REC. BILLS'
+    transactionType
   });
 
+  const coveredChallans = sources
+    .map(source => source.documentNo)
+    .filter(Boolean)
+    .join(', ');
+
   const data = {
-    workDespatchId: despatch.id,
-    companyName: optionalString(req.body.companyName) || despatch.companyName || ctx.companyName,
-    transactionType: optionalString(req.body.transactionType) || REC_TYPES[0],
+    workDespatchId: primary.sourceId,
+    sourceDespatchIds: sources.map(source => source.sourceId),
+    companyName: optionalString(req.body.companyName) || primary.companyName || ctx.companyName,
+    transactionType,
     partyName,
     partyGstin: totals.partyGstin,
     placeOfSupply: totals.placeOfSupply,
-    stateCode: totals.stateCode || getStateCodeFromName(totals.placeOfSupply) || despatch.stateCode,
-    gstType: totals.gstTypeLabel || totals.gstType || despatch.gstType,
-    challanNo: optionalString(req.body.challanNo) || despatch.challanNo,
+    stateCode: totals.stateCode || getStateCodeFromName(totals.placeOfSupply) || primary.stateCode,
+    gstType: totals.gstTypeLabel || totals.gstType || primary.gstType,
+    challanNo: optionalString(req.body.challanNo) || coveredChallans || primary.documentNo,
     receiptDate: req.body.receiptDate ? new Date(req.body.receiptDate) : (existing?.receiptDate || new Date()),
-    brokerName: optionalString(req.body.brokerName) || despatch.brokerName,
+    brokerName: optionalString(req.body.brokerName) || primary.brokerName,
     vehicleNo: optionalString(req.body.vehicleNo),
-    workType: optionalString(req.body.workType) || despatch.workType,
+    workType: optionalString(req.body.workType) || primary.workType,
     hsnCode: optionalString(req.body.hsnCode) || '9988',
     remarks: optionalString(req.body.remarks),
     receivedBy: optionalString(req.body.receivedBy),
     billNo: optionalString(req.body.billNo),
-    lineItems,
+    lineItems: taggedLines,
     totalPcs: agg.totalPcs,
     totalMts: agg.totalMts,
     totalFresh: agg.totalFresh,
@@ -449,7 +544,6 @@ async function saveReceipt(req, res, existing = null) {
 }
 
 router.post('/', authenticateToken, requireActiveSubscription, [
-  body('workDespatchId').trim().notEmpty().withMessage('Work despatch is required'),
   body('partyName').trim().notEmpty().withMessage('Party is required')
 ], async (req, res, next) => {
   try {
@@ -462,7 +556,6 @@ router.post('/', authenticateToken, requireActiveSubscription, [
 });
 
 router.put('/:id', authenticateToken, requireActiveSubscription, [
-  body('workDespatchId').trim().notEmpty().withMessage('Work despatch is required'),
   body('partyName').trim().notEmpty().withMessage('Party is required')
 ], async (req, res, next) => {
   try {

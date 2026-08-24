@@ -35,3 +35,7 @@ Thumbs.db
 
 # Local env files
 .env*.local
+
+# Reference screenshots of the legacy Empire screens (~70 MB of photos).
+# The decoded data lives in backend/constants/data/ instead.
+16 images/

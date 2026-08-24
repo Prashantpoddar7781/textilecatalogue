@@ -1042,6 +1042,10 @@ export interface CreditDebitNote {
 
 export interface WorkLineItem {
   lineNo?: number;
+  /** On receipt lines: the despatch challan this line was received against. */
+  sourceDespatchId?: string | null;
+  sourceChallanNo?: string | null;
+  sourceLineNo?: number | null;
   itemName: string;
   bundles?: number;
   jobType?: string | null;
@@ -1079,6 +1083,42 @@ export interface WorkPendingDespatch {
   pendingMts: number;
   lineItems?: WorkLineItem[];
   pendingLines?: WorkLineItem[];
+}
+
+/**
+ * A pending source document offered by the document link engine. The Transaction
+ * Types master's PREVIOUS LINK decides which series may appear here.
+ */
+export interface LinkedSourceDocument {
+  sourceSeries: string;
+  sourceId: string;
+  documentNo?: string | null;
+  documentDate?: string;
+  partyName: string;
+  partyGstin?: string | null;
+  placeOfSupply?: string | null;
+  stateCode?: string | null;
+  gstType?: string | null;
+  brokerName?: string | null;
+  workType?: string | null;
+  companyName?: string | null;
+  totalPcs: number;
+  totalMts: number;
+  receivedPcs: number;
+  receivedMts: number;
+  pendingPcs: number;
+  pendingMts: number;
+  lineItems?: WorkLineItem[];
+  pendingLines?: WorkLineItem[];
+}
+
+export interface LinkBehaviour {
+  sourceSeries: string[];
+  fromMaster: boolean;
+  compulsoryLink: boolean;
+  copyItemDetails: boolean;
+  showAllEntriesInPick: boolean;
+  seriesCode?: string | null;
 }
 
 export interface WorkDespatch {
@@ -1119,6 +1159,8 @@ export interface WorkReceipt {
   userId: string;
   workDespatchId: string;
   workDespatch?: WorkDespatch | null;
+  /** Every despatch challan this bill covers; workDespatchId is the primary one. */
+  sourceDespatchIds?: string[];
   companyName?: string | null;
   transactionType: string;
   partyName: string;

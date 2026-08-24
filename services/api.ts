@@ -1403,10 +1403,37 @@ export const workReceiptsApi = {
       transactionTypes: string[];
       states: string[];
       parties?: Array<{ name: string; gstNumber?: string | null; state?: string | null; brokerName?: string | null }>;
+      linkBehaviourByType?: Record<string, import('../types').LinkBehaviour>;
     }>('/work-receipts/meta');
   },
   getById: async (id: string) => {
-    return request<{ entry: import('../types').WorkReceipt }>(`/work-receipts/${id}`);
+    return request<{
+      entry: import('../types').WorkReceipt;
+      sources?: import('../types').LinkedSourceDocument[];
+    }>(`/work-receipts/${id}`);
+  },
+  /** Pending source documents this receipt may be raised against (PREVIOUS LINK). */
+  getPendingSources: async (params: { transactionType: string; partyName?: string; excludeId?: string }) => {
+    const qs = new URLSearchParams();
+    qs.set('transactionType', params.transactionType);
+    if (params.partyName) qs.set('partyName', params.partyName);
+    if (params.excludeId) qs.set('excludeId', params.excludeId);
+    return request<{
+      sources: import('../types').LinkedSourceDocument[];
+      sourceSeries: string[];
+      fromMaster: boolean;
+      behaviour: import('../types').LinkBehaviour;
+    }>(`/work-receipts/pending-sources?${qs.toString()}`);
+  },
+  /** Builds receipt lines from the picked challans, each tagged with its source. */
+  seedFromSources: async (body: { transactionType: string; sourceDespatchIds: string[]; excludeId?: string }) => {
+    return request<{
+      sources: import('../types').LinkedSourceDocument[];
+      lineItems: import('../types').WorkLineItem[];
+    }>('/work-receipts/seed-from-sources', {
+      method: 'POST',
+      body: JSON.stringify(body)
+    });
   },
   calculate: async (body: Record<string, unknown>) => {
     return request<{ totals: Record<string, number | string>; lineItems?: import('../types').WorkLineItem[] }>('/work-receipts/calculate', {
