@@ -19,6 +19,7 @@
 import { PrismaClient } from '@prisma/client';
 import { roundMoney } from '../utils/orderBilling.js';
 import {
+  ERP_POSTING_RULES,
   getPostingRule,
   getSourceSeriesFor,
   copiesItemDetailsFromSource,
@@ -31,14 +32,16 @@ const prisma = new PrismaClient();
 
 const QTY_TOLERANCE = 0.01;
 
-const WORK_DESPATCH_SERIES = [
-  'WORK DESP CHALLAN',
-  'WORK DESP.SUIT CHALLAN',
-  'WORK DESP.LACE SUIT CHALLAN',
-  'WORK DESP LACE CHALLAN',
-  'WORK DESP POONAM CHALLAN',
-  'WORK DESP POONAM LACE CHALLAN'
-];
+/**
+ * Every work despatch series in the master, firm-specific ones included, so a
+ * challan already saved under a series we no longer offer can still be picked and
+ * closed off. Which series may be *created* is decided by the route's type list.
+ *
+ * WORK DESP ALL is a grouping row in the master, not a document series.
+ */
+const WORK_DESPATCH_SERIES = ERP_POSTING_RULES
+  .filter(rule => rule.series.startsWith('WORK DESP') && rule.series !== 'WORK DESP ALL')
+  .map(rule => rule.series);
 
 /** Normalizes a work despatch + its pending state into the engine's source shape. */
 function toWorkDespatchSource(pending, despatch) {

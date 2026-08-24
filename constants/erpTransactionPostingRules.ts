@@ -97,6 +97,11 @@ export interface ErpPostingRule {
   includeCostingOfStage: boolean;
   scanPath: string | null;
   tcsAccount: string | null;
+  /**
+   * True for series that exist only for one firm and carry its name. Kept so saved
+   * vouchers still resolve, but never offered in a pick list.
+   */
+  companySpecific: boolean;
 }
 
 export const ERP_POSTING_RULES: ErpPostingRule[] = [
@@ -138,7 +143,8 @@ export const ERP_POSTING_RULES: ErpPostingRule[] = [
     finalStageOfJobCard: false,
     includeCostingOfStage: false,
     scanPath: null,
-    tcsAccount: null
+    tcsAccount: null,
+    companySpecific: false
   },
   {
     series: 'BANK RECEIPT',
@@ -178,7 +184,8 @@ export const ERP_POSTING_RULES: ErpPostingRule[] = [
     finalStageOfJobCard: false,
     includeCostingOfStage: false,
     scanPath: null,
-    tcsAccount: null
+    tcsAccount: null,
+    companySpecific: false
   },
   {
     series: 'BANK PAYMENT',
@@ -218,7 +225,8 @@ export const ERP_POSTING_RULES: ErpPostingRule[] = [
     finalStageOfJobCard: false,
     includeCostingOfStage: false,
     scanPath: null,
-    tcsAccount: null
+    tcsAccount: null,
+    companySpecific: false
   },
   {
     series: 'CASH RECEIPT',
@@ -258,7 +266,8 @@ export const ERP_POSTING_RULES: ErpPostingRule[] = [
     finalStageOfJobCard: false,
     includeCostingOfStage: false,
     scanPath: null,
-    tcsAccount: null
+    tcsAccount: null,
+    companySpecific: false
   },
   {
     series: 'CASH PAYMENT',
@@ -298,7 +307,8 @@ export const ERP_POSTING_RULES: ErpPostingRule[] = [
     finalStageOfJobCard: false,
     includeCostingOfStage: false,
     scanPath: null,
-    tcsAccount: null
+    tcsAccount: null,
+    companySpecific: false
   },
   {
     series: 'EXPENSES',
@@ -338,7 +348,8 @@ export const ERP_POSTING_RULES: ErpPostingRule[] = [
     finalStageOfJobCard: false,
     includeCostingOfStage: false,
     scanPath: null,
-    tcsAccount: null
+    tcsAccount: null,
+    companySpecific: false
   },
   {
     series: 'JOB WORK',
@@ -378,7 +389,8 @@ export const ERP_POSTING_RULES: ErpPostingRule[] = [
     finalStageOfJobCard: false,
     includeCostingOfStage: false,
     scanPath: null,
-    tcsAccount: null
+    tcsAccount: null,
+    companySpecific: false
   },
   {
     series: 'JOURNAL',
@@ -418,7 +430,8 @@ export const ERP_POSTING_RULES: ErpPostingRule[] = [
     finalStageOfJobCard: false,
     includeCostingOfStage: false,
     scanPath: null,
-    tcsAccount: null
+    tcsAccount: null,
+    companySpecific: false
   },
   {
     series: 'WORK DESP ALL',
@@ -458,7 +471,8 @@ export const ERP_POSTING_RULES: ErpPostingRule[] = [
     finalStageOfJobCard: false,
     includeCostingOfStage: false,
     scanPath: null,
-    tcsAccount: null
+    tcsAccount: null,
+    companySpecific: false
   },
   {
     series: 'SALES ORDERS',
@@ -498,7 +512,8 @@ export const ERP_POSTING_RULES: ErpPostingRule[] = [
     finalStageOfJobCard: false,
     includeCostingOfStage: false,
     scanPath: null,
-    tcsAccount: null
+    tcsAccount: null,
+    companySpecific: false
   },
   {
     series: 'WORK DESP LACE CHALLAN',
@@ -538,7 +553,8 @@ export const ERP_POSTING_RULES: ErpPostingRule[] = [
     finalStageOfJobCard: false,
     includeCostingOfStage: false,
     scanPath: null,
-    tcsAccount: null
+    tcsAccount: null,
+    companySpecific: false
   },
   {
     series: 'WORK DESP POONAM LACE CHALLAN',
@@ -578,7 +594,8 @@ export const ERP_POSTING_RULES: ErpPostingRule[] = [
     finalStageOfJobCard: false,
     includeCostingOfStage: false,
     scanPath: null,
-    tcsAccount: null
+    tcsAccount: null,
+    companySpecific: true
   },
   {
     series: 'WORK DESP.LACE SUIT CHALLAN',
@@ -618,7 +635,8 @@ export const ERP_POSTING_RULES: ErpPostingRule[] = [
     finalStageOfJobCard: false,
     includeCostingOfStage: false,
     scanPath: null,
-    tcsAccount: null
+    tcsAccount: null,
+    companySpecific: false
   },
   {
     series: 'STOCK TRANSFER',
@@ -658,7 +676,8 @@ export const ERP_POSTING_RULES: ErpPostingRule[] = [
     finalStageOfJobCard: false,
     includeCostingOfStage: false,
     scanPath: null,
-    tcsAccount: null
+    tcsAccount: null,
+    companySpecific: false
   },
   {
     series: 'WORK DESP POONAM CHALLAN',
@@ -698,7 +717,8 @@ export const ERP_POSTING_RULES: ErpPostingRule[] = [
     finalStageOfJobCard: false,
     includeCostingOfStage: false,
     scanPath: null,
-    tcsAccount: null
+    tcsAccount: null,
+    companySpecific: true
   },
   {
     series: 'WORK DESP CHALLAN',
@@ -738,7 +758,8 @@ export const ERP_POSTING_RULES: ErpPostingRule[] = [
     finalStageOfJobCard: false,
     includeCostingOfStage: false,
     scanPath: null,
-    tcsAccount: null
+    tcsAccount: null,
+    companySpecific: false
   },
   {
     series: 'SALES CHALLAN',
@@ -778,7 +799,8 @@ export const ERP_POSTING_RULES: ErpPostingRule[] = [
     finalStageOfJobCard: false,
     includeCostingOfStage: false,
     scanPath: null,
-    tcsAccount: null
+    tcsAccount: null,
+    companySpecific: false
   },
   {
     series: 'WORK DESP.SUIT CHALLAN',
@@ -818,7 +840,8 @@ export const ERP_POSTING_RULES: ErpPostingRule[] = [
     finalStageOfJobCard: false,
     includeCostingOfStage: false,
     scanPath: null,
-    tcsAccount: null
+    tcsAccount: null,
+    companySpecific: false
   },
   {
     series: 'ADVANCE RECEIPT VOUCHER',
@@ -858,7 +881,8 @@ export const ERP_POSTING_RULES: ErpPostingRule[] = [
     finalStageOfJobCard: false,
     includeCostingOfStage: false,
     scanPath: null,
-    tcsAccount: null
+    tcsAccount: null,
+    companySpecific: false
   },
   {
     series: 'ADVANCE REFUND VOUCHER',
@@ -898,7 +922,8 @@ export const ERP_POSTING_RULES: ErpPostingRule[] = [
     finalStageOfJobCard: false,
     includeCostingOfStage: false,
     scanPath: null,
-    tcsAccount: null
+    tcsAccount: null,
+    companySpecific: false
   },
   {
     series: 'REVERSE CHARGE SALES TO SELF',
@@ -938,7 +963,8 @@ export const ERP_POSTING_RULES: ErpPostingRule[] = [
     finalStageOfJobCard: false,
     includeCostingOfStage: false,
     scanPath: null,
-    tcsAccount: null
+    tcsAccount: null,
+    companySpecific: false
   },
   {
     series: 'PURCHASES (ALL)',
@@ -978,7 +1004,8 @@ export const ERP_POSTING_RULES: ErpPostingRule[] = [
     finalStageOfJobCard: false,
     includeCostingOfStage: false,
     scanPath: null,
-    tcsAccount: null
+    tcsAccount: null,
+    companySpecific: false
   },
   {
     series: 'GREY PURCHASE',
@@ -1018,7 +1045,8 @@ export const ERP_POSTING_RULES: ErpPostingRule[] = [
     finalStageOfJobCard: false,
     includeCostingOfStage: false,
     scanPath: null,
-    tcsAccount: 'TCS RECEIVABLE A/C'
+    tcsAccount: 'TCS RECEIVABLE A/C',
+    companySpecific: false
   },
   {
     series: 'VALUE ADDITION PURCHASE',
@@ -1058,7 +1086,8 @@ export const ERP_POSTING_RULES: ErpPostingRule[] = [
     finalStageOfJobCard: false,
     includeCostingOfStage: false,
     scanPath: null,
-    tcsAccount: 'TCS RECEIVABLE A/C'
+    tcsAccount: 'TCS RECEIVABLE A/C',
+    companySpecific: false
   },
   {
     series: 'WORK REC LACE CHALLAN',
@@ -1098,7 +1127,8 @@ export const ERP_POSTING_RULES: ErpPostingRule[] = [
     finalStageOfJobCard: false,
     includeCostingOfStage: false,
     scanPath: null,
-    tcsAccount: null
+    tcsAccount: null,
+    companySpecific: false
   },
   {
     series: 'SALARY EXP A/C',
@@ -1138,7 +1168,8 @@ export const ERP_POSTING_RULES: ErpPostingRule[] = [
     finalStageOfJobCard: false,
     includeCostingOfStage: false,
     scanPath: null,
-    tcsAccount: 'TCS RECEIVABLE A/C'
+    tcsAccount: 'TCS RECEIVABLE A/C',
+    companySpecific: false
   },
   {
     series: 'WORK REC. POONAM LACE BILLS',
@@ -1178,7 +1209,8 @@ export const ERP_POSTING_RULES: ErpPostingRule[] = [
     finalStageOfJobCard: false,
     includeCostingOfStage: false,
     scanPath: null,
-    tcsAccount: null
+    tcsAccount: null,
+    companySpecific: true
   },
   {
     series: 'WORK REC. LACE SUIT BILLS',
@@ -1218,7 +1250,8 @@ export const ERP_POSTING_RULES: ErpPostingRule[] = [
     finalStageOfJobCard: false,
     includeCostingOfStage: false,
     scanPath: null,
-    tcsAccount: null
+    tcsAccount: null,
+    companySpecific: false
   },
   {
     series: 'FINISH PURCHASE',
@@ -1258,7 +1291,8 @@ export const ERP_POSTING_RULES: ErpPostingRule[] = [
     finalStageOfJobCard: false,
     includeCostingOfStage: false,
     scanPath: null,
-    tcsAccount: 'TCS RECEIVABLE A/C'
+    tcsAccount: 'TCS RECEIVABLE A/C',
+    companySpecific: false
   },
   {
     series: 'SALES GOODS RETURN',
@@ -1298,7 +1332,8 @@ export const ERP_POSTING_RULES: ErpPostingRule[] = [
     finalStageOfJobCard: false,
     includeCostingOfStage: false,
     scanPath: null,
-    tcsAccount: null
+    tcsAccount: null,
+    companySpecific: false
   },
   {
     series: 'WORK REC. LACE BILLS',
@@ -1338,7 +1373,8 @@ export const ERP_POSTING_RULES: ErpPostingRule[] = [
     finalStageOfJobCard: false,
     includeCostingOfStage: false,
     scanPath: null,
-    tcsAccount: null
+    tcsAccount: null,
+    companySpecific: false
   },
   {
     series: 'PACKING MATERIAL',
@@ -1378,7 +1414,8 @@ export const ERP_POSTING_RULES: ErpPostingRule[] = [
     finalStageOfJobCard: false,
     includeCostingOfStage: false,
     scanPath: null,
-    tcsAccount: null
+    tcsAccount: null,
+    companySpecific: false
   },
   {
     series: 'WORK REC. POONAM BILLS',
@@ -1418,7 +1455,8 @@ export const ERP_POSTING_RULES: ErpPostingRule[] = [
     finalStageOfJobCard: false,
     includeCostingOfStage: false,
     scanPath: null,
-    tcsAccount: null
+    tcsAccount: null,
+    companySpecific: true
   },
   {
     series: 'WORK REC. CHALLAN',
@@ -1458,7 +1496,8 @@ export const ERP_POSTING_RULES: ErpPostingRule[] = [
     finalStageOfJobCard: false,
     includeCostingOfStage: false,
     scanPath: null,
-    tcsAccount: null
+    tcsAccount: null,
+    companySpecific: false
   },
   {
     series: 'BOX PURCHASES',
@@ -1498,7 +1537,8 @@ export const ERP_POSTING_RULES: ErpPostingRule[] = [
     finalStageOfJobCard: false,
     includeCostingOfStage: false,
     scanPath: null,
-    tcsAccount: 'TCS RECEIVABLE A/C'
+    tcsAccount: 'TCS RECEIVABLE A/C',
+    companySpecific: false
   },
   {
     series: 'CREDIT NOTE (TDS)',
@@ -1538,7 +1578,8 @@ export const ERP_POSTING_RULES: ErpPostingRule[] = [
     finalStageOfJobCard: false,
     includeCostingOfStage: false,
     scanPath: null,
-    tcsAccount: null
+    tcsAccount: null,
+    companySpecific: false
   },
   {
     series: 'WORK REC. BILLS',
@@ -1578,7 +1619,8 @@ export const ERP_POSTING_RULES: ErpPostingRule[] = [
     finalStageOfJobCard: false,
     includeCostingOfStage: false,
     scanPath: null,
-    tcsAccount: null
+    tcsAccount: null,
+    companySpecific: false
   },
   {
     series: 'CREDIT NOTE (TCS)',
@@ -1618,7 +1660,8 @@ export const ERP_POSTING_RULES: ErpPostingRule[] = [
     finalStageOfJobCard: false,
     includeCostingOfStage: false,
     scanPath: null,
-    tcsAccount: null
+    tcsAccount: null,
+    companySpecific: false
   },
   {
     series: 'GENERAL PURCHASES',
@@ -1658,7 +1701,8 @@ export const ERP_POSTING_RULES: ErpPostingRule[] = [
     finalStageOfJobCard: false,
     includeCostingOfStage: false,
     scanPath: null,
-    tcsAccount: 'TCS RECEIVABLE A/C'
+    tcsAccount: 'TCS RECEIVABLE A/C',
+    companySpecific: false
   },
   {
     series: 'WORK REC. SUIT BILLS',
@@ -1698,7 +1742,8 @@ export const ERP_POSTING_RULES: ErpPostingRule[] = [
     finalStageOfJobCard: false,
     includeCostingOfStage: false,
     scanPath: null,
-    tcsAccount: null
+    tcsAccount: null,
+    companySpecific: false
   },
   {
     series: 'CREDIT NOTE (ON SALES)',
@@ -1738,7 +1783,8 @@ export const ERP_POSTING_RULES: ErpPostingRule[] = [
     finalStageOfJobCard: false,
     includeCostingOfStage: false,
     scanPath: null,
-    tcsAccount: null
+    tcsAccount: null,
+    companySpecific: false
   },
   {
     series: 'CREDIT NOTE (ON PURCHASES)',
@@ -1778,7 +1824,8 @@ export const ERP_POSTING_RULES: ErpPostingRule[] = [
     finalStageOfJobCard: false,
     includeCostingOfStage: false,
     scanPath: null,
-    tcsAccount: 'TCS RECEIVABLE A/C'
+    tcsAccount: 'TCS RECEIVABLE A/C',
+    companySpecific: false
   },
   {
     series: 'PURCHASE (GST INPUT SERVICES)',
@@ -1818,7 +1865,8 @@ export const ERP_POSTING_RULES: ErpPostingRule[] = [
     finalStageOfJobCard: false,
     includeCostingOfStage: false,
     scanPath: null,
-    tcsAccount: null
+    tcsAccount: null,
+    companySpecific: false
   },
   {
     series: 'PURCHASE (GST CAPITAL GOODS)',
@@ -1858,7 +1906,8 @@ export const ERP_POSTING_RULES: ErpPostingRule[] = [
     finalStageOfJobCard: false,
     includeCostingOfStage: false,
     scanPath: null,
-    tcsAccount: null
+    tcsAccount: null,
+    companySpecific: false
   },
   {
     series: 'PURCHASE (GST GENERAL GOODS)',
@@ -1898,7 +1947,8 @@ export const ERP_POSTING_RULES: ErpPostingRule[] = [
     finalStageOfJobCard: false,
     includeCostingOfStage: false,
     scanPath: null,
-    tcsAccount: null
+    tcsAccount: null,
+    companySpecific: false
   },
   {
     series: 'SALES',
@@ -1938,7 +1988,8 @@ export const ERP_POSTING_RULES: ErpPostingRule[] = [
     finalStageOfJobCard: false,
     includeCostingOfStage: false,
     scanPath: null,
-    tcsAccount: null
+    tcsAccount: null,
+    companySpecific: false
   },
   {
     series: 'FINISH SALES',
@@ -1978,7 +2029,8 @@ export const ERP_POSTING_RULES: ErpPostingRule[] = [
     finalStageOfJobCard: false,
     includeCostingOfStage: false,
     scanPath: null,
-    tcsAccount: 'TCS PAYABLE A/C'
+    tcsAccount: 'TCS PAYABLE A/C',
+    companySpecific: false
   },
   {
     series: 'GREY PURCHASE RETURN',
@@ -2018,7 +2070,8 @@ export const ERP_POSTING_RULES: ErpPostingRule[] = [
     finalStageOfJobCard: false,
     includeCostingOfStage: false,
     scanPath: null,
-    tcsAccount: 'TCS RECEIVABLE A/C'
+    tcsAccount: 'TCS RECEIVABLE A/C',
+    companySpecific: false
   },
   {
     series: 'FINISH PURCHASE RETURN',
@@ -2058,7 +2111,8 @@ export const ERP_POSTING_RULES: ErpPostingRule[] = [
     finalStageOfJobCard: false,
     includeCostingOfStage: false,
     scanPath: null,
-    tcsAccount: 'TCS RECEIVABLE A/C'
+    tcsAccount: 'TCS RECEIVABLE A/C',
+    companySpecific: false
   },
   {
     series: 'CASH SALES',
@@ -2098,7 +2152,8 @@ export const ERP_POSTING_RULES: ErpPostingRule[] = [
     finalStageOfJobCard: false,
     includeCostingOfStage: false,
     scanPath: null,
-    tcsAccount: 'TCS PAYABLE A/C'
+    tcsAccount: 'TCS PAYABLE A/C',
+    companySpecific: false
   },
   {
     series: 'GREY SALES',
@@ -2138,7 +2193,8 @@ export const ERP_POSTING_RULES: ErpPostingRule[] = [
     finalStageOfJobCard: false,
     includeCostingOfStage: false,
     scanPath: null,
-    tcsAccount: 'TCS PAYABLE A/C'
+    tcsAccount: 'TCS PAYABLE A/C',
+    companySpecific: false
   },
   {
     series: 'FINISH SALES (GST)',
@@ -2178,7 +2234,8 @@ export const ERP_POSTING_RULES: ErpPostingRule[] = [
     finalStageOfJobCard: false,
     includeCostingOfStage: false,
     scanPath: null,
-    tcsAccount: 'TCS PAYABLE A/C'
+    tcsAccount: 'TCS PAYABLE A/C',
+    companySpecific: false
   },
   {
     series: 'FENT SALES',
@@ -2218,7 +2275,8 @@ export const ERP_POSTING_RULES: ErpPostingRule[] = [
     finalStageOfJobCard: false,
     includeCostingOfStage: false,
     scanPath: null,
-    tcsAccount: 'TCS PAYABLE A/C'
+    tcsAccount: 'TCS PAYABLE A/C',
+    companySpecific: false
   },
   {
     series: 'DEBIT NOTE (TDS)',
@@ -2258,7 +2316,8 @@ export const ERP_POSTING_RULES: ErpPostingRule[] = [
     finalStageOfJobCard: false,
     includeCostingOfStage: false,
     scanPath: null,
-    tcsAccount: null
+    tcsAccount: null,
+    companySpecific: false
   },
   {
     series: 'DEBIT NOTE (TCS)',
@@ -2298,7 +2357,8 @@ export const ERP_POSTING_RULES: ErpPostingRule[] = [
     finalStageOfJobCard: false,
     includeCostingOfStage: false,
     scanPath: null,
-    tcsAccount: null
+    tcsAccount: null,
+    companySpecific: false
   },
   {
     series: 'DEBIT NOTE (ON SALES)',
@@ -2338,7 +2398,8 @@ export const ERP_POSTING_RULES: ErpPostingRule[] = [
     finalStageOfJobCard: false,
     includeCostingOfStage: false,
     scanPath: null,
-    tcsAccount: 'TCS PAYABLE A/C'
+    tcsAccount: 'TCS PAYABLE A/C',
+    companySpecific: false
   },
   {
     series: 'DEBIT NOTE (ON PURCHASES)',
@@ -2378,7 +2439,8 @@ export const ERP_POSTING_RULES: ErpPostingRule[] = [
     finalStageOfJobCard: false,
     includeCostingOfStage: false,
     scanPath: null,
-    tcsAccount: 'TCS RECEIVABLE A/C'
+    tcsAccount: 'TCS RECEIVABLE A/C',
+    companySpecific: false
   },
   {
     series: 'TDS',
@@ -2418,7 +2480,8 @@ export const ERP_POSTING_RULES: ErpPostingRule[] = [
     finalStageOfJobCard: false,
     includeCostingOfStage: false,
     scanPath: null,
-    tcsAccount: null
+    tcsAccount: null,
+    companySpecific: false
   },
   {
     series: 'VATAV',
@@ -2458,7 +2521,8 @@ export const ERP_POSTING_RULES: ErpPostingRule[] = [
     finalStageOfJobCard: false,
     includeCostingOfStage: false,
     scanPath: null,
-    tcsAccount: null
+    tcsAccount: null,
+    companySpecific: false
   },
   {
     series: 'CLOSING ENTRIES (TRADING)',
@@ -2498,7 +2562,8 @@ export const ERP_POSTING_RULES: ErpPostingRule[] = [
     finalStageOfJobCard: false,
     includeCostingOfStage: false,
     scanPath: null,
-    tcsAccount: null
+    tcsAccount: null,
+    companySpecific: false
   },
   {
     series: 'CLOSING ENTRIES (P & L)',
@@ -2538,7 +2603,8 @@ export const ERP_POSTING_RULES: ErpPostingRule[] = [
     finalStageOfJobCard: false,
     includeCostingOfStage: false,
     scanPath: null,
-    tcsAccount: null
+    tcsAccount: null,
+    companySpecific: false
   },
   {
     series: 'VAT JV',
@@ -2578,7 +2644,8 @@ export const ERP_POSTING_RULES: ErpPostingRule[] = [
     finalStageOfJobCard: false,
     includeCostingOfStage: false,
     scanPath: null,
-    tcsAccount: null
+    tcsAccount: null,
+    companySpecific: false
   },
   {
     series: 'COMMISSION JVS',
@@ -2618,7 +2685,8 @@ export const ERP_POSTING_RULES: ErpPostingRule[] = [
     finalStageOfJobCard: false,
     includeCostingOfStage: false,
     scanPath: null,
-    tcsAccount: null
+    tcsAccount: null,
+    companySpecific: false
   },
   {
     series: 'UNADJ PAYMENT',
@@ -2658,7 +2726,8 @@ export const ERP_POSTING_RULES: ErpPostingRule[] = [
     finalStageOfJobCard: false,
     includeCostingOfStage: false,
     scanPath: null,
-    tcsAccount: null
+    tcsAccount: null,
+    companySpecific: false
   },
   {
     series: 'MILL REC.CHALLAN',
@@ -2698,13 +2767,32 @@ export const ERP_POSTING_RULES: ErpPostingRule[] = [
     finalStageOfJobCard: false,
     includeCostingOfStage: false,
     scanPath: null,
-    tcsAccount: null
+    tcsAccount: null,
+    companySpecific: false
   }
 ];
 
 const RULE_BY_SERIES = new Map<string, ErpPostingRule>(
   ERP_POSTING_RULES.map(row => [row.series.toUpperCase(), row])
 );
+
+/**
+ * The general master: everything except series named after one particular firm.
+ * Use this for dropdowns and pick lists; use ERP_POSTING_RULES when resolving the
+ * rule for a voucher that is already saved.
+ */
+export const ERP_GENERAL_POSTING_RULES: ErpPostingRule[] =
+  ERP_POSTING_RULES.filter(row => !row.companySpecific);
+
+/** True for a series that belongs to one firm only and should not be offered. */
+export function isCompanySpecificSeries(transactionType?: string | null): boolean {
+  return getPostingRule(transactionType)?.companySpecific === true;
+}
+
+/** Filters a list of series names down to the ones any firm may use. */
+export function generalSeriesOnly(seriesNames: string[]): string[] {
+  return (seriesNames || []).filter(name => !isCompanySpecificSeries(name));
+}
 
 export function getPostingRule(transactionType?: string | null): ErpPostingRule | undefined {
   const upper = String(transactionType || '').trim().toUpperCase();

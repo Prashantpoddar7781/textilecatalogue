@@ -61,6 +61,20 @@ const COLUMNS = [
 ];
 
 /**
+ * Series that only exist because one firm asked for them, and carry that firm's name.
+ *
+ * They stay in the master so any voucher already saved against them still resolves
+ * its posting rule and keeps its link, but they are excluded from the general pick
+ * lists — a new customer should never see another firm's name in a dropdown.
+ */
+const COMPANY_SPECIFIC_SERIES = new Set([
+  'WORK DESP POONAM CHALLAN',
+  'WORK DESP POONAM LACE CHALLAN',
+  'WORK REC. POONAM BILLS',
+  'WORK REC. POONAM LACE BILLS'
+]);
+
+/**
  * Series our app posts that Empire's master does not define. Kept here (not in the
  * TSV) so a re-export never silently drops them.
  */
@@ -119,6 +133,9 @@ function toStringOrNull(raw) {
   return v === '' ? null : v;
 }
 
+/** Serialized key order: every Excel column, then our own derived flags. */
+const FIELD_ORDER = [...COLUMNS.map(([, field]) => field), 'companySpecific'];
+
 function buildRule(row) {
   const rule = {};
   for (const [header, field, kind] of COLUMNS) {
@@ -128,6 +145,7 @@ function buildRule(row) {
     else if (kind === 'numberOrNull') rule[field] = toNumberOrNull(raw);
     else rule[field] = toStringOrNull(raw);
   }
+  rule.companySpecific = COMPANY_SPECIFIC_SERIES.has(String(rule.series || '').toUpperCase());
   return rule;
 }
 
@@ -138,6 +156,7 @@ function withExtensionDefaults(seed) {
     else if (kind === 'number') rule[field] = 0;
     else rule[field] = null;
   }
+  rule.companySpecific = false;
   return { ...rule, ...seed };
 }
 
@@ -171,7 +190,7 @@ function literal(value) {
 function serializeRules(indent = '  ') {
   return all
     .map(rule => {
-      const body = COLUMNS.map(([, field]) => `${indent}  ${field}: ${literal(rule[field])}`).join(',\n');
+      const body = FIELD_ORDER.map(field => `${indent}  ${field}: ${literal(rule[field])}`).join(',\n');
       return `${indent}{\n${body}\n${indent}}`;
     })
     .join(',\n');
@@ -263,6 +282,11 @@ export interface ErpPostingRule {
   includeCostingOfStage: boolean;
   scanPath: string | null;
   tcsAccount: string | null;
+  /**
+   * True for series that exist only for one firm and carry its name. Kept so saved
+   * vouchers still resolve, but never offered in a pick list.
+   */
+  companySpecific: boolean;
 }
 
 export const ERP_POSTING_RULES: ErpPostingRule[] = [
@@ -295,6 +319,24 @@ function sharedHelpers({ typed }) {
   return `const RULE_BY_SERIES = new Map${mapType}(
   ERP_POSTING_RULES.map(row => [row.series.toUpperCase(), row])
 );
+
+/**
+ * The general master: everything except series named after one particular firm.
+ * Use this for dropdowns and pick lists; use ERP_POSTING_RULES when resolving the
+ * rule for a voucher that is already saved.
+ */
+export const ERP_GENERAL_POSTING_RULES${typed ? ': ErpPostingRule[]' : ''} =
+  ERP_POSTING_RULES.filter(row => !row.companySpecific);
+
+/** True for a series that belongs to one firm only and should not be offered. */
+export function isCompanySpecificSeries(transactionType${optStr})${retBool} {
+  return getPostingRule(transactionType)?.companySpecific === true;
+}
+
+/** Filters a list of series names down to the ones any firm may use. */
+export function generalSeriesOnly(seriesNames${typed ? ': string[]' : ''})${strArr} {
+  return (seriesNames || []).filter(name => !isCompanySpecificSeries(name));
+}
 
 export function getPostingRule(transactionType${optStr})${ruleType} {
   const upper = String(transactionType || '').trim().toUpperCase();
