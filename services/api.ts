@@ -950,6 +950,7 @@ export const greyPurchasesApi = {
       defaultHsnCode: string;
       defaultGstRate: number;
       nextSrNo: number;
+      nextTypeBillNumber?: number | null;
       states: string[];
       stateCodes: Array<{ code: string; name: string }>;
     }>('/grey-purchases/meta');

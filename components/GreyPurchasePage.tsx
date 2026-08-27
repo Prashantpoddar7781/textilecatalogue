@@ -2,9 +2,11 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertCircle, ArrowLeft, ListOrdered, Loader2 } from 'lucide-react';
 import { GREY_QUALITY_OPTIONS } from '../constants/greyQualities';
 import { getGstDefaultsForTransactionType } from '../constants/erpTransactionTypes';
+import { postingPartyAccountType, formatSeriesBillNumber, getGstDocumentType, gstReturnSection, postingSummary } from '../constants/erpTransactionPostingRules';
 import { greyPurchasesApi, purchasesApi } from '../services/api';
 import { isWrongGstNumber, normalizeGstNumber } from '../services/gstValidation';
-import { ErpSession, GreyPurchaseLine, GreyTakaDetailRow, Supplier } from '../types';
+import { AccountParty, ErpSession, GreyPurchaseLine, GreyTakaDetailRow, Supplier } from '../types';
+import { AccountsInformationDialog, AddPartyConfirmDialog } from './AccountsInformationDialog';
 import { ErpTopMenu } from './ErpTopMenu';
 import { ErpFormShell } from './ErpFormShell';
 import { ErpSaveButton } from './ErpSaveButton';
@@ -22,10 +24,14 @@ const money = (v: number) => round2(v).toLocaleString('en-IN', { minimumFraction
 const inputClass = 'w-full rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-sm font-semibold outline-none focus:border-indigo-400';
 const labelClass = 'mb-1 block text-[10px] font-black uppercase tracking-wide text-gray-500';
 const calcInputClass = 'w-full rounded-lg border border-violet-200 bg-white px-2.5 py-2 text-sm font-bold outline-none focus:border-violet-400';
+const readonlyClass = 'w-full rounded-lg border border-gray-200 bg-gray-100 px-2.5 py-2 text-sm font-semibold';
 
 export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
   const editId = useMemo(() => new URLSearchParams(window.location.search).get('edit'), []);
   const isEditMode = Boolean(editId);
+  const GREY_TYPE = 'GREY PURCHASE';
+  const gstDocumentType = getGstDocumentType(GREY_TYPE);
+  const gstReturn = gstReturnSection(GREY_TYPE);
 
   const [companyName, setCompanyName] = useState('');
   const [businessState, setBusinessState] = useState('');
@@ -39,6 +45,7 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [gstFromMaster, setGstFromMaster] = useState(false);
   const [quality, setQuality] = useState('');
   const [srNo, setSrNo] = useState('1');
+  const [typeBillNumber, setTypeBillNumber] = useState<number | null>(null);
   const [orderNo, setOrderNo] = useState('0');
   const [hsnCode, setHsnCode] = useState('');
   const [billNo, setBillNo] = useState('');
@@ -78,6 +85,10 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [pendingNewParty, setPendingNewParty] = useState('');
+  const [showAddConfirm, setShowAddConfirm] = useState(false);
+  const [showAccountsDialog, setShowAccountsDialog] = useState(false);
+  const [allowUnknownParty, setAllowUnknownParty] = useState(false);
   const [success, setSuccess] = useState('');
 
   const gstInvalid = isWrongGstNumber(partyGstin);
@@ -126,6 +137,7 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
         setStates(meta.states || []);
         setStateCodes(meta.stateCodes || []);
         if (!isEditMode) setSrNo(String(meta.nextSrNo || 1));
+        if (!isEditMode) setTypeBillNumber(meta.nextTypeBillNumber ?? null);
         if (!isEditMode) {
           const d = getGstDefaultsForTransactionType(
             'GREY PURCHASE',
@@ -148,6 +160,7 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
           setPartyMsme(entry.partyMsme || '');
           setQuality(entry.quality || '');
           setSrNo(String(entry.srNo ?? ''));
+          setTypeBillNumber(entry.typeBillNumber ?? null);
           setOrderNo(entry.orderNo || '0');
           setHsnCode(entry.hsnCode || meta.defaultHsnCode || '');
           setBillNo(entry.billNo || '');
@@ -185,6 +198,17 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
     return () => { cancelled = true; };
   }, [editId, isEditMode]);
 
+  const knownSupplier = (name: string) =>
+    suppliers.find(s => s.name.toLowerCase() === name.trim().toLowerCase());
+
+  const promptIfNewParty = (name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    if (knownSupplier(trimmed)) return;
+    setPendingNewParty(trimmed);
+    setShowAddConfirm(true);
+  };
+
   const applyParty = (supplier: Supplier | null) => {
     if (!supplier) {
       setSupplierId('');
@@ -210,6 +234,28 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
       }
     }
     if (supplier.msmeType) setPartyMsme(supplier.msmeType);
+  };
+
+  const onPartySaved = (party: AccountParty) => {
+    const supplier: Supplier = {
+      id: party.id,
+      userId: '',
+      name: party.name,
+      gstNumber: party.gstNumber,
+      panNumber: party.panNumber,
+      mobileNumber: party.mobileNumber,
+      address: party.address,
+      city: party.city,
+      state: party.state,
+      pincode: party.pincode,
+      msmeType: party.msmeType,
+      accountType: party.accountType,
+      createdAt: '',
+      updatedAt: ''
+    };
+    setSuppliers(prev => (prev.some(row => row.id === party.id) ? prev : [...prev, supplier]));
+    setAllowUnknownParty(false);
+    applyParty(supplier);
   };
 
   const recalculate = useCallback(async () => {
@@ -276,6 +322,11 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
         setSaving(false);
         return;
       }
+      if (!knownSupplier(partyName) && !allowUnknownParty) {
+        promptIfNewParty(partyName);
+        setSaving(false);
+        return;
+      }
       if (needsManualState) {
         setError('Select state / GST type source: party GSTIN or state.');
         setSaving(false);
@@ -320,8 +371,11 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
         await greyPurchasesApi.update(editId, payload);
         setSuccess('Grey purchase updated.');
       } else {
-        await greyPurchasesApi.create(payload);
-        setSuccess('Grey purchase saved and posted to godown inventory.');
+        const created = await greyPurchasesApi.create(payload);
+        const voucher = formatSeriesBillNumber('GREY PURCHASE', created.entry?.typeBillNumber ?? typeBillNumber);
+        setSuccess(voucher
+          ? `Grey purchase saved as ${voucher} and posted to godown inventory.`
+          : 'Grey purchase saved and posted to godown inventory.');
         setBillNo('');
         setRecTaka('');
         setRecMts('');
@@ -336,6 +390,7 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
         setTakaDetails([]);
         const meta = await greyPurchasesApi.getMeta();
         setSrNo(String(meta.nextSrNo || 1));
+        setTypeBillNumber(meta.nextTypeBillNumber ?? null);
       }
     } catch (err: any) {
       setError(err.message || 'Could not save grey purchase.');
@@ -392,14 +447,32 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
                     onChange={e => {
                       const name = e.target.value;
                       setPartyName(name);
-                      const match = suppliers.find(s => s.name.toLowerCase() === name.toLowerCase());
+                      setAllowUnknownParty(false);
+                      const match = knownSupplier(name);
                       applyParty(match || null);
                     }}
+                    onBlur={e => promptIfNewParty(e.target.value)}
                     required
                   />
                   <datalist id="grey-party-list">
                     {suppliers.map(s => <option key={s.id} value={s.name} />)}
                   </datalist>
+                </label>
+                <label>
+                  <span className={labelClass}>Voucher No.</span>
+                  <input
+                    className={readonlyClass}
+                    value={formatSeriesBillNumber(GREY_TYPE, typeBillNumber) || '—'}
+                    readOnly
+                  />
+                </label>
+                <label className="xl:col-span-2">
+                  <span className={labelClass}>GST Document{gstReturn !== 'NONE' ? ` · ${gstReturn}` : ''}</span>
+                  <input className={readonlyClass} value={gstDocumentType || '—'} readOnly />
+                </label>
+                <label className="xl:col-span-2">
+                  <span className={labelClass}>Posts To</span>
+                  <input className={readonlyClass} value={postingSummary(GREY_TYPE)} readOnly />
                 </label>
                 <label>
                   <span className={labelClass}>Quality</span>
@@ -426,7 +499,7 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
                   <input className={inputClass} value={orderNo} onChange={e => setOrderNo(e.target.value)} />
                 </label>
                 <label>
-                  <span className={labelClass}>Bill No.</span>
+                  <span className={labelClass}>Party Bill No.</span>
                   <input className={inputClass} value={billNo} onChange={e => setBillNo(e.target.value)} />
                 </label>
                 <label>
@@ -692,6 +765,27 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
           </>
         )}
       </main>
+
+      <AddPartyConfirmDialog
+        open={showAddConfirm}
+        partyName={pendingNewParty}
+        onNo={() => {
+          setShowAddConfirm(false);
+          setAllowUnknownParty(true);
+        }}
+        onYes={() => {
+          setShowAddConfirm(false);
+          setShowAccountsDialog(true);
+        }}
+      />
+      <AccountsInformationDialog
+        open={showAccountsDialog}
+        initialName={pendingNewParty}
+        context="grey"
+        suggestedAccountType={postingPartyAccountType('GREY PURCHASE') || undefined}
+        onClose={() => setShowAccountsDialog(false)}
+        onSaved={onPartySaved}
+      />
     </div>
   );
 };

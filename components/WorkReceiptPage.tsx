@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, ListOrdered, Loader2 } from 'lucide-react';
+import { postingPartyAccountType } from '../constants/erpTransactionPostingRules';
 import { workReceiptsApi } from '../services/api';
-import { ErpSession, LinkedSourceDocument, WorkLineItem } from '../types';
+import { AccountParty, ErpSession, LinkedSourceDocument, WorkLineItem } from '../types';
+import { AccountsInformationDialog, AddPartyConfirmDialog } from './AccountsInformationDialog';
 import { ErpFormShell } from './ErpFormShell';
 import { ErpSaveButton } from './ErpSaveButton';
 import { ErpTopMenu } from './ErpTopMenu';
@@ -30,6 +32,10 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [pendingNewParty, setPendingNewParty] = useState('');
+  const [showAddConfirm, setShowAddConfirm] = useState(false);
+  const [showAccountsDialog, setShowAccountsDialog] = useState(false);
+  const [allowUnknownParty, setAllowUnknownParty] = useState(false);
   const [companyName, setCompanyName] = useState('');
   const [transactionTypes, setTransactionTypes] = useState<string[]>([]);
   const [parties, setParties] = useState<Array<{ name: string; gstNumber?: string | null; state?: string | null; brokerName?: string | null }>>([]);
@@ -174,6 +180,31 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
     if (match.gstNumber) setPartyGstin(match.gstNumber);
     if (match.brokerName) setBrokerName(match.brokerName);
     if (match.state) setPlaceOfSupply(match.state);
+  };
+
+  const promptIfNewParty = (name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    if (parties.some(p => p.name.toLowerCase() === trimmed.toLowerCase())) return;
+    setPendingNewParty(trimmed);
+    setShowAddConfirm(true);
+  };
+
+  const onPartySaved = (party: AccountParty) => {
+    setPartyName(party.name);
+    if (party.gstNumber) setPartyGstin(party.gstNumber);
+    if (party.brokerName) setBrokerName(party.brokerName);
+    if (party.state) setPlaceOfSupply(party.state);
+    setAllowUnknownParty(false);
+    setParties(prev => {
+      if (prev.some(row => row.name.toLowerCase() === party.name.toLowerCase())) return prev;
+      return [...prev, {
+        name: party.name,
+        gstNumber: party.gstNumber,
+        state: party.state,
+        brokerName: party.brokerName
+      }];
+    });
   };
 
   const loadPending = async () => {
@@ -414,6 +445,10 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
     try {
       if (!selectedSources.length) throw new Error('Pick at least one work desp challan for this party.');
       if (!partyName.trim()) throw new Error('Party is required.');
+      if (!parties.some(p => p.name.toLowerCase() === partyName.trim().toLowerCase()) && !allowUnknownParty) {
+        promptIfNewParty(partyName);
+        return;
+      }
       if (!lines.length) throw new Error('Add received lines.');
       if (isEditMode && editId) {
         await workReceiptsApi.update(editId, buildPayload());
@@ -504,8 +539,10 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
                   value={partyName}
                   onChange={e => {
                     setPartyName(e.target.value);
+                    setAllowUnknownParty(false);
                     applyPartyDefaults(e.target.value);
                   }}
+                  onBlur={e => promptIfNewParty(e.target.value)}
                 />
                 <datalist id="work-rec-parties">
                   {parties.map(p => <option key={p.name} value={p.name} />)}
@@ -728,6 +765,27 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
           </div>
         </div>
       )}
+
+      <AddPartyConfirmDialog
+        open={showAddConfirm}
+        partyName={pendingNewParty}
+        onNo={() => {
+          setShowAddConfirm(false);
+          setAllowUnknownParty(true);
+        }}
+        onYes={() => {
+          setShowAddConfirm(false);
+          setShowAccountsDialog(true);
+        }}
+      />
+      <AccountsInformationDialog
+        open={showAccountsDialog}
+        initialName={pendingNewParty}
+        context="work"
+        suggestedAccountType={postingPartyAccountType(transactionType) || undefined}
+        onClose={() => setShowAccountsDialog(false)}
+        onSaved={onPartySaved}
+      />
     </div>
   );
 };

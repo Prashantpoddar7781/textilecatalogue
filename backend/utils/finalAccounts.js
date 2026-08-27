@@ -888,7 +888,9 @@ export async function buildFinalAccountsDrill(prisma, userId, {
       rows.push({
         id: grey.id,
         date,
-        billNo: grey.voucherNo || grey.billNo || grey.id.slice(-6),
+        billNo: formatSeriesBillNumber('GREY PURCHASE', grey.typeBillNumber)
+          || grey.billNo || grey.id.slice(-6),
+        gstDocumentType: getGstDocumentType('GREY PURCHASE'),
         transactionType: 'GREY PURCHASE',
         amount,
         partyName: grey.partyName,
@@ -1072,7 +1074,9 @@ export async function buildFinalAccountsDrill(prisma, userId, {
       tradingBillRows.push({
         id: grey.id,
         date,
-        billNo: grey.voucherNo || grey.billNo || grey.id.slice(-6),
+        billNo: formatSeriesBillNumber('GREY PURCHASE', grey.typeBillNumber)
+          || grey.billNo || grey.id.slice(-6),
+        gstDocumentType: getGstDocumentType('GREY PURCHASE'),
         transactionType: 'GREY PURCHASE',
         amount,
         partyName: grey.partyName || '',

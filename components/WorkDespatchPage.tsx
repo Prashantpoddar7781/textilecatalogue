@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Loader2, Plus, Trash2 } from 'lucide-react';
+import { postingPartyAccountType } from '../constants/erpTransactionPostingRules';
 import { workDespatchesApi } from '../services/api';
-import { ErpSession, WorkLineItem } from '../types';
+import { AccountParty, ErpSession, WorkLineItem } from '../types';
+import { AccountsInformationDialog, AddPartyConfirmDialog } from './AccountsInformationDialog';
 import { ErpFormShell } from './ErpFormShell';
 import { ErpSaveButton } from './ErpSaveButton';
 import { ErpTopMenu } from './ErpTopMenu';
@@ -40,6 +42,10 @@ export const WorkDespatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [pendingNewParty, setPendingNewParty] = useState('');
+  const [showAddConfirm, setShowAddConfirm] = useState(false);
+  const [showAccountsDialog, setShowAccountsDialog] = useState(false);
+  const [allowUnknownParty, setAllowUnknownParty] = useState(false);
   const [companyName, setCompanyName] = useState('');
   const [transactionTypes, setTransactionTypes] = useState<string[]>([]);
   const [workTypes, setWorkTypes] = useState<string[]>([]);
@@ -119,6 +125,7 @@ export const WorkDespatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
 
   const applyParty = (name: string) => {
     setPartyName(name);
+    setAllowUnknownParty(false);
     const match = parties.find(p => p.name.toLowerCase() === name.trim().toLowerCase());
     if (!match) return;
     if (match.gstNumber) setPartyGstin(match.gstNumber);
@@ -127,6 +134,34 @@ export const WorkDespatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
       setStateCode(match.state);
     }
     if (match.brokerName) setBrokerName(match.brokerName);
+  };
+
+  const promptIfNewParty = (name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    if (parties.some(p => p.name.toLowerCase() === trimmed.toLowerCase())) return;
+    setPendingNewParty(trimmed);
+    setShowAddConfirm(true);
+  };
+
+  const onPartySaved = (party: AccountParty) => {
+    setPartyName(party.name);
+    if (party.gstNumber) setPartyGstin(party.gstNumber);
+    if (party.state) {
+      setPlaceOfSupply(party.state);
+      setStateCode(party.state);
+    }
+    if (party.brokerName) setBrokerName(party.brokerName);
+    setAllowUnknownParty(false);
+    setParties(prev => {
+      if (prev.some(row => row.name.toLowerCase() === party.name.toLowerCase())) return prev;
+      return [...prev, {
+        name: party.name,
+        gstNumber: party.gstNumber,
+        state: party.state,
+        brokerName: party.brokerName
+      }];
+    });
   };
 
   const updateLine = (index: number, patch: Partial<WorkLineItem>) => {
@@ -164,6 +199,11 @@ export const WorkDespatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
     setSuccess('');
     try {
       if (!partyName.trim()) throw new Error('Party is required.');
+      if (!parties.some(p => p.name.toLowerCase() === partyName.trim().toLowerCase()) && !allowUnknownParty) {
+        promptIfNewParty(partyName);
+        setSaving(false);
+        return;
+      }
       const validLines = lines.filter(l => l.itemName.trim() && (toNum(l.pcs) > 0 || toNum(l.mtsQty) > 0));
       if (!validLines.length) throw new Error('Add at least one item line.');
       const payload = {
@@ -256,7 +296,14 @@ export const WorkDespatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
               <label><span className={labelClass}>Date</span><input type="date" className={inputClass} value={despatchDate} onChange={e => setDespatchDate(e.target.value)} /></label>
               <label className="md:col-span-2">
                 <span className={labelClass}>Party</span>
-                <input list="work-desp-parties" className={inputClass} value={partyName} onChange={e => applyParty(e.target.value)} placeholder="Select party / khataval" />
+                <input
+                  list="work-desp-parties"
+                  className={inputClass}
+                  value={partyName}
+                  onChange={e => applyParty(e.target.value)}
+                  onBlur={e => promptIfNewParty(e.target.value)}
+                  placeholder="Select party / khataval"
+                />
                 <datalist id="work-desp-parties">{parties.map(p => <option key={p.name} value={p.name} />)}</datalist>
               </label>
               <label><span className={labelClass}>State</span><input className={inputClass} value={stateCode} onChange={e => setStateCode(e.target.value)} /></label>
@@ -356,6 +403,27 @@ export const WorkDespatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
           </div>
         </ErpFormShell>
       </main>
+
+      <AddPartyConfirmDialog
+        open={showAddConfirm}
+        partyName={pendingNewParty}
+        onNo={() => {
+          setShowAddConfirm(false);
+          setAllowUnknownParty(true);
+        }}
+        onYes={() => {
+          setShowAddConfirm(false);
+          setShowAccountsDialog(true);
+        }}
+      />
+      <AccountsInformationDialog
+        open={showAccountsDialog}
+        initialName={pendingNewParty}
+        context="work"
+        suggestedAccountType={postingPartyAccountType(transactionType) || undefined}
+        onClose={() => setShowAccountsDialog(false)}
+        onSaved={onPartySaved}
+      />
     </div>
   );
 };

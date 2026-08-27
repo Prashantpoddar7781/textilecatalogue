@@ -10,6 +10,7 @@ import {
   INDIAN_STATES
 } from '../utils/gstCalculation.js';
 import { resolveSupplierForEntry } from '../utils/partyMaster.js';
+import { allocateNextTypeBillNumber } from '../utils/transactionBilling.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -292,9 +293,16 @@ router.get('/meta', authenticateToken, requireActiveSubscription, async (req, re
   try {
     const ctx = await getCompanyContext(req.user.userId);
     const count = await prisma.greyPurchase.count({ where: { userId: req.user.userId } });
+    const nextTypeBillNumber = await allocateNextTypeBillNumber(
+      prisma,
+      req.user.userId,
+      'GREY PURCHASE',
+      'grey_purchase'
+    );
     res.json({
       ...ctx,
       nextSrNo: count + 1,
+      nextTypeBillNumber,
       states: INDIAN_STATES,
       stateCodes: Object.entries(
         // unique preferred codes
@@ -518,8 +526,15 @@ router.post('/', authenticateToken, requireActiveSubscription, [
 
     const userId = req.user.userId;
     const built = await buildGreyPurchaseData(req, userId, false);
+    const payload = greyPurchaseDataPayload(req, built, userId);
+    payload.typeBillNumber = await allocateNextTypeBillNumber(
+      prisma,
+      userId,
+      'GREY PURCHASE',
+      'grey_purchase'
+    );
     const entry = await prisma.greyPurchase.create({
-      data: greyPurchaseDataPayload(req, built, userId),
+      data: payload,
       include: { supplier: true }
     });
 
@@ -547,6 +562,7 @@ router.put('/:id', authenticateToken, requireActiveSubscription, [
     const built = await buildGreyPurchaseData(req, userId, true);
     const payload = greyPurchaseDataPayload(req, built, userId);
     delete payload.userId;
+    payload.typeBillNumber = existing.typeBillNumber;
     if (optionalNumber(req.body.srNo) == null) {
       delete payload.srNo;
     } else {
