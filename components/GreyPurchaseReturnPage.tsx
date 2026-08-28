@@ -153,7 +153,7 @@ export const GreyPurchaseReturnPage: React.FC<Props> = ({ onBack, erpSession }) 
           setCompanyName(entry.companyName || meta.companyName || '');
           setEntryType(entry.entryType || 'GREY PURCHASE');
           setGreyType(entry.greyType === 'REPROCESS' ? 'REPROCESS' : 'GREY');
-          setVoucherNo(String(entry.voucherNo ?? meta.nextVoucherNo || 1));
+          setVoucherNo(String(entry.voucherNo ?? meta.nextVoucherNo ?? 1));
           setSaleAccount(entry.saleAccount || 'GREY PURCHASE RETURN');
           setPurSr(String(entry.purSr ?? ''));
           setGreyPurchaseId(entry.greyPurchaseId || '');

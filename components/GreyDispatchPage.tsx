@@ -106,7 +106,7 @@ export const GreyDispatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
           setCheckerName(entry.checkerName || '');
           setVehicleNo(entry.vehicleNo || '');
           setEwayBillNo(entry.ewayBillNo || '');
-          setSrNo(String(entry.srNo ?? meta.nextSrNo || 1));
+          setSrNo(String(entry.srNo ?? meta.nextSrNo ?? 1));
           const takaRows = Array.isArray(entry.takaDetails) ? entry.takaDetails : [];
           setSelectedTakaDetails(takaRows);
           if (entry.greyPurchaseId) {
