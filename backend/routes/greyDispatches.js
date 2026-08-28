@@ -425,7 +425,10 @@ router.get('/grey-receipts/:greyPurchaseId/available-takas', authenticateToken, 
     });
     if (!purchase) return res.status(404).json({ error: 'Grey receipt not found' });
 
-    const occupiedSrNos = await getOccupiedSrNos(purchase.id, { mode });
+    const occupiedSrNos = await getOccupiedSrNos(purchase.id, {
+      mode,
+      excludeDispatchId: optionalString(req.query.excludeDispatchId)
+    });
     const allRows = Array.isArray(purchase.takaDetails) ? normalizeTakaDetails(purchase.takaDetails) : [];
     const availableRows = allRows.length
       ? allRows.filter(row => !occupiedSrNos.has(row.srNo))
@@ -644,6 +647,142 @@ router.post('/', authenticateToken, requireActiveSubscription, [
     });
 
     res.status(201).json({ entry });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.put('/:id', authenticateToken, requireActiveSubscription, [
+  body('greyPurchaseId').trim().notEmpty().withMessage('Grey receipt is required'),
+  body('millName').trim().notEmpty().withMessage('Mill is required')
+], async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const userId = req.user.userId;
+    const existing = await prisma.greyDispatch.findFirst({
+      where: { id: req.params.id, userId },
+      include: { greyPurchase: true }
+    });
+    if (!existing) return res.status(404).json({ error: 'Grey dispatch not found' });
+    if (String(existing.transactionType || '').toUpperCase() === 'RETURN') {
+      return res.status(400).json({ error: 'Edit this movement from Grey Purchase Return.' });
+    }
+
+    const greyPurchaseId = String(req.body.greyPurchaseId);
+    const purchase = await prisma.greyPurchase.findFirst({
+      where: { id: greyPurchaseId, userId, status: { not: 'cancelled' } }
+    });
+    if (!purchase) return res.status(404).json({ error: 'Grey receipt not found' });
+
+    const takaDetails = normalizeTakaDetails(req.body.takaDetails);
+    const despMts = optionalNumber(req.body.despMts) ?? roundMoney(takaDetails.reduce((s, r) => s + r.mts, 0));
+    const despTaka = optionalNumber(req.body.despTaka) ?? (takaDetails.length || 0);
+    if (despMts <= 0) {
+      return res.status(400).json({ error: 'Dispatch meters must be greater than zero.' });
+    }
+
+    const samePurchase = purchase.id === existing.greyPurchaseId;
+    const available = roundMoney(
+      Math.max(0, Number(purchase.recMts) - Number(purchase.despatchMts) + (samePurchase ? Number(existing.despMts) : 0))
+    );
+    if (despMts > available + 0.01) {
+      return res.status(400).json({ error: `Only ${available} meters available in godown for this receipt.` });
+    }
+
+    const transactionType = normalizeDispatchType(req.body.transactionType);
+    const occupiedSrNos = await getOccupiedSrNos(purchase.id, { mode: transactionType, excludeDispatchId: existing.id });
+    for (const row of takaDetails) {
+      if (occupiedSrNos.has(row.srNo)) {
+        return res.status(400).json({ error: `Taka ${row.srNo} is already dispatched.` });
+      }
+    }
+
+    const millName = optionalString(req.body.millName);
+    if (!millName) {
+      return res.status(400).json({ error: 'Mill is required.' });
+    }
+
+    if (transactionType === 'REPROCESS') {
+      const millReturnCount = await prisma.millReceipt.count({
+        where: {
+          userId,
+          greyPurchaseId: purchase.id,
+          processType: 'RETURN',
+          status: { not: 'cancelled' }
+        }
+      });
+      if (millReturnCount <= 0) {
+        return res.status(400).json({
+          error: 'REPROCESS requires a mill RETURN (reprocess) receipt for this purchase bill.'
+        });
+      }
+    }
+
+    await ensureMillParty(prisma, userId, millName);
+    await resolveSupplierForEntry(prisma, userId, {
+      partyName: optionalString(req.body.weaverName) || purchase.partyName,
+      partyGstin: purchase.partyGstin,
+      placeOfSupply: purchase.placeOfSupply,
+      partyMsme: purchase.partyMsme,
+      transactionType: 'GREY PURCHASE'
+    });
+
+    const ctx = await getCompanyContext(userId);
+    const entry = await prisma.$transaction(async (tx) => {
+      if (existing.greyPurchaseId !== purchase.id) {
+        await tx.greyPurchase.update({
+          where: { id: existing.greyPurchaseId },
+          data: { despatchMts: roundMoney(Math.max(0, Number(existing.greyPurchase.despatchMts) - Number(existing.despMts))) }
+        });
+      }
+
+      const updated = await tx.greyDispatch.update({
+        where: { id: existing.id },
+        data: {
+          greyPurchaseId: purchase.id,
+          companyName: optionalString(req.body.companyName) || purchase.companyName || ctx.companyName,
+          transactionType,
+          challanNo: optionalString(req.body.challanNo) || existing.challanNo,
+          dispatchDate: req.body.dispatchDate ? new Date(req.body.dispatchDate) : existing.dispatchDate,
+          millLotNo: optionalString(req.body.millLotNo),
+          purSr: optionalNumber(req.body.purSr) ?? purchase.srNo,
+          millName,
+          ourMarka: optionalString(req.body.ourMarka),
+          purBillNo: optionalString(req.body.purBillNo) || purchase.billNo,
+          purDate: req.body.purDate ? new Date(req.body.purDate) : purchase.billDate,
+          weaverName: optionalString(req.body.weaverName) || purchase.partyName,
+          quality: optionalString(req.body.quality) || purchase.quality,
+          cut: optionalNumber(req.body.cut) ?? 0,
+          weight: optionalNumber(req.body.weight) ?? 0,
+          rate: optionalNumber(req.body.rate) ?? purchase.purRate,
+          despTaka,
+          despMts,
+          takaDetails: takaDetails.length ? takaDetails : null,
+          remark: optionalString(req.body.remark) || purchase.remarks,
+          brokerName: optionalString(req.body.brokerName) || purchase.brokerName,
+          orderNo: optionalString(req.body.orderNo) || purchase.orderNo,
+          checkerName: optionalString(req.body.checkerName) || purchase.checkerName,
+          vehicleNo: optionalString(req.body.vehicleNo),
+          ewayBillNo: optionalString(req.body.ewayBillNo)
+        },
+        include: { greyPurchase: true }
+      });
+
+      const latestPurchase = await tx.greyPurchase.findFirst({ where: { id: purchase.id } });
+      const baseDespatch = Number(latestPurchase?.despatchMts || 0) - (samePurchase ? Number(existing.despMts) : 0);
+      await tx.greyPurchase.update({
+        where: { id: purchase.id },
+        data: { despatchMts: roundMoney(baseDespatch + despMts) }
+      });
+
+      return updated;
+    });
+
+    res.json({ entry });
   } catch (error) {
     next(error);
   }

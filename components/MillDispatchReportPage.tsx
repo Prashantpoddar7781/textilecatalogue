@@ -242,13 +242,22 @@ const DispatchDetailPanel: React.FC<{
             {entry.millName} · Pur Sr. {entry.purSr ?? '-'} · Ch. {entry.challanNo || '-'}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded-lg border border-orange-200 bg-white px-2.5 py-1.5 text-xs font-bold text-orange-700"
-        >
-          Close
-        </button>
+        <div className="flex shrink-0 items-center gap-2">
+          <button
+            type="button"
+            onClick={() => { window.location.href = `/erp/grey-dispatch?edit=${entry.id}`; }}
+            className="rounded-lg bg-orange-700 px-2.5 py-1.5 text-xs font-black uppercase text-white"
+          >
+            Edit entry
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg border border-orange-200 bg-white px-2.5 py-1.5 text-xs font-bold text-orange-700"
+          >
+            Close
+          </button>
+        </div>
       </div>
       <div className="mt-4 grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-4">
         {[

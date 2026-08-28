@@ -1093,9 +1093,10 @@ export const greyDispatchesApi = {
       `/grey-dispatches/grey-receipts${qs ? `?${qs}` : ''}`
     );
   },
-  getAvailableTakas: async (greyPurchaseId: string, opts?: { transactionType?: string }) => {
+  getAvailableTakas: async (greyPurchaseId: string, opts?: { transactionType?: string; excludeDispatchId?: string }) => {
     const query = new URLSearchParams();
     if (opts?.transactionType) query.set('transactionType', opts.transactionType);
+    if (opts?.excludeDispatchId) query.set('excludeDispatchId', opts.excludeDispatchId);
     const qs = query.toString();
     return request<{
       purchase: GreyReceiptSummary;
@@ -1215,6 +1216,12 @@ export const greyDispatchesApi = {
       method: 'POST',
       body: JSON.stringify(body)
     });
+  },
+  update: async (id: string, body: Record<string, unknown>) => {
+    return request<{ entry: GreyDispatch }>(`/grey-dispatches/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(body)
+    });
   }
 };
 
@@ -1250,6 +1257,79 @@ export const greyPurchaseReturnsApi = {
       method: 'POST',
       body: JSON.stringify(body)
     });
+  },
+  update: async (id: string, body: Record<string, unknown>) => {
+    return request<{ entry: GreyPurchaseReturn }>(`/grey-purchase-returns/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(body)
+    });
+  }
+};
+
+export const stockApi = {
+  getReport: async (params?: { stockType?: string; fromDate?: string; toDate?: string }) => {
+    const query = new URLSearchParams();
+    if (params?.stockType) query.set('stockType', params.stockType);
+    if (params?.fromDate) query.set('fromDate', params.fromDate);
+    if (params?.toDate) query.set('toDate', params.toDate);
+    const qs = query.toString();
+    return request<{
+      stockType: string;
+      fromDate?: string | null;
+      toDate?: string | null;
+      movements: Array<{
+        id: string;
+        source: string;
+        date: string;
+        stockType: string;
+        stockEffect: number;
+        inferred: boolean;
+        direction: 'IN' | 'OUT';
+        transactionType: string;
+        voucherNo: string;
+        billNo: string;
+        partyName: string;
+        quality: string;
+        itemName: string;
+        pcs: number;
+        mts: number;
+        signedPcs: number;
+        signedMts: number;
+        runningPcs: number;
+        runningMts: number;
+        editPath: string;
+      }>;
+      balances: Array<{
+        stockType: string;
+        item: string;
+        inPcs: number;
+        inMts: number;
+        outPcs: number;
+        outMts: number;
+        closingPcs: number;
+        closingMts: number;
+        entries: number;
+      }>;
+      totalsByType: Array<{
+        stockType: string;
+        inPcs: number;
+        inMts: number;
+        outPcs: number;
+        outMts: number;
+        closingPcs: number;
+        closingMts: number;
+        entries: number;
+      }>;
+      totals: {
+        inPcs: number;
+        inMts: number;
+        outPcs: number;
+        outMts: number;
+        closingPcs: number;
+        closingMts: number;
+        entries: number;
+      };
+    }>(`/stock/report${qs ? `?${qs}` : ''}`);
   }
 };
 

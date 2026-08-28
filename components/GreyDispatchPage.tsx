@@ -23,6 +23,8 @@ const formatDateInput = (value?: string | null) =>
   value ? new Date(value).toISOString().slice(0, 10) : '';
 
 export const GreyDispatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
+  const editId = useMemo(() => new URLSearchParams(window.location.search).get('edit'), []);
+  const isEditMode = Boolean(editId);
   const [companyName, setCompanyName] = useState('');
   const [transactionType, setTransactionType] = useState('PROCESS');
   const [challanNo, setChallanNo] = useState('');
@@ -76,7 +78,49 @@ export const GreyDispatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
         setSrNo(String(meta.nextSrNo || 1));
         setChallanNo(String(meta.nextChallanNo || 1));
         setMills(meta.mills || []);
-        if (meta.transactionTypes?.[0]) setTransactionType(meta.transactionTypes[0]);
+        if (meta.transactionTypes?.[0] && !isEditMode) setTransactionType(meta.transactionTypes[0]);
+        if (isEditMode && editId) {
+          const { entry } = await greyDispatchesApi.getById(editId);
+          if (cancelled) return;
+          setCompanyName(entry.companyName || meta.companyName || '');
+          setTransactionType(entry.transactionType === 'REPROCESS' ? 'REPROCESS' : 'PROCESS');
+          setChallanNo(entry.challanNo || '');
+          setDispatchDate(formatDateInput(entry.dispatchDate) || today());
+          setMillLotNo(entry.millLotNo || '');
+          setPurSr(String(entry.purSr ?? ''));
+          setGreyPurchaseId(entry.greyPurchaseId || '');
+          setMillName(entry.millName || '');
+          setOurMarka(entry.ourMarka || '');
+          setPurBillNo(entry.purBillNo || '');
+          setPurDate(formatDateInput(entry.purDate));
+          setWeaverName(entry.weaverName || '');
+          setQuality(entry.quality || '');
+          setCut(String(entry.cut ?? 0));
+          setWeight(String(entry.weight ?? 0));
+          setRate(String(entry.rate ?? ''));
+          setDespTaka(String(entry.despTaka ?? ''));
+          setDespMts(String(entry.despMts ?? ''));
+          setRemark(entry.remark || '');
+          setBrokerName(entry.brokerName || '');
+          setOrderNo(entry.orderNo || '');
+          setCheckerName(entry.checkerName || '');
+          setVehicleNo(entry.vehicleNo || '');
+          setEwayBillNo(entry.ewayBillNo || '');
+          setSrNo(String(entry.srNo ?? meta.nextSrNo || 1));
+          const takaRows = Array.isArray(entry.takaDetails) ? entry.takaDetails : [];
+          setSelectedTakaDetails(takaRows);
+          if (entry.greyPurchaseId) {
+            try {
+              const { availableRows } = await greyDispatchesApi.getAvailableTakas(entry.greyPurchaseId, {
+                transactionType: entry.transactionType === 'REPROCESS' ? 'REPROCESS' : 'PROCESS',
+                excludeDispatchId: editId
+              });
+              setAvailableTakas([...(takaRows || []), ...(availableRows || [])]);
+            } catch {
+              setAvailableTakas(takaRows);
+            }
+          }
+        }
       } catch (err: any) {
         if (!cancelled) setError(err.message || 'Could not load grey dispatch.');
       } finally {
@@ -85,7 +129,7 @@ export const GreyDispatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
     };
     void load();
     return () => { cancelled = true; };
-  }, []);
+  }, [editId, isEditMode]);
 
   const loadGreyReceipts = async (filterSr?: string) => {
     setReceiptsLoading(true);
@@ -121,7 +165,10 @@ export const GreyDispatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
     setPurPickerOpen(false);
 
     try {
-      const { availableRows } = await greyDispatchesApi.getAvailableTakas(receipt.id, { transactionType });
+      const { availableRows } = await greyDispatchesApi.getAvailableTakas(receipt.id, {
+        transactionType,
+        excludeDispatchId: editId || undefined
+      });
       setAvailableTakas(availableRows || []);
     } catch {
       setAvailableTakas([]);
@@ -165,7 +212,10 @@ export const GreyDispatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
     }
     setError('');
     try {
-      const { availableRows } = await greyDispatchesApi.getAvailableTakas(greyPurchaseId, { transactionType });
+      const { availableRows } = await greyDispatchesApi.getAvailableTakas(greyPurchaseId, {
+        transactionType,
+        excludeDispatchId: editId || undefined
+      });
       setAvailableTakas(availableRows || []);
       if (!availableRows?.length) {
         setError(
@@ -202,7 +252,7 @@ export const GreyDispatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
         return;
       }
 
-      await greyDispatchesApi.create({
+      const payload = {
         greyPurchaseId,
         companyName,
         transactionType,
@@ -229,38 +279,43 @@ export const GreyDispatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
         vehicleNo,
         ewayBillNo,
         srNo: toNum(srNo)
-      });
-
-      setSuccess(
-        transactionType === 'REPROCESS'
-          ? 'REPROCESS dispatch saved — grey re-sent to mill from returned stock.'
-          : 'Grey dispatch saved and stock updated in godown.'
-      );
-      setMillLotNo('');
-      setPurSr('');
-      setGreyPurchaseId('');
-      setMillName('');
-      setOurMarka('');
-      setPurBillNo('');
-      setPurDate('');
-      setWeaverName('');
-      setQuality('');
-      setCut('0');
-      setWeight('0');
-      setRate('');
-      setDespTaka('');
-      setDespMts('');
-      setRemark('');
-      setBrokerName('');
-      setOrderNo('0');
-      setCheckerName('');
-      setVehicleNo('');
-      setEwayBillNo('');
-      setSelectedTakaDetails([]);
-      setAvailableTakas([]);
-      const meta = await greyDispatchesApi.getMeta();
-      setSrNo(String(meta.nextSrNo || 1));
-      setChallanNo(String(meta.nextChallanNo || 1));
+      };
+      if (isEditMode && editId) {
+        await greyDispatchesApi.update(editId, payload);
+        setSuccess('Grey dispatch updated.');
+      } else {
+        await greyDispatchesApi.create(payload);
+        setSuccess(
+          transactionType === 'REPROCESS'
+            ? 'REPROCESS dispatch saved — grey re-sent to mill from returned stock.'
+            : 'Grey dispatch saved and stock updated in godown.'
+        );
+        setMillLotNo('');
+        setPurSr('');
+        setGreyPurchaseId('');
+        setMillName('');
+        setOurMarka('');
+        setPurBillNo('');
+        setPurDate('');
+        setWeaverName('');
+        setQuality('');
+        setCut('0');
+        setWeight('0');
+        setRate('');
+        setDespTaka('');
+        setDespMts('');
+        setRemark('');
+        setBrokerName('');
+        setOrderNo('0');
+        setCheckerName('');
+        setVehicleNo('');
+        setEwayBillNo('');
+        setSelectedTakaDetails([]);
+        setAvailableTakas([]);
+        const meta = await greyDispatchesApi.getMeta();
+        setSrNo(String(meta.nextSrNo || 1));
+        setChallanNo(String(meta.nextChallanNo || 1));
+      }
     } catch (err: any) {
       setError(err.message || 'Could not save grey dispatch.');
     } finally {
@@ -271,7 +326,7 @@ export const GreyDispatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
   return (
     <div className="min-h-screen bg-[#F6F7FB]">
       <ErpTopMenu
-        title="Mill Dispatch Entry"
+        title={isEditMode ? 'Edit Mill Dispatch' : 'Mill Dispatch Entry'}
         erpSession={erpSession}
         onBackToCatalogue={() => { window.location.href = '/'; }}
       />
@@ -282,7 +337,7 @@ export const GreyDispatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
             <ArrowLeft className="h-4 w-4" />
             ERP
           </button>
-          <p className="text-xs font-black uppercase tracking-wide text-orange-700">Grey Dispatch</p>
+          <p className="text-xs font-black uppercase tracking-wide text-orange-700">{isEditMode ? 'Edit Grey Dispatch' : 'Grey Dispatch'}</p>
         </div>
 
         {error && <div className="mb-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{error}</div>}
@@ -497,7 +552,7 @@ export const GreyDispatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
             <div className="flex justify-end">
               <ErpSaveButton
                 saving={saving}
-                label="Save Dispatch"
+                label={isEditMode ? 'Update Dispatch' : 'Save Dispatch'}
                 className="flex items-center gap-2 rounded-2xl bg-orange-600 px-6 py-3 text-sm font-black text-white disabled:opacity-60"
               />
             </div>

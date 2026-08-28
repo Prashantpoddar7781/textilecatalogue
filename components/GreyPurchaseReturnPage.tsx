@@ -25,6 +25,8 @@ const formatDateInput = (value?: string | null) =>
   value ? new Date(value).toISOString().slice(0, 10) : '';
 
 export const GreyPurchaseReturnPage: React.FC<Props> = ({ onBack, erpSession }) => {
+  const editId = useMemo(() => new URLSearchParams(window.location.search).get('edit'), []);
+  const isEditMode = Boolean(editId);
   const [companyName, setCompanyName] = useState('');
   const [entryType, setEntryType] = useState('GREY PURCHASE');
   const [greyType, setGreyType] = useState('GREY');
@@ -145,6 +147,58 @@ export const GreyPurchaseReturnPage: React.FC<Props> = ({ onBack, erpSession }) 
         );
         setHsnCode(d.hsnCode);
         setGstRate(String(d.gstRate));
+        if (isEditMode && editId) {
+          const { entry } = await greyPurchaseReturnsApi.getById(editId);
+          if (cancelled) return;
+          setCompanyName(entry.companyName || meta.companyName || '');
+          setEntryType(entry.entryType || 'GREY PURCHASE');
+          setGreyType(entry.greyType === 'REPROCESS' ? 'REPROCESS' : 'GREY');
+          setVoucherNo(String(entry.voucherNo ?? meta.nextVoucherNo || 1));
+          setSaleAccount(entry.saleAccount || 'GREY PURCHASE RETURN');
+          setPurSr(String(entry.purSr ?? ''));
+          setGreyPurchaseId(entry.greyPurchaseId || '');
+          setQuality(entry.quality || '');
+          setHsnCode(entry.hsnCode || d.hsnCode);
+          setPartyName(entry.partyName || '');
+          setPartyGstin(entry.partyGstin || '');
+          setPlaceOfSupply(entry.placeOfSupply || '');
+          setStateCode(entry.stateCode || '');
+          setGstTypeLabel(entry.gstType || '');
+          setBillNo(entry.billNo || '');
+          setReturnDate(formatDateInput(entry.returnDate) || today());
+          setRefBillNo(entry.refBillNo || '');
+          setRefBillDate(formatDateInput(entry.refBillDate));
+          setBrokerName(entry.brokerName || '');
+          setChallanNo(entry.challanNo || '');
+          setStation(entry.station || '');
+          setTransport(entry.transport || '');
+          setVehicleNo(entry.vehicleNo || '');
+          setEwayBillNo(entry.ewayBillNo || '');
+          setLrNo(entry.lrNo || '');
+          setCheckerName(entry.checkerName || '');
+          setPcs(String(entry.pcs ?? ''));
+          setMts(String(entry.mts ?? ''));
+          setRate(String(entry.rate ?? ''));
+          setDiscountPercent(String(entry.discountPercent ?? ''));
+          setDiscountAmount(Number(entry.discountAmount) || 0);
+          setOtherLess(String(entry.otherLess ?? ''));
+          setOtherAdd(String(entry.otherAdd ?? ''));
+          setGstRate(String(entry.gstRate ?? d.gstRate));
+          setCgstRate(String(entry.cgstRate ?? 0));
+          setCgstAmount(String(entry.cgstAmount ?? 0));
+          setSgstRate(String(entry.sgstRate ?? 0));
+          setSgstAmount(String(entry.sgstAmount ?? 0));
+          setIgstRate(String(entry.igstRate ?? 0));
+          setIgstAmount(String(entry.igstAmount ?? 0));
+          setGrossAmount(Number(entry.grossAmount) || 0);
+          setNetAmount(Number(entry.netAmount) || 0);
+          setPaidAmount(String(entry.paidAmount ?? ''));
+          setPaid(Boolean(entry.paid));
+          setAdjustBillNo(entry.adjustBillNo || '');
+          setRemarks(entry.remarks || '');
+          const takaRows = Array.isArray(entry.takaDetails) ? entry.takaDetails : [];
+          setSelectedTakaDetails(takaRows);
+        }
       } catch (err: any) {
         if (!cancelled) setError(err.message || 'Could not load grey purchase return.');
       } finally {
@@ -153,7 +207,7 @@ export const GreyPurchaseReturnPage: React.FC<Props> = ({ onBack, erpSession }) 
     };
     void load();
     return () => { cancelled = true; };
-  }, []);
+  }, [editId, isEditMode]);
 
   const loadGreyReceipts = async (filterSr?: string) => {
     setReceiptsLoading(true);
@@ -259,7 +313,7 @@ export const GreyPurchaseReturnPage: React.FC<Props> = ({ onBack, erpSession }) 
         return;
       }
 
-      await greyPurchaseReturnsApi.create({
+      const payload = {
         greyPurchaseId,
         companyName,
         entryType,
@@ -299,17 +353,22 @@ export const GreyPurchaseReturnPage: React.FC<Props> = ({ onBack, erpSession }) 
         adjustBillNo,
         remarks,
         takaDetails: selectedTakaDetails
-      });
-
-      setSuccess('Grey purchase return saved. Stock updated and return posted to purchase view.');
-      setPurSr('');
-      setGreyPurchaseId('');
-      setPcs('');
-      setMts('');
-      setSelectedTakaDetails([]);
-      const meta = await greyPurchaseReturnsApi.getMeta();
-      setVoucherNo(String(meta.nextVoucherNo || 1));
-      setChallanNo(String(meta.nextChallanNo || 1));
+      };
+      if (isEditMode && editId) {
+        await greyPurchaseReturnsApi.update(editId, payload);
+        setSuccess('Grey purchase return updated.');
+      } else {
+        await greyPurchaseReturnsApi.create(payload);
+        setSuccess('Grey purchase return saved. Stock updated and return posted to purchase view.');
+        setPurSr('');
+        setGreyPurchaseId('');
+        setPcs('');
+        setMts('');
+        setSelectedTakaDetails([]);
+        const meta = await greyPurchaseReturnsApi.getMeta();
+        setVoucherNo(String(meta.nextVoucherNo || 1));
+        setChallanNo(String(meta.nextChallanNo || 1));
+      }
     } catch (err: any) {
       setError(err.message || 'Could not save grey purchase return.');
     } finally {
@@ -320,7 +379,7 @@ export const GreyPurchaseReturnPage: React.FC<Props> = ({ onBack, erpSession }) 
   return (
     <div className="min-h-screen bg-[#F6F7FB]">
       <ErpTopMenu
-        title="Grey Sales / Return Entry"
+        title={isEditMode ? 'Edit Grey Purchase Return' : 'Grey Sales / Return Entry'}
         erpSession={erpSession}
         onBackToCatalogue={() => { window.location.href = '/'; }}
       />
@@ -331,7 +390,7 @@ export const GreyPurchaseReturnPage: React.FC<Props> = ({ onBack, erpSession }) 
             <ArrowLeft className="h-4 w-4" />
             ERP
           </button>
-          <p className="text-xs font-black uppercase tracking-wide text-rose-700">Grey Purchase Return</p>
+          <p className="text-xs font-black uppercase tracking-wide text-rose-700">{isEditMode ? 'Edit Grey Purchase Return' : 'Grey Purchase Return'}</p>
         </div>
 
         {error && <div className="mb-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{error}</div>}
@@ -468,7 +527,7 @@ export const GreyPurchaseReturnPage: React.FC<Props> = ({ onBack, erpSession }) 
               </div>
             </section>
 
-            <ErpSaveButton label="Save Return" saving={saving} className="ml-auto flex items-center gap-2 rounded-2xl bg-rose-600 px-6 py-3 text-sm font-black text-white disabled:opacity-60" />
+            <ErpSaveButton label={isEditMode ? 'Update Return' : 'Save Return'} saving={saving} className="ml-auto flex items-center gap-2 rounded-2xl bg-rose-600 px-6 py-3 text-sm font-black text-white disabled:opacity-60" />
           </ErpFormShell>
         )}
 

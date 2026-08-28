@@ -55,9 +55,13 @@ async function getCompanyContext(userId) {
   };
 }
 
-async function getDispatchedSrNos(greyPurchaseId) {
+async function getDispatchedSrNos(greyPurchaseId, excludeDispatchId = null) {
   const dispatches = await prisma.greyDispatch.findMany({
-    where: { greyPurchaseId, status: { not: 'cancelled' } },
+    where: {
+      greyPurchaseId,
+      status: { not: 'cancelled' },
+      ...(excludeDispatchId ? { id: { not: excludeDispatchId } } : {})
+    },
     select: { takaDetails: true }
   });
   const srNos = new Set();
@@ -351,6 +355,188 @@ router.post('/', authenticateToken, requireActiveSubscription, [
     });
 
     res.status(201).json({ entry });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.put('/:id', authenticateToken, requireActiveSubscription, [
+  body('greyPurchaseId').trim().notEmpty().withMessage('Purchase voucher is required'),
+  body('partyName').trim().notEmpty().withMessage('Party is required')
+], async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const userId = req.user.userId;
+    const existing = await prisma.greyPurchaseReturn.findFirst({
+      where: { id: req.params.id, userId },
+      include: { greyPurchase: true }
+    });
+    if (!existing) return res.status(404).json({ error: 'Grey purchase return not found' });
+
+    const ctx = await getCompanyContext(userId);
+    const greyPurchaseId = String(req.body.greyPurchaseId);
+    const purchase = await prisma.greyPurchase.findFirst({
+      where: { id: greyPurchaseId, userId, status: { not: 'cancelled' } }
+    });
+    if (!purchase) return res.status(404).json({ error: 'Grey purchase not found' });
+
+    const takaDetails = normalizeTakaDetails(req.body.takaDetails);
+    const mts = optionalNumber(req.body.mts) ?? roundMoney(takaDetails.reduce((s, r) => s + r.mts, 0));
+    const pcs = optionalNumber(req.body.pcs) ?? (takaDetails.length || 0);
+    const rate = optionalNumber(req.body.rate) ?? purchase.purRate;
+    const grossAmount = optionalNumber(req.body.grossAmount) ?? roundMoney(mts * rate);
+    if (mts <= 0) {
+      return res.status(400).json({ error: 'Return meters must be greater than zero.' });
+    }
+
+    const samePurchase = purchase.id === existing.greyPurchaseId;
+    const available = roundMoney(
+      Math.max(0, Number(purchase.recMts) - Number(purchase.despatchMts) + (samePurchase ? Number(existing.mts) : 0))
+    );
+    if (mts > available + 0.01) {
+      return res.status(400).json({ error: `Only ${available} meters available in godown for this purchase.` });
+    }
+
+    const dispatchedSrNos = await getDispatchedSrNos(purchase.id, existing.greyDispatchId);
+    for (const row of takaDetails) {
+      if (dispatchedSrNos.has(row.srNo)) {
+        return res.status(400).json({ error: `Taka ${row.srNo} is already moved out of godown.` });
+      }
+    }
+
+    const partyGstin = optionalString(req.body.partyGstin) || purchase.partyGstin;
+    const placeOfSupply = resolvePlaceOfSupply({
+      partyGstin,
+      placeOfSupply: req.body.placeOfSupply || purchase.placeOfSupply,
+      stateCode: req.body.stateCode || purchase.stateCode
+    });
+
+    const totals = calculateGreyPurchaseTotals({
+      grossAmount,
+      discountPercent: req.body.discountPercent,
+      discountAmount: req.body.discountAmount,
+      otherAddBefore: req.body.otherAdd,
+      otherLessBefore: req.body.otherLess,
+      otherAddAfter: 0,
+      otherLessAfter: 0,
+      gstRate: req.body.gstRate ?? purchase.gstRate ?? ctx.defaultGstRate,
+      placeOfSupply,
+      businessState: ctx.businessState,
+      partyGstin,
+      stateCode: req.body.stateCode || purchase.stateCode
+    });
+
+    await resolveSupplierForEntry(prisma, userId, {
+      partyName: optionalString(req.body.partyName) || purchase.partyName,
+      partyGstin,
+      placeOfSupply: totals.placeOfSupply || placeOfSupply,
+      partyMsme: purchase.partyMsme,
+      transactionType: 'GREY PURCHASE RETURN'
+    });
+
+    const entry = await prisma.$transaction(async (tx) => {
+      if (existing.greyPurchaseId !== purchase.id) {
+        await tx.greyPurchase.update({
+          where: { id: existing.greyPurchaseId },
+          data: { despatchMts: roundMoney(Math.max(0, Number(existing.greyPurchase.despatchMts) - Number(existing.mts))) }
+        });
+      }
+
+      if (existing.greyDispatchId) {
+        await tx.greyDispatch.update({
+          where: { id: existing.greyDispatchId },
+          data: {
+            greyPurchaseId: purchase.id,
+            companyName: optionalString(req.body.companyName) || purchase.companyName || ctx.companyName,
+            challanNo: optionalString(req.body.challanNo) || existing.challanNo,
+            dispatchDate: req.body.returnDate ? new Date(req.body.returnDate) : existing.returnDate,
+            purSr: optionalNumber(req.body.purSr) ?? purchase.srNo,
+            weaverName: optionalString(req.body.partyName) || purchase.partyName,
+            quality: optionalString(req.body.quality) || purchase.quality,
+            rate,
+            despTaka: pcs,
+            despMts: mts,
+            takaDetails: takaDetails.length ? takaDetails : null,
+            remark: optionalString(req.body.remarks),
+            brokerName: optionalString(req.body.brokerName) || purchase.brokerName,
+            vehicleNo: optionalString(req.body.vehicleNo),
+            ewayBillNo: optionalString(req.body.ewayBillNo)
+          }
+        });
+      }
+
+      const updated = await tx.greyPurchaseReturn.update({
+        where: { id: existing.id },
+        data: {
+          greyPurchaseId: purchase.id,
+          companyName: optionalString(req.body.companyName) || purchase.companyName || ctx.companyName,
+          entryType: optionalString(req.body.entryType) || existing.entryType,
+          greyType: (() => {
+            const raw = optionalString(req.body.greyType) || existing.greyType || 'GREY';
+            return String(raw).toUpperCase() === 'REPROCESS' ? 'REPROCESS' : 'GREY';
+          })(),
+          saleAccount: optionalString(req.body.saleAccount) || existing.saleAccount || DEFAULT_SALE_ACCOUNT,
+          purSr: optionalNumber(req.body.purSr) ?? purchase.srNo,
+          quality: optionalString(req.body.quality) || purchase.quality,
+          hsnCode: optionalString(req.body.hsnCode) || purchase.hsnCode || ctx.defaultHsnCode,
+          partyName: optionalString(req.body.partyName) || purchase.partyName,
+          partyGstin,
+          placeOfSupply: totals.placeOfSupply || placeOfSupply,
+          stateCode: totals.stateCode || getStateCodeFromName(placeOfSupply) || purchase.stateCode,
+          gstType: totals.gstType,
+          billNo: optionalString(req.body.billNo),
+          returnDate: req.body.returnDate ? new Date(req.body.returnDate) : existing.returnDate,
+          refBillNo: optionalString(req.body.refBillNo) || purchase.billNo,
+          refBillDate: req.body.refBillDate ? new Date(req.body.refBillDate) : existing.refBillDate,
+          brokerName: optionalString(req.body.brokerName) || purchase.brokerName,
+          challanNo: optionalString(req.body.challanNo) || existing.challanNo,
+          station: optionalString(req.body.station),
+          transport: optionalString(req.body.transport),
+          vehicleNo: optionalString(req.body.vehicleNo),
+          ewayBillNo: optionalString(req.body.ewayBillNo),
+          lrNo: optionalString(req.body.lrNo),
+          checkerName: optionalString(req.body.checkerName) || purchase.checkerName,
+          pcs,
+          mts,
+          rate,
+          grossAmount: totals.grossAmount,
+          discountPercent: totals.discountPercent,
+          discountAmount: totals.discountAmount,
+          otherLess: totals.otherLessBefore,
+          otherAdd: totals.otherAddBefore,
+          taxableAmount: totals.taxableAmount,
+          gstRate: totals.gstRate,
+          cgstRate: totals.cgstRate,
+          cgstAmount: totals.cgstAmount,
+          sgstRate: totals.sgstRate,
+          sgstAmount: totals.sgstAmount,
+          igstRate: totals.igstRate,
+          igstAmount: totals.igstAmount,
+          netAmount: totals.netAmount,
+          paidAmount: optionalNumber(req.body.paidAmount) ?? existing.paidAmount,
+          paid: Boolean(req.body.paid),
+          adjustBillNo: optionalString(req.body.adjustBillNo),
+          remarks: optionalString(req.body.remarks),
+          takaDetails: takaDetails.length ? takaDetails : existing.takaDetails
+        },
+        include: { greyPurchase: true }
+      });
+
+      const latestPurchase = await tx.greyPurchase.findFirst({ where: { id: purchase.id } });
+      const baseDespatch = Number(latestPurchase?.despatchMts || 0) - (samePurchase ? Number(existing.mts) : 0);
+      await tx.greyPurchase.update({
+        where: { id: purchase.id },
+        data: { despatchMts: roundMoney(baseDespatch + mts) }
+      });
+
+      return updated;
+    });
+
+    res.json({ entry });
   } catch (error) {
     next(error);
   }

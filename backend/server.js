@@ -27,6 +27,7 @@ import millReceiptRoutes from './routes/millReceipts.js';
 import workDespatchRoutes from './routes/workDespatches.js';
 import workReceiptRoutes from './routes/workReceipts.js';
 import salesOrderRoutes from './routes/salesOrders.js';
+import stockRoutes from './routes/stock.js';
 
 dotenv.config();
 
@@ -194,6 +195,7 @@ try {
   app.use('/api/work-despatches', workDespatchRoutes);
   app.use('/api/work-receipts', workReceiptRoutes);
   app.use('/api/sales-orders', salesOrderRoutes);
+  app.use('/api/stock', stockRoutes);
   console.log('Routes configured: /api/auth, /api/billing, /api/designs, /api/users, /api/catalogues, /api/contacts, /api/customers, /api/share-links, /api/orders, /api/invoices, /api/purchases, /api/bank-entries, /api/credit-debit-notes, /api/ledger, /api/erp-users, /api/erp-auth, /api/grey-purchases, /api/grey-dispatches, /api/grey-purchase-returns');
 } catch (error) {
   console.error('Error setting up routes:', error);

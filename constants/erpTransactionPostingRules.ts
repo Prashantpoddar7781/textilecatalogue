@@ -45,6 +45,13 @@ export type ErpItcEligibility =
 /** Which GST return the document feeds. Delivery challans carry no tax liability. */
 export type ErpGstReturnSection = 'GSTR-1' | 'GSTR-2' | 'NONE';
 
+/** STOCK TYPE + STOCK EFFECT after filling blanks the Excel left empty. */
+export type ErpResolvedStockMovement = {
+  stockType: ErpStockType | null;
+  stockEffect: number | null;
+  inferred: boolean;
+};
+
 export interface ErpPostingRule {
   /** SERIES NAME — matches the transaction type stored on the voucher. */
   series: string;
@@ -2825,6 +2832,66 @@ export function getStockType(transactionType?: string | null): ErpStockType | nu
 export function getStockEffect(transactionType?: string | null): number | null {
   const found = getPostingRule(transactionType);
   return found && found.stockEffect != null ? found.stockEffect : null;
+}
+
+/**
+ * Direction when STOCK TYPE is set but STOCK EFFECT is blank in the master.
+ * Purchases / receipts / opening / transfer / box come in; sales / despatch /
+ * purchase returns go out; sales goods return comes back in.
+ */
+export function inferredStockEffect(series?: string | null): number | null {
+  const u = String(series || '').trim().toUpperCase();
+  if (!u) return null;
+  if (u.includes('SALES GOODS RETURN')) return 1;
+  if (u.includes('PURCHASE RETURN')) return -1;
+  if (u.includes('WORK DESP')) return -1;
+  if (u.includes('WORK REC')) return 1;
+  if (u.includes('SALES') || /\bDESP/.test(u)) return -1;
+  if (u.includes('PURCHASE') || u.includes('OPENING') || u.includes('TRANSFER') || u.includes('BOX')) return 1;
+  return 1;
+}
+
+/**
+ * Stock ledger movement for a voucher series.
+ *
+ * Prefer the Excel STOCK EFFECT when it is filled. When STOCK TYPE is set and
+ * EFFECT is blank, infer the sign — except WORK REC. *BILLS, which are job-charge
+ * invoices (the challan already moved WORK). Grey mill dispatch is not in the
+ * master at all: PROCESS / REPROCESS are GREY out.
+ */
+export function resolveStockMovement(transactionType?: string | null): ErpResolvedStockMovement {
+  const upper = String(transactionType || '').trim().toUpperCase();
+  if (upper === 'PROCESS' || upper === 'REPROCESS' || upper === 'GREY DISPATCH') {
+    return { stockType: 'GREY', stockEffect: -1, inferred: true };
+  }
+  if (upper === 'RETURN') {
+    return { stockType: null, stockEffect: null, inferred: false };
+  }
+
+  const found = getPostingRule(upper);
+  if (!found) {
+    if (upper.startsWith('WORK DESP')) return { stockType: 'WORK', stockEffect: -1, inferred: true };
+    if (upper.includes('WORK REC') && upper.includes('CHALLAN')) {
+      return { stockType: 'WORK', stockEffect: 1, inferred: true };
+    }
+    return { stockType: null, stockEffect: null, inferred: false };
+  }
+
+  let stockType = found.stockType;
+  if (!stockType && upper.startsWith('WORK DESP')) stockType = 'WORK';
+
+  if (upper.includes('MILL REC')) {
+    return { stockType, stockEffect: null, inferred: false };
+  }
+
+  if (stockType && found.stockEffect == null) {
+    if (upper.includes('WORK REC') && upper.includes('BILL')) {
+      return { stockType, stockEffect: null, inferred: false };
+    }
+    return { stockType, stockEffect: inferredStockEffect(found.series), inferred: true };
+  }
+
+  return { stockType, stockEffect: found.stockEffect != null ? found.stockEffect : null, inferred: false };
 }
 
 /** True when the series belongs to the billing system rather than general entries. */
