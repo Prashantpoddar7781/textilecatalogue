@@ -271,6 +271,9 @@ model Order {
   station            String?
   sourceSalesOrderId String?
   sourceSalesOrder   SalesOrder?    @relation(fields: [sourceSalesOrderId], references: [id], onDelete: SetNull)
+  /// Optional extra Sales Orders this bill covers. sourceSalesOrderId stays the
+  /// primary so legacy pending and the Order→SalesOrder relation keep working.
+  sourceSalesOrderIds String[]      @default([])
   challanNo          String?
   gstType            String?
   lrNo               String?
@@ -802,11 +805,11 @@ model WorkReceipt {
   id              String       @id @default(cuid())
   userId          String
   user            User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  workDespatchId  String
-  workDespatch    WorkDespatch @relation(fields: [workDespatchId], references: [id], onDelete: Restrict)
-  /// Every despatch this receipt draws on. workDespatchId stays the primary one so
-  /// existing relations and reports keep working; per-line sourceDespatchId in
-  /// lineItems says which despatch each line came from.
+  workDespatchId  String?
+  workDespatch    WorkDespatch? @relation(fields: [workDespatchId], references: [id], onDelete: Restrict)
+  /// Optional: a bill may be typed with no linked desp (same as Finish Sales
+  /// without a Sales Order). When picked, workDespatchId is the primary challan
+  /// and sourceDespatchIds lists every challan this bill covers.
   sourceDespatchIds String[]
   companyName     String?
   transactionType String       @default("WORK REC. CHALLAN")

@@ -143,4 +143,44 @@ test('picked challans with no lines are reported as unused', () => {
   assert.strictEqual(result.unused[0].documentNo, 'C-2');
 });
 
+test('direct bill with no picked challan keeps untagged lines', () => {
+  const lines = [{ lineNo: 1, itemName: 'A', pcs: 5, mtsQty: 31.5 }];
+  const result = attributeLinesToSources({ lines, sources: [] });
+  assert.deepStrictEqual(result.errors, []);
+  assert.strictEqual(result.lines[0].sourceDespatchId, undefined);
+  assert.strictEqual(result.perSource.length, 0);
+});
+
+test('direct receipt with no despatch does not consume any challan pending', () => {
+  const receipt = { workDespatchId: null, sourceDespatchIds: [], lineItems: [{ lineNo: 1, itemName: 'A', pcs: 5 }] };
+  assert.strictEqual(linesForSource(receipt, 'd1').length, 0);
+});
+
+console.log('\nsales bills covering several sales orders');
+
+test('legacy sales bill counts all lines against its primary SO', () => {
+  const bill = {
+    sourceSalesOrderId: 'so1',
+    orderLines: [{ lineNo: 1, sourceLineNo: 1, pcs: 10 }, { lineNo: 2, sourceLineNo: 2, pcs: 5 }]
+  };
+  const opts = { primaryIdField: 'sourceSalesOrderId', lineSourceField: 'sourceSalesOrderId', linesField: 'orderLines' };
+  assert.strictEqual(linesForSource(bill, 'so1', opts).length, 2);
+  assert.strictEqual(linesForSource(bill, 'so2', opts).length, 0);
+});
+
+test('tagged sales bill lines only consume their own Sales Order', () => {
+  const bill = {
+    sourceSalesOrderId: 'so1',
+    sourceSalesOrderIds: ['so1', 'so2'],
+    orderLines: [
+      { lineNo: 1, sourceSalesOrderId: 'so1', sourceLineNo: 1, pcs: 8 },
+      { lineNo: 2, sourceSalesOrderId: 'so2', sourceLineNo: 1, pcs: 4 }
+    ]
+  };
+  const opts = { primaryIdField: 'sourceSalesOrderId', lineSourceField: 'sourceSalesOrderId', linesField: 'orderLines' };
+  assert.strictEqual(linesForSource(bill, 'so1', opts).length, 1);
+  assert.strictEqual(linesForSource(bill, 'so2', opts).length, 1);
+  assert.strictEqual(linesForSource(bill, 'so1', opts)[0].pcs, 8);
+});
+
 console.log(`\n${passed} checks passed${process.exitCode ? ' (with failures)' : ''}`);

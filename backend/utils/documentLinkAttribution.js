@@ -12,16 +12,20 @@
  * those the whole document belongs to its primary source, which is how the single
  * challan per bill era behaved — so historical pending stays exactly as it was.
  */
-export function linesForSource(target, sourceId, { primaryIdField = 'workDespatchId', lineSourceField = 'sourceDespatchId' } = {}) {
-  const lines = Array.isArray(target?.lineItems) ? target.lineItems : [];
+export function linesForSource(target, sourceId, {
+  primaryIdField = 'workDespatchId',
+  lineSourceField = 'sourceDespatchId',
+  linesField = 'lineItems'
+} = {}) {
+  const lines = Array.isArray(target?.[linesField]) ? target[linesField] : [];
   const tagged = lines.some(line => line && line[lineSourceField]);
   if (tagged) return lines.filter(line => line && line[lineSourceField] === sourceId);
   return target?.[primaryIdField] === sourceId ? lines : [];
 }
 
 /** True when the document uses per-line source tags rather than the legacy single link. */
-export function hasPerLineSources(target, lineSourceField = 'sourceDespatchId') {
-  const lines = Array.isArray(target?.lineItems) ? target.lineItems : [];
+export function hasPerLineSources(target, lineSourceField = 'sourceDespatchId', linesField = 'lineItems') {
+  const lines = Array.isArray(target?.[linesField]) ? target[linesField] : [];
   return lines.some(line => line && line[lineSourceField]);
 }
 

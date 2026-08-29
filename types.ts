@@ -182,6 +182,8 @@ export interface Order {
   station?: string | null;
   sourceSalesOrderId?: string | null;
   sourceSalesOrder?: SalesOrder | null;
+  /** Every Sales Order this bill covers; sourceSalesOrderId is the primary one when picked. */
+  sourceSalesOrderIds?: string[];
   challanNo?: string | null;
   gstType?: string | null;
   lrNo?: string | null;
@@ -199,6 +201,8 @@ export interface Order {
 export interface SalesLineItem {
   lineNo?: number;
   sourceLineNo?: number;
+  sourceSalesOrderId?: string | null;
+  sourceOrderNo?: string | null;
   itemMasterId?: string | null;
   itemName: string;
   bundles: number;
@@ -1157,9 +1161,9 @@ export interface WorkDespatch {
 export interface WorkReceipt {
   id: string;
   userId: string;
-  workDespatchId: string;
+  workDespatchId?: string | null;
   workDespatch?: WorkDespatch | null;
-  /** Every despatch challan this bill covers; workDespatchId is the primary one. */
+  /** Every despatch challan this bill covers; workDespatchId is the primary one when picked. */
   sourceDespatchIds?: string[];
   companyName?: string | null;
   transactionType: string;

@@ -618,14 +618,15 @@ export const salesOrdersApi = {
       body: JSON.stringify(body)
     });
   },
-  getPending: async (params: { partyName?: string; customerId?: string }) => {
+  getPending: async (params: { partyName?: string; customerId?: string; excludeId?: string }) => {
     const query = new URLSearchParams();
     if (params.customerId) query.set('customerId', params.customerId);
     if (params.partyName) query.set('partyName', params.partyName);
+    if (params.excludeId) query.set('excludeId', params.excludeId);
     return request<{ entries: import('../types').SalesOrder[] }>(`/sales-orders/pending?${query.toString()}`);
   },
   getBill: async (id: string) => {
-    return request<{ bill: Order }>(`/sales-orders/bills/${id}`);
+    return request<{ bill: Order; sources?: import('../types').SalesOrder[] }>(`/sales-orders/bills/${id}`);
   },
   createBill: async (body: Record<string, unknown>) => {
     return request<{ bill: Order; totals: Record<string, number> }>('/sales-orders/bills', {

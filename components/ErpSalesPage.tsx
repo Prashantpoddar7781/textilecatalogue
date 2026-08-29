@@ -35,7 +35,9 @@ const labelClass = 'mb-1 block text-[10px] font-black uppercase tracking-wide te
 
 const blankLine = (lineNo = 1, gstRate = 5, hsnCode = '5407'): SalesLineItem => ({
   lineNo,
-  sourceLineNo: lineNo,
+  sourceLineNo: undefined,
+  sourceSalesOrderId: null,
+  sourceOrderNo: null,
   itemName: '',
   bundles: 0,
   mainScreen: '',
@@ -151,6 +153,9 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [items, setItems] = useState<SalesItemMaster[]>([]);
   const [pendingOrders, setPendingOrders] = useState<SalesOrder[]>([]);
   const [pendingLoading, setPendingLoading] = useState(false);
+  const [selectedSources, setSelectedSources] = useState<SalesOrder[]>([]);
+  const [checked, setChecked] = useState<Record<string, boolean>>({});
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [customerId, setCustomerId] = useState('');
   const [partyName, setPartyName] = useState('');
   const [partyGstin, setPartyGstin] = useState('');
@@ -245,9 +250,9 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
           setTransactionType('SALES ORDERS');
           applyOrderDoc(order, meta.businessState || '', companyGst, companyHsn);
         } else if (editId && editKind === 'bill') {
-          const { bill } = await salesOrdersApi.getBill(editId);
+          const { bill, sources } = await salesOrdersApi.getBill(editId);
           if (cancelled) return;
-          applyBillDoc(bill, meta.businessState || '', companyGst, companyHsn);
+          applyBillDoc(bill, meta.businessState || '', companyGst, companyHsn, sources || []);
         }
       } catch (err: any) {
         if (!cancelled) setError(err.message || 'Could not load sales entry.');
@@ -279,13 +284,17 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
     }
     setPendingLoading(true);
     const timer = window.setTimeout(() => {
-      void salesOrdersApi.getPending({ customerId: customerId || undefined, partyName: partyName.trim() })
+      void salesOrdersApi.getPending({
+        customerId: customerId || undefined,
+        partyName: partyName.trim(),
+        excludeId: editKind === 'bill' ? (editId || undefined) : undefined
+      })
         .then(({ entries }) => setPendingOrders(entries || []))
         .catch(() => setPendingOrders([]))
         .finally(() => setPendingLoading(false));
     }, 250);
     return () => window.clearTimeout(timer);
-  }, [customerId, partyName, isSalesOrder, isGoodsReturn]);
+  }, [customerId, partyName, isSalesOrder, isGoodsReturn, editId, editKind]);
 
   const applyOrderDoc = (order: SalesOrder, companyState: string, gstRate: number, hsn: string) => {
     setCustomerId(order.customerId || '');
@@ -314,7 +323,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
     }, companyState, order.state || '')));
   };
 
-  const applyBillDoc = (bill: Order, companyState: string, gstRate: number, hsn: string) => {
+  const applyBillDoc = (bill: Order, companyState: string, gstRate: number, hsn: string, sources: SalesOrder[] = []) => {
     setTransactionType(bill.transactionType || 'FINISH SALES');
     setTypeBillNumber(bill.typeBillNumber || null);
     setCustomerId(bill.customerId || '');
@@ -331,8 +340,13 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
     setDhara(String(bill.dhara ?? 0));
     setGrace(String(bill.grace ?? 0));
     setScreenSeries(bill.screenSeries || '');
-    setOrderNo(bill.orderNumber || '');
-    setSourceSalesOrderId(bill.sourceSalesOrderId || '');
+    setSelectedSources(sources);
+    setSourceSalesOrderId(bill.sourceSalesOrderId || sources[0]?.id || '');
+    setOrderNo(
+      sources.length
+        ? sources.map(row => row.orderNo).join(', ')
+        : (bill.orderNumber || '')
+    );
     setOrderDate((bill.orderDate || bill.createdAt).slice(0, 10));
     setExpectedDate(bill.expectedDate?.slice(0, 10) || '');
     setRemarks(bill.remarks || '');
@@ -341,6 +355,8 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
       ...blankLine(index + 1, gstRate, hsn),
       ...line,
       lineNo: line.lineNo || index + 1,
+      sourceSalesOrderId: line.sourceSalesOrderId || bill.sourceSalesOrderId || null,
+      sourceOrderNo: line.sourceOrderNo || (sources.length === 1 ? String(sources[0].orderNo) : null),
       sourceLineNo: line.sourceLineNo || line.lineNo || index + 1,
       itemName: line.itemName || line.description || line.designName || '',
       mainScreen: line.mainScreen || line.designNo || '',
@@ -350,10 +366,104 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
 
   const clearLinkedOrder = () => {
     setSourceSalesOrderId('');
+    setSelectedSources([]);
+    setChecked({});
     setOrderNo('');
     if (!isSalesOrder) {
       setLineItems([blankLine(1, defaultGstRate, defaultHsnCode)]);
     }
+  };
+
+  const pickerRows = useMemo(() => {
+    const byId = new Map(pendingOrders.map(order => [order.id, order]));
+    for (const source of selectedSources) {
+      if (!byId.has(source.id)) byId.set(source.id, source);
+    }
+    return Array.from(byId.values());
+  }, [pendingOrders, selectedSources]);
+
+  const checkedCount = useMemo(() => Object.values(checked).filter(Boolean).length, [checked]);
+
+  const openOrderPicker = () => {
+    if (!partyName.trim()) {
+      setError('Select Party first, then pick Sales Orders.');
+      return;
+    }
+    setChecked(Object.fromEntries(selectedSources.map(source => [source.id, true])));
+    setPickerOpen(true);
+    if (!pendingLoading && !pickerRows.length) {
+      setError(`No pending Sales Orders for ${partyName.trim()}. You can still add bill lines.`);
+    }
+  };
+
+  const toggleChecked = (id: string) => {
+    setChecked(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const applySelectedOrders = () => {
+    const ids = Object.entries(checked).filter(([, on]) => on).map(([id]) => id);
+    if (!ids.length) {
+      clearLinkedOrder();
+      setPickerOpen(false);
+      return;
+    }
+    const orders = ids
+      .map(id => pickerRows.find(row => row.id === id))
+      .filter((row): row is SalesOrder => Boolean(row));
+    if (!orders.length) return;
+    const primary = orders[0];
+    setSelectedSources(orders);
+    setSourceSalesOrderId(primary.id);
+    setError('');
+    setCustomerId(primary.customerId || customerId);
+    setPartyName(primary.partyName);
+    setPartyGstin(primary.partyGstin || partyGstin);
+    setState(primary.state || state);
+    setStation(primary.station || station);
+    setBrokerName(primary.brokerName || brokerName);
+    setTransportName(primary.transportName || transportName);
+    setVehicleNo(primary.vehicleNo || vehicleNo);
+    setHaste(primary.haste || haste);
+    setHasteGstin(primary.hasteGstin || hasteGstin);
+    setDhara(String(primary.dhara ?? dhara));
+    setGrace(String(primary.grace ?? grace));
+    setScreenSeries(primary.screenSeries || screenSeries);
+    setOrderNo(orders.map(order => order.orderNo).join(', '));
+    setRemarks(primary.remarks || remarks);
+    setHsnCode(primary.hsnCode || hsnCode);
+    const filled: SalesLineItem[] = [];
+    for (const order of orders) {
+      for (const line of order.pendingLines || []) {
+        if (toNum(line.pendingPcs) <= 0 && toNum(line.pendingMts) <= 0) continue;
+        filled.push(calcLine({
+          ...blankLine(filled.length + 1, defaultGstRate, defaultHsnCode),
+          ...line,
+          lineNo: filled.length + 1,
+          sourceSalesOrderId: order.id,
+          sourceOrderNo: String(order.orderNo),
+          sourceLineNo: line.lineNo || line.sourceLineNo,
+          pcs: toNum(line.pendingPcs),
+          mtsQty: toNum(line.pendingMts),
+          cut: toNum(line.cut),
+          rate: toNum(line.rate),
+          bundles: toNum(line.bundles),
+          packing: line.packing || 'NAKED',
+          unit: line.unit || 'PCS',
+          itemName: line.itemName || line.screenName || '',
+          screenName: line.screenName || line.itemName || '',
+          mainScreen: line.mainScreen || '',
+          gstRate: toNum(line.gstRate) || defaultGstRate,
+          hsnCode: line.hsnCode || defaultHsnCode
+        }, businessState, order.state || state));
+      }
+    }
+    setLineItems(filled.length ? filled : [blankLine(1, defaultGstRate, defaultHsnCode)]);
+    setSuccess(
+      orders.length === 1
+        ? `Sales Order #${primary.orderNo} loaded. All items are editable.`
+        : `${orders.length} Sales Orders loaded. All items are editable.`
+    );
+    setPickerOpen(false);
   };
 
   const chooseCustomer = (id: string) => {
@@ -455,59 +565,6 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
     }
   };
 
-  const applyPendingOrder = (id: string) => {
-    if (!id) {
-      clearLinkedOrder();
-      return;
-    }
-    if (!partyName.trim()) {
-      setError('Select Party first, then choose Ord / Ref.');
-      return;
-    }
-    const order = pendingOrders.find(row => row.id === id);
-    if (!order) return;
-    setSourceSalesOrderId(id);
-    setError('');
-    setCustomerId(order.customerId || customerId);
-    setPartyName(order.partyName);
-    setPartyGstin(order.partyGstin || partyGstin);
-    setState(order.state || state);
-    setStation(order.station || station);
-    setBrokerName(order.brokerName || brokerName);
-    setTransportName(order.transportName || transportName);
-    setVehicleNo(order.vehicleNo || vehicleNo);
-    setHaste(order.haste || haste);
-    setHasteGstin(order.hasteGstin || hasteGstin);
-    setDhara(String(order.dhara ?? dhara));
-    setGrace(String(order.grace ?? grace));
-    setScreenSeries(order.screenSeries || screenSeries);
-    setOrderNo(String(order.orderNo));
-    setRemarks(order.remarks || remarks);
-    setHsnCode(order.hsnCode || hsnCode);
-    const filled = (order.pendingLines || [])
-      .filter(line => toNum(line.pendingPcs) > 0 || toNum(line.pendingMts) > 0)
-      .map((line, index) => calcLine({
-        ...blankLine(index + 1, defaultGstRate, defaultHsnCode),
-        ...line,
-        lineNo: index + 1,
-        sourceLineNo: line.lineNo || index + 1,
-        pcs: toNum(line.pendingPcs),
-        mtsQty: toNum(line.pendingMts),
-        cut: toNum(line.cut),
-        rate: toNum(line.rate),
-        bundles: toNum(line.bundles),
-        packing: line.packing || 'NAKED',
-        unit: line.unit || 'PCS',
-        itemName: line.itemName || line.screenName || '',
-        screenName: line.screenName || line.itemName || '',
-        mainScreen: line.mainScreen || '',
-        gstRate: toNum(line.gstRate) || defaultGstRate,
-        hsnCode: line.hsnCode || defaultHsnCode
-      }, businessState, order.state || state));
-    setLineItems(filled.length ? filled : [blankLine(1, defaultGstRate, defaultHsnCode)]);
-    setSuccess(`Sales Order #${order.orderNo} loaded. All items are editable.`);
-  };
-
   const saveItemMaster = async () => {
     if (!itemForm.name.trim() || !itemForm.mainScreen.trim()) {
       setError('Item name and Main Screen are required.');
@@ -589,6 +646,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
         const body = {
           ...payload,
           sourceSalesOrderId: isGoodsReturn ? undefined : (sourceSalesOrderId || undefined),
+          sourceSalesOrderIds: isGoodsReturn ? undefined : selectedSources.map(source => source.id),
           orderNumber: orderNo || undefined
         };
         const result = editId && editKind === 'bill'
@@ -604,6 +662,8 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
         if (!isEditMode) {
           setLineItems([blankLine(1, defaultGstRate, defaultHsnCode)]);
           setSourceSalesOrderId('');
+          setSelectedSources([]);
+          setChecked({});
           setOrderNo('');
           setRemarks('');
           setLrNo('');
@@ -664,7 +724,6 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
                 {isSalesOrder ? 'Order form · No ledger' : isGoodsReturn ? 'Return · Credits ledger' : 'Bill · Posts to ledger'}
               </span>
             </div>
-
             <div className="grid gap-3 md:grid-cols-4 xl:grid-cols-6">
               <label><span className={labelClass}>Company</span><input className={readonlyClass} value={companyName} readOnly /></label>
               <label>
@@ -677,6 +736,8 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
                     const next = e.target.value;
                     setTransactionType(next);
                     setSourceSalesOrderId('');
+                    setSelectedSources([]);
+                    setChecked({});
                     setOrderNo('');
                     setPendingOrders([]);
                     const d = applyTypeGstDefaults(next);
@@ -754,31 +815,24 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
               )}
               {isBillEntry && !isGoodsReturn && (
                 <label className="md:col-span-2">
-                  <span className={labelClass}>2. Ord / Ref (Sales Orders of this party)</span>
-                  <select
-                    className={`${inputClass} border-amber-300 bg-amber-50 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400`}
-                    value={sourceSalesOrderId}
+                  <span className={labelClass}>
+                    2. Ord / Ref (optional — pick one or more Sales Orders)
+                    {selectedSources.length > 1 ? ` · ${selectedSources.length}` : ''}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={openOrderPicker}
                     disabled={!partyName.trim() || pendingLoading}
-                    onChange={e => applyPendingOrder(e.target.value)}
+                    className={`${inputClass} truncate text-left text-indigo-800 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400`}
                   >
-                    <option value="">
-                      {!partyName.trim()
-                        ? 'Select Party first…'
-                        : pendingLoading
-                          ? 'Loading party orders…'
-                          : pendingOrders.length
-                            ? 'Select Sales Order to prefill items'
-                            : 'No pending Sales Orders for this party'}
-                    </option>
-                    {sourceSalesOrderId && !pendingOrders.some(order => order.id === sourceSalesOrderId) && (
-                      <option value={sourceSalesOrderId}>SO {orderNo || 'linked'}</option>
-                    )}
-                    {pendingOrders.map(order => (
-                      <option key={order.id} value={order.id}>
-                        SO {order.orderNo} · {new Date(order.orderDate).toLocaleDateString('en-IN')} · {order.pendingPcs} PCS / {order.pendingMts} MTS pending
-                      </option>
-                    ))}
-                  </select>
+                    {!partyName.trim()
+                      ? 'Select Party first…'
+                      : pendingLoading
+                        ? 'Loading party orders…'
+                        : orderNo
+                          ? `SO ${orderNo}`
+                          : 'Optional — pick to prefill, or add lines below'}
+                  </button>
                 </label>
               )}
               <label><span className={labelClass}>State</span><input className={inputClass} value={state} onChange={e => setState(e.target.value)} /></label>
@@ -797,6 +851,27 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
               <label><span className={labelClass}>HSN Code</span><input className={inputClass} value={hsnCode} onChange={e => setHsnCode(e.target.value)} /></label>
               <label className="md:col-span-2"><span className={labelClass}>Remark</span><input className={inputClass} value={remarks} onChange={e => setRemarks(e.target.value)} /></label>
             </div>
+            {selectedSources.length > 1 && (
+              <div className="mt-3 rounded-xl border border-indigo-200 bg-white p-3">
+                <p className={labelClass}>This bill covers {selectedSources.length} Sales Orders</p>
+                <div className="flex flex-wrap gap-2">
+                  {selectedSources.map(source => {
+                    const billed = lineItems
+                      .filter(line => line.sourceSalesOrderId === source.id)
+                      .reduce((sum, line) => sum + toNum(line.pcs), 0);
+                    return (
+                      <span
+                        key={source.id}
+                        className="rounded-lg bg-indigo-50 px-2.5 py-1 text-[11px] font-bold text-indigo-900"
+                        title={`${source.pendingPcs} pcs pending on this order`}
+                      >
+                        SO {source.orderNo} · {round2(billed)} pcs
+                      </span>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </section>
 
           <section className="mt-4 overflow-hidden rounded-2xl border bg-white shadow-sm">
@@ -807,10 +882,10 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
                   : isGoodsReturn
                     ? 'Return items · editable lines · amount credits party ledger'
                     : partyName.trim()
-                      ? (sourceSalesOrderId
+                      ? (selectedSources.length
                         ? `Items from Sales Order #${orderNo || ''} — all fields editable`
-                        : 'Select Ord / Ref above to load this party\'s Sales Order items (editable)')
-                      : 'Select Party first, then choose Ord / Ref to load Sales Order items'}
+                        : 'Add lines here, or pick Ord / Ref above to load Sales Orders')
+                      : 'Select Party first. You can bill without a Sales Order.'}
               </p>
               <button
                 type="button"
@@ -835,7 +910,9 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
                     <tr key={index} className="border-b odd:bg-white even:bg-slate-50">
                       <td className="px-2 py-1.5 font-black">{index + 1}</td>
                       {!isSalesOrder && (
-                        <td className="px-2 py-1.5 text-right font-semibold text-amber-800">{line.sourceLineNo || orderNo || '-'}</td>
+                        <td className="px-2 py-1.5 text-right font-semibold text-amber-800">
+                          {line.sourceOrderNo ? `SO ${line.sourceOrderNo}` : (line.sourceLineNo || '-')}
+                        </td>
                       )}
                       {isSalesOrder ? (
                         <>
@@ -958,6 +1035,90 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
           />
         </ErpFormShell>
       </main>
+
+      {pickerOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
+          <div className="max-h-[85vh] w-full max-w-3xl overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b px-4 py-3">
+              <div>
+                <h3 className="text-sm font-black uppercase">Sales Orders · {partyName || 'All'}</h3>
+                <p className="text-[11px] font-semibold text-gray-500">
+                  Tick every order this bill covers — one bill can cover several Sales Orders.
+                </p>
+              </div>
+              <button type="button" onClick={() => setPickerOpen(false)} className="rounded-lg border px-3 py-1 text-xs font-bold">Close</button>
+            </div>
+            <div className="max-h-[60vh] overflow-y-auto p-4">
+              {pendingLoading ? (
+                <p className="py-8 text-center text-sm text-gray-500">Loading…</p>
+              ) : (
+                <table className="min-w-full text-left text-sm">
+                  <thead className="border-b text-[10px] uppercase text-gray-500">
+                    <tr>
+                      <th className="p-2">
+                        <input
+                          type="checkbox"
+                          checked={pickerRows.length > 0 && checkedCount === pickerRows.length}
+                          onChange={e => setChecked(
+                            e.target.checked
+                              ? Object.fromEntries(pickerRows.map(row => [row.id, true]))
+                              : {}
+                          )}
+                        />
+                      </th>
+                      <th className="p-2">Order</th>
+                      <th className="p-2">Date</th>
+                      <th className="p-2">Status</th>
+                      <th className="p-2 text-right">Pend Pcs</th>
+                      <th className="p-2 text-right">Pend Mts</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pickerRows.map(row => (
+                      <tr
+                        key={row.id}
+                        className={`cursor-pointer border-b hover:bg-indigo-50 ${checked[row.id] ? 'bg-indigo-50' : ''}`}
+                        onClick={() => toggleChecked(row.id)}
+                      >
+                        <td className="p-2">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(checked[row.id])}
+                            onChange={() => toggleChecked(row.id)}
+                            onClick={e => e.stopPropagation()}
+                          />
+                        </td>
+                        <td className="p-2 font-bold">SO {row.orderNo}</td>
+                        <td className="p-2 text-xs">{row.orderDate ? String(row.orderDate).slice(0, 10) : '-'}</td>
+                        <td className="p-2 text-xs">{row.status || 'open'}</td>
+                        <td className="p-2 text-right font-bold text-indigo-800">{row.pendingPcs}</td>
+                        <td className="p-2 text-right font-bold text-indigo-800">{toNum(row.pendingMts).toFixed(2)}</td>
+                      </tr>
+                    ))}
+                    {!pickerRows.length && (
+                      <tr><td colSpan={6} className="p-8 text-center text-gray-500">No pending Sales Orders for this party.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              )}
+            </div>
+            <div className="flex items-center justify-between border-t bg-gray-50 px-4 py-3">
+              <span className="text-xs font-bold text-gray-600">
+                {checkedCount} order{checkedCount === 1 ? '' : 's'} ticked ·{' '}
+                {round2(pickerRows.filter(row => checked[row.id]).reduce((sum, row) => sum + toNum(row.pendingPcs), 0))} pcs pending
+              </span>
+              <button
+                type="button"
+                disabled={pendingLoading}
+                onClick={applySelectedOrders}
+                className="rounded-xl bg-indigo-700 px-4 py-2 text-xs font-black uppercase text-white disabled:opacity-40"
+              >
+                {checkedCount ? 'Add to bill' : 'Clear pick'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {itemModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">

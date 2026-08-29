@@ -8,6 +8,7 @@ import { roundMoney, allocateNextInvoiceNumber } from '../utils/orderBilling.js'
 import { allocateNextTypeBillNumber } from '../utils/transactionBilling.js';
 import { getStateFromGstin, calculateGstBreakup } from '../utils/gstCalculation.js';
 import { getGstDefaultsForTransactionType } from '../constants/erpTransactionTypes.js';
+import { linesForSource } from '../utils/documentLinkAttribution.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -104,7 +105,10 @@ function normalizeSalesLines(raw, context = {}) {
       taxableAmount,
       totalAmount: roundMoney(taxableAmount + taxAmount),
       hsnCode: optionalString(input.hsnCode) || context.defaultHsnCode || '5407',
-      sourceLineNo: Number(input.sourceLineNo) || Number(input.lineNo) || index + 1
+      sourceSalesOrderId: optionalString(input.sourceSalesOrderId),
+      sourceOrderNo: optionalString(input.sourceOrderNo),
+      sourceLineNo: optionalNumber(input.sourceLineNo)
+        ?? (optionalString(input.sourceSalesOrderId) ? (Number(input.lineNo) || index + 1) : null)
     };
   }).filter(line => line.itemName && (line.pcs > 0 || line.amount > 0));
 }
@@ -125,18 +129,24 @@ function aggregateLines(lines) {
 async function soldBySalesOrder(salesOrderId, excludeBillId = null, client = prisma) {
   const bills = await client.order.findMany({
     where: {
-      sourceSalesOrderId: salesOrderId,
       status: 'completed',
-      // Goods returns must not inflate sold qty against a Sales Order.
       NOT: { transactionType: { equals: 'SALES GOODS RETURN', mode: 'insensitive' } },
+      OR: [
+        { sourceSalesOrderId: salesOrderId },
+        { sourceSalesOrderIds: { has: salesOrderId } }
+      ],
       ...(excludeBillId ? { id: { not: excludeBillId } } : {})
     },
-    select: { orderLines: true }
+    select: { id: true, sourceSalesOrderId: true, sourceSalesOrderIds: true, orderLines: true }
   });
   const byLine = new Map();
+  const lineOpts = {
+    primaryIdField: 'sourceSalesOrderId',
+    lineSourceField: 'sourceSalesOrderId',
+    linesField: 'orderLines'
+  };
   for (const bill of bills) {
-    const lines = Array.isArray(bill.orderLines) ? bill.orderLines : [];
-    for (const line of lines) {
+    for (const line of linesForSource(bill, salesOrderId, lineOpts)) {
       const key = Number(line.sourceLineNo || line.lineNo) || 0;
       const current = byLine.get(key) || { pcs: 0, mtsQty: 0 };
       current.pcs = roundMoney(current.pcs + (Number(line.pcs ?? line.quantity) || 0));
@@ -281,6 +291,7 @@ router.get('/pending', authenticateToken, requireActiveSubscription, async (req,
   try {
     const partyName = optionalString(req.query.partyName);
     const customerId = optionalString(req.query.customerId);
+    const excludeId = optionalString(req.query.excludeId);
     // Finish Sales must pick party first — never list all parties' orders.
     if (!customerId && !partyName) {
       return res.json({ entries: [] });
@@ -292,14 +303,14 @@ router.get('/pending', authenticateToken, requireActiveSubscription, async (req,
     const orders = await prisma.salesOrder.findMany({
       where: {
         userId: req.user.userId,
-        status: { in: ['open', 'partial'] },
+        status: excludeId ? { in: ['open', 'partial', 'closed'] } : { in: ['open', 'partial'] },
         ...partyFilter
       },
       orderBy: [{ orderDate: 'desc' }, { createdAt: 'desc' }]
     });
     const entries = [];
     for (const order of orders) {
-      const pending = await buildPending(order);
+      const pending = await buildPending(order, excludeId);
       if (pending.pendingPcs > 0.001 || pending.pendingMts > 0.001) entries.push(pending);
     }
     res.json({ entries });
@@ -514,11 +525,59 @@ router.get('/bills/:id', authenticateToken, requireActiveSubscription, async (re
       include: { customer: true, sourceSalesOrder: true }
     });
     if (!bill) return res.status(404).json({ error: 'Sales bill not found' });
-    res.json({ bill });
+    const ids = (bill.sourceSalesOrderIds?.length
+      ? bill.sourceSalesOrderIds
+      : (bill.sourceSalesOrderId ? [bill.sourceSalesOrderId] : [])
+    ).filter(Boolean);
+    const sources = [];
+    for (const id of ids) {
+      const order = await prisma.salesOrder.findFirst({ where: { id, userId: req.user.userId } });
+      if (order) sources.push(await buildPending(order, bill.id));
+    }
+    res.json({ bill, sources });
   } catch (error) {
     next(error);
   }
 });
+
+function requestedSalesOrderIds(reqBody) {
+  const many = Array.isArray(reqBody.sourceSalesOrderIds) ? reqBody.sourceSalesOrderIds : [];
+  const ids = many.map(id => optionalString(id)).filter(Boolean);
+  const single = optionalString(reqBody.sourceSalesOrderId);
+  if (single && !ids.includes(single)) ids.unshift(single);
+  for (const line of Array.isArray(reqBody.lineItems) ? reqBody.lineItems : []) {
+    const id = optionalString(line.sourceSalesOrderId);
+    if (id && !ids.includes(id)) ids.push(id);
+  }
+  return Array.from(new Set(ids));
+}
+
+/**
+ * Stamp each bill line with the Sales Order it consumes.
+ * One picked order: untagged lines belong to it (legacy single-SO bills).
+ * Several orders: untagged lines are extra / direct and do not consume pending.
+ */
+function tagSalesLinesToOrders(lines, sources) {
+  const byId = new Map(sources.map(source => [source.id, source]));
+  const errors = [];
+  const tagged = lines.map(line => {
+    const declared = optionalString(line.sourceSalesOrderId);
+    const resolvedId = declared || (sources.length === 1 ? sources[0].id : null);
+    if (!resolvedId) return { ...line, sourceSalesOrderId: null, sourceOrderNo: line.sourceOrderNo || null };
+    const source = byId.get(resolvedId);
+    if (!source) {
+      errors.push(`A line refers to a Sales Order that is not selected.`);
+      return line;
+    }
+    return {
+      ...line,
+      sourceSalesOrderId: source.id,
+      sourceOrderNo: line.sourceOrderNo || String(source.orderNo),
+      sourceLineNo: line.sourceLineNo != null ? line.sourceLineNo : line.lineNo
+    };
+  });
+  return { lines: tagged, errors };
+}
 
 async function saveBill(req, res, existing = null) {
   const userId = req.user.userId;
@@ -535,13 +594,24 @@ async function saveBill(req, res, existing = null) {
   if (!customer) return res.status(400).json({ error: 'Customer is required' });
 
   const goodsReturn = String(transactionType).toUpperCase() === 'SALES GOODS RETURN';
-  // Goods returns do not consume Sales Order pending qty.
-  const sourceSalesOrderId = goodsReturn ? null : optionalString(req.body.sourceSalesOrderId);
-  let sourceOrder = null;
-  if (sourceSalesOrderId) {
-    sourceOrder = await prisma.salesOrder.findFirst({ where: { id: sourceSalesOrderId, userId } });
-    if (!sourceOrder) return res.status(404).json({ error: 'Sales Order not found' });
+  const requestedIds = goodsReturn ? [] : requestedSalesOrderIds(req.body);
+  const sources = [];
+  if (requestedIds.length) {
+    const found = await prisma.salesOrder.findMany({
+      where: { id: { in: requestedIds }, userId }
+    });
+    const byId = new Map(found.map(row => [row.id, row]));
+    for (const id of requestedIds) {
+      const order = byId.get(id);
+      if (!order) return res.status(404).json({ error: 'Sales Order not found' });
+      sources.push(order);
+    }
+    const parties = Array.from(new Set(sources.map(row => String(row.partyName || '').trim().toUpperCase())));
+    if (parties.length > 1) {
+      return res.status(400).json({ error: 'All picked Sales Orders must belong to the same party.' });
+    }
   }
+  const primary = sources[0] || null;
   const partyGstin = optionalString(req.body.partyGstin) || customer.gstNumber;
   const placeOfSupply = optionalString(req.body.state) || customer.state || getStateFromGstin(partyGstin).stateName;
   const typeGst = getGstDefaultsForTransactionType(
@@ -557,23 +627,39 @@ async function saveBill(req, res, existing = null) {
   });
   if (!lines.length) return res.status(400).json({ error: 'Add at least one sales line' });
 
-  if (sourceOrder) {
-    const pending = await buildPending(sourceOrder, existing?.id || null);
+  const tagged = tagSalesLinesToOrders(lines, sources);
+  if (tagged.errors.length) {
+    return res.status(400).json({ error: tagged.errors.join(' ') });
+  }
+
+  for (const source of sources) {
+    const pending = await buildPending(source, existing?.id || null);
     const pendingMap = new Map(pending.pendingLines.map(line => [Number(line.lineNo), line]));
-    for (const line of lines) {
-      const sourceLine = pendingMap.get(Number(line.sourceLineNo));
-      if (!sourceLine) return res.status(400).json({ error: `Sales Order line ${line.sourceLineNo} not found` });
-      if (line.pcs > sourceLine.pendingPcs + 0.01 || line.mtsQty > sourceLine.pendingMts + 0.01) {
+    const used = new Map();
+    for (const line of tagged.lines.filter(row => row.sourceSalesOrderId === source.id)) {
+      const key = Number(line.sourceLineNo);
+      const sourceLine = pendingMap.get(key);
+      if (!sourceLine) {
+        return res.status(400).json({ error: `Sales Order #${source.orderNo} line ${key} not found.` });
+      }
+      const cur = used.get(key) || { pcs: 0, mtsQty: 0, itemName: sourceLine.itemName };
+      cur.pcs = roundMoney(cur.pcs + (Number(line.pcs) || 0));
+      cur.mtsQty = roundMoney(cur.mtsQty + (Number(line.mtsQty) || 0));
+      used.set(key, cur);
+    }
+    for (const [key, qty] of used) {
+      const sourceLine = pendingMap.get(key);
+      if (qty.pcs > sourceLine.pendingPcs + 0.01 || qty.mtsQty > sourceLine.pendingMts + 0.01) {
         return res.status(400).json({
-          error: `Only ${sourceLine.pendingPcs} pcs / ${sourceLine.pendingMts} mts pending for ${sourceLine.itemName}.`
+          error: `SO #${source.orderNo}: only ${sourceLine.pendingPcs} pcs / ${sourceLine.pendingMts} mts pending for ${qty.itemName}.`
         });
       }
     }
   }
 
-  const totals = aggregateLines(lines);
+  const totals = aggregateLines(tagged.lines);
   const quantity = Math.max(1, Math.round(totals.totalPcs));
-  const orderLines = lines.map(line => ({
+  const orderLines = tagged.lines.map(line => ({
     ...line,
     description: line.itemName,
     designName: line.itemName,
@@ -595,7 +681,9 @@ async function saveBill(req, res, existing = null) {
       status: 'completed',
       remarks: optionalString(req.body.remarks),
       manualType: 'erp_sales',
-      orderNumber: sourceOrder ? String(sourceOrder.orderNo) : optionalString(req.body.orderNumber),
+      orderNumber: sources.length
+        ? sources.map(row => row.orderNo).join(', ')
+        : optionalString(req.body.orderNumber),
       transactionType,
       agentName: optionalString(req.body.brokerName || req.body.agentName),
       transportName: optionalString(req.body.transportName),
@@ -605,7 +693,8 @@ async function saveBill(req, res, existing = null) {
       expectedDate: req.body.expectedDate ? toDate(req.body.expectedDate, null) : null,
       haste: optionalString(req.body.haste),
       station: optionalString(req.body.station),
-      sourceSalesOrderId: sourceOrder?.id || null,
+      sourceSalesOrderId: primary?.id || null,
+      sourceSalesOrderIds: sources.map(row => row.id),
       challanNo: optionalString(req.body.challanNo),
       gstType: optionalString(req.body.gstType),
       lrNo: optionalString(req.body.lrNo),
@@ -627,7 +716,11 @@ async function saveBill(req, res, existing = null) {
         data: { userId, shareLinkId: null, designId: null, ...data, invoiceNumber, typeBillNumber }
       });
     }
-    const affected = new Set([existing?.sourceSalesOrderId, sourceOrder?.id].filter(Boolean));
+    const affected = new Set([
+      ...(existing?.sourceSalesOrderIds || []),
+      existing?.sourceSalesOrderId,
+      ...sources.map(row => row.id)
+    ].filter(Boolean));
     for (const id of affected) await refreshSalesOrderStatus(tx, id);
     return bill;
   });

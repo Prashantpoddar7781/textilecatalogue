@@ -210,6 +210,9 @@ export async function loadSourcesByIds({ userId, targetSeries, ids, excludeTarge
  * looks like.
  */
 export function attributeLinesToSources({ lines, sources }) {
+  if (!sources.length) {
+    return { lines, perSource: [], unused: [], errors: [] };
+  }
   const byId = new Map(sources.map(source => [source.sourceId, source]));
   const errors = [];
 

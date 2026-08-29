@@ -409,7 +409,10 @@ router.get('/:id', authenticateToken, requireActiveSubscription, async (req, res
 
     // Rehydrate every challan this bill covers so the edit screen can re-tick them,
     // excluding this receipt's own consumption from their pending.
-    const ids = entry.sourceDespatchIds?.length ? entry.sourceDespatchIds : [entry.workDespatchId];
+    const ids = (entry.sourceDespatchIds?.length
+      ? entry.sourceDespatchIds
+      : (entry.workDespatchId ? [entry.workDespatchId] : [])
+    ).filter(Boolean);
     const sources = await loadSourcesByIds({
       userId: req.user.userId,
       targetSeries: entry.transactionType,
@@ -436,28 +439,26 @@ async function saveReceipt(req, res, existing = null) {
   const ctx = await getCompanyContext(userId);
   const transactionType = optionalString(req.body.transactionType) || REC_TYPES[0];
   const ids = requestedSourceIds(req.body);
-  if (!ids.length) {
-    return res.status(400).json({ error: 'Pick at least one work desp challan.' });
-  }
-
-  const sources = await loadSourcesByIds({
-    userId,
-    targetSeries: transactionType,
-    ids,
-    excludeTargetId: existing?.id || null
-  });
-  if (sources.length !== ids.length) {
-    return res.status(404).json({ error: 'One or more work desp challans could not be found.' });
-  }
-
-  const parties = Array.from(new Set(sources.map(source => String(source.partyName || '').trim().toUpperCase())));
-  if (parties.length > 1) {
-    return res.status(400).json({
-      error: 'All picked challans must belong to the same party.'
+  let sources = [];
+  if (ids.length) {
+    sources = await loadSourcesByIds({
+      userId,
+      targetSeries: transactionType,
+      ids,
+      excludeTargetId: existing?.id || null
     });
+    if (sources.length !== ids.length) {
+      return res.status(404).json({ error: 'One or more work desp challans could not be found.' });
+    }
+    const parties = Array.from(new Set(sources.map(source => String(source.partyName || '').trim().toUpperCase())));
+    if (parties.length > 1) {
+      return res.status(400).json({
+        error: 'All picked challans must belong to the same party.'
+      });
+    }
   }
 
-  const primary = sources[0];
+  const primary = sources[0] || null;
   const lineItems = normalizeWorkLines(req.body.lineItems, { billOnFresh: true });
   if (!lineItems.length) {
     return res.status(400).json({ error: 'Add at least one received item line.' });
@@ -471,7 +472,10 @@ async function saveReceipt(req, res, existing = null) {
 
   const agg = lineAgg(taggedLines);
   const totals = computeReceiptTotals(req.body, taggedLines, ctx, primary);
-  const partyName = optionalString(req.body.partyName) || primary.partyName;
+  const partyName = optionalString(req.body.partyName) || primary?.partyName;
+  if (!partyName) {
+    return res.status(400).json({ error: 'Party is required.' });
+  }
 
   await ensureMillParty(prisma, userId, partyName);
   await resolveSupplierForEntry(prisma, userId, {
@@ -487,20 +491,20 @@ async function saveReceipt(req, res, existing = null) {
     .join(', ');
 
   const data = {
-    workDespatchId: primary.sourceId,
+    workDespatchId: primary?.sourceId || null,
     sourceDespatchIds: sources.map(source => source.sourceId),
-    companyName: optionalString(req.body.companyName) || primary.companyName || ctx.companyName,
+    companyName: optionalString(req.body.companyName) || primary?.companyName || ctx.companyName,
     transactionType,
     partyName,
     partyGstin: totals.partyGstin,
     placeOfSupply: totals.placeOfSupply,
-    stateCode: totals.stateCode || getStateCodeFromName(totals.placeOfSupply) || primary.stateCode,
-    gstType: totals.gstTypeLabel || totals.gstType || primary.gstType,
-    challanNo: optionalString(req.body.challanNo) || coveredChallans || primary.documentNo,
+    stateCode: totals.stateCode || getStateCodeFromName(totals.placeOfSupply) || primary?.stateCode,
+    gstType: totals.gstTypeLabel || totals.gstType || primary?.gstType,
+    challanNo: optionalString(req.body.challanNo) || coveredChallans || primary?.documentNo,
     receiptDate: req.body.receiptDate ? new Date(req.body.receiptDate) : (existing?.receiptDate || new Date()),
-    brokerName: optionalString(req.body.brokerName) || primary.brokerName,
+    brokerName: optionalString(req.body.brokerName) || primary?.brokerName,
     vehicleNo: optionalString(req.body.vehicleNo),
-    workType: optionalString(req.body.workType) || primary.workType,
+    workType: optionalString(req.body.workType) || primary?.workType,
     hsnCode: optionalString(req.body.hsnCode) || '9988',
     remarks: optionalString(req.body.remarks),
     receivedBy: optionalString(req.body.receivedBy),

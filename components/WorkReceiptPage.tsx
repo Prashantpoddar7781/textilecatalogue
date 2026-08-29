@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, ListOrdered, Loader2 } from 'lucide-react';
+import { ArrowLeft, ListOrdered, Loader2, Plus, Trash2 } from 'lucide-react';
 import { getGstDocumentType, getItcEligibility, gstReturnSection, postingTdsAccount, postingTdsPercent, resolveDefaultTdsPercent, postingPartyAccountType, postingDiscountAccount } from '../constants/erpTransactionPostingRules';
 import { workReceiptsApi } from '../services/api';
 import { resolvePartyPan, suggestTdsPercentFromPan } from '../utils/tds';
@@ -24,6 +24,28 @@ const labelClass = 'mb-1 block text-[10px] font-black uppercase tracking-wide te
 
 const calcFresh = (pcs: number, plain: number, sec: number, lost: number, lace: number) =>
   round2(Math.max(0, pcs - plain - sec - lost - lace));
+
+const blankLine = (lineNo: number): WorkLineItem => ({
+  lineNo,
+  sourceDespatchId: null,
+  sourceChallanNo: null,
+  sourceLineNo: null,
+  itemName: '',
+  jobType: 'HAND WORK',
+  unit: 'PCS',
+  pcs: 0,
+  cut: DEFAULT_CUT,
+  mtsQty: 0,
+  plain: 0,
+  sec: 0,
+  lost: 0,
+  lace: 0,
+  fresh: 0,
+  rate: 0,
+  amount: 0,
+  fabricRate: 0,
+  taxableValue: 0
+});
 
 export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const editId = useMemo(() => new URLSearchParams(window.location.search).get('edit'), []);
@@ -260,7 +282,9 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
       // Pre-tick whatever this bill already covers so editing is additive.
       setChecked(Object.fromEntries(selectedSources.map(source => [source.sourceId, true])));
       setPickerOpen(true);
-      if (!sources?.length) setError(`No pending work desp challans for ${partyName.trim()}.`);
+      if (!sources?.length) {
+        setError(`No pending work desp challans for ${partyName.trim()}. You can still add bill lines without a challan.`);
+      }
     } catch (err: any) {
       setError(err.message || 'Could not load pending despatches.');
     } finally {
@@ -483,7 +507,6 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
     setError('');
     setSuccess('');
     try {
-      if (!selectedSources.length) throw new Error('Pick at least one work desp challan for this party.');
       if (!partyName.trim()) throw new Error('Party is required.');
       if (!parties.some(p => p.name.toLowerCase() === partyName.trim().toLowerCase()) && !allowUnknownParty) {
         promptIfNewParty(partyName);
@@ -598,10 +621,11 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
               </label>
               <label>
                 <span className={labelClass}>
-                  Pick (Desp Challan){selectedSources.length > 1 ? ` · ${selectedSources.length}` : ''}
+                  Pick desp challan (optional)
+                  {selectedSources.length > 1 ? ` · ${selectedSources.length}` : ''}
                 </span>
                 <button type="button" onClick={() => void loadPending()} className={`${inputClass} truncate text-left text-fuchsia-800`}>
-                  {challanNo || 'Select work desp challan…'}
+                  {challanNo || 'Optional — pick to prefill, or add lines below'}
                 </button>
               </label>
               <label><span className={labelClass}>Bill No.</span><input className={inputClass} value={billNo} onChange={e => setBillNo(e.target.value)} /></label>
@@ -643,8 +667,19 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
           </section>
 
           <section className="mt-4 overflow-hidden rounded-2xl border bg-white shadow-sm">
-            <div className="border-b bg-fuchsia-50 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-fuchsia-800">
-              Particulars · Fresh = Pcs − (plain + sec + lost + lace) · Amount = Fresh × Rate
+            <div className="flex items-center justify-between border-b bg-fuchsia-50 px-4 py-3">
+              <p className="text-[10px] font-black uppercase tracking-widest text-fuchsia-800">
+                {selectedSources.length
+                  ? 'Particulars · Fresh = Pcs − (plain + sec + lost + lace) · Amount = Fresh × Rate'
+                  : 'Add lines here, or pick a desp challan above to prefill'}
+              </p>
+              <button
+                type="button"
+                onClick={() => setLines(prev => [...prev, blankLine(Math.max(0, ...prev.map(line => toNum(line.lineNo))) + 1)])}
+                className="inline-flex items-center gap-1 rounded-lg bg-fuchsia-600 px-3 py-1.5 text-[10px] font-black uppercase text-white"
+              >
+                <Plus className="h-3.5 w-3.5" /> Add Line
+              </button>
             </div>
             <div className="overflow-x-auto">
               <table className="min-w-full text-left text-xs">
@@ -663,17 +698,22 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
                     <th className="px-2 py-2 text-right">Fresh</th>
                     <th className="px-2 py-2 text-right">Rate</th>
                     <th className="px-2 py-2 text-right">Amount</th>
+                    <th className="px-2 py-2"></th>
                   </tr>
                 </thead>
                 <tbody>
                   {!lines.length && (
-                    <tr><td colSpan={13} className="px-4 py-8 text-center text-sm text-gray-500">Select party, then pick one or more work desp challans to load pcs / rate / cut / mts.</td></tr>
+                    <tr><td colSpan={14} className="px-4 py-8 text-center text-sm text-gray-500">Add lines, or pick a work desp challan to load pcs / rate / cut / mts.</td></tr>
                   )}
                   {lines.map((line, index) => (
                     <tr key={index} className="border-b">
                       <td className="px-2 py-2 text-[11px] font-bold text-fuchsia-800">{line.sourceChallanNo || '-'}</td>
-                      <td className="px-2 py-2 font-semibold">{line.itemName}</td>
-                      <td className="px-2 py-2">{line.jobType}</td>
+                      <td className="px-2 py-2">
+                        <input className={inputClass} value={line.itemName} onChange={e => updateLine(index, { itemName: e.target.value })} placeholder="Item / design" />
+                      </td>
+                      <td className="px-2 py-2">
+                        <input className={inputClass} value={line.jobType || ''} onChange={e => updateLine(index, { jobType: e.target.value })} />
+                      </td>
                       <td className="px-2 py-2"><input className={inputClass} type="number" value={line.pcs || ''} onChange={e => updateLine(index, { pcs: toNum(e.target.value) })} /></td>
                       <td className="px-2 py-2"><input className={inputClass} type="number" step="0.01" value={line.cut} onChange={e => updateLine(index, { cut: toNum(e.target.value) })} /></td>
                       <td className="px-2 py-2"><input className={inputClass} type="number" step="0.01" value={line.mtsQty || ''} onChange={e => updateLine(index, { mtsQty: toNum(e.target.value) })} /></td>
@@ -684,6 +724,11 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
                       <td className="px-2 py-2 text-right font-black text-emerald-800">{toNum(line.fresh).toFixed(2)}</td>
                       <td className="px-2 py-2"><input className={inputClass} type="number" step="0.01" value={line.rate || ''} onChange={e => updateLine(index, { rate: toNum(e.target.value) })} /></td>
                       <td className="px-2 py-2 text-right font-black">{toNum(line.amount).toFixed(2)}</td>
+                      <td className="px-2 py-2">
+                        <button type="button" onClick={() => setLines(prev => prev.filter((_, i) => i !== index))} className="rounded p-1 text-gray-400 hover:bg-rose-50 hover:text-rose-600">
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -785,7 +830,7 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
               <div>
                 <h3 className="text-sm font-black uppercase">Work Desp Challans · {partyName || 'All'}</h3>
                 <p className="text-[11px] font-semibold text-gray-500">
-                  Tick every challan this bill covers — one bill can cover several challans.
+                  Optional. Tick challans to prefill this bill, or close and type lines by hand.
                 </p>
               </div>
               <button type="button" onClick={() => setPickerOpen(false)} className="rounded-lg border px-3 py-1 text-xs font-bold">Close</button>
