@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, ListOrdered, Loader2 } from 'lucide-react';
 import { greyDispatchesApi, greyPurchaseReturnsApi } from '../services/api';
 import { getGstDefaultsForTransactionType } from '../constants/erpTransactionTypes';
+import { getGstDocumentType, getItcEligibility, gstReturnSection } from '../constants/erpTransactionPostingRules';
 import { ErpSession, GreyReceiptSummary, GreyTakaDetailRow } from '../types';
 import { DispatchTakaSelectModal } from './DispatchTakaSelectModal';
 import { ErpFormShell } from './ErpFormShell';
@@ -27,6 +28,10 @@ const formatDateInput = (value?: string | null) =>
 export const GreyPurchaseReturnPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const editId = useMemo(() => new URLSearchParams(window.location.search).get('edit'), []);
   const isEditMode = Boolean(editId);
+  const RETURN_TYPE = 'GREY PURCHASE RETURN';
+  const gstDocumentType = getGstDocumentType(RETURN_TYPE);
+  const gstReturn = gstReturnSection(RETURN_TYPE);
+  const itcEligibility = getItcEligibility(RETURN_TYPE);
   const [companyName, setCompanyName] = useState('');
   const [entryType, setEntryType] = useState('GREY PURCHASE');
   const [greyType, setGreyType] = useState('GREY');
@@ -484,6 +489,10 @@ export const GreyPurchaseReturnPage: React.FC<Props> = ({ onBack, erpSession }) 
                 <label><span className={labelClass}>Place of Supply</span><input className={inputClass} value={placeOfSupply} onChange={e => setPlaceOfSupply(e.target.value)} /></label>
                 <label><span className={labelClass}>State Code</span><input className={inputClass} value={stateCode} onChange={e => setStateCode(e.target.value)} /></label>
                 <label><span className={labelClass}>GST Type</span><input className={readonlyClass} value={gstTypeLabel || '-'} readOnly /></label>
+                <label className="md:col-span-2">
+                  <span className={labelClass}>GST Document{gstReturn !== 'NONE' ? ` · ${gstReturn}` : ''}{itcEligibility ? ` · ITC ${itcEligibility}` : ''}</span>
+                  <input className={readonlyClass} value={gstDocumentType || '—'} readOnly />
+                </label>
                 <label><span className={labelClass}>Bill No.</span><input className={inputClass} value={billNo} onChange={e => setBillNo(e.target.value)} /></label>
                 <label><span className={labelClass}>Ref Bill No</span><input className={inputClass} value={refBillNo} onChange={e => setRefBillNo(e.target.value)} /></label>
                 <label><span className={labelClass}>Ref Bill Date</span><input type="date" className={inputClass} value={refBillDate} onChange={e => setRefBillDate(e.target.value)} /></label>

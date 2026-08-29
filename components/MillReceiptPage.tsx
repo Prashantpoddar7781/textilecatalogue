@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, ListOrdered, Loader2 } from 'lucide-react';
 import { millReceiptsApi } from '../services/api';
+import { getGstDocumentType, getItcEligibility, gstReturnSection } from '../constants/erpTransactionPostingRules';
 import { AccountParty, ErpSession, MillPendingDispatch, MillReceiptTakaRow } from '../types';
 import { AccountsInformationDialog, AddPartyConfirmDialog } from './AccountsInformationDialog';
 import { ErpFormShell } from './ErpFormShell';
@@ -41,6 +42,9 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [entryType, setEntryType] = useState('JOB WORK');
   const [processType, setProcessType] = useState<'FINISH' | 'RETURN'>('FINISH');
   const isReturn = processType === 'RETURN';
+  const gstDocumentType = getGstDocumentType(entryType);
+  const gstReturn = gstReturnSection(entryType);
+  const itcEligibility = getItcEligibility(entryType);
   const [hsnCode, setHsnCode] = useState('9988');
   const [stateCode, setStateCode] = useState('');
   const [placeOfSupply, setPlaceOfSupply] = useState('');
@@ -627,6 +631,10 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
               <div>
                 <label className={labelClass}>GST Type</label>
                 <input className={readonlyClass} value={gstTypeLabel || '-'} readOnly />
+              </div>
+              <div>
+                <label className={labelClass}>GST Document{gstReturn !== 'NONE' ? ` · ${gstReturn}` : ''}{itcEligibility ? ` · ITC ${itcEligibility}` : ''}</label>
+                <input className={readonlyClass} value={gstDocumentType || '—'} readOnly />
               </div>
               <div>
                 <label className={labelClass}>Voucher</label>

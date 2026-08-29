@@ -1333,6 +1333,48 @@ export const stockApi = {
   }
 };
 
+export const gstApi = {
+  getGstr3b: async (params?: { bucket?: string; fromDate?: string; toDate?: string }) => {
+    const query = new URLSearchParams();
+    if (params?.bucket) query.set('bucket', params.bucket);
+    if (params?.fromDate) query.set('fromDate', params.fromDate);
+    if (params?.toDate) query.set('toDate', params.toDate);
+    const qs = query.toString();
+    return request<{
+      bucket: string;
+      fromDate?: string | null;
+      toDate?: string | null;
+      outward: { taxable: number; igst: number; cgst: number; sgst: number; tax: number; entries: number };
+      itc: {
+        'Input Goods': { taxable: number; igst: number; cgst: number; sgst: number; tax: number; entries: number };
+        'Input Services': { taxable: number; igst: number; cgst: number; sgst: number; tax: number; entries: number };
+        'Capital Goods': { taxable: number; igst: number; cgst: number; sgst: number; tax: number; entries: number };
+        total: { taxable: number; igst: number; cgst: number; sgst: number; tax: number; entries: number };
+      };
+      netPayable: { igst: number; cgst: number; sgst: number; tax: number };
+      rows: Array<{
+        id: string;
+        source: string;
+        date: string;
+        transactionType: string;
+        voucherNo: string;
+        billNo: string;
+        partyName: string;
+        section: string;
+        itcEligibility: string | null;
+        bucket: string;
+        sign: number;
+        taxable: number;
+        igst: number;
+        cgst: number;
+        sgst: number;
+        tax: number;
+        editPath: string;
+      }>;
+    }>(`/gst/gstr-3b${qs ? `?${qs}` : ''}`);
+  }
+};
+
 export const millReceiptsApi = {
   getMeta: async () => {
     return request<{

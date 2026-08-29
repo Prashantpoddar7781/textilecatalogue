@@ -10,6 +10,7 @@ import {
 import {
   formatSeriesBillNumber,
   getGstDocumentType,
+  getItcEligibility,
   gstReturnSection,
   postingPartyAccountType,
   postingSummary
@@ -160,6 +161,7 @@ export const ErpPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
   const gstType = gstTypeLabel(state, businessState);
   const gstDocumentType = getGstDocumentType(transactionType);
   const gstReturn = gstReturnSection(transactionType);
+  const itcEligibility = getItcEligibility(transactionType);
 
   const totals = useMemo(() => lineItems.reduce((acc, line) => ({
     pcs: round2(acc.pcs + toNum(line.pcs)),
@@ -496,7 +498,7 @@ export const ErpPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
               <label><span className={labelClass}>Date</span><input type="date" className={inputClass} value={billDate} onChange={e => setBillDate(e.target.value)} /></label>
               <label><span className={labelClass}>GST Type</span><input className={readonlyClass} value={gstType} readOnly /></label>
               <label className="md:col-span-2">
-                <span className={labelClass}>GST Document{gstReturn !== 'NONE' ? ` · ${gstReturn}` : ''}</span>
+                <span className={labelClass}>GST Document{gstReturn !== 'NONE' ? ` · ${gstReturn}` : ''}{itcEligibility ? ` · ITC ${itcEligibility}` : ''}</span>
                 <input className={readonlyClass} value={gstDocumentType || '—'} readOnly />
               </label>
               <label className="md:col-span-2">

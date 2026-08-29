@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertCircle, ArrowLeft, ListOrdered, Loader2 } from 'lucide-react';
 import { GREY_QUALITY_OPTIONS } from '../constants/greyQualities';
 import { getGstDefaultsForTransactionType } from '../constants/erpTransactionTypes';
-import { postingPartyAccountType, formatSeriesBillNumber, getGstDocumentType, gstReturnSection, postingSummary } from '../constants/erpTransactionPostingRules';
+import { postingPartyAccountType, formatSeriesBillNumber, getGstDocumentType, getItcEligibility, gstReturnSection, postingSummary } from '../constants/erpTransactionPostingRules';
 import { greyPurchasesApi, purchasesApi } from '../services/api';
 import { isWrongGstNumber, normalizeGstNumber } from '../services/gstValidation';
 import { AccountParty, ErpSession, GreyPurchaseLine, GreyTakaDetailRow, Supplier } from '../types';
@@ -32,6 +32,7 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
   const GREY_TYPE = 'GREY PURCHASE';
   const gstDocumentType = getGstDocumentType(GREY_TYPE);
   const gstReturn = gstReturnSection(GREY_TYPE);
+  const itcEligibility = getItcEligibility(GREY_TYPE);
 
   const [companyName, setCompanyName] = useState('');
   const [businessState, setBusinessState] = useState('');
@@ -467,7 +468,7 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
                   />
                 </label>
                 <label className="xl:col-span-2">
-                  <span className={labelClass}>GST Document{gstReturn !== 'NONE' ? ` · ${gstReturn}` : ''}</span>
+                  <span className={labelClass}>GST Document{gstReturn !== 'NONE' ? ` · ${gstReturn}` : ''}{itcEligibility ? ` · ITC ${itcEligibility}` : ''}</span>
                   <input className={readonlyClass} value={gstDocumentType || '—'} readOnly />
                 </label>
                 <label className="xl:col-span-2">

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, ListOrdered, Loader2 } from 'lucide-react';
-import { postingPartyAccountType } from '../constants/erpTransactionPostingRules';
+import { getGstDocumentType, getItcEligibility, gstReturnSection, postingPartyAccountType } from '../constants/erpTransactionPostingRules';
 import { workReceiptsApi } from '../services/api';
 import { AccountParty, ErpSession, LinkedSourceDocument, WorkLineItem } from '../types';
 import { AccountsInformationDialog, AddPartyConfirmDialog } from './AccountsInformationDialog';
@@ -40,6 +40,9 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [transactionTypes, setTransactionTypes] = useState<string[]>([]);
   const [parties, setParties] = useState<Array<{ name: string; gstNumber?: string | null; state?: string | null; brokerName?: string | null }>>([]);
   const [transactionType, setTransactionType] = useState('WORK REC. BILL');
+  const gstDocumentType = getGstDocumentType(transactionType);
+  const gstReturn = gstReturnSection(transactionType);
+  const itcEligibility = getItcEligibility(transactionType);
   const [voucherNo, setVoucherNo] = useState('1');
   const [gstRate, setGstRate] = useState('5');
   const [partyName, setPartyName] = useState('');
@@ -562,6 +565,10 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
               <label><span className={labelClass}>Vehicle No.</span><input className={inputClass} value={vehicleNo} onChange={e => setVehicleNo(e.target.value)} /></label>
               <label><span className={labelClass}>Party GSTIN</span><input className={inputClass} value={partyGstin} onChange={e => setPartyGstin(e.target.value)} /></label>
               <label><span className={labelClass}>GST Type</span><input className={readonlyClass} value={gstType || '-'} readOnly /></label>
+              <label className="md:col-span-2">
+                <span className={labelClass}>GST Document{gstReturn !== 'NONE' ? ` · ${gstReturn}` : ''}{itcEligibility ? ` · ITC ${itcEligibility}` : ''}</span>
+                <input className={readonlyClass} value={gstDocumentType || '—'} readOnly />
+              </label>
               <label><span className={labelClass}>GST %</span><input className={inputClass} type="number" value={gstRate} onChange={e => setGstRate(e.target.value)} /></label>
               <label><span className={labelClass}>HSN</span><input className={inputClass} value={hsnCode} onChange={e => setHsnCode(e.target.value)} /></label>
               <label className="md:col-span-2"><span className={labelClass}>Remark</span><input className={inputClass} value={remarks} onChange={e => setRemarks(e.target.value)} /></label>

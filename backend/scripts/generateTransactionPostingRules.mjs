@@ -346,10 +346,15 @@ export function generalSeriesOnly(seriesNames${typed ? ': string[]' : ''})${strA
   return (seriesNames || []).filter(name => !isCompanySpecificSeries(name));
 }
 
+/** Screen names that are the same series as an Excel row. */
+const SERIES_ALIASES${typed ? ': Record<string, string>' : ''} = {
+  'WORK REC. BILL': 'WORK REC. BILLS'
+};
+
 export function getPostingRule(transactionType${optStr})${ruleType} {
   const upper = String(transactionType || '').trim().toUpperCase();
   if (!upper) return undefined;
-  return RULE_BY_SERIES.get(upper);
+  return RULE_BY_SERIES.get(SERIES_ALIASES[upper] || upper);
 }
 
 /** Party control account for this series, or the caller's fallback when the master is blank. */
@@ -541,6 +546,32 @@ export function gstReturnSection(transactionType${optStr})${typed ? ': ErpGstRet
   return 'NONE';
 }
 
+/**
+ * GSTR-3B Table 4 bucket for this series: Input Goods, Input Services, or Capital Goods.
+ * When Excel left eligibility blank on an inward GST document, treat it as Input Goods
+ * (purchase returns and BOX PURCHASES are blank in the master).
+ */
+export function getItcEligibility(transactionType${optStr})${typed ? ': ErpItcEligibility | null' : ''} {
+  const found = getPostingRule(transactionType);
+  if (found && found.itcEligibility) return found.itcEligibility;
+  const u = String(transactionType || '').trim().toUpperCase();
+  if (u.includes('PURCHASE RETURN')) return 'Input Goods';
+  if (gstReturnSection(transactionType) === 'GSTR-2') return 'Input Goods';
+  return null;
+}
+
+/**
+ * Sign of the GST amounts on this document for GSTR-1 / GSTR-3B.
+ * Credit notes and purchase / sales returns reverse tax or ITC.
+ */
+export function gstDocumentSign(transactionType${optStr})${typed ? ': number' : ''} {
+  const u = String(transactionType || '').trim().toUpperCase();
+  if (u.includes('RETURN') || u.includes('CREDIT NOTE')) return -1;
+  const doc = getGstDocumentType(transactionType);
+  if (doc === 'Credit Note' || doc === 'Credit Note (inward)') return -1;
+  return 1;
+}
+
 /** Delivery challans move goods without creating a tax liability. */
 export function isDeliveryChallanDocument(transactionType${optStr})${retBool} {
   const doc = getGstDocumentType(transactionType);
@@ -573,7 +604,8 @@ export function postingSummary(transactionType${optStr})${s} {
   const parts = [
     found.saleOrPurchaseAccount,
     found.partyAccountType,
-    found.stockType ? \`Stock: \${found.stockType}\` : null
+    found.stockType ? \`Stock: \${found.stockType}\` : null,
+    getItcEligibility(transactionType) ? \`ITC: \${getItcEligibility(transactionType)}\` : null
   ].filter(Boolean);
   return parts.length ? parts.join(' · ') : '—';
 }
