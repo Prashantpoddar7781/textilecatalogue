@@ -15,7 +15,9 @@ import {
   getItcEligibility,
   postingPartyAccountType,
   postingSaleOrPurchaseAccount,
-  postingSummary
+  postingSummary,
+  postingTdsAccount,
+  postingTdsPercent
 } from '../constants/erpTransactionPostingRules';
 import { AccountsInformationDialog, AddPartyConfirmDialog } from './AccountsInformationDialog';
 import { ErpFormShell } from './ErpFormShell';
@@ -180,6 +182,8 @@ export const ErpExpensesPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const gstDocumentType = getGstDocumentType(transactionType);
   const gstReturn = gstReturnSection(transactionType);
   const itcEligibility = getItcEligibility(transactionType);
+  const tdsAccount = postingTdsAccount(transactionType);
+  const masterTdsPercent = postingTdsPercent(transactionType);
 
   const totals = useMemo(() => lineItems.reduce((acc, line) => ({
     pcs: round2(acc.pcs + toNum(line.pcs)),
@@ -565,6 +569,12 @@ export const ErpExpensesPage: React.FC<Props> = ({ onBack, erpSession }) => {
                 <span className={labelClass}>Posts To</span>
                 <input className={readonlyClass} value={postingSummary(transactionType)} readOnly />
               </label>
+              {tdsAccount && (
+                <label>
+                  <span className={labelClass}>TDS A/C{masterTdsPercent != null ? ` · ${masterTdsPercent}%` : ''}</span>
+                  <input className={readonlyClass} value={tdsAccount} readOnly />
+                </label>
+              )}
               <label><span className={labelClass}>Vehicle No</span><input className={inputClass} value={vehicleNo} onChange={e => setVehicleNo(e.target.value)} /></label>
               <label><span className={labelClass}>Screen Series</span><input className={inputClass} value={screenSeries} onChange={e => setScreenSeries(e.target.value)} /></label>
               <label><span className={labelClass}>Party GSTIN</span><input className={inputClass} value={partyGstin} onChange={e => setPartyGstin(e.target.value)} /></label>

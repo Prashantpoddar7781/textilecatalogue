@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, ListOrdered, Loader2 } from 'lucide-react';
-import { getGstDocumentType, getItcEligibility, gstReturnSection, postingPartyAccountType } from '../constants/erpTransactionPostingRules';
+import { getGstDocumentType, getItcEligibility, gstReturnSection, postingTdsAccount, postingTdsPercent, resolveDefaultTdsPercent, postingPartyAccountType } from '../constants/erpTransactionPostingRules';
 import { workReceiptsApi } from '../services/api';
 import { AccountParty, ErpSession, LinkedSourceDocument, WorkLineItem } from '../types';
 import { AccountsInformationDialog, AddPartyConfirmDialog } from './AccountsInformationDialog';
@@ -38,11 +38,13 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [allowUnknownParty, setAllowUnknownParty] = useState(false);
   const [companyName, setCompanyName] = useState('');
   const [transactionTypes, setTransactionTypes] = useState<string[]>([]);
-  const [parties, setParties] = useState<Array<{ name: string; gstNumber?: string | null; state?: string | null; brokerName?: string | null }>>([]);
+  const [parties, setParties] = useState<Array<{ name: string; gstNumber?: string | null; state?: string | null; brokerName?: string | null; suggestedTdsPercent?: number | null }>>([]);
   const [transactionType, setTransactionType] = useState('WORK REC. BILL');
   const gstDocumentType = getGstDocumentType(transactionType);
   const gstReturn = gstReturnSection(transactionType);
   const itcEligibility = getItcEligibility(transactionType);
+  const tdsAccount = postingTdsAccount(transactionType);
+  const masterTdsPercent = postingTdsPercent(transactionType);
   const [voucherNo, setVoucherNo] = useState('1');
   const [gstRate, setGstRate] = useState('5');
   const [partyName, setPartyName] = useState('');
@@ -70,6 +72,7 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [otherLess, setOtherLess] = useState('');
   const [otherAdd, setOtherAdd] = useState('');
   const [tdsPercent, setTdsPercent] = useState('');
+  const [tdsPercentTouched, setTdsPercentTouched] = useState(false);
   const [tdsOnAmt, setTdsOnAmt] = useState('');
   const [tdsAmount, setTdsAmount] = useState('0');
   const [tdsOnAmtTouched, setTdsOnAmtTouched] = useState(false);
@@ -158,6 +161,7 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
           setSgstRate(String(entry.sgstRate ?? 0));
           setIgstRate(String(entry.igstRate ?? 0));
           setTdsPercent(entry.tdsPercent ? String(entry.tdsPercent) : '');
+          setTdsPercentTouched(Boolean(Number(entry.tdsPercent) > 0));
           const taxable = Number(entry.taxableAmount) || 0;
           const pct = Number(entry.tdsPercent) || 0;
           // Default On Amt = taxable (same as mill). Manual override only after user edits the field.
@@ -177,12 +181,21 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
     return () => { cancelled = true; };
   }, [editId, isEditMode]);
 
+  const applyTdsDefaults = (type: string, party?: string) => {
+    if (tdsPercentTouched) return;
+    const name = (party || partyName).trim().toLowerCase();
+    const match = parties.find(p => p.name.toLowerCase() === name);
+    const pct = resolveDefaultTdsPercent(type, match?.suggestedTdsPercent);
+    setTdsPercent(pct != null ? String(pct) : '');
+  };
+
   const applyPartyDefaults = (name: string) => {
     const match = parties.find(p => p.name.toLowerCase() === name.trim().toLowerCase());
     if (!match) return;
     if (match.gstNumber) setPartyGstin(match.gstNumber);
     if (match.brokerName) setBrokerName(match.brokerName);
     if (match.state) setPlaceOfSupply(match.state);
+    applyTdsDefaults(transactionType, name);
   };
 
   const promptIfNewParty = (name: string) => {
@@ -528,7 +541,15 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
               <label><span className={labelClass}>Company</span><input className={inputClass} value={companyName} onChange={e => setCompanyName(e.target.value)} /></label>
               <label>
                 <span className={labelClass}>Type</span>
-                <select className={inputClass} value={transactionType} onChange={e => setTransactionType(e.target.value)}>
+                <select
+                  className={inputClass}
+                  value={transactionType}
+                  onChange={e => {
+                    const next = e.target.value;
+                    setTransactionType(next);
+                    applyTdsDefaults(next);
+                  }}
+                >
                   {transactionTypes.map(t => <option key={t} value={t}>{t}</option>)}
                 </select>
               </label>
@@ -659,7 +680,31 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
               <div><span className={labelClass}>CGST {cgstRate}%</span><input className={readonlyClass} value={cgstAmount} readOnly /></div>
               <div><span className={labelClass}>SGST {sgstRate}%</span><input className={readonlyClass} value={sgstAmount} readOnly /></div>
               <div><span className={labelClass}>IGST {igstRate}%</span><input className={readonlyClass} value={igstAmount} readOnly /></div>
-              <div><span className={labelClass}>TDS %</span><input className={inputClass} type="number" step="0.001" value={tdsPercent} onChange={e => setTdsPercent(e.target.value)} /></div>
+              <div>
+                <span className={labelClass}>TDS A/C</span>
+                <input className={readonlyClass} value={tdsAccount || '—'} readOnly />
+              </div>
+              <div>
+                <span className={labelClass}>TDS %</span>
+                <input
+                  className={inputClass}
+                  type="number"
+                  step="0.001"
+                  value={tdsPercent}
+                  onChange={e => {
+                    setTdsPercentTouched(true);
+                    setTdsPercent(e.target.value);
+                  }}
+                />
+                {!tdsPercentTouched && masterTdsPercent != null && (
+                  <p className="mt-1 text-[10px] font-semibold text-fuchsia-700">Auto from Transaction Types → {masterTdsPercent}%</p>
+                )}
+                {!tdsPercentTouched && masterTdsPercent == null && parties.find(p => p.name.toLowerCase() === partyName.trim().toLowerCase())?.suggestedTdsPercent != null && (
+                  <p className="mt-1 text-[10px] font-semibold text-fuchsia-700">
+                    Auto from PAN → {parties.find(p => p.name.toLowerCase() === partyName.trim().toLowerCase())?.suggestedTdsPercent}%
+                  </p>
+                )}
+              </div>
               <div>
                 <span className={labelClass}>TDS On Amt</span>
                 <input

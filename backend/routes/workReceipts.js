@@ -11,6 +11,7 @@ import {
 } from '../utils/gstCalculation.js';
 import { ensureMillParty, resolveSupplierForEntry } from '../utils/partyMaster.js';
 import { roundMoney } from '../utils/orderBilling.js';
+import { resolvePartyPan, suggestTdsPercentFromPan } from '../utils/tds.js';
 import { normalizeWorkLines } from './workDespatches.js';
 import {
   attributeLinesToSources,
@@ -144,18 +145,26 @@ router.get('/meta', authenticateToken, requireActiveSubscription, async (req, re
       prisma.supplier.findMany({ where: { userId }, orderBy: { name: 'asc' }, take: 300 })
     ]);
     const parties = [
-      ...customers.map(c => ({
-        name: c.organizationName,
-        gstNumber: c.gstNumber,
-        state: c.state,
-        brokerName: c.agentName
-      })),
-      ...suppliers.map(s => ({
-        name: s.name,
-        gstNumber: s.gstNumber,
-        state: s.state,
-        brokerName: s.brokerName
-      }))
+      ...customers.map(c => {
+        const pan = resolvePartyPan({ panNumber: c.panNumber, gstNumber: c.gstNumber });
+        return {
+          name: c.organizationName,
+          gstNumber: c.gstNumber,
+          state: c.state,
+          brokerName: c.agentName,
+          suggestedTdsPercent: suggestTdsPercentFromPan(pan)
+        };
+      }),
+      ...suppliers.map(s => {
+        const pan = resolvePartyPan({ panNumber: s.panNumber, gstNumber: s.gstNumber });
+        return {
+          name: s.name,
+          gstNumber: s.gstNumber,
+          state: s.state,
+          brokerName: s.brokerName,
+          suggestedTdsPercent: suggestTdsPercentFromPan(pan)
+        };
+      })
     ].filter(p => p.name);
 
     res.json({

@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, ListOrdered, Loader2 } from 'lucide-react';
 import { millReceiptsApi } from '../services/api';
-import { getGstDocumentType, getItcEligibility, gstReturnSection } from '../constants/erpTransactionPostingRules';
+import { getGstDocumentType, getItcEligibility, gstReturnSection, postingTdsAccount, postingTdsPercent, resolveDefaultTdsPercent } from '../constants/erpTransactionPostingRules';
 import { AccountParty, ErpSession, MillPendingDispatch, MillReceiptTakaRow } from '../types';
 import { AccountsInformationDialog, AddPartyConfirmDialog } from './AccountsInformationDialog';
 import { ErpFormShell } from './ErpFormShell';
@@ -45,6 +45,8 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const gstDocumentType = getGstDocumentType(entryType);
   const gstReturn = gstReturnSection(entryType);
   const itcEligibility = getItcEligibility(entryType);
+  const tdsAccount = postingTdsAccount(entryType);
+  const masterTdsPercent = postingTdsPercent(entryType);
   const [hsnCode, setHsnCode] = useState('9988');
   const [stateCode, setStateCode] = useState('');
   const [placeOfSupply, setPlaceOfSupply] = useState('');
@@ -321,8 +323,9 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
     const match = millParties.find(m => m.name.toLowerCase() === trimmed.toLowerCase());
     if (match) {
       if (match.gstNumber && !millGstin) setMillGstin(match.gstNumber);
-      if (!tdsPercentTouched && match.suggestedTdsPercent != null) {
-        setTdsPercent(String(match.suggestedTdsPercent));
+      if (!tdsPercentTouched) {
+        const pct = resolveDefaultTdsPercent(entryType, match.suggestedTdsPercent);
+        setTdsPercent(pct != null ? String(pct) : '');
       }
       return;
     }
@@ -536,6 +539,10 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
     jobRate: jobRate || '0',
     jobAmount
   }), [lotNo, despNo, recChallan, marka, quality, printStyle, recTaka, recMts, greyMts, shortMts, jobRate, jobAmount]);
+
+  const millPartyMatch = millParties.find(m => m.name.toLowerCase() === millName.trim().toLowerCase());
+  const panTdsPercent = millPartyMatch?.suggestedTdsPercent;
+  const autoTdsPercent = resolveDefaultTdsPercent(entryType, panTdsPercent);
 
   if (loading) {
     return (
@@ -848,6 +855,10 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
               <input className={readonlyClass} value={invoiceValue.toFixed(2)} readOnly />
             </div>
             <div>
+              <label className={labelClass}>TDS A/C</label>
+              <input className={readonlyClass} value={tdsAccount || '—'} readOnly />
+            </div>
+            <div>
               <label className={labelClass}>TDS On Amt</label>
               <input
                 className={inputClass}
@@ -871,15 +882,20 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
                   setTdsPercentTouched(true);
                   setTdsPercent(e.target.value);
                 }}
-                placeholder="1 or 2 (auto from PAN)"
+                placeholder={tdsAccount ? 'Auto from master / PAN' : '—'}
               />
-              {!tdsPercentTouched && millParties.find(m => m.name.toLowerCase() === millName.trim().toLowerCase())?.suggestedTdsPercent != null && (
+              {!tdsPercentTouched && masterTdsPercent != null && (
                 <p className="mt-1 text-[10px] font-semibold text-teal-700">
-                  Auto from PAN → {millParties.find(m => m.name.toLowerCase() === millName.trim().toLowerCase())?.suggestedTdsPercent}%
+                  Auto from Transaction Types → {masterTdsPercent}%
                 </p>
               )}
-              {!tdsPercentTouched && millName.trim() && millParties.find(m => m.name.toLowerCase() === millName.trim().toLowerCase())?.suggestedTdsPercent == null && (
-                <p className="mt-1 text-[10px] font-semibold text-amber-700">No PAN in master — enter TDS % manually</p>
+              {!tdsPercentTouched && masterTdsPercent == null && panTdsPercent != null && (
+                <p className="mt-1 text-[10px] font-semibold text-teal-700">
+                  Auto from PAN → {panTdsPercent}%{tdsAccount ? ` · ${tdsAccount}` : ''}
+                </p>
+              )}
+              {!tdsPercentTouched && tdsAccount && millName.trim() && autoTdsPercent == null && (
+                <p className="mt-1 text-[10px] font-semibold text-amber-700">TDS A/C from master — enter TDS % (no PAN)</p>
               )}
             </div>
             <div>

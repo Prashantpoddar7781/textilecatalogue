@@ -2879,6 +2879,31 @@ export function postingGstRate(transactionType) {
   return total > 0 ? total : null;
 }
 
+/** TDS % from the master when Excel filled a non-zero rate. */
+export function postingTdsPercent(transactionType) {
+  const found = getPostingRule(transactionType);
+  if (!found) return null;
+  const pct = Number(found.tdsPercent) || 0;
+  return pct > 0 ? pct : null;
+}
+
+/** TDS A/C this series posts to. Blank in Excel means the series does not deduct TDS. */
+export function postingTdsAccount(transactionType) {
+  return getPostingRule(transactionType)?.tdsAccount || null;
+}
+
+/**
+ * Default TDS % for a new entry: master rate first, else party PAN (194C)
+ * when the series has a TDS A/C.
+ */
+export function resolveDefaultTdsPercent(transactionType, suggestedFromPan) {
+  const master = postingTdsPercent(transactionType);
+  if (master != null) return master;
+  if (!postingTdsAccount(transactionType)) return null;
+  const panRate = Number(suggestedFromPan);
+  return Number.isFinite(panRate) && panRate > 0 ? panRate : null;
+}
+
 const GSTR1_DOCUMENTS = new Set([
   'Invoices for outward supply',
   'Credit Note',
@@ -2959,7 +2984,9 @@ export function postingSummary(transactionType) {
     found.saleOrPurchaseAccount,
     found.partyAccountType,
     found.stockType ? `Stock: ${found.stockType}` : null,
-    getItcEligibility(transactionType) ? `ITC: ${getItcEligibility(transactionType)}` : null
+    getItcEligibility(transactionType) ? `ITC: ${getItcEligibility(transactionType)}` : null,
+    postingTdsPercent(transactionType) != null ? `TDS ${postingTdsPercent(transactionType)}%` : null,
+    postingTdsAccount(transactionType) ? `TDS A/C: ${postingTdsAccount(transactionType)}` : null
   ].filter(Boolean);
   return parts.length ? parts.join(' · ') : '—';
 }

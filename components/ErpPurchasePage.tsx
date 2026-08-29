@@ -13,7 +13,9 @@ import {
   getItcEligibility,
   gstReturnSection,
   postingPartyAccountType,
-  postingSummary
+  postingSummary,
+  postingTdsAccount,
+  postingTdsPercent
 } from '../constants/erpTransactionPostingRules';
 import { AccountsInformationDialog, AddPartyConfirmDialog } from './AccountsInformationDialog';
 import { ErpFormShell } from './ErpFormShell';
@@ -162,6 +164,8 @@ export const ErpPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
   const gstDocumentType = getGstDocumentType(transactionType);
   const gstReturn = gstReturnSection(transactionType);
   const itcEligibility = getItcEligibility(transactionType);
+  const tdsAccount = postingTdsAccount(transactionType);
+  const masterTdsPercent = postingTdsPercent(transactionType);
 
   const totals = useMemo(() => lineItems.reduce((acc, line) => ({
     pcs: round2(acc.pcs + toNum(line.pcs)),
@@ -505,6 +509,12 @@ export const ErpPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
                 <span className={labelClass}>Posts To</span>
                 <input className={readonlyClass} value={postingSummary(transactionType)} readOnly />
               </label>
+              {tdsAccount && (
+                <label>
+                  <span className={labelClass}>TDS A/C{masterTdsPercent != null ? ` · ${masterTdsPercent}%` : ''}</span>
+                  <input className={readonlyClass} value={tdsAccount} readOnly />
+                </label>
+              )}
               <label className="md:col-span-2">
                 <span className={labelClass}>{isPurchaseReturn ? '1. Party (required first)' : 'Party'}</span>
                 <input

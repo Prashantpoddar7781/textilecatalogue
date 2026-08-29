@@ -10,6 +10,7 @@ import {
 } from './orderBilling.js';
 import { isPurchaseReturn } from './erpLineItems.js';
 import { isExpensePurchaseType } from '../constants/erpTransactionTypes.js';
+import { postingTdsAccount } from '../constants/erpTransactionPostingRules.js';
 import { matchesNoteParty } from './creditDebitNotes.js';
 
 const sortByDate = (a, b) => {
@@ -741,7 +742,7 @@ export async function buildSupplierLedger(prisma, userId, supplierId) {
         date: receipt.receiptDate || receipt.createdAt,
         voucherNumber: String(receipt.voucherNo || '-'),
         billNumber: receipt.billNo || String(receipt.voucherNo || '-'),
-        account: 'TDS PAYABLE A/C',
+        account: postingTdsAccount(receipt.entryType) || 'TDS PAYABLE A/C',
         particulars: `TDS ${roundMoney(tdsPercent)}%`,
         remarks: '',
         debitAmount: tdsAmount,
@@ -793,7 +794,7 @@ export async function buildSupplierLedger(prisma, userId, supplierId) {
         date: receipt.receiptDate || receipt.createdAt,
         voucherNumber: String(receipt.voucherNo || '-'),
         billNumber: receipt.billNo || receipt.challanNo || String(receipt.voucherNo || '-'),
-        account: 'TDS PAYABLE A/C',
+        account: postingTdsAccount(receipt.transactionType) || 'TDS PAYABLE A/C',
         particulars: `TDS ${roundMoney(tdsPercent)}%`,
         remarks: `TDS ${roundMoney(tdsPercent)}% on ${taxable.toFixed(2)}`,
         debitAmount: tdsAmount,
@@ -1174,6 +1175,7 @@ export async function getLedgerEntryDetail(prisma, userId, sourceType, sourceId)
         { label: 'Invoice Value', value: invoiceValue, isMoney: true },
         { label: 'TDS On Amt', value: tdsOnAmt, isMoney: true },
         { label: 'TDS %', value: tdsPercent },
+        { label: 'TDS A/C', value: postingTdsAccount(receipt.entryType) || 'TDS PAYABLE A/C' },
         { label: 'TDS Amt', value: tdsAmount, isMoney: true },
         { label: 'Net After TDS', value: netAfterTds, isMoney: true },
         { label: 'Remarks', value: receipt.remarks }
@@ -1237,6 +1239,7 @@ export async function getLedgerEntryDetail(prisma, userId, sourceType, sourceId)
         { label: 'Invoice Value', value: invoiceValue, isMoney: true },
         { label: 'TDS On Amt', value: tdsOnAmt, isMoney: true },
         { label: 'TDS %', value: tdsPercent },
+        { label: 'TDS A/C', value: postingTdsAccount(receipt.transactionType) || 'TDS PAYABLE A/C' },
         { label: 'TDS Amt', value: tdsAmount, isMoney: true },
         { label: 'Net After TDS', value: netAfterTds, isMoney: true },
         { label: 'Remarks', value: receipt.remarks }
