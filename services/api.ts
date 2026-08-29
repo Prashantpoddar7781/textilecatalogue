@@ -1474,7 +1474,13 @@ export const workDespatchesApi = {
       workTypes: string[];
       units: string[];
       defaultCut: number;
-      parties: Array<{ name: string; gstNumber?: string | null; state?: string | null; brokerName?: string | null }>;
+      parties: Array<{
+        name: string;
+        gstNumber?: string | null;
+        state?: string | null;
+        brokerName?: string | null;
+        suggestedTdsPercent?: number | null;
+      }>;
     }>('/work-despatches/meta');
   },
   getById: async (id: string) => {
@@ -1525,7 +1531,13 @@ export const workReceiptsApi = {
       nextVoucherNo: number;
       transactionTypes: string[];
       states: string[];
-      parties?: Array<{ name: string; gstNumber?: string | null; state?: string | null; brokerName?: string | null }>;
+      parties?: Array<{
+        name: string;
+        gstNumber?: string | null;
+        state?: string | null;
+        brokerName?: string | null;
+        suggestedTdsPercent?: number | null;
+      }>;
       linkBehaviourByType?: Record<string, import('../types').LinkBehaviour>;
     }>('/work-receipts/meta');
   },

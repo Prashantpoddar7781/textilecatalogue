@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, ListOrdered, Loader2 } from 'lucide-react';
 import { getGstDocumentType, getItcEligibility, gstReturnSection, postingTdsAccount, postingTdsPercent, resolveDefaultTdsPercent, postingPartyAccountType } from '../constants/erpTransactionPostingRules';
 import { workReceiptsApi } from '../services/api';
+import { resolvePartyPan, suggestTdsPercentFromPan } from '../utils/tds';
 import { AccountParty, ErpSession, LinkedSourceDocument, WorkLineItem } from '../types';
 import { AccountsInformationDialog, AddPartyConfirmDialog } from './AccountsInformationDialog';
 import { ErpFormShell } from './ErpFormShell';
@@ -181,11 +182,21 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
     return () => { cancelled = true; };
   }, [editId, isEditMode]);
 
-  const applyTdsDefaults = (type: string, party?: string) => {
+  const applyTdsDefaults = (
+    type: string,
+    opts?: { party?: string; gstin?: string | null; panNumber?: string | null }
+  ) => {
     if (tdsPercentTouched) return;
-    const name = (party || partyName).trim().toLowerCase();
+    const name = (opts?.party || partyName).trim().toLowerCase();
     const match = parties.find(p => p.name.toLowerCase() === name);
-    const pct = resolveDefaultTdsPercent(type, match?.suggestedTdsPercent);
+    const pan = resolvePartyPan({
+      panNumber: opts?.panNumber,
+      gstNumber: opts?.gstin || match?.gstNumber || partyGstin
+    });
+    const fromPan = match?.suggestedTdsPercent != null
+      ? match.suggestedTdsPercent
+      : suggestTdsPercentFromPan(pan);
+    const pct = resolveDefaultTdsPercent(type, fromPan);
     setTdsPercent(pct != null ? String(pct) : '');
   };
 
@@ -195,7 +206,7 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
     if (match.gstNumber) setPartyGstin(match.gstNumber);
     if (match.brokerName) setBrokerName(match.brokerName);
     if (match.state) setPlaceOfSupply(match.state);
-    applyTdsDefaults(transactionType, name);
+    applyTdsDefaults(transactionType, { party: name, gstin: match.gstNumber });
   };
 
   const promptIfNewParty = (name: string) => {
@@ -212,14 +223,22 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
     if (party.brokerName) setBrokerName(party.brokerName);
     if (party.state) setPlaceOfSupply(party.state);
     setAllowUnknownParty(false);
+    const pan = resolvePartyPan({ panNumber: party.panNumber, gstNumber: party.gstNumber });
+    const suggested = suggestTdsPercentFromPan(pan);
     setParties(prev => {
       if (prev.some(row => row.name.toLowerCase() === party.name.toLowerCase())) return prev;
       return [...prev, {
         name: party.name,
         gstNumber: party.gstNumber,
         state: party.state,
-        brokerName: party.brokerName
+        brokerName: party.brokerName,
+        suggestedTdsPercent: suggested
       }];
+    });
+    applyTdsDefaults(transactionType, {
+      party: party.name,
+      gstin: party.gstNumber,
+      panNumber: party.panNumber
     });
   };
 
@@ -275,6 +294,10 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
         setPartyGstin(primary.partyGstin || '');
         setBrokerName(primary.brokerName || '');
         setWorkType(primary.workType || '');
+        applyTdsDefaults(transactionType, {
+          party: primary.partyName || '',
+          gstin: primary.partyGstin || null
+        });
       }
       setChallanNo(sources.map(source => source.documentNo).filter(Boolean).join(', '));
       setLines(lineItems.map(row => {
@@ -547,7 +570,7 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
                   onChange={e => {
                     const next = e.target.value;
                     setTransactionType(next);
-                    applyTdsDefaults(next);
+                    applyTdsDefaults(next, { party: partyName, gstin: partyGstin });
                   }}
                 >
                   {transactionTypes.map(t => <option key={t} value={t}>{t}</option>)}
@@ -695,15 +718,34 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
                     setTdsPercentTouched(true);
                     setTdsPercent(e.target.value);
                   }}
+                  placeholder={tdsAccount ? 'Auto from master / PAN' : '—'}
                 />
                 {!tdsPercentTouched && masterTdsPercent != null && (
-                  <p className="mt-1 text-[10px] font-semibold text-fuchsia-700">Auto from Transaction Types → {masterTdsPercent}%</p>
-                )}
-                {!tdsPercentTouched && masterTdsPercent == null && parties.find(p => p.name.toLowerCase() === partyName.trim().toLowerCase())?.suggestedTdsPercent != null && (
                   <p className="mt-1 text-[10px] font-semibold text-fuchsia-700">
-                    Auto from PAN → {parties.find(p => p.name.toLowerCase() === partyName.trim().toLowerCase())?.suggestedTdsPercent}%
+                    Auto from Transaction Types → {masterTdsPercent}%
                   </p>
                 )}
+                {!tdsPercentTouched && masterTdsPercent == null && (() => {
+                  const match = parties.find(p => p.name.toLowerCase() === partyName.trim().toLowerCase());
+                  const panRate = match?.suggestedTdsPercent != null
+                    ? match.suggestedTdsPercent
+                    : suggestTdsPercentFromPan(resolvePartyPan({ gstNumber: partyGstin || match?.gstNumber }));
+                  if (panRate != null) {
+                    return (
+                      <p className="mt-1 text-[10px] font-semibold text-fuchsia-700">
+                        Auto from PAN → {panRate}%
+                      </p>
+                    );
+                  }
+                  if (tdsAccount && partyName.trim()) {
+                    return (
+                      <p className="mt-1 text-[10px] font-semibold text-amber-700">
+                        TDS A/C from master — enter TDS % (no PAN)
+                      </p>
+                    );
+                  }
+                  return null;
+                })()}
               </div>
               <div>
                 <span className={labelClass}>TDS On Amt</span>
