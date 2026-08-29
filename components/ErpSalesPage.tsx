@@ -12,7 +12,8 @@ import {
   getGstDocumentType,
   gstReturnSection,
   postingPartyAccountType,
-  postingSummary
+  postingSummary,
+  postingDiscountAccount
 } from '../constants/erpTransactionPostingRules';
 import { AccountsInformationDialog, AddPartyConfirmDialog } from './AccountsInformationDialog';
 import { ErpFormShell } from './ErpFormShell';
@@ -199,6 +200,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const gstType = gstTypeLabel(state, businessState);
   const gstDocumentType = getGstDocumentType(transactionType);
   const gstReturn = gstReturnSection(transactionType);
+  const discountAccount = postingDiscountAccount(transactionType);
 
   const totals = useMemo(() => lineItems.reduce((acc, line) => ({
     pcs: round2(acc.pcs + toNum(line.pcs)),
@@ -706,6 +708,12 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
                 <span className={labelClass}>Posts To</span>
                 <input className={readonlyClass} value={postingSummary(transactionType)} readOnly />
               </label>
+              {discountAccount && (
+                <label>
+                  <span className={labelClass}>Disc A/C</span>
+                  <input className={readonlyClass} value={discountAccount} readOnly />
+                </label>
+              )}
               <label className="md:col-span-2">
                 <span className={labelClass}>{(isFinishSales || isGoodsReturn) ? '1. Party (required first)' : 'Party'}</span>
                 <input

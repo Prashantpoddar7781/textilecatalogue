@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertCircle, ArrowLeft, ListOrdered, Loader2 } from 'lucide-react';
 import { GREY_QUALITY_OPTIONS } from '../constants/greyQualities';
 import { getGstDefaultsForTransactionType } from '../constants/erpTransactionTypes';
-import { postingPartyAccountType, formatSeriesBillNumber, getGstDocumentType, getItcEligibility, gstReturnSection, postingSummary } from '../constants/erpTransactionPostingRules';
+import { postingPartyAccountType, formatSeriesBillNumber, getGstDocumentType, getItcEligibility, gstReturnSection, postingDiscountAccount, postingSummary } from '../constants/erpTransactionPostingRules';
 import { greyPurchasesApi, purchasesApi } from '../services/api';
 import { isWrongGstNumber, normalizeGstNumber } from '../services/gstValidation';
 import { AccountParty, ErpSession, GreyPurchaseLine, GreyTakaDetailRow, Supplier } from '../types';
@@ -33,6 +33,7 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
   const gstDocumentType = getGstDocumentType(GREY_TYPE);
   const gstReturn = gstReturnSection(GREY_TYPE);
   const itcEligibility = getItcEligibility(GREY_TYPE);
+  const discountAccount = postingDiscountAccount(GREY_TYPE);
 
   const [companyName, setCompanyName] = useState('');
   const [businessState, setBusinessState] = useState('');
@@ -588,6 +589,12 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
                   <span className={labelClass}>2. Disc Amt</span>
                   <input className={`${calcInputClass} bg-violet-100`} readOnly value={money(discountAmount)} />
                 </label>
+                {discountAccount && (
+                  <label>
+                    <span className={labelClass}>Disc A/C</span>
+                    <input className={readonlyClass} value={discountAccount} readOnly />
+                  </label>
+                )}
                 <label>
                   <span className={labelClass}>3. Taxable Value</span>
                   <input className={calcInputClass} readOnly value={money(taxableBeforeOther)} />

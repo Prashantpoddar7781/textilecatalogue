@@ -15,7 +15,8 @@ import {
   postingPartyAccountType,
   postingSummary,
   postingTdsAccount,
-  postingTdsPercent
+  postingTdsPercent,
+  postingDiscountAccount
 } from '../constants/erpTransactionPostingRules';
 import { AccountsInformationDialog, AddPartyConfirmDialog } from './AccountsInformationDialog';
 import { ErpFormShell } from './ErpFormShell';
@@ -166,6 +167,7 @@ export const ErpPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
   const itcEligibility = getItcEligibility(transactionType);
   const tdsAccount = postingTdsAccount(transactionType);
   const masterTdsPercent = postingTdsPercent(transactionType);
+  const discountAccount = postingDiscountAccount(transactionType);
 
   const totals = useMemo(() => lineItems.reduce((acc, line) => ({
     pcs: round2(acc.pcs + toNum(line.pcs)),
@@ -513,6 +515,12 @@ export const ErpPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
                 <label>
                   <span className={labelClass}>TDS A/C{masterTdsPercent != null ? ` · ${masterTdsPercent}%` : ''}</span>
                   <input className={readonlyClass} value={tdsAccount} readOnly />
+                </label>
+              )}
+              {discountAccount && (
+                <label>
+                  <span className={labelClass}>Disc A/C</span>
+                  <input className={readonlyClass} value={discountAccount} readOnly />
                 </label>
               )}
               <label className="md:col-span-2">

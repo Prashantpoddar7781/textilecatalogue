@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, ListOrdered, Loader2 } from 'lucide-react';
-import { getGstDocumentType, getItcEligibility, gstReturnSection, postingTdsAccount, postingTdsPercent, resolveDefaultTdsPercent, postingPartyAccountType } from '../constants/erpTransactionPostingRules';
+import { getGstDocumentType, getItcEligibility, gstReturnSection, postingTdsAccount, postingTdsPercent, resolveDefaultTdsPercent, postingPartyAccountType, postingDiscountAccount } from '../constants/erpTransactionPostingRules';
 import { workReceiptsApi } from '../services/api';
 import { resolvePartyPan, suggestTdsPercentFromPan } from '../utils/tds';
 import { AccountParty, ErpSession, LinkedSourceDocument, WorkLineItem } from '../types';
@@ -46,6 +46,7 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const itcEligibility = getItcEligibility(transactionType);
   const tdsAccount = postingTdsAccount(transactionType);
   const masterTdsPercent = postingTdsPercent(transactionType);
+  const discountAccount = postingDiscountAccount(transactionType);
   const [voucherNo, setVoucherNo] = useState('1');
   const [gstRate, setGstRate] = useState('5');
   const [partyName, setPartyName] = useState('');
@@ -695,6 +696,9 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
               <div><span className={labelClass}>Gross</span><input className={readonlyClass} value={grossAmount.toFixed(2)} readOnly /></div>
               <div><span className={labelClass}>Disc %</span><input className={inputClass} type="number" step="0.01" value={discountPercent} onChange={e => setDiscountPercent(e.target.value)} /></div>
               <div><span className={labelClass}>Disc Amt</span><input className={readonlyClass} value={discountAmount.toFixed(2)} readOnly /></div>
+              {discountAccount && (
+                <div><span className={labelClass}>Disc A/C</span><input className={readonlyClass} value={discountAccount} readOnly /></div>
+              )}
               <div><span className={labelClass}>Other Less</span><input className={inputClass} type="number" step="0.01" value={otherLess} onChange={e => setOtherLess(e.target.value)} /></div>
               <div><span className={labelClass}>Other Add</span><input className={inputClass} type="number" step="0.01" value={otherAdd} onChange={e => setOtherAdd(e.target.value)} /></div>
             </div>

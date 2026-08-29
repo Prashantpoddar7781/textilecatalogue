@@ -37,6 +37,23 @@ export function matchesPartyName(order, partyName) {
   return candidates.some(name => name === target || name.includes(target) || target.includes(name));
 }
 
+export function calculateOrderDiscountAmount(order) {
+  const lines = normalizeOrderLines(order.orderLines);
+  const fromLines = roundMoney(lines.reduce((sum, line) => sum + (Number(line.discountAmount) || 0), 0));
+  if (fromLines > 0) return fromLines;
+
+  let subtotal = 0;
+  if (lines.length > 0) {
+    subtotal = lines.reduce((sum, line) => {
+      const rate = Number(line.retailPrice ?? line.basePrice ?? 0);
+      const qty = parseInt(line.quantity, 10) || 0;
+      return sum + rate * qty;
+    }, 0);
+  }
+  const discountRate = Number(order.discountRate) || 0;
+  return roundMoney(subtotal * (discountRate / 100));
+}
+
 export function calculateOrderGrandTotal(order) {
   const lines = normalizeOrderLines(order.orderLines);
   let subtotal = 0;

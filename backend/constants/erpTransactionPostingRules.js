@@ -2892,6 +2892,29 @@ export function postingTdsAccount(transactionType) {
   return getPostingRule(transactionType)?.tdsAccount || null;
 }
 
+/** Disc. A/C this series journals discount to. Blank in Excel means no discount JV. */
+export function postingDiscountAccount(transactionType) {
+  return getPostingRule(transactionType)?.discountAccount || null;
+}
+
+/** True when DISCOUNT JVS is on and Disc. A/C is filled. */
+export function postsDiscountJournal(transactionType) {
+  const found = getPostingRule(transactionType);
+  return Boolean(found?.discountJvs && found?.discountAccount);
+}
+
+/**
+ * Discount JV for a saved bill: amount + Disc. A/C, or null when the master
+ * does not journal discount (or the bill has no discount).
+ */
+export function resolveDiscountJournal(transactionType, discountAmount) {
+  if (!postsDiscountJournal(transactionType)) return null;
+  const amount = Math.round((Number(discountAmount) || 0) * 100) / 100;
+  const account = postingDiscountAccount(transactionType);
+  if (!(amount > 0) || !account) return null;
+  return { amount, account };
+}
+
 /**
  * Default TDS % for a new entry: master rate first, else party PAN (194C)
  * when the series has a TDS A/C.
@@ -2986,7 +3009,8 @@ export function postingSummary(transactionType) {
     found.stockType ? `Stock: ${found.stockType}` : null,
     getItcEligibility(transactionType) ? `ITC: ${getItcEligibility(transactionType)}` : null,
     postingTdsPercent(transactionType) != null ? `TDS ${postingTdsPercent(transactionType)}%` : null,
-    postingTdsAccount(transactionType) ? `TDS A/C: ${postingTdsAccount(transactionType)}` : null
+    postingTdsAccount(transactionType) ? `TDS A/C: ${postingTdsAccount(transactionType)}` : null,
+    postingDiscountAccount(transactionType) ? `Disc A/C: ${postingDiscountAccount(transactionType)}` : null
   ].filter(Boolean);
   return parts.length ? parts.join(' · ') : '—';
 }

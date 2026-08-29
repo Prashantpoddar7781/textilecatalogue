@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, ListOrdered, Loader2 } from 'lucide-react';
 import { millReceiptsApi } from '../services/api';
-import { getGstDocumentType, getItcEligibility, gstReturnSection, postingTdsAccount, postingTdsPercent, resolveDefaultTdsPercent } from '../constants/erpTransactionPostingRules';
+import { getGstDocumentType, getItcEligibility, gstReturnSection, postingDiscountAccount, postingTdsAccount, postingTdsPercent, resolveDefaultTdsPercent } from '../constants/erpTransactionPostingRules';
 import { AccountParty, ErpSession, MillPendingDispatch, MillReceiptTakaRow } from '../types';
 import { AccountsInformationDialog, AddPartyConfirmDialog } from './AccountsInformationDialog';
 import { ErpFormShell } from './ErpFormShell';
@@ -47,6 +47,7 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const itcEligibility = getItcEligibility(entryType);
   const tdsAccount = postingTdsAccount(entryType);
   const masterTdsPercent = postingTdsPercent(entryType);
+  const discountAccount = postingDiscountAccount(entryType);
   const [hsnCode, setHsnCode] = useState('9988');
   const [stateCode, setStateCode] = useState('');
   const [placeOfSupply, setPlaceOfSupply] = useState('');
@@ -814,6 +815,12 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
               <label className={labelClass}>Disc Amt</label>
               <input className={readonlyClass} value={discountAmount.toFixed(2)} readOnly />
             </div>
+            {discountAccount && (
+              <div>
+                <label className={labelClass}>Disc A/C</label>
+                <input className={readonlyClass} value={discountAccount} readOnly />
+              </div>
+            )}
             <div>
               <label className={labelClass}>Oth Less</label>
               <input className={inputClass} type="number" step="0.01" value={otherLess} onChange={e => setOtherLess(e.target.value)} />

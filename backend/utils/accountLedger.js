@@ -1,4 +1,5 @@
 import {
+  calculateOrderDiscountAmount,
   calculateOrderGrandTotal,
   getOrderPartyName,
   isSalesGoodsReturn,
@@ -10,7 +11,7 @@ import {
 } from './orderBilling.js';
 import { isPurchaseReturn } from './erpLineItems.js';
 import { isExpensePurchaseType } from '../constants/erpTransactionTypes.js';
-import { postingTdsAccount } from '../constants/erpTransactionPostingRules.js';
+import { postingDiscountAccount, postingTdsAccount, resolveDiscountJournal } from '../constants/erpTransactionPostingRules.js';
 import { matchesNoteParty } from './creditDebitNotes.js';
 
 const sortByDate = (a, b) => {
@@ -110,7 +111,7 @@ export async function getSupplierLedgerParties(prisma, userId) {
       include: {
         purchaseBills: {
           where: { status: { not: 'cancelled' } },
-          select: { grandTotal: true }
+          select: { grandTotal: true, discountAmount: true, transactionType: true }
         },
         _count: { select: { purchaseBills: true } }
       },
@@ -118,13 +119,14 @@ export async function getSupplierLedgerParties(prisma, userId) {
     }),
     prisma.greyPurchase.findMany({
       where: { userId, status: { not: 'cancelled' } },
-      select: { supplierId: true, partyName: true, netAmount: true }
+      select: { supplierId: true, partyName: true, netAmount: true, discountAmount: true }
     }),
     prisma.greyPurchaseReturn.findMany({
       where: { userId, status: { not: 'cancelled' } },
       select: {
         partyName: true,
         netAmount: true,
+        discountAmount: true,
         greyPurchase: { select: { supplierId: true, partyName: true } }
       }
     }),
@@ -133,26 +135,30 @@ export async function getSupplierLedgerParties(prisma, userId) {
       select: {
         millName: true,
         processType: true,
+        entryType: true,
         netAfterTds: true,
         invoiceValue: true,
         tdsAmount: true,
         tdsPercent: true,
         tdsOnAmt: true,
         taxableAmount: true,
-        jobAmount: true
+        jobAmount: true,
+        discountAmount: true
       }
     }),
     prisma.workReceipt.findMany({
       where: { userId, status: { not: 'cancelled' } },
       select: {
         partyName: true,
+        transactionType: true,
         invoiceValue: true,
         taxableAmount: true,
         grossAmount: true,
         tdsPercent: true,
         tdsAmount: true,
         tdsOnAmt: true,
-        netAfterTds: true
+        netAfterTds: true,
+        discountAmount: true
       }
     })
   ]);
@@ -161,10 +167,14 @@ export async function getSupplierLedgerParties(prisma, userId) {
     let runningBalance = supplier.purchaseBills.reduce((sum, bill) => sum + bill.grandTotal, 0);
     let entryCount = supplier._count.purchaseBills;
 
+    for (const bill of supplier.purchaseBills) {
+      if (resolveDiscountJournal(bill.transactionType, bill.discountAmount)) entryCount += 1;
+    }
+
     for (const grey of greyPurchases) {
       if (grey.supplierId !== supplier.id && !matchesSupplierName(supplier.name, grey.partyName)) continue;
       runningBalance = roundMoney(runningBalance + grey.netAmount);
-      entryCount += 1;
+      entryCount += 1 + (resolveDiscountJournal('GREY PURCHASE', grey.discountAmount) ? 1 : 0);
     }
 
     for (const ret of greyReturns) {
@@ -173,7 +183,7 @@ export async function getSupplierLedgerParties(prisma, userId) {
         || matchesSupplierName(supplier.name, ret.greyPurchase?.partyName);
       if (!linkedToSupplier) continue;
       runningBalance = roundMoney(runningBalance - ret.netAmount);
-      entryCount += 1;
+      entryCount += 1 + (resolveDiscountJournal('GREY PURCHASE RETURN', ret.discountAmount) ? 1 : 0);
     }
 
     for (const receipt of millReceipts) {
@@ -190,9 +200,11 @@ export async function getSupplierLedgerParties(prisma, userId) {
         || (Number(receipt.netAfterTds || 0) + tdsAmount)
         || 0
       );
-      // Net payable = invoice credit − TDS debit
+      // Net payable = invoice credit − TDS debit (discount JV nets to zero)
       runningBalance = roundMoney(runningBalance + invoiceValue - tdsAmount);
-      entryCount += 1 + (tdsAmount > 0 ? 1 : 0);
+      entryCount += 1
+        + (tdsAmount > 0 ? 1 : 0)
+        + (resolveDiscountJournal(receipt.entryType, receipt.discountAmount) ? 1 : 0);
     }
 
     for (const receipt of workReceipts) {
@@ -203,7 +215,9 @@ export async function getSupplierLedgerParties(prisma, userId) {
       const invoiceValue = roundMoney(receipt.invoiceValue || receipt.taxableAmount || 0);
       if (invoiceValue <= 0 && tdsAmount <= 0) continue;
       runningBalance = roundMoney(runningBalance + invoiceValue - tdsAmount);
-      entryCount += 1 + (tdsAmount > 0 ? 1 : 0);
+      entryCount += 1
+        + (tdsAmount > 0 ? 1 : 0)
+        + (resolveDiscountJournal(receipt.transactionType, receipt.discountAmount) ? 1 : 0);
     }
 
     return {
@@ -470,6 +484,8 @@ export async function buildCustomerLedger(prisma, userId, partyName) {
     if (amount <= 0) continue;
     const billNo = order.typeBillNumber != null ? String(order.typeBillNumber) : (order.orderNumber || order.invoiceNumber || order.id.slice(-6));
     const goodsReturn = isSalesGoodsReturn(order.transactionType);
+    const disc = resolveDiscountJournal(order.transactionType, calculateOrderDiscountAmount(order));
+    const mainAmount = disc ? roundMoney(amount + disc.amount) : amount;
     rawEntries.push({
       id: `order-${order.id}`,
       sourceType: 'order',
@@ -479,9 +495,23 @@ export async function buildCustomerLedger(prisma, userId, partyName) {
       billNumber: billNo,
       account: order.transactionType || 'SALES',
       particulars: goodsReturn ? `Sales goods return #${billNo}` : `Sales bill / order #${billNo}`,
-      debitAmount: goodsReturn ? 0 : amount,
-      creditAmount: goodsReturn ? amount : 0
+      debitAmount: goodsReturn ? 0 : mainAmount,
+      creditAmount: goodsReturn ? mainAmount : 0
     });
+    if (disc) {
+      rawEntries.push({
+        id: `order-discount-${order.id}`,
+        sourceType: 'order_discount',
+        sourceId: order.id,
+        date: order.orderDate || order.createdAt,
+        voucherNumber: order.orderNumber || String(order.invoiceNumber || '-'),
+        billNumber: billNo,
+        account: disc.account,
+        particulars: `Discount on ${goodsReturn ? 'return' : 'bill'} #${billNo}`,
+        debitAmount: goodsReturn ? disc.amount : 0,
+        creditAmount: goodsReturn ? 0 : disc.amount
+      });
+    }
   }
 
   for (const invoice of invoices) {
@@ -490,6 +520,8 @@ export async function buildCustomerLedger(prisma, userId, partyName) {
     if (!matchesPartyName({ buyerName: customerName, customer: invoice.customer }, partyName)) continue;
     const amount = roundMoney(invoice.grandTotal);
     if (amount <= 0) continue;
+    const disc = resolveDiscountJournal(invoice.order?.transactionType, invoice.discountAmount);
+    const mainAmount = disc ? roundMoney(amount + disc.amount) : amount;
     rawEntries.push({
       id: `invoice-${invoice.id}`,
       sourceType: 'sales_invoice',
@@ -499,9 +531,23 @@ export async function buildCustomerLedger(prisma, userId, partyName) {
       billNumber: invoice.invoiceNumber,
       account: invoice.order?.transactionType || 'SALES INVOICE',
       particulars: `Sales invoice #${invoice.invoiceNumber}`,
-      debitAmount: amount,
+      debitAmount: mainAmount,
       creditAmount: 0
     });
+    if (disc) {
+      rawEntries.push({
+        id: `invoice-discount-${invoice.id}`,
+        sourceType: 'sales_invoice_discount',
+        sourceId: invoice.id,
+        date: invoice.invoiceDate,
+        voucherNumber: invoice.order?.orderNumber || invoice.invoiceNumber,
+        billNumber: invoice.invoiceNumber,
+        account: disc.account,
+        particulars: `Discount on invoice #${invoice.invoiceNumber}`,
+        debitAmount: 0,
+        creditAmount: disc.amount
+      });
+    }
   }
 
   for (const note of notes) {
@@ -599,6 +645,8 @@ export async function buildSupplierLedger(prisma, userId, supplierId) {
     const amount = roundMoney(bill.grandTotal);
     if (amount <= 0) continue;
     const purchaseReturn = isPurchaseReturn(bill.transactionType);
+    const disc = resolveDiscountJournal(bill.transactionType, bill.discountAmount);
+    const mainAmount = disc ? roundMoney(amount + disc.amount) : amount;
     rawEntries.push({
       id: `bill-${bill.id}`,
       sourceType: 'purchase_bill',
@@ -612,10 +660,24 @@ export async function buildSupplierLedger(prisma, userId, supplierId) {
         : isExpensePurchaseType(bill.transactionType)
           ? `Expense ${bill.transactionType || ''} #${bill.billNumber || bill.typeBillNumber || '-'}${bill.purchaseAccount ? ` · ${bill.purchaseAccount}` : ''}`
           : `Purchase bill #${bill.billNumber || bill.typeBillNumber || '-'}`,
-      debitAmount: purchaseReturn ? amount : 0,
-      creditAmount: purchaseReturn ? 0 : amount,
+      debitAmount: purchaseReturn ? mainAmount : 0,
+      creditAmount: purchaseReturn ? 0 : mainAmount,
       lineCount: Array.isArray(bill.lineItems) ? bill.lineItems.length : 0
     });
+    if (disc) {
+      rawEntries.push({
+        id: `bill-discount-${bill.id}`,
+        sourceType: 'purchase_bill_discount',
+        sourceId: bill.id,
+        date: bill.billDate || bill.createdAt,
+        voucherNumber: bill.voucherNumber || '-',
+        billNumber: bill.billNumber || String(bill.typeBillNumber || '-'),
+        account: disc.account,
+        particulars: `Discount on ${purchaseReturn ? 'return' : 'bill'} #${bill.billNumber || bill.typeBillNumber || '-'}`,
+        debitAmount: purchaseReturn ? 0 : disc.amount,
+        creditAmount: purchaseReturn ? disc.amount : 0
+      });
+    }
   }
 
   const greyPurchases = await prisma.greyPurchase.findMany({
@@ -633,6 +695,8 @@ export async function buildSupplierLedger(prisma, userId, supplierId) {
   for (const grey of greyPurchases) {
     const amount = roundMoney(grey.netAmount);
     if (amount <= 0) continue;
+    const disc = resolveDiscountJournal('GREY PURCHASE', grey.discountAmount);
+    const mainAmount = disc ? roundMoney(amount + disc.amount) : amount;
     rawEntries.push({
       id: `grey-${grey.id}`,
       sourceType: 'grey_purchase',
@@ -644,8 +708,23 @@ export async function buildSupplierLedger(prisma, userId, supplierId) {
       particulars: grey.quality ? String(grey.quality) : '',
       remarks: grey.remarks || '',
       debitAmount: 0,
-      creditAmount: amount
+      creditAmount: mainAmount
     });
+    if (disc) {
+      rawEntries.push({
+        id: `grey-discount-${grey.id}`,
+        sourceType: 'grey_purchase_discount',
+        sourceId: grey.id,
+        date: grey.billDate || grey.createdAt,
+        voucherNumber: String(grey.srNo || '-'),
+        billNumber: grey.billNo || String(grey.srNo || '-'),
+        account: disc.account,
+        particulars: `Discount on grey purchase #${grey.srNo || '-'}`,
+        remarks: '',
+        debitAmount: disc.amount,
+        creditAmount: 0
+      });
+    }
   }
 
   const greyReturns = await prisma.greyPurchaseReturn.findMany({
@@ -673,6 +752,8 @@ export async function buildSupplierLedger(prisma, userId, supplierId) {
     const amount = roundMoney(ret.netAmount);
     if (amount <= 0) continue;
     const adjustBill = ret.adjustBillNo || ret.refBillNo || ret.greyPurchase?.billNo;
+    const disc = resolveDiscountJournal('GREY PURCHASE RETURN', ret.discountAmount);
+    const mainAmount = disc ? roundMoney(amount + disc.amount) : amount;
     rawEntries.push({
       id: `grey-return-${ret.id}`,
       sourceType: 'grey_purchase_return',
@@ -685,9 +766,24 @@ export async function buildSupplierLedger(prisma, userId, supplierId) {
       remarks: adjustBill
         ? `ADJUSTED AGAINST BILL NO. ${adjustBill}`
         : (ret.remarks || ''),
-      debitAmount: amount,
+      debitAmount: mainAmount,
       creditAmount: 0
     });
+    if (disc) {
+      rawEntries.push({
+        id: `grey-return-discount-${ret.id}`,
+        sourceType: 'grey_purchase_return_discount',
+        sourceId: ret.id,
+        date: ret.returnDate || ret.createdAt,
+        voucherNumber: String(ret.voucherNo || ret.challanNo || '-'),
+        billNumber: ret.billNo || ret.refBillNo || String(ret.voucherNo || '-'),
+        account: disc.account,
+        particulars: `Discount on grey return #${ret.voucherNo || '-'}`,
+        remarks: '',
+        debitAmount: 0,
+        creditAmount: disc.amount
+      });
+    }
   }
 
   const millReceipts = await prisma.millReceipt.findMany({
@@ -716,8 +812,11 @@ export async function buildSupplierLedger(prisma, userId, supplierId) {
     );
     if (invoiceValue <= 0 && tdsAmount <= 0) continue;
 
-    // Legacy: full invoice as JOB CHARGES credit
-    if (invoiceValue > 0) {
+    const disc = resolveDiscountJournal(receipt.entryType, receipt.discountAmount);
+    const creditAmount = disc ? roundMoney(invoiceValue + disc.amount) : invoiceValue;
+
+    // Legacy: full invoice as JOB CHARGES credit (grossed up when discount JV posts)
+    if (creditAmount > 0) {
       rawEntries.push({
         id: `mill-receipt-${receipt.id}`,
         sourceType: 'mill_receipt',
@@ -729,7 +828,23 @@ export async function buildSupplierLedger(prisma, userId, supplierId) {
         particulars: receipt.quality || receipt.lotNo || '',
         remarks: receipt.remarks || '',
         debitAmount: 0,
-        creditAmount: invoiceValue
+        creditAmount
+      });
+    }
+
+    if (disc) {
+      rawEntries.push({
+        id: `mill-receipt-discount-${receipt.id}`,
+        sourceType: 'mill_receipt_discount',
+        sourceId: receipt.id,
+        date: receipt.receiptDate || receipt.createdAt,
+        voucherNumber: String(receipt.voucherNo || '-'),
+        billNumber: receipt.billNo || String(receipt.voucherNo || '-'),
+        account: disc.account,
+        particulars: 'Discount',
+        remarks: '',
+        debitAmount: disc.amount,
+        creditAmount: 0
       });
     }
 
@@ -770,7 +885,10 @@ export async function buildSupplierLedger(prisma, userId, supplierId) {
     );
     if (invoiceValue <= 0 && tdsAmount <= 0) continue;
 
-    if (invoiceValue > 0) {
+    const disc = resolveDiscountJournal(receipt.transactionType, receipt.discountAmount);
+    const creditAmount = disc ? roundMoney(invoiceValue + disc.amount) : invoiceValue;
+
+    if (creditAmount > 0) {
       rawEntries.push({
         id: `work-receipt-${receipt.id}`,
         sourceType: 'work_receipt',
@@ -782,7 +900,23 @@ export async function buildSupplierLedger(prisma, userId, supplierId) {
         particulars: receipt.workType || '',
         remarks: receipt.remarks || '',
         debitAmount: 0,
-        creditAmount: invoiceValue
+        creditAmount
+      });
+    }
+
+    if (disc) {
+      rawEntries.push({
+        id: `work-receipt-discount-${receipt.id}`,
+        sourceType: 'work_receipt_discount',
+        sourceId: receipt.id,
+        date: receipt.receiptDate || receipt.createdAt,
+        voucherNumber: String(receipt.voucherNo || '-'),
+        billNumber: receipt.billNo || receipt.challanNo || String(receipt.voucherNo || '-'),
+        account: disc.account,
+        particulars: 'Discount',
+        remarks: '',
+        debitAmount: disc.amount,
+        creditAmount: 0
       });
     }
 
@@ -875,16 +1009,23 @@ export async function buildSupplierLedger(prisma, userId, supplierId) {
 
 const VALID_SOURCE_TYPES = new Set([
   'order',
+  'order_discount',
   'sales_invoice',
+  'sales_invoice_discount',
   'purchase_bill',
+  'purchase_bill_discount',
   'bank_entry',
   'credit_debit_note',
   'grey_purchase',
+  'grey_purchase_discount',
   'grey_purchase_return',
+  'grey_purchase_return_discount',
   'mill_receipt',
   'mill_receipt_tds',
+  'mill_receipt_discount',
   'work_receipt',
-  'work_receipt_tds'
+  'work_receipt_tds',
+  'work_receipt_discount'
 ]);
 
 function buildDetailFields(items) {
@@ -958,7 +1099,7 @@ async function resolveBillNumbers(prisma, userId, allocations) {
 export async function getLedgerEntryDetail(prisma, userId, sourceType, sourceId) {
   if (!VALID_SOURCE_TYPES.has(sourceType)) return null;
 
-  if (sourceType === 'order') {
+  if (sourceType === 'order' || sourceType === 'order_discount') {
     const order = await prisma.order.findFirst({
       where: { id: sourceId, userId },
       include: { customer: true, design: true }
@@ -967,13 +1108,17 @@ export async function getLedgerEntryDetail(prisma, userId, sourceType, sourceId)
 
     const lines = normalizeOrderLines(order.orderLines);
     const grandTotal = calculateOrderGrandTotal(order);
+    const discountAmount = calculateOrderDiscountAmount(order);
     const billNo = order.typeBillNumber != null
       ? String(order.typeBillNumber)
       : (order.orderNumber || order.invoiceNumber || order.id.slice(-6));
 
     const goodsReturn = isSalesGoodsReturn(order.transactionType);
+    const isDiscountLine = sourceType === 'order_discount';
     return {
-      title: goodsReturn ? `Sales Goods Return #${billNo}` : `Sales Bill #${billNo}`,
+      title: isDiscountLine
+        ? `Discount on ${goodsReturn ? 'Sales Return' : 'Sales Bill'} #${billNo}`
+        : goodsReturn ? `Sales Goods Return #${billNo}` : `Sales Bill #${billNo}`,
       subtitle: getOrderPartyName(order),
       sourceType,
       sourceId,
@@ -988,6 +1133,8 @@ export async function getLedgerEntryDetail(prisma, userId, sourceType, sourceId)
         { label: 'Agent', value: order.agentName },
         { label: 'Transport', value: order.transportName },
         { label: 'Discount %', value: order.discountRate != null ? String(order.discountRate) : '' },
+        { label: 'Disc Amt', value: discountAmount, isMoney: true },
+        { label: 'Disc A/C', value: postingDiscountAccount(order.transactionType) },
         { label: 'Shipping', value: order.shippingCharge, isMoney: true },
         { label: 'Grand Total', value: grandTotal, isMoney: true },
         { label: 'Remarks', value: order.remarks }
@@ -1011,7 +1158,7 @@ export async function getLedgerEntryDetail(prisma, userId, sourceType, sourceId)
     };
   }
 
-  if (sourceType === 'sales_invoice') {
+  if (sourceType === 'sales_invoice' || sourceType === 'sales_invoice_discount') {
     const invoice = await prisma.salesInvoice.findFirst({
       where: { id: sourceId, userId },
       include: { customer: true, order: { select: { orderNumber: true, transactionType: true } } }
@@ -1022,9 +1169,12 @@ export async function getLedgerEntryDetail(prisma, userId, sourceType, sourceId)
       ? invoice.buyerSnapshot
       : {};
     const lineItems = Array.isArray(invoice.lineItems) ? invoice.lineItems : [];
+    const isDiscountLine = sourceType === 'sales_invoice_discount';
 
     return {
-      title: `Sales Invoice #${invoice.invoiceNumber}`,
+      title: isDiscountLine
+        ? `Discount on Sales Invoice #${invoice.invoiceNumber}`
+        : `Sales Invoice #${invoice.invoiceNumber}`,
       subtitle: invoice.customer?.organizationName || buyerSnapshot.name || '',
       sourceType,
       sourceId,
@@ -1035,6 +1185,7 @@ export async function getLedgerEntryDetail(prisma, userId, sourceType, sourceId)
         { label: 'Place of Supply', value: invoice.placeOfSupply },
         { label: 'Taxable', value: invoice.taxableAmount, isMoney: true },
         { label: 'Discount', value: invoice.discountAmount, isMoney: true },
+        { label: 'Disc A/C', value: postingDiscountAccount(invoice.order?.transactionType) },
         { label: 'CGST', value: invoice.cgstAmount, isMoney: true },
         { label: 'SGST', value: invoice.sgstAmount, isMoney: true },
         { label: 'IGST', value: invoice.igstAmount, isMoney: true },
@@ -1058,7 +1209,7 @@ export async function getLedgerEntryDetail(prisma, userId, sourceType, sourceId)
     };
   }
 
-  if (sourceType === 'purchase_bill') {
+  if (sourceType === 'purchase_bill' || sourceType === 'purchase_bill_discount') {
     const bill = await prisma.purchaseBill.findFirst({
       where: { id: sourceId, userId },
       include: { supplier: true }
@@ -1069,13 +1220,16 @@ export async function getLedgerEntryDetail(prisma, userId, sourceType, sourceId)
       ? String(bill.typeBillNumber)
       : (bill.billNumber || bill.voucherNumber || bill.id.slice(-6));
     const lineItems = Array.isArray(bill.lineItems) ? bill.lineItems : [];
+    const isDiscountLine = sourceType === 'purchase_bill_discount';
 
     return {
-      title: isPurchaseReturn(bill.transactionType)
-        ? `Purchase Return #${billNo}`
-        : isExpensePurchaseType(bill.transactionType)
-          ? `Expense #${billNo}`
-          : `Purchase Bill #${billNo}`,
+      title: isDiscountLine
+        ? `Discount on ${isPurchaseReturn(bill.transactionType) ? 'Purchase Return' : isExpensePurchaseType(bill.transactionType) ? 'Expense' : 'Purchase Bill'} #${billNo}`
+        : isPurchaseReturn(bill.transactionType)
+          ? `Purchase Return #${billNo}`
+          : isExpensePurchaseType(bill.transactionType)
+            ? `Expense #${billNo}`
+            : `Purchase Bill #${billNo}`,
       subtitle: bill.supplier?.name || '',
       sourceType,
       sourceId,
@@ -1093,6 +1247,7 @@ export async function getLedgerEntryDetail(prisma, userId, sourceType, sourceId)
         { label: 'Status', value: bill.status },
         { label: 'Taxable', value: bill.taxableAmount, isMoney: true },
         { label: 'Discount', value: bill.discountAmount, isMoney: true },
+        { label: 'Disc A/C', value: postingDiscountAccount(bill.transactionType) },
         { label: 'CGST', value: bill.cgstAmount, isMoney: true },
         { label: 'SGST', value: bill.sgstAmount, isMoney: true },
         { label: 'IGST', value: bill.igstAmount, isMoney: true },
@@ -1121,7 +1276,7 @@ export async function getLedgerEntryDetail(prisma, userId, sourceType, sourceId)
     };
   }
 
-  if (sourceType === 'mill_receipt' || sourceType === 'mill_receipt_tds') {
+  if (sourceType === 'mill_receipt' || sourceType === 'mill_receipt_tds' || sourceType === 'mill_receipt_discount') {
     const receipt = await prisma.millReceipt.findFirst({
       where: { id: sourceId, userId },
       include: { greyDispatch: true }
@@ -1130,6 +1285,7 @@ export async function getLedgerEntryDetail(prisma, userId, sourceType, sourceId)
 
     const takaDetails = Array.isArray(receipt.takaDetails) ? receipt.takaDetails : [];
     const isTdsLine = sourceType === 'mill_receipt_tds';
+    const isDiscountLine = sourceType === 'mill_receipt_discount';
     const tdsPercent = Number(receipt.tdsPercent) || 0;
     let tdsOnAmt = roundMoney(receipt.tdsOnAmt || 0);
     let tdsAmount = roundMoney(receipt.tdsAmount || 0);
@@ -1149,7 +1305,9 @@ export async function getLedgerEntryDetail(prisma, userId, sourceType, sourceId)
     return {
       title: isTdsLine
         ? `TDS on Mill Receipt #${receipt.voucherNo ?? '-'}`
-        : `Mill Receipt #${receipt.voucherNo ?? '-'}`,
+        : isDiscountLine
+          ? `Discount on Mill Receipt #${receipt.voucherNo ?? '-'}`
+          : `Mill Receipt #${receipt.voucherNo ?? '-'}`,
       subtitle: receipt.millName,
       sourceType,
       sourceId,
@@ -1168,6 +1326,8 @@ export async function getLedgerEntryDetail(prisma, userId, sourceType, sourceId)
         { label: 'Short Mts', value: receipt.shortMts, isMoney: true },
         { label: 'Job Rate', value: receipt.jobRate, isMoney: true },
         { label: 'Job Amt', value: receipt.jobAmount, isMoney: true },
+        { label: 'Disc Amt', value: receipt.discountAmount, isMoney: true },
+        { label: 'Disc A/C', value: postingDiscountAccount(receipt.entryType) },
         { label: 'Taxable', value: receipt.taxableAmount, isMoney: true },
         { label: 'CGST', value: receipt.cgstAmount, isMoney: true },
         { label: 'SGST', value: receipt.sgstAmount, isMoney: true },
@@ -1199,7 +1359,7 @@ export async function getLedgerEntryDetail(prisma, userId, sourceType, sourceId)
     };
   }
 
-  if (sourceType === 'work_receipt' || sourceType === 'work_receipt_tds') {
+  if (sourceType === 'work_receipt' || sourceType === 'work_receipt_tds' || sourceType === 'work_receipt_discount') {
     const receipt = await prisma.workReceipt.findFirst({
       where: { id: sourceId, userId },
       include: { workDespatch: true }
@@ -1207,6 +1367,7 @@ export async function getLedgerEntryDetail(prisma, userId, sourceType, sourceId)
     if (!receipt) return null;
     const lineItems = Array.isArray(receipt.lineItems) ? receipt.lineItems : [];
     const isTdsLine = sourceType === 'work_receipt_tds';
+    const isDiscountLine = sourceType === 'work_receipt_discount';
     const tdsPercent = Number(receipt.tdsPercent) || 0;
     const taxable = roundMoney(receipt.taxableAmount || receipt.grossAmount || 0);
     const tdsOnAmt = taxable;
@@ -1217,7 +1378,9 @@ export async function getLedgerEntryDetail(prisma, userId, sourceType, sourceId)
     return {
       title: isTdsLine
         ? `TDS on Work Receipt #${receipt.voucherNo ?? '-'}`
-        : `Work Receipt #${receipt.voucherNo ?? '-'}`,
+        : isDiscountLine
+          ? `Discount on Work Receipt #${receipt.voucherNo ?? '-'}`
+          : `Work Receipt #${receipt.voucherNo ?? '-'}`,
       subtitle: receipt.partyName,
       sourceType,
       sourceId,
@@ -1232,6 +1395,8 @@ export async function getLedgerEntryDetail(prisma, userId, sourceType, sourceId)
         { label: 'Fresh', value: receipt.totalFresh },
         { label: 'Rec. Mts', value: receipt.totalMts, isMoney: true },
         { label: 'Gross', value: receipt.grossAmount, isMoney: true },
+        { label: 'Disc Amt', value: receipt.discountAmount, isMoney: true },
+        { label: 'Disc A/C', value: postingDiscountAccount(receipt.transactionType) },
         { label: 'Taxable', value: receipt.taxableAmount, isMoney: true },
         { label: 'CGST', value: receipt.cgstAmount, isMoney: true },
         { label: 'SGST', value: receipt.sgstAmount, isMoney: true },
@@ -1244,7 +1409,7 @@ export async function getLedgerEntryDetail(prisma, userId, sourceType, sourceId)
         { label: 'Net After TDS', value: netAfterTds, isMoney: true },
         { label: 'Remarks', value: receipt.remarks }
       ]),
-      lineColumns: !isTdsLine && lineItems.length
+      lineColumns: !isTdsLine && !isDiscountLine && lineItems.length
         ? [
           { key: 'itemName', label: 'Item' },
           { key: 'jobType', label: 'Job Type' },
@@ -1258,7 +1423,7 @@ export async function getLedgerEntryDetail(prisma, userId, sourceType, sourceId)
           { key: 'amount', label: 'Amount', align: 'right', isMoney: true }
         ]
         : undefined,
-      lineItems: !isTdsLine && lineItems.length
+      lineItems: !isTdsLine && !isDiscountLine && lineItems.length
         ? lineItems.map(row => ({
           itemName: row.itemName,
           jobType: row.jobType,
@@ -1275,7 +1440,7 @@ export async function getLedgerEntryDetail(prisma, userId, sourceType, sourceId)
     };
   }
 
-  if (sourceType === 'grey_purchase_return') {
+  if (sourceType === 'grey_purchase_return' || sourceType === 'grey_purchase_return_discount') {
     const ret = await prisma.greyPurchaseReturn.findFirst({
       where: { id: sourceId, userId },
       include: { greyPurchase: true }
@@ -1284,8 +1449,12 @@ export async function getLedgerEntryDetail(prisma, userId, sourceType, sourceId)
 
     const takaDetails = Array.isArray(ret.takaDetails) ? ret.takaDetails : [];
 
+    const isDiscountLine = sourceType === 'grey_purchase_return_discount';
+
     return {
-      title: `Grey Purchase Return #${ret.voucherNo ?? '-'}`,
+      title: isDiscountLine
+        ? `Discount on Grey Purchase Return #${ret.voucherNo ?? '-'}`
+        : `Grey Purchase Return #${ret.voucherNo ?? '-'}`,
       subtitle: ret.partyName,
       sourceType,
       sourceId,
@@ -1304,6 +1473,7 @@ export async function getLedgerEntryDetail(prisma, userId, sourceType, sourceId)
         { label: 'Rate', value: ret.rate, isMoney: true },
         { label: 'Gross Amt', value: ret.grossAmount, isMoney: true },
         { label: 'Disc Amt', value: ret.discountAmount, isMoney: true },
+        { label: 'Disc A/C', value: postingDiscountAccount('GREY PURCHASE RETURN') },
         { label: 'Taxable', value: ret.taxableAmount, isMoney: true },
         { label: 'CGST', value: ret.cgstAmount, isMoney: true },
         { label: 'SGST', value: ret.sgstAmount, isMoney: true },
@@ -1327,7 +1497,7 @@ export async function getLedgerEntryDetail(prisma, userId, sourceType, sourceId)
     };
   }
 
-  if (sourceType === 'grey_purchase') {
+  if (sourceType === 'grey_purchase' || sourceType === 'grey_purchase_discount') {
     const grey = await prisma.greyPurchase.findFirst({
       where: { id: sourceId, userId },
       include: { supplier: true }
@@ -1337,8 +1507,12 @@ export async function getLedgerEntryDetail(prisma, userId, sourceType, sourceId)
     const lineItems = Array.isArray(grey.lineItems) ? grey.lineItems : [];
     const takaDetails = Array.isArray(grey.takaDetails) ? grey.takaDetails : [];
 
+    const isDiscountLine = sourceType === 'grey_purchase_discount';
+
     return {
-      title: `Grey Purchase #${grey.srNo ?? '-'}`,
+      title: isDiscountLine
+        ? `Discount on Grey Purchase #${grey.srNo ?? '-'}`
+        : `Grey Purchase #${grey.srNo ?? '-'}`,
       subtitle: grey.partyName,
       sourceType,
       sourceId,
@@ -1354,6 +1528,7 @@ export async function getLedgerEntryDetail(prisma, userId, sourceType, sourceId)
         { label: 'Pur Rate', value: grey.purRate, isMoney: true },
         { label: 'Gross Amt', value: grey.grossAmount, isMoney: true },
         { label: 'Disc Amt', value: grey.discountAmount, isMoney: true },
+        { label: 'Disc A/C', value: postingDiscountAccount('GREY PURCHASE') },
         { label: 'Taxable', value: grey.taxableAmount, isMoney: true },
         { label: 'CGST', value: grey.cgstAmount, isMoney: true },
         { label: 'SGST', value: grey.sgstAmount, isMoney: true },

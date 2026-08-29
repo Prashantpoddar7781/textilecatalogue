@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, ListOrdered, Loader2 } from 'lucide-react';
 import { greyDispatchesApi, greyPurchaseReturnsApi } from '../services/api';
 import { getGstDefaultsForTransactionType } from '../constants/erpTransactionTypes';
-import { getGstDocumentType, getItcEligibility, gstReturnSection } from '../constants/erpTransactionPostingRules';
+import { getGstDocumentType, getItcEligibility, gstReturnSection, postingDiscountAccount } from '../constants/erpTransactionPostingRules';
 import { ErpSession, GreyReceiptSummary, GreyTakaDetailRow } from '../types';
 import { DispatchTakaSelectModal } from './DispatchTakaSelectModal';
 import { ErpFormShell } from './ErpFormShell';
@@ -32,6 +32,7 @@ export const GreyPurchaseReturnPage: React.FC<Props> = ({ onBack, erpSession }) 
   const gstDocumentType = getGstDocumentType(RETURN_TYPE);
   const gstReturn = gstReturnSection(RETURN_TYPE);
   const itcEligibility = getItcEligibility(RETURN_TYPE);
+  const discountAccount = postingDiscountAccount(RETURN_TYPE);
   const [companyName, setCompanyName] = useState('');
   const [entryType, setEntryType] = useState('GREY PURCHASE');
   const [greyType, setGreyType] = useState('GREY');
@@ -523,6 +524,9 @@ export const GreyPurchaseReturnPage: React.FC<Props> = ({ onBack, erpSession }) 
                 <label><span className={labelClass}>Godown Stock</span><input className={readonlyClass} value={stockMts.toFixed(2)} readOnly /></label>
                 <label><span className={labelClass}>Disc %</span><input className={calcInputClass} value={discountPercent} onChange={e => setDiscountPercent(e.target.value)} /></label>
                 <label><span className={labelClass}>Disc Amt</span><input className={readonlyClass} value={discountAmount.toFixed(2)} readOnly /></label>
+                {discountAccount && (
+                  <label><span className={labelClass}>Disc A/C</span><input className={readonlyClass} value={discountAccount} readOnly /></label>
+                )}
                 <label><span className={labelClass}>Oth. Less</span><input className={calcInputClass} value={otherLess} onChange={e => setOtherLess(e.target.value)} /></label>
                 <label><span className={labelClass}>Add</span><input className={calcInputClass} value={otherAdd} onChange={e => setOtherAdd(e.target.value)} /></label>
                 <label><span className={labelClass}>CGST % / Amt</span><div className="grid grid-cols-2 gap-1"><input className={readonlyClass} value={cgstRate} readOnly /><input className={readonlyClass} value={cgstAmount} readOnly /></div></label>

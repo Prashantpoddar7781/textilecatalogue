@@ -1,4 +1,5 @@
 import {
+  calculateOrderDiscountAmount,
   calculateOrderGrandTotal,
   isPurchaseReturn,
   isSalesGoodsReturn,
@@ -14,7 +15,8 @@ import {
   formatSeriesBillNumber,
   getGstDocumentType,
   postingPartyAccountType,
-  postingSaleOrPurchaseAccount
+  postingSaleOrPurchaseAccount,
+  resolveDiscountJournal
 } from '../constants/erpTransactionPostingRules.js';
 
 /** Generic role defaults: a party sitting on one of these was never classified deliberately. */
@@ -223,6 +225,12 @@ export async function buildFinalAccounts(prisma, userId, {
   let capitalGoodsPeriod = 0;
   let bankReceipts = 0;
   let bankPayments = 0;
+  let salesDiscountAmt = 0;
+  let salesReturnDiscountAmt = 0;
+  let purchaseDiscountAmt = 0;
+  let purchaseReturnDiscountAmt = 0;
+  let greyDiscountAmt = 0;
+  let greyReturnDiscountAmt = 0;
 
   const expenseByAccount = new Map();
   const fixedAssetsPeriod = new Map();
@@ -239,15 +247,25 @@ export async function buildFinalAccounts(prisma, userId, {
     if (amount <= 0) return;
     const party = (order.customer?.organizationName || order.buyerName || '').trim() || 'Customer';
     const isReturn = isSalesGoodsReturn(order.transactionType);
+    const disc = resolveDiscountJournal(order.transactionType, calculateOrderDiscountAmount(order));
+    const trialAmt = disc ? roundMoney(amount + disc.amount) : amount;
 
     if (!periodOnly || inRange(date, fromDate, toDate)) {
       if (periodOnly) {
         if (isReturn) {
           salesReturn = roundMoney(salesReturn + amount);
-          bump(trial, 'Sales Goods Return', 'debit', amount);
+          bump(trial, 'Sales Goods Return', 'debit', trialAmt);
+          if (disc) {
+            salesReturnDiscountAmt = roundMoney(salesReturnDiscountAmt + disc.amount);
+            bump(trial, disc.account, 'credit', disc.amount);
+          }
         } else {
           sales = roundMoney(sales + amount);
-          bump(trial, order.transactionType || 'Finish Sales', 'credit', amount);
+          bump(trial, order.transactionType || 'Finish Sales', 'credit', trialAmt);
+          if (disc) {
+            salesDiscountAmt = roundMoney(salesDiscountAmt + disc.amount);
+            bump(trial, disc.account, 'debit', disc.amount);
+          }
         }
       }
     }
@@ -282,22 +300,35 @@ export async function buildFinalAccounts(prisma, userId, {
 
     if (!inRange(date, fromDate, toDate)) continue;
 
+    const disc = resolveDiscountJournal(bill.transactionType, bill.discountAmount);
+    const trialAmt = disc ? roundMoney(amount + disc.amount) : amount;
+
     if (isPurchaseReturn(bill.transactionType)) {
       // Returns against finish/trading purchases
       purchaseReturn = roundMoney(purchaseReturn + amount);
-      bump(trial, bill.transactionType || 'Purchase Return', 'credit', amount);
+      bump(trial, bill.transactionType || 'Purchase Return', 'credit', trialAmt);
+      if (disc) {
+        purchaseReturnDiscountAmt = roundMoney(purchaseReturnDiscountAmt + disc.amount);
+        bump(trial, disc.account, 'debit', disc.amount);
+      }
     } else if (isCapitalGoodsPurchase(bill.transactionType)) {
       capitalGoodsPeriod = roundMoney(capitalGoodsPeriod + amount);
       bump(fixedAssetsPeriod, account, 'debit', amount);
-      bump(trial, `Fixed Asset · ${account}`, 'debit', amount);
+      bump(trial, `Fixed Asset · ${account}`, 'debit', trialAmt);
+      if (disc) bump(trial, disc.account, 'credit', disc.amount);
     } else if (isPlExpensePurchase(bill.transactionType)) {
       expenses = roundMoney(expenses + amount);
       bump(expenseByAccount, account, 'debit', amount);
-      bump(trial, `Expense · ${account}`, 'debit', amount);
+      bump(trial, `Expense · ${account}`, 'debit', trialAmt);
+      if (disc) bump(trial, disc.account, 'credit', disc.amount);
     } else {
       // Finish purchase / other trading purchases
       purchases = roundMoney(purchases + amount);
-      bump(trial, bill.transactionType || 'Finish Purchase', 'debit', amount);
+      bump(trial, bill.transactionType || 'Finish Purchase', 'debit', trialAmt);
+      if (disc) {
+        purchaseDiscountAmt = roundMoney(purchaseDiscountAmt + disc.amount);
+        bump(trial, disc.account, 'credit', disc.amount);
+      }
     }
   }
 
@@ -309,8 +340,13 @@ export async function buildFinalAccounts(prisma, userId, {
       bump(creditorsAsOn, grey.partyName || 'Supplier', 'credit', amount);
     }
     if (!inRange(date, fromDate, toDate)) continue;
+    const disc = resolveDiscountJournal('GREY PURCHASE', grey.discountAmount);
     greyPurchaseAmt = roundMoney(greyPurchaseAmt + amount);
-    bump(trial, 'Grey Purchase', 'debit', amount);
+    bump(trial, 'Grey Purchase', 'debit', disc ? roundMoney(amount + disc.amount) : amount);
+    if (disc) {
+      greyDiscountAmt = roundMoney(greyDiscountAmt + disc.amount);
+      bump(trial, disc.account, 'credit', disc.amount);
+    }
   }
 
   for (const ret of greyReturns) {
@@ -321,8 +357,13 @@ export async function buildFinalAccounts(prisma, userId, {
       bump(creditorsAsOn, ret.partyName || 'Supplier', 'credit', -amount);
     }
     if (!inRange(date, fromDate, toDate)) continue;
+    const disc = resolveDiscountJournal('GREY PURCHASE RETURN', ret.discountAmount);
     greyReturnAmt = roundMoney(greyReturnAmt + amount);
-    bump(trial, ret.saleAccount || 'Grey Purchase Return', 'credit', amount);
+    bump(trial, ret.saleAccount || 'Grey Purchase Return', 'credit', disc ? roundMoney(amount + disc.amount) : amount);
+    if (disc) {
+      greyReturnDiscountAmt = roundMoney(greyReturnDiscountAmt + disc.amount);
+      bump(trial, disc.account, 'debit', disc.amount);
+    }
   }
 
   for (const entry of bankEntries) {
@@ -450,14 +491,23 @@ export async function buildFinalAccounts(prisma, userId, {
     sundryCreditors: creditorTotal
   };
 
+  const discountReceived = roundMoney(purchaseDiscountAmt + greyDiscountAmt);
+  const discountAllowed = roundMoney(salesDiscountAmt);
+  const discountOnPurchaseReturns = roundMoney(purchaseReturnDiscountAmt + greyReturnDiscountAmt);
+  const discountOnSalesReturns = roundMoney(salesReturnDiscountAmt);
+
   const buildTrading = () => {
     const rows = [
-      { side: 'debit', particular: 'To Purchases (Finish / Trading)', amount: purchases, drillKey: 'trading_purchases', clickable: true },
-      { side: 'debit', particular: 'To Grey Purchase', amount: greyPurchaseAmt, drillKey: 'trading_grey_purchase', clickable: true },
-      { side: 'debit', particular: 'To Sales Return', amount: salesReturn, drillKey: 'trading_sales_return', clickable: true },
-      { side: 'credit', particular: 'By Sales', amount: sales, drillKey: 'trading_sales', clickable: true },
-      { side: 'credit', particular: 'By Purchase Return', amount: purchaseReturn, drillKey: 'trading_purchase_return', clickable: true },
-      { side: 'credit', particular: 'By Grey Purchase Return', amount: greyReturnAmt, drillKey: 'trading_grey_return', clickable: true }
+      { side: 'debit', particular: 'To Purchases (Finish / Trading)', amount: roundMoney(purchases + purchaseDiscountAmt), drillKey: 'trading_purchases', clickable: true },
+      { side: 'debit', particular: 'To Grey Purchase', amount: roundMoney(greyPurchaseAmt + greyDiscountAmt), drillKey: 'trading_grey_purchase', clickable: true },
+      { side: 'debit', particular: 'To Sales Return', amount: roundMoney(salesReturn + salesReturnDiscountAmt), drillKey: 'trading_sales_return', clickable: true },
+      { side: 'debit', particular: 'To Discount Allowed', amount: discountAllowed, drillKey: 'trading_discount_allowed', clickable: true },
+      { side: 'debit', particular: 'To Discount (Purchase Returns)', amount: discountOnPurchaseReturns, drillKey: 'trading_discount_purchase_return', clickable: true },
+      { side: 'credit', particular: 'By Sales', amount: roundMoney(sales + salesDiscountAmt), drillKey: 'trading_sales', clickable: true },
+      { side: 'credit', particular: 'By Purchase Return', amount: roundMoney(purchaseReturn + purchaseReturnDiscountAmt), drillKey: 'trading_purchase_return', clickable: true },
+      { side: 'credit', particular: 'By Grey Purchase Return', amount: roundMoney(greyReturnAmt + greyReturnDiscountAmt), drillKey: 'trading_grey_return', clickable: true },
+      { side: 'credit', particular: 'By Discount Received', amount: discountReceived, drillKey: 'trading_discount_received', clickable: true },
+      { side: 'credit', particular: 'By Discount (Sales Returns)', amount: discountOnSalesReturns, drillKey: 'trading_discount_sales_return', clickable: true }
     ];
     if (grossProfit >= 0) rows.push({ side: 'debit', particular: 'To Gross Profit c/d', amount: grossProfit, clickable: false });
     else rows.push({ side: 'credit', particular: 'By Gross Loss c/d', amount: Math.abs(grossProfit), clickable: false });
@@ -1101,6 +1151,98 @@ export async function buildFinalAccountsDrill(prisma, userId, {
         editPath: `/erp/grey-purchase-return?edit=${ret.id}`,
         clickable: true
       });
+    }
+  }
+
+  const isDiscountReceived = key === 'trading_discount_received';
+  const isDiscountAllowed = key === 'trading_discount_allowed';
+  const isDiscountPurchaseReturn = key === 'trading_discount_purchase_return';
+  const isDiscountSalesReturn = key === 'trading_discount_sales_return';
+  if (isDiscountReceived || isDiscountAllowed || isDiscountPurchaseReturn || isDiscountSalesReturn) {
+    if (isDiscountReceived || isDiscountPurchaseReturn) {
+      for (const bill of purchaseBills) {
+        const date = bill.billDate || bill.createdAt;
+        if (!inRange(date, fromDate, toDate)) continue;
+        if (isCapitalGoodsPurchase(bill.transactionType) || isPlExpensePurchase(bill.transactionType)) continue;
+        const isRet = isPurchaseReturn(bill.transactionType);
+        if (isDiscountReceived && isRet) continue;
+        if (isDiscountPurchaseReturn && !isRet) continue;
+        const disc = resolveDiscountJournal(bill.transactionType, bill.discountAmount);
+        if (!disc) continue;
+        tradingBillRows.push({
+          id: bill.id,
+          date,
+          billNo: formatSeriesBillNumber(bill.transactionType, bill.typeBillNumber)
+            || bill.billNumber || bill.voucherNumber,
+          gstDocumentType: getGstDocumentType(bill.transactionType),
+          transactionType: bill.transactionType || '',
+          amount: isRet ? -disc.amount : disc.amount,
+          partyName: bill.supplier?.name || '',
+          editPath: purchaseEditPath(bill),
+          clickable: true
+        });
+      }
+      for (const grey of greyPurchases) {
+        if (!isDiscountReceived) continue;
+        const date = grey.billDate || grey.createdAt;
+        if (!inRange(date, fromDate, toDate)) continue;
+        const disc = resolveDiscountJournal('GREY PURCHASE', grey.discountAmount);
+        if (!disc) continue;
+        tradingBillRows.push({
+          id: grey.id,
+          date,
+          billNo: formatSeriesBillNumber('GREY PURCHASE', grey.typeBillNumber)
+            || grey.billNo || grey.id.slice(-6),
+          gstDocumentType: getGstDocumentType('GREY PURCHASE'),
+          transactionType: 'GREY PURCHASE',
+          amount: disc.amount,
+          partyName: grey.partyName || '',
+          editPath: `/erp/grey-purchase?edit=${grey.id}`,
+          clickable: true
+        });
+      }
+      if (isDiscountPurchaseReturn) {
+        for (const ret of greyReturns) {
+          const date = ret.returnDate || ret.createdAt;
+          if (!inRange(date, fromDate, toDate)) continue;
+          const disc = resolveDiscountJournal('GREY PURCHASE RETURN', ret.discountAmount);
+          if (!disc) continue;
+          tradingBillRows.push({
+            id: ret.id,
+            date,
+            billNo: ret.voucherNo || ret.billNo || ret.id.slice(-6),
+            transactionType: 'GREY PURCHASE RETURN',
+            amount: -disc.amount,
+            partyName: ret.partyName || '',
+            editPath: `/erp/grey-purchase-return?edit=${ret.id}`,
+            clickable: true
+          });
+        }
+      }
+    }
+    if (isDiscountAllowed || isDiscountSalesReturn) {
+      for (const order of orders) {
+        const date = order.orderDate || order.createdAt;
+        if (!inRange(date, fromDate, toDate)) continue;
+        const isRet = isSalesGoodsReturn(order.transactionType);
+        if (isDiscountAllowed && isRet) continue;
+        if (isDiscountSalesReturn && !isRet) continue;
+        const disc = resolveDiscountJournal(order.transactionType, calculateOrderDiscountAmount(order));
+        if (!disc) continue;
+        const editPath = salesEditPath(order);
+        tradingBillRows.push({
+          id: order.id,
+          date,
+          billNo: formatSeriesBillNumber(order.transactionType, order.typeBillNumber)
+            || order.invoiceNumber || order.orderNumber,
+          gstDocumentType: getGstDocumentType(order.transactionType),
+          transactionType: order.transactionType || 'FINISH SALES',
+          amount: isRet ? -disc.amount : disc.amount,
+          partyName: (order.customer?.organizationName || order.buyerName || '').trim(),
+          editPath,
+          clickable: Boolean(editPath)
+        });
+      }
     }
   }
   if (tradingBillRows.length || String(key).startsWith('trading_')) {
