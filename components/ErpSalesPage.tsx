@@ -94,6 +94,78 @@ function calcLine(input: SalesLineItem, businessState: string, partyState: strin
   };
 }
 
+const itemKey = (value?: string | null) => String(value || '').trim().toLowerCase();
+
+function findSalesItem(
+  items: SalesItemMaster[],
+  query: string,
+  current?: { name?: string | null; mainScreen?: string | null }
+): SalesItemMaster | null {
+  const q = itemKey(query);
+  if (!q) return null;
+  const currentName = itemKey(current?.name);
+  const currentMain = itemKey(current?.mainScreen);
+  const byName = items.filter(item => itemKey(item.name) === q);
+  if (byName.length) {
+    return byName.find(item => currentMain && itemKey(item.mainScreen) === currentMain) || byName[0];
+  }
+  const byMain = items.filter(item => itemKey(item.mainScreen) === q);
+  if (byMain.length) {
+    return byMain.find(item => currentName && itemKey(item.name) === currentName) || byMain[0];
+  }
+  return null;
+}
+
+function mergeBillLines(lines: SalesLineItem[]): SalesLineItem[] {
+  const groups = new Map<string, SalesLineItem[]>();
+  const order: string[] = [];
+  lines.forEach((line, index) => {
+    const name = itemKey(line.itemName || line.screenName);
+    const key = name || `__row_${index}`;
+    if (!groups.has(key)) {
+      groups.set(key, []);
+      order.push(key);
+    }
+    groups.get(key)!.push(line);
+  });
+  return order.map((key, index) => {
+    const rows = groups.get(key) || [];
+    const first = rows[0];
+    const allocations = rows
+      .filter(row => row.sourceSalesOrderId)
+      .map(row => ({
+        sourceSalesOrderId: String(row.sourceSalesOrderId),
+        sourceOrderNo: row.sourceOrderNo || null,
+        sourceLineNo: row.sourceLineNo ?? null,
+        pcs: toNum(row.pcs),
+        mtsQty: toNum(row.mtsQty)
+      }));
+    if (rows.length === 1) {
+      return {
+        ...first,
+        lineNo: index + 1,
+        sourceAllocations: allocations.length ? allocations : first.sourceAllocations
+      };
+    }
+    const pcs = round2(rows.reduce((sum, row) => sum + toNum(row.pcs), 0));
+    const mtsQty = round2(rows.reduce((sum, row) => sum + toNum(row.mtsQty), 0));
+    const bundles = round2(rows.reduce((sum, row) => sum + toNum(row.bundles), 0));
+    const orderNos = Array.from(new Set(rows.map(row => row.sourceOrderNo).filter(Boolean)));
+    return {
+      ...first,
+      lineNo: index + 1,
+      pcs,
+      mtsQty,
+      bundles,
+      cut: pcs > 0 ? round2(mtsQty / pcs) : toNum(first.cut),
+      sourceSalesOrderId: first.sourceSalesOrderId,
+      sourceOrderNo: orderNos.join(', '),
+      sourceLineNo: first.sourceLineNo,
+      sourceAllocations: allocations
+    };
+  });
+}
+
 const itemDefaults = (mainScreen = '') => ({
   name: mainScreen,
   mainScreen,
@@ -358,6 +430,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
       sourceSalesOrderId: line.sourceSalesOrderId || bill.sourceSalesOrderId || null,
       sourceOrderNo: line.sourceOrderNo || (sources.length === 1 ? String(sources[0].orderNo) : null),
       sourceLineNo: line.sourceLineNo || line.lineNo || index + 1,
+      sourceAllocations: Array.isArray(line.sourceAllocations) ? line.sourceAllocations : undefined,
       itemName: line.itemName || line.description || line.designName || '',
       mainScreen: line.mainScreen || line.designNo || '',
       pcs: toNum(line.pcs ?? line.quantity)
@@ -457,11 +530,12 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
         }, businessState, order.state || state));
       }
     }
-    setLineItems(filled.length ? filled : [blankLine(1, defaultGstRate, defaultHsnCode)]);
+    const merged = mergeBillLines(filled).map(line => calcLine(line, businessState, primary.state || state));
+    setLineItems(merged.length ? merged : [blankLine(1, defaultGstRate, defaultHsnCode)]);
     setSuccess(
       orders.length === 1
         ? `Sales Order #${primary.orderNo} loaded. All items are editable.`
-        : `${orders.length} Sales Orders loaded. All items are editable.`
+        : `${orders.length} Sales Orders loaded. Same item names are merged and quantities added.`
     );
     setPickerOpen(false);
   };
@@ -553,14 +627,29 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
     }, businessState, state) : line));
   };
 
-  const checkUnknownMainScreen = (index: number) => {
-    const value = lineItems[index]?.mainScreen?.trim();
+  const applyMasterIfKnown = (index: number, query: string) => {
+    const line = lineItems[index];
+    const found = findSalesItem(items, query, { name: line?.itemName, mainScreen: line?.mainScreen });
+    if (found) applyItem(index, found);
+    return found;
+  };
+
+  const checkUnknownMainScreen = (index: number, typed?: string) => {
+    const line = lineItems[index];
+    const value = (typed ?? line?.mainScreen ?? '').trim();
     if (!value) return;
-    const exists = items.some(item => item.mainScreen.trim().toLowerCase() === value.toLowerCase());
-    if (exists) return;
+    const found = findSalesItem(items, value, { name: line?.itemName, mainScreen: value });
+    if (found) {
+      applyItem(index, found);
+      return;
+    }
     if (window.confirm(`"${value}" is not in Quality Information. Add a new item now?`)) {
       setItemModalRow(index);
-      setItemForm(itemDefaults(value));
+      setItemForm({
+        ...itemDefaults(value),
+        name: line?.itemName?.trim() || value,
+        mainScreen: value
+      });
       setItemModalOpen(true);
     }
   };
@@ -573,11 +662,34 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
     setItemSaving(true);
     try {
       const { item } = await salesOrdersApi.createItem(itemForm);
-      setItems(prev => [...prev, item].sort((a, b) => a.mainScreen.localeCompare(b.mainScreen)));
+      setItems(prev => {
+        const next = prev.some(row => row.id === item.id)
+          ? prev.map(row => row.id === item.id ? item : row)
+          : [...prev, item];
+        return next.sort((a, b) => a.mainScreen.localeCompare(b.mainScreen) || a.name.localeCompare(b.name));
+      });
       if (itemModalRow != null) applyItem(itemModalRow, item);
       setItemModalOpen(false);
-      setSuccess(`Quality Information saved for ${item.name}.`);
+      setSuccess(`Quality Information saved for ${item.name}. Rate ${toNum(item.sellingRate)} will fill when you pick this name again.`);
     } catch (err: any) {
+      if (String(err.message || '').toLowerCase().includes('already exists')) {
+        try {
+          const { items: latest } = await salesOrdersApi.getItems();
+          setItems(latest || []);
+          const existing = findSalesItem(latest || [], itemForm.name, { name: itemForm.name, mainScreen: itemForm.mainScreen })
+            || (latest || []).find(row => itemKey(row.name) === itemKey(itemForm.name) && itemKey(row.mainScreen) === itemKey(itemForm.mainScreen));
+          if (existing && itemModalRow != null) {
+            const { item } = await salesOrdersApi.updateItem(existing.id, itemForm);
+            setItems(prev => prev.map(row => row.id === item.id ? item : row));
+            applyItem(itemModalRow, item);
+            setItemModalOpen(false);
+            setSuccess(`Quality Information updated for ${item.name}.`);
+            return;
+          }
+        } catch {
+          // fall through to the original error
+        }
+      }
       setError(err.message || 'Could not save Quality Information.');
     } finally {
       setItemSaving(false);
@@ -917,7 +1029,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
                       {isSalesOrder ? (
                         <>
                           <td className="min-w-[150px] px-1 py-1.5">
-                            <input className={inputClass} list="main-screen-names" value={line.mainScreen} onChange={e => updateLine(index, 'mainScreen', e.target.value)} onBlur={() => checkUnknownMainScreen(index)} />
+                            <input className={inputClass} list="main-screen-names" value={line.mainScreen} onChange={e => updateLine(index, 'mainScreen', e.target.value)} onBlur={e => checkUnknownMainScreen(index, e.target.value)} />
                           </td>
                           <td className="px-1 py-1.5"><input className={inputClass} type="number" value={line.bundles || ''} onChange={e => updateLine(index, 'bundles', toNum(e.target.value))} /></td>
                           <td className="min-w-[140px] px-1 py-1.5">
@@ -930,11 +1042,9 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
                                 setLineItems(prev => prev.map((row, i) => i === index
                                   ? calcLine({ ...row, screenName: value, itemName: value }, businessState, state)
                                   : row));
+                                applyMasterIfKnown(index, value);
                               }}
-                              onBlur={e => {
-                                const found = items.find(item => item.name.toLowerCase() === e.target.value.trim().toLowerCase());
-                                if (found) applyItem(index, found);
-                              }}
+                              onBlur={e => applyMasterIfKnown(index, e.target.value)}
                             />
                           </td>
                         </>
@@ -945,16 +1055,16 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
                               className={inputClass}
                               list="sales-item-names"
                               value={line.itemName}
-                              onChange={e => updateLine(index, 'itemName', e.target.value)}
-                              onBlur={e => {
-                                const found = items.find(item => item.name.toLowerCase() === e.target.value.trim().toLowerCase());
-                                if (found) applyItem(index, found);
+                              onChange={e => {
+                                updateLine(index, 'itemName', e.target.value);
+                                applyMasterIfKnown(index, e.target.value);
                               }}
+                              onBlur={e => applyMasterIfKnown(index, e.target.value)}
                             />
                           </td>
                           <td className="px-1 py-1.5"><input className={inputClass} type="number" value={line.bundles || ''} onChange={e => updateLine(index, 'bundles', toNum(e.target.value))} /></td>
                           <td className="min-w-[140px] px-1 py-1.5">
-                            <input className={inputClass} list="main-screen-names" value={line.mainScreen} onChange={e => updateLine(index, 'mainScreen', e.target.value)} onBlur={() => checkUnknownMainScreen(index)} />
+                            <input className={inputClass} list="main-screen-names" value={line.mainScreen} onChange={e => updateLine(index, 'mainScreen', e.target.value)} onBlur={e => checkUnknownMainScreen(index, e.target.value)} />
                           </td>
                         </>
                       )}
@@ -1011,8 +1121,18 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
                   </tr>
                 </tfoot>
               </table>
-              <datalist id="sales-item-names">{items.map(item => <option key={item.id} value={item.name}>{item.mainScreen}</option>)}</datalist>
-              <datalist id="main-screen-names">{Array.from(new Set(items.map(item => item.mainScreen))).map(name => <option key={name} value={name} />)}</datalist>
+              <datalist id="sales-item-names">
+                {items.map(item => (
+                  <option key={`name-${item.id}`} value={item.name}>
+                    {item.mainScreen}{toNum(item.sellingRate) ? ` · ${item.sellingRate}` : ''}
+                  </option>
+                ))}
+              </datalist>
+              <datalist id="main-screen-names">
+                {Array.from(new Set(items.map(item => item.mainScreen).filter(Boolean))).map(name => (
+                  <option key={name} value={name} />
+                ))}
+              </datalist>
             </div>
           </section>
 

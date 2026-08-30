@@ -8,7 +8,7 @@ import { roundMoney, allocateNextInvoiceNumber } from '../utils/orderBilling.js'
 import { allocateNextTypeBillNumber } from '../utils/transactionBilling.js';
 import { getStateFromGstin, calculateGstBreakup } from '../utils/gstCalculation.js';
 import { getGstDefaultsForTransactionType } from '../constants/erpTransactionTypes.js';
-import { linesForSource } from '../utils/documentLinkAttribution.js';
+import { linesForSource, qtySlicesForSalesOrder } from '../utils/documentLinkAttribution.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -108,9 +108,46 @@ function normalizeSalesLines(raw, context = {}) {
       sourceSalesOrderId: optionalString(input.sourceSalesOrderId),
       sourceOrderNo: optionalString(input.sourceOrderNo),
       sourceLineNo: optionalNumber(input.sourceLineNo)
-        ?? (optionalString(input.sourceSalesOrderId) ? (Number(input.lineNo) || index + 1) : null)
+        ?? (optionalString(input.sourceSalesOrderId) ? (Number(input.lineNo) || index + 1) : null),
+      sourceAllocations: normalizeSourceAllocations(input.sourceAllocations)
     };
   }).filter(line => line.itemName && (line.pcs > 0 || line.amount > 0));
+}
+
+function normalizeSourceAllocations(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map(row => ({
+      sourceSalesOrderId: optionalString(row?.sourceSalesOrderId),
+      sourceOrderNo: optionalString(row?.sourceOrderNo),
+      sourceLineNo: optionalNumber(row?.sourceLineNo),
+      pcs: roundMoney(row?.pcs ?? 0),
+      mtsQty: roundMoney(row?.mtsQty ?? 0)
+    }))
+    .filter(row => row.sourceSalesOrderId && (row.pcs > 0 || row.mtsQty > 0));
+}
+
+function scaleAllocationsToLine(line) {
+  const allocs = Array.isArray(line.sourceAllocations) ? line.sourceAllocations : [];
+  if (!allocs.length) return line;
+  const sumPcs = roundMoney(allocs.reduce((sum, row) => sum + (Number(row.pcs) || 0), 0));
+  const sumMts = roundMoney(allocs.reduce((sum, row) => sum + (Number(row.mtsQty) || 0), 0));
+  const targetPcs = Number(line.pcs) || 0;
+  const targetMts = Number(line.mtsQty) || 0;
+  if (sumPcs <= 0 && sumMts <= 0) return line;
+  if (Math.abs(sumPcs - targetPcs) <= 0.01 && Math.abs(sumMts - targetMts) <= 0.01) return line;
+  const scaled = allocs.map((row, index) => {
+    const pcs = sumPcs > 0 ? roundMoney(row.pcs * targetPcs / sumPcs) : (index === 0 ? targetPcs : 0);
+    const mtsQty = sumMts > 0 ? roundMoney(row.mtsQty * targetMts / sumMts) : (index === 0 ? targetMts : 0);
+    return { ...row, pcs, mtsQty };
+  });
+  const pcsDrift = roundMoney(targetPcs - scaled.reduce((sum, row) => sum + row.pcs, 0));
+  const mtsDrift = roundMoney(targetMts - scaled.reduce((sum, row) => sum + row.mtsQty, 0));
+  if (scaled.length) {
+    scaled[scaled.length - 1].pcs = roundMoney(scaled[scaled.length - 1].pcs + pcsDrift);
+    scaled[scaled.length - 1].mtsQty = roundMoney(scaled[scaled.length - 1].mtsQty + mtsDrift);
+  }
+  return { ...line, sourceAllocations: scaled };
 }
 
 function aggregateLines(lines) {
@@ -146,11 +183,23 @@ async function soldBySalesOrder(salesOrderId, excludeBillId = null, client = pri
     linesField: 'orderLines'
   };
   for (const bill of bills) {
-    for (const line of linesForSource(bill, salesOrderId, lineOpts)) {
-      const key = Number(line.sourceLineNo || line.lineNo) || 0;
+    const lines = Array.isArray(bill.orderLines) ? bill.orderLines : [];
+    const usesSlices = lines.some(line => (
+      (Array.isArray(line.sourceAllocations) && line.sourceAllocations.length)
+      || line.sourceSalesOrderId
+    ));
+    const slices = usesSlices
+      ? lines.flatMap(line => qtySlicesForSalesOrder(line, salesOrderId))
+      : linesForSource(bill, salesOrderId, lineOpts).map(line => ({
+        sourceLineNo: Number(line.sourceLineNo || line.lineNo) || 0,
+        pcs: Number(line.pcs ?? line.quantity) || 0,
+        mtsQty: Number(line.mtsQty) || 0
+      }));
+    for (const slice of slices) {
+      const key = Number(slice.sourceLineNo) || 0;
       const current = byLine.get(key) || { pcs: 0, mtsQty: 0 };
-      current.pcs = roundMoney(current.pcs + (Number(line.pcs ?? line.quantity) || 0));
-      current.mtsQty = roundMoney(current.mtsQty + (Number(line.mtsQty) || 0));
+      current.pcs = roundMoney(current.pcs + (Number(slice.pcs) || 0));
+      current.mtsQty = roundMoney(current.mtsQty + (Number(slice.mtsQty) || 0));
       byLine.set(key, current);
     }
   }
@@ -548,6 +597,10 @@ function requestedSalesOrderIds(reqBody) {
   for (const line of Array.isArray(reqBody.lineItems) ? reqBody.lineItems : []) {
     const id = optionalString(line.sourceSalesOrderId);
     if (id && !ids.includes(id)) ids.push(id);
+    for (const alloc of Array.isArray(line.sourceAllocations) ? line.sourceAllocations : []) {
+      const allocId = optionalString(alloc.sourceSalesOrderId);
+      if (allocId && !ids.includes(allocId)) ids.push(allocId);
+    }
   }
   return Array.from(new Set(ids));
 }
@@ -561,19 +614,36 @@ function tagSalesLinesToOrders(lines, sources) {
   const byId = new Map(sources.map(source => [source.id, source]));
   const errors = [];
   const tagged = lines.map(line => {
-    const declared = optionalString(line.sourceSalesOrderId);
+    const scaled = scaleAllocationsToLine(line);
+    if (scaled.sourceAllocations?.length) {
+      for (const alloc of scaled.sourceAllocations) {
+        if (!byId.has(alloc.sourceSalesOrderId)) {
+          errors.push(`A line refers to a Sales Order that is not selected.`);
+        }
+      }
+      const primaryAlloc = scaled.sourceAllocations[0];
+      const primary = byId.get(primaryAlloc.sourceSalesOrderId);
+      return {
+        ...scaled,
+        sourceSalesOrderId: primary?.id || primaryAlloc.sourceSalesOrderId,
+        sourceOrderNo: scaled.sourceOrderNo
+          || scaled.sourceAllocations.map(row => row.sourceOrderNo).filter(Boolean).join(', '),
+        sourceLineNo: scaled.sourceLineNo != null ? scaled.sourceLineNo : primaryAlloc.sourceLineNo
+      };
+    }
+    const declared = optionalString(scaled.sourceSalesOrderId);
     const resolvedId = declared || (sources.length === 1 ? sources[0].id : null);
-    if (!resolvedId) return { ...line, sourceSalesOrderId: null, sourceOrderNo: line.sourceOrderNo || null };
+    if (!resolvedId) return { ...scaled, sourceSalesOrderId: null, sourceOrderNo: scaled.sourceOrderNo || null };
     const source = byId.get(resolvedId);
     if (!source) {
       errors.push(`A line refers to a Sales Order that is not selected.`);
-      return line;
+      return scaled;
     }
     return {
-      ...line,
+      ...scaled,
       sourceSalesOrderId: source.id,
-      sourceOrderNo: line.sourceOrderNo || String(source.orderNo),
-      sourceLineNo: line.sourceLineNo != null ? line.sourceLineNo : line.lineNo
+      sourceOrderNo: scaled.sourceOrderNo || String(source.orderNo),
+      sourceLineNo: scaled.sourceLineNo != null ? scaled.sourceLineNo : scaled.lineNo
     };
   });
   return { lines: tagged, errors };
@@ -636,16 +706,18 @@ async function saveBill(req, res, existing = null) {
     const pending = await buildPending(source, existing?.id || null);
     const pendingMap = new Map(pending.pendingLines.map(line => [Number(line.lineNo), line]));
     const used = new Map();
-    for (const line of tagged.lines.filter(row => row.sourceSalesOrderId === source.id)) {
-      const key = Number(line.sourceLineNo);
-      const sourceLine = pendingMap.get(key);
-      if (!sourceLine) {
-        return res.status(400).json({ error: `Sales Order #${source.orderNo} line ${key} not found.` });
+    for (const line of tagged.lines) {
+      for (const slice of qtySlicesForSalesOrder(line, source.id)) {
+        const key = Number(slice.sourceLineNo);
+        const sourceLine = pendingMap.get(key);
+        if (!sourceLine) {
+          return res.status(400).json({ error: `Sales Order #${source.orderNo} line ${key} not found.` });
+        }
+        const cur = used.get(key) || { pcs: 0, mtsQty: 0, itemName: sourceLine.itemName };
+        cur.pcs = roundMoney(cur.pcs + (Number(slice.pcs) || 0));
+        cur.mtsQty = roundMoney(cur.mtsQty + (Number(slice.mtsQty) || 0));
+        used.set(key, cur);
       }
-      const cur = used.get(key) || { pcs: 0, mtsQty: 0, itemName: sourceLine.itemName };
-      cur.pcs = roundMoney(cur.pcs + (Number(line.pcs) || 0));
-      cur.mtsQty = roundMoney(cur.mtsQty + (Number(line.mtsQty) || 0));
-      used.set(key, cur);
     }
     for (const [key, qty] of used) {
       const sourceLine = pendingMap.get(key);

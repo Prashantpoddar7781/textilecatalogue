@@ -4,7 +4,7 @@
  */
 
 import assert from 'assert';
-import { linesForSource, hasPerLineSources, sourceLineKey } from '../utils/documentLinkAttribution.js';
+import { linesForSource, hasPerLineSources, sourceLineKey, qtySlicesForSalesOrder } from '../utils/documentLinkAttribution.js';
 import { attributeLinesToSources } from '../services/documentLinkEngine.js';
 
 let passed = 0;
@@ -181,6 +181,23 @@ test('tagged sales bill lines only consume their own Sales Order', () => {
   assert.strictEqual(linesForSource(bill, 'so1', opts).length, 1);
   assert.strictEqual(linesForSource(bill, 'so2', opts).length, 1);
   assert.strictEqual(linesForSource(bill, 'so1', opts)[0].pcs, 8);
+});
+
+test('merged same-name line splits pending across both Sales Orders', () => {
+  const line = {
+    sourceSalesOrderId: 'so1',
+    pcs: 12,
+    mtsQty: 75.6,
+    sourceAllocations: [
+      { sourceSalesOrderId: 'so1', sourceLineNo: 1, pcs: 8, mtsQty: 50.4 },
+      { sourceSalesOrderId: 'so2', sourceLineNo: 1, pcs: 4, mtsQty: 25.2 }
+    ]
+  };
+  const so1 = qtySlicesForSalesOrder(line, 'so1');
+  const so2 = qtySlicesForSalesOrder(line, 'so2');
+  assert.strictEqual(so1.length, 1);
+  assert.strictEqual(so1[0].pcs, 8);
+  assert.strictEqual(so2[0].pcs, 4);
 });
 
 console.log(`\n${passed} checks passed${process.exitCode ? ' (with failures)' : ''}`);

@@ -203,6 +203,14 @@ export interface SalesLineItem {
   sourceLineNo?: number;
   sourceSalesOrderId?: string | null;
   sourceOrderNo?: string | null;
+  /** When several Sales Orders contribute the same item, pending is split here. */
+  sourceAllocations?: Array<{
+    sourceSalesOrderId: string;
+    sourceOrderNo?: string | null;
+    sourceLineNo?: number | null;
+    pcs: number;
+    mtsQty: number;
+  }>;
   itemMasterId?: string | null;
   itemName: string;
   bundles: number;
