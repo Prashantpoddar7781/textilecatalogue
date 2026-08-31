@@ -1,0 +1,18 @@
+---
+description: Every ERP feature must be designed from the Transaction Types master, not invented
+alwaysApply: true
+---
+
+# Transaction Types is the ERP posting master (locked)
+
+Empire **TRANSACTION TYPES** is the source of truth for every ERP voucher we add or change.
+
+1. Read the master first: `backend/constants/data/transactionTypes.tsv`.
+2. Use generated helpers from `constants/erpTransactionPostingRules.ts` (and the backend `.js` copy). Do not hard-code GST %, HSN, ITC, Disc A/C, TDS A/C, stock type/effect, series code, bill suffix, previous/next link, or sale/pur A/C.
+3. After a TSV re-export, run `node backend/scripts/generateTransactionPostingRules.mjs`. Do not hand-edit the generated files.
+4. New entry screens, ledgers, stock, GST, and numbering must honour that series' row: billing form, party A/C type, stock movement, discount JVs, TDS/TCS A/C, GST document type, and previous-link pick (optional unless the user asks to force it).
+5. If the master has no row, add a **local extension** in the generator (like `MILL REC.CHALLAN`) — never a silent one-off in a route.
+6. Company-named series (Poonam, etc.) stay in the master for old vouchers but stay out of general pick lists.
+7. Do not infer COMPULSORY LINK. Excel is 0 on every row; keep previous-document pick **optional** unless the user explicitly wants it.
+
+Before building a feature, name the series and the Excel columns it uses. If a column is unused, say so — do not invent behaviour the master does not define.

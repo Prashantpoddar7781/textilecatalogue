@@ -26,6 +26,15 @@ import {
   DEFAULT_PURCHASE_TRANSACTION_TYPE,
   isExpensePurchaseType
 } from '../constants/erpTransactionTypes.js';
+import { postingSaleOrPurchaseAccount } from '../constants/erpTransactionPostingRules.js';
+import {
+  bankCashEntryType,
+  bankCashPaymentMode,
+  formatBillNosRemark,
+  isBankCashSeries,
+  normalizeBankCashSeries,
+  slipNumberFromDate
+} from '../constants/bankCashSeries.js';
 import { allocateNextTypeBillNumber } from '../utils/transactionBilling.js';
 import { getPendingCreditDebitNotes, mergePendingBillsWithNotes } from '../utils/creditDebitNotes.js';
 import { ensurePartyMaster } from '../utils/partyMaster.js';
@@ -58,32 +67,57 @@ const optionalEntryDate = (value) => {
 function normalizePayload(body) {
   const amount = Number(body.amount);
   const billAllocations = Array.isArray(body.billAllocations) ? body.billAllocations : null;
+  const series = isBankCashSeries(body.transactionType)
+    ? normalizeBankCashSeries(body.transactionType)
+    : optionalString(body.transactionType);
+  const entryType = series && isBankCashSeries(series)
+    ? bankCashEntryType(series)
+    : (ENTRY_TYPES.includes(body.entryType) ? body.entryType : 'payment');
+  const paymentMode = series && isBankCashSeries(series)
+    ? bankCashPaymentMode(series)
+    : (optionalString(body.paymentMode) || 'bank');
+  const entryDate = optionalEntryDate(body.entryDate);
+  const cashAccount = postingSaleOrPurchaseAccount(series) || 'CASH A/C';
+  let bankName = optionalString(body.bankName);
+  if (paymentMode === 'cash') {
+    bankName = cashAccount;
+  }
+  const slipNumber = optionalString(body.slipNumber) || slipNumberFromDate(entryDate);
+  const billNos = formatBillNosRemark(billAllocations);
+  const billNumber = optionalString(body.billNumber)
+    || (billAllocations || [])
+      .filter(item => item && item.billType !== 'credit_debit_note' && (Number(item.adjustAmount) || 0) > 0)
+      .map(item => String(item.billNumber || '').trim())
+      .filter(Boolean)
+      .join(', ')
+    || null;
+
   return {
-    entryType: ENTRY_TYPES.includes(body.entryType) ? body.entryType : 'payment',
-    entryDate: optionalEntryDate(body.entryDate),
+    entryType,
+    entryDate,
     voucherNumber: optionalString(body.voucherNumber),
     companyName: optionalString(body.companyName),
-    bankName: optionalString(body.bankName),
+    bankName,
     accountName: optionalString(body.accountName),
     partyType: PARTY_TYPES.includes(body.partyType) ? body.partyType : 'other',
     partyName: optionalString(body.partyName),
     linkedType: LINKED_TYPES.includes(body.linkedType) ? body.linkedType : 'none',
     linkedId: optionalString(body.linkedId),
     amount: Number.isFinite(amount) ? roundMoney(amount) : 0,
-    paymentMode: optionalString(body.paymentMode),
+    paymentMode,
     referenceNumber: optionalString(body.referenceNumber),
     chequeNumber: optionalString(body.chequeNumber),
     chequeDate: optionalDate(body.chequeDate),
-    slipNumber: optionalString(body.slipNumber),
-    billNumber: optionalString(body.billNumber),
-    transactionType: optionalString(body.transactionType),
+    slipNumber,
+    billNumber,
+    transactionType: series,
     billAllocations,
     grossAmount: roundMoney(body.grossAmount),
     adjustPending: roundMoney(body.adjustPending),
     netBillAmount: roundMoney(body.netBillAmount),
     adjustAdd: roundMoney(body.adjustAdd),
     taxableValuePaidBills: roundMoney(body.taxableValuePaidBills),
-    remarks: optionalString(body.remarks)
+    remarks: optionalString(body.remarks) || billNos || null
   };
 }
 
@@ -405,7 +439,9 @@ router.get('/pending-bills', authenticateToken, requireActiveSubscription, async
     const userId = req.user.userId;
     const partyName = optionalString(req.query.partyName);
     const partyType = PARTY_TYPES.includes(req.query.partyType) ? req.query.partyType : 'customer';
-    const transactionType = optionalString(req.query.transactionType);
+    // Bill filter only — ignore BANK/CASH series names (those are the voucher type, not the bill type).
+    const rawType = optionalString(req.query.transactionType) || optionalString(req.query.billType);
+    const transactionType = isBankCashSeries(rawType) ? null : rawType;
 
     if (!partyName) {
       return res.json({ bills: [] });
@@ -668,16 +704,33 @@ router.get('/outstanding-report', authenticateToken, requireActiveSubscription, 
 router.get('/bank-accounts', authenticateToken, requireActiveSubscription, async (req, res, next) => {
   try {
     const userId = req.user.userId;
-    const entries = await prisma.bankEntry.findMany({
-      where: { userId, bankName: { not: null } },
-      select: { bankName: true, entryType: true, amount: true }
-    });
-    const profile = await prisma.businessProfile.findUnique({ where: { userId } });
+    const [entries, profile, bankParties, cashParties] = await Promise.all([
+      prisma.bankEntry.findMany({
+        where: { userId, bankName: { not: null } },
+        select: { bankName: true, entryType: true, amount: true }
+      }),
+      prisma.businessProfile.findUnique({ where: { userId } }),
+      prisma.supplier.findMany({
+        where: { userId, accountType: { equals: 'BANK', mode: 'insensitive' } },
+        select: { name: true }
+      }),
+      prisma.supplier.findMany({
+        where: { userId, accountType: { equals: 'CASH', mode: 'insensitive' } },
+        select: { name: true }
+      })
+    ]);
     const map = new Map();
     map.set('Default Bank', OPENING_BANK_BALANCE);
+    map.set('CASH A/C', OPENING_BANK_BALANCE);
 
     if (profile?.bankName) {
       map.set(profile.bankName, OPENING_BANK_BALANCE);
+    }
+    for (const party of bankParties) {
+      if (party.name) map.set(party.name, map.get(party.name) ?? OPENING_BANK_BALANCE);
+    }
+    for (const party of cashParties) {
+      if (party.name) map.set(party.name, map.get(party.name) ?? OPENING_BANK_BALANCE);
     }
 
     for (const entry of entries) {
@@ -687,10 +740,13 @@ router.get('/bank-accounts', authenticateToken, requireActiveSubscription, async
       map.set(entry.bankName, next);
     }
 
-    const accounts = Array.from(map.entries()).map(([name, balance]) => ({
-      name,
-      balance: roundMoneyLocal(balance)
-    }));
+    const accounts = Array.from(map.entries())
+      .map(([name, balance]) => ({
+        name,
+        balance: roundMoneyLocal(balance),
+        accountType: String(name).toUpperCase().includes('CASH') ? 'CASH' : 'BANK'
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
 
     res.json({ accounts });
   } catch (error) {
@@ -717,7 +773,8 @@ router.get('/', authenticateToken, requireActiveSubscription, async (req, res, n
         { bankName: { contains: search, mode: 'insensitive' } },
         { remarks: { contains: search, mode: 'insensitive' } },
         { chequeNumber: { contains: search, mode: 'insensitive' } },
-        { slipNumber: { contains: search, mode: 'insensitive' } }
+        { slipNumber: { contains: search, mode: 'insensitive' } },
+        { transactionType: { contains: search, mode: 'insensitive' } }
       ];
     }
 
@@ -735,8 +792,33 @@ router.get('/', authenticateToken, requireActiveSubscription, async (req, res, n
   }
 });
 
+router.get('/:id', authenticateToken, requireActiveSubscription, async (req, res, next) => {
+  try {
+    const entry = await prisma.bankEntry.findFirst({
+      where: { id: req.params.id, userId: req.user.userId }
+    });
+    if (!entry) {
+      return res.status(404).json({ error: 'Bank entry not found' });
+    }
+    res.json({ entry });
+  } catch (error) {
+    next(error);
+  }
+});
+
+async function ensureOwnBankAccount(userId, bankName, paymentMode) {
+  const name = String(bankName || '').trim();
+  if (!name) return null;
+  const accountType = paymentMode === 'cash' || name.toUpperCase().includes('CASH') ? 'CASH' : 'BANK';
+  return ensurePartyMaster(prisma, userId, {
+    partyType: 'supplier',
+    partyName: name,
+    accountType
+  });
+}
+
 router.post('/', authenticateToken, requireActiveSubscription, [
-  body('entryType').isIn(ENTRY_TYPES),
+  body('entryType').optional().isIn(ENTRY_TYPES),
   body('partyName').trim().notEmpty(),
   body('amount').isFloat({ min: 0.01 })
 ], async (req, res, next) => {
@@ -747,10 +829,13 @@ router.post('/', authenticateToken, requireActiveSubscription, [
     }
 
     const payload = normalizePayload(req.body);
-    const party = await ensurePartyMaster(prisma, req.user.userId, {
-      partyType: payload.partyType,
-      partyName: payload.partyName
-    });
+    const [party] = await Promise.all([
+      ensurePartyMaster(prisma, req.user.userId, {
+        partyType: payload.partyType,
+        partyName: payload.partyName
+      }),
+      ensureOwnBankAccount(req.user.userId, payload.bankName, payload.paymentMode)
+    ]);
     const entry = await prisma.bankEntry.create({
       data: {
         userId: req.user.userId,
@@ -788,10 +873,13 @@ router.put('/:id', authenticateToken, requireActiveSubscription, [
     }
 
     const payload = normalizePayload({ ...existing, ...req.body });
-    const party = await ensurePartyMaster(prisma, req.user.userId, {
-      partyType: payload.partyType,
-      partyName: payload.partyName
-    });
+    const [party] = await Promise.all([
+      ensurePartyMaster(prisma, req.user.userId, {
+        partyType: payload.partyType,
+        partyName: payload.partyName
+      }),
+      ensureOwnBankAccount(req.user.userId, payload.bankName, payload.paymentMode)
+    ]);
     const entry = await prisma.bankEntry.update({
       where: { id: existing.id },
       data: {

@@ -12,7 +12,49 @@ import {
 import { isPurchaseReturn } from './erpLineItems.js';
 import { isExpensePurchaseType } from '../constants/erpTransactionTypes.js';
 import { postingDiscountAccount, postingTdsAccount, resolveDiscountJournal } from '../constants/erpTransactionPostingRules.js';
+import { formatBillNosRemark, formatPaidOnRemark } from '../constants/bankCashSeries.js';
 import { matchesNoteParty } from './creditDebitNotes.js';
+
+function paidInfoByBillId(bankEntries) {
+  const map = new Map();
+  for (const entry of bankEntries || []) {
+    for (const allocation of normalizeBillAllocations(entry.billAllocations)) {
+      if (!allocation?.billId || allocation.billType === 'credit_debit_note') continue;
+      const amount = roundMoney(allocation.adjustAmount);
+      if (amount <= 0) continue;
+      const current = map.get(allocation.billId) || { amount: 0, date: null };
+      current.amount = roundMoney(current.amount + amount);
+      const entryDate = entry.entryDate ? new Date(entry.entryDate) : null;
+      if (entryDate && (!current.date || entryDate > current.date)) {
+        current.date = entryDate;
+      }
+      map.set(allocation.billId, current);
+    }
+  }
+  return map;
+}
+
+function bankEntryLedgerRow(entry) {
+  const applied = roundMoney(entry.adjustAdd || entry.amount);
+  const billNos = formatBillNosRemark(entry.billAllocations) || entry.remarks || '';
+  const isReceipt = entry.entryType === 'receipt';
+  return {
+    id: `bank-${entry.id}`,
+    sourceType: 'bank_entry',
+    sourceId: entry.id,
+    date: entry.entryDate,
+    voucherNumber: entry.voucherNumber || '-',
+    billNumber: entry.chequeNumber || entry.slipNumber || entry.billNumber || '-',
+    account: entry.bankName || entry.transactionType || (isReceipt ? 'BANK RECEIPT' : 'BANK PAYMENT'),
+    particulars: billNos || `${entry.transactionType || (isReceipt ? 'Bank receipt' : 'Bank payment')} V.${entry.voucherNumber || '-'}`,
+    remarks: billNos,
+    debitAmount: isReceipt ? 0 : applied,
+    creditAmount: isReceipt ? applied : 0,
+    reference: entry.referenceNumber || null,
+    slipNumber: entry.slipNumber || null,
+    transactionLabel: entry.transactionType || (isReceipt ? 'BANK RECEIPT' : 'BANK PAYMENT')
+  };
+}
 
 const sortByDate = (a, b) => {
   const da = new Date(a.date).getTime();
@@ -234,9 +276,13 @@ export async function getSupplierLedgerParties(prisma, userId) {
 
 /** Single-account list: customers + suppliers merged by name (Dynamic Ledger). */
 export async function getAllLedgerParties(prisma, userId) {
-  const [customers, suppliers] = await Promise.all([
+  const [customers, suppliers, bankNames] = await Promise.all([
     getCustomerLedgerParties(prisma, userId),
-    getSupplierLedgerParties(prisma, userId)
+    getSupplierLedgerParties(prisma, userId),
+    prisma.bankEntry.findMany({
+      where: { userId, bankName: { not: null } },
+      select: { bankName: true, amount: true, entryType: true }
+    })
   ]);
   const map = new Map();
   for (const party of customers) {
@@ -280,6 +326,31 @@ export async function getAllLedgerParties(prisma, userId) {
         runningBalance: party.runningBalance || 0
       });
     }
+  }
+  const bankBalances = new Map();
+  for (const entry of bankNames) {
+    const key = String(entry.bankName || '').trim();
+    if (!key) continue;
+    const lower = key.toLowerCase();
+    const current = bankBalances.get(lower) || { name: key, count: 0, balance: 0 };
+    current.count += 1;
+    current.balance = roundMoney(
+      current.balance + (entry.entryType === 'receipt' ? entry.amount : -entry.amount)
+    );
+    bankBalances.set(lower, current);
+  }
+  for (const [lower, info] of bankBalances) {
+    if (map.has(lower)) continue;
+    map.set(lower, {
+      partyType: 'bank',
+      partyName: info.name,
+      customerId: null,
+      supplierId: null,
+      gstNumber: null,
+      mobileNumber: null,
+      entryCount: info.count,
+      runningBalance: info.balance
+    });
   }
   return Array.from(map.values()).sort((a, b) => a.partyName.localeCompare(b.partyName));
 }
@@ -343,31 +414,96 @@ function toDayEnd(value) {
   return d;
 }
 
+/** Ledger for our bank / cash A/C (deposit = debit, withdraw = credit). */
+export async function buildBankAccountLedger(prisma, userId, bankName) {
+  const name = String(bankName || '').trim();
+  if (!name) return null;
+  const entries = await prisma.bankEntry.findMany({
+    where: { userId, bankName: { equals: name, mode: 'insensitive' } },
+    orderBy: [{ entryDate: 'asc' }, { createdAt: 'asc' }]
+  });
+  if (!entries.length) return null;
+
+  const rawEntries = entries.map(entry => {
+    const applied = roundMoney(entry.adjustAdd || entry.amount);
+    const billNos = formatBillNosRemark(entry.billAllocations) || entry.remarks || '';
+    const isReceipt = entry.entryType === 'receipt';
+    return {
+      id: `bank-book-${entry.id}`,
+      sourceType: 'bank_entry',
+      sourceId: entry.id,
+      date: entry.entryDate,
+      voucherNumber: entry.voucherNumber || '-',
+      billNumber: entry.chequeNumber || entry.slipNumber || '-',
+      account: entry.partyName,
+      particulars: billNos,
+      remarks: billNos,
+      // Asset A/C: receipt deposits (Dr), payment withdraws (Cr)
+      debitAmount: isReceipt ? applied : 0,
+      creditAmount: isReceipt ? 0 : applied
+    };
+  }).filter(row => (row.debitAmount || 0) + (row.creditAmount || 0) > 0);
+
+  if (!rawEntries.length) return null;
+  const ledger = withRunningBalance(rawEntries, 'customer');
+  const last = ledger[ledger.length - 1];
+  return {
+    partyType: 'bank',
+    partyName: name,
+    ledger,
+    runningBalance: last ? last.runningBalance : 0,
+    balanceType: last ? last.balanceType : 'DR',
+    totalDebit: roundMoney(ledger.reduce((sum, row) => sum + row.debitAmount, 0)),
+    totalCredit: roundMoney(ledger.reduce((sum, row) => sum + row.creditAmount, 0))
+  };
+}
+
 /** Unified single-account ledger (customer and/or supplier activity for one A/C name). */
 export async function buildUnifiedPartyLedger(prisma, userId, { partyName, supplierId, customerId, fromDate, toDate }) {
   const name = String(partyName || '').trim();
   if (!name) return null;
 
   let resolvedSupplierId = supplierId || null;
+  let supplierAccountType = null;
   if (!resolvedSupplierId) {
     const supplier = await prisma.supplier.findFirst({
       where: { userId, name: { equals: name, mode: 'insensitive' } },
-      select: { id: true }
+      select: { id: true, accountType: true }
     });
     resolvedSupplierId = supplier?.id || null;
+    supplierAccountType = supplier?.accountType || null;
+  } else {
+    const supplier = await prisma.supplier.findFirst({
+      where: { id: resolvedSupplierId, userId },
+      select: { accountType: true }
+    });
+    supplierAccountType = supplier?.accountType || null;
   }
+
+  const accountTypeUpper = String(supplierAccountType || '').trim().toUpperCase();
+  const bankBook = await buildBankAccountLedger(prisma, userId, name);
+  const isBankCashAccount = accountTypeUpper === 'BANK'
+    || accountTypeUpper === 'CASH'
+    || name.toUpperCase() === 'CASH A/C'
+    || Boolean(bankBook?.ledger?.length);
 
   const chunks = [];
-  if (resolvedSupplierId) {
-    const supplierLedger = await buildSupplierLedger(prisma, userId, resolvedSupplierId);
-    if (supplierLedger?.ledger?.length) chunks.push(supplierLedger);
+  if (bankBook?.ledger?.length) {
+    chunks.push(bankBook);
   }
 
-  const customerLedger = await buildCustomerLedger(prisma, userId, name);
-  if (customerLedger?.ledger?.length) chunks.push(customerLedger);
+  // Bank/cash books are deposit/withdraw only — skip trade ledgers for those A/Cs.
+  if (!isBankCashAccount) {
+    if (resolvedSupplierId) {
+      const supplierLedger = await buildSupplierLedger(prisma, userId, resolvedSupplierId);
+      if (supplierLedger?.ledger?.length) chunks.push(supplierLedger);
+    }
+    const customerLedger = await buildCustomerLedger(prisma, userId, name);
+    if (customerLedger?.ledger?.length) chunks.push(customerLedger);
+  }
 
   const emptyResult = {
-    partyType: resolvedSupplierId ? 'supplier' : 'customer',
+    partyType: bankBook ? 'bank' : (resolvedSupplierId ? 'supplier' : 'customer'),
     partyName: name,
     supplierId: resolvedSupplierId,
     customerId: customerId || null,
@@ -377,9 +513,9 @@ export async function buildUnifiedPartyLedger(prisma, userId, { partyName, suppl
     openingDebit: 0,
     openingCredit: 0,
     openingBalance: 0,
-    openingBalanceType: resolvedSupplierId ? 'CR' : 'DR',
+    openingBalanceType: bankBook || !resolvedSupplierId ? 'DR' : 'CR',
     runningBalance: 0,
-    balanceType: resolvedSupplierId ? 'CR' : 'DR',
+    balanceType: bankBook || !resolvedSupplierId ? 'DR' : 'CR',
     totalDebit: 0,
     totalCredit: 0
   };
@@ -475,6 +611,7 @@ export async function buildCustomerLedger(prisma, userId, partyName) {
   ]);
 
   const invoicedOrderIds = new Set(invoices.map(inv => inv.orderId));
+  const paidByBill = paidInfoByBillId(bankEntries);
   const rawEntries = [];
 
   for (const order of orders) {
@@ -486,6 +623,8 @@ export async function buildCustomerLedger(prisma, userId, partyName) {
     const goodsReturn = isSalesGoodsReturn(order.transactionType);
     const disc = resolveDiscountJournal(order.transactionType, calculateOrderDiscountAmount(order));
     const mainAmount = disc ? roundMoney(amount + disc.amount) : amount;
+    const paidInfo = paidByBill.get(order.id);
+    const paidOn = paidInfo && paidInfo.amount + 0.001 >= amount ? formatPaidOnRemark(paidInfo.date) : '';
     rawEntries.push({
       id: `order-${order.id}`,
       sourceType: 'order',
@@ -494,7 +633,8 @@ export async function buildCustomerLedger(prisma, userId, partyName) {
       voucherNumber: order.orderNumber || String(order.invoiceNumber || '-'),
       billNumber: billNo,
       account: order.transactionType || 'SALES',
-      particulars: goodsReturn ? `Sales goods return #${billNo}` : `Sales bill / order #${billNo}`,
+      particulars: paidOn || (goodsReturn ? `Sales goods return #${billNo}` : `Sales bill / order #${billNo}`),
+      remarks: paidOn,
       debitAmount: goodsReturn ? 0 : mainAmount,
       creditAmount: goodsReturn ? mainAmount : 0
     });
@@ -522,6 +662,8 @@ export async function buildCustomerLedger(prisma, userId, partyName) {
     if (amount <= 0) continue;
     const disc = resolveDiscountJournal(invoice.order?.transactionType, invoice.discountAmount);
     const mainAmount = disc ? roundMoney(amount + disc.amount) : amount;
+    const paidInfo = paidByBill.get(invoice.id) || (invoice.orderId ? paidByBill.get(invoice.orderId) : null);
+    const paidOn = paidInfo && paidInfo.amount + 0.001 >= amount ? formatPaidOnRemark(paidInfo.date) : '';
     rawEntries.push({
       id: `invoice-${invoice.id}`,
       sourceType: 'sales_invoice',
@@ -530,7 +672,8 @@ export async function buildCustomerLedger(prisma, userId, partyName) {
       voucherNumber: invoice.order?.orderNumber || invoice.invoiceNumber,
       billNumber: invoice.invoiceNumber,
       account: invoice.order?.transactionType || 'SALES INVOICE',
-      particulars: `Sales invoice #${invoice.invoiceNumber}`,
+      particulars: paidOn || `Sales invoice #${invoice.invoiceNumber}`,
+      remarks: paidOn,
       debitAmount: mainAmount,
       creditAmount: 0
     });
@@ -571,35 +714,9 @@ export async function buildCustomerLedger(prisma, userId, partyName) {
 
   for (const entry of bankEntries) {
     if (!matchesPartyName({ buyerName: entry.partyName, customer: null }, partyName)) continue;
-    const applied = roundMoney(entry.adjustAdd || entry.amount);
-    if (applied <= 0) continue;
-    if (entry.entryType === 'receipt') {
-      rawEntries.push({
-        id: `bank-${entry.id}`,
-        sourceType: 'bank_entry',
-        sourceId: entry.id,
-        date: entry.entryDate,
-        voucherNumber: entry.voucherNumber || '-',
-        billNumber: entry.billNumber || entry.slipNumber || '-',
-        account: entry.transactionType || 'BANK RECEIPT',
-        particulars: `Bank receipt V.${entry.voucherNumber || '-'}${entry.remarks ? ` · ${entry.remarks}` : ''}`,
-        debitAmount: 0,
-        creditAmount: applied
-      });
-    } else {
-      rawEntries.push({
-        id: `bank-${entry.id}`,
-        sourceType: 'bank_entry',
-        sourceId: entry.id,
-        date: entry.entryDate,
-        voucherNumber: entry.voucherNumber || '-',
-        billNumber: entry.billNumber || entry.slipNumber || '-',
-        account: entry.transactionType || 'BANK PAYMENT',
-        particulars: `Bank payment V.${entry.voucherNumber || '-'}`,
-        debitAmount: applied,
-        creditAmount: 0
-      });
-    }
+    const row = bankEntryLedgerRow(entry);
+    if ((row.debitAmount || 0) + (row.creditAmount || 0) <= 0) continue;
+    rawEntries.push(row);
   }
 
   rawEntries.sort(sortByDate);
@@ -639,6 +756,7 @@ export async function buildSupplierLedger(prisma, userId, supplierId) {
     })
   ]);
 
+  const paidByBill = paidInfoByBillId(bankEntries);
   const rawEntries = [];
 
   for (const bill of supplier.purchaseBills) {
@@ -647,6 +765,10 @@ export async function buildSupplierLedger(prisma, userId, supplierId) {
     const purchaseReturn = isPurchaseReturn(bill.transactionType);
     const disc = resolveDiscountJournal(bill.transactionType, bill.discountAmount);
     const mainAmount = disc ? roundMoney(amount + disc.amount) : amount;
+    const paidInfo = paidByBill.get(bill.id);
+    const paidOn = !purchaseReturn && paidInfo && paidInfo.amount + 0.001 >= amount
+      ? formatPaidOnRemark(paidInfo.date)
+      : '';
     rawEntries.push({
       id: `bill-${bill.id}`,
       sourceType: 'purchase_bill',
@@ -655,11 +777,12 @@ export async function buildSupplierLedger(prisma, userId, supplierId) {
       voucherNumber: bill.voucherNumber || '-',
       billNumber: bill.billNumber || String(bill.typeBillNumber || '-'),
       account: bill.purchaseAccount || bill.transactionType || 'FINISH PURCHASE',
-      particulars: purchaseReturn
+      particulars: paidOn || (purchaseReturn
         ? `Purchase return #${bill.billNumber || bill.typeBillNumber || '-'}`
         : isExpensePurchaseType(bill.transactionType)
           ? `Expense ${bill.transactionType || ''} #${bill.billNumber || bill.typeBillNumber || '-'}${bill.purchaseAccount ? ` · ${bill.purchaseAccount}` : ''}`
-          : `Purchase bill #${bill.billNumber || bill.typeBillNumber || '-'}`,
+          : `Purchase bill #${bill.billNumber || bill.typeBillNumber || '-'}`),
+      remarks: paidOn,
       debitAmount: purchaseReturn ? mainAmount : 0,
       creditAmount: purchaseReturn ? 0 : mainAmount,
       lineCount: Array.isArray(bill.lineItems) ? bill.lineItems.length : 0
@@ -958,35 +1081,10 @@ export async function buildSupplierLedger(prisma, userId, supplierId) {
 
   for (const entry of bankEntries) {
     if (!matchesSupplierName(entry.partyName, supplier.name)) continue;
-    const applied = roundMoney(entry.adjustAdd || entry.amount);
-    if (applied <= 0) continue;
-    if (entry.entryType === 'payment') {
-      rawEntries.push({
-        id: `bank-${entry.id}`,
-        sourceType: 'bank_entry',
-        sourceId: entry.id,
-        date: entry.entryDate,
-        voucherNumber: entry.voucherNumber || '-',
-        billNumber: entry.billNumber || entry.slipNumber || '-',
-        account: entry.transactionType || 'BANK PAYMENT',
-        particulars: `Bank payment V.${entry.voucherNumber || '-'}`,
-        debitAmount: applied,
-        creditAmount: 0
-      });
-    } else {
-      rawEntries.push({
-        id: `bank-${entry.id}`,
-        sourceType: 'bank_entry',
-        sourceId: entry.id,
-        date: entry.entryDate,
-        voucherNumber: entry.voucherNumber || '-',
-        billNumber: entry.billNumber || entry.slipNumber || '-',
-        account: entry.transactionType || 'BANK RECEIPT',
-        particulars: `Bank receipt V.${entry.voucherNumber || '-'}`,
-        debitAmount: 0,
-        creditAmount: applied
-      });
-    }
+    const row = bankEntryLedgerRow(entry);
+    if ((row.debitAmount || 0) + (row.creditAmount || 0) <= 0) continue;
+    // Supplier party ledger: payment debits the party (clears CR), receipt credits.
+    rawEntries.push(row);
   }
 
   rawEntries.sort(sortByDate);
@@ -1580,20 +1678,22 @@ export async function getLedgerEntryDetail(prisma, userId, sourceType, sourceId)
     const entryLabel = entry.entryType === 'receipt' ? 'Bank Receipt' : 'Bank Payment';
 
     return {
-      title: `${entryLabel} V.${entry.voucherNumber || '-'}`,
+      title: `${entry.transactionType || entryLabel} V.${entry.voucherNumber || '-'}`,
       subtitle: entry.partyName,
       sourceType,
       sourceId,
+      canEdit: true,
+      editPath: `/erp/bank?edit=${entry.id}`,
       fields: buildDetailFields([
         { label: 'Date', value: toIsoDate(entry.entryDate) },
-        { label: 'Type', value: entry.entryType },
-        { label: 'Transaction Type', value: entry.transactionType },
+        { label: 'Type', value: entry.transactionType || entry.entryType },
         { label: 'Party Type', value: entry.partyType },
-        { label: 'Bank', value: entry.bankName },
-        { label: 'Payment Mode', value: entry.paymentMode },
-        { label: 'Reference', value: entry.referenceNumber },
+        { label: 'Bank / Cash', value: entry.bankName },
+        { label: 'Draw / Cheque', value: entry.referenceNumber },
         { label: 'Cheque No.', value: entry.chequeNumber },
         { label: 'Cheque Date', value: entry.chequeDate ? toIsoDate(entry.chequeDate) : '' },
+        { label: 'Slip No.', value: entry.slipNumber },
+        { label: 'Bill Nos.', value: formatBillNosRemark(entry.billAllocations) || entry.billNumber },
         { label: 'Gross Amount', value: entry.grossAmount, isMoney: true },
         { label: 'Adjust Pending', value: entry.adjustPending, isMoney: true },
         { label: 'Net Bill Amount', value: entry.netBillAmount, isMoney: true },

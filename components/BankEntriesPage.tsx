@@ -1,8 +1,19 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Edit3, Loader2, RefreshCw, Save, Search, Trash2 } from 'lucide-react';
+import { ArrowLeft, Edit3, Loader2, Plus, RefreshCw, Search, Trash2 } from 'lucide-react';
 import { bankEntriesApi, invoicesApi } from '../services/api';
-import { BankEntry, BankPendingBill, CompletedOrderParty, PurchaseBillParty } from '../types';
-import { DEFAULT_PURCHASE_TRANSACTION_TYPE, DEFAULT_SALES_TRANSACTION_TYPE, ERP_TRANSACTION_TYPES } from '../constants/erpTransactionTypes';
+import { AccountParty, BankEntry, BankPendingBill, CompletedOrderParty, PurchaseBillParty } from '../types';
+import { ERP_TRANSACTION_TYPES } from '../constants/erpTransactionTypes';
+import { postingSaleOrPurchaseAccount } from '../constants/erpTransactionPostingRules';
+import {
+  BANK_CASH_SERIES,
+  bankCashDefaultPartyType,
+  bankCashEntryType,
+  bankCashPaymentMode,
+  DEFAULT_BANK_CASH_SERIES,
+  normalizeBankCashSeries,
+  slipNumberFromDate
+} from '../constants/bankCashSeries';
+import { AccountsInformationDialog } from './AccountsInformationDialog';
 import { ErpFormShell } from './ErpFormShell';
 import { ErpSaveButton } from './ErpSaveButton';
 
@@ -130,31 +141,39 @@ const computeAdjustmentBreakdown = (
 const inputClass = 'w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm font-semibold outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100';
 const labelClass = 'mb-1 block text-[10px] font-black uppercase tracking-widest text-gray-500';
 
-const emptyForm = () => ({
-  entryType: 'receipt' as 'payment' | 'receipt',
-  entryDate: today(),
-  voucherNumber: '',
-  companyName: '',
-  bankName: '',
-  partyType: 'customer' as 'customer' | 'supplier' | 'other',
-  partyName: '',
-  transactionType: DEFAULT_SALES_TRANSACTION_TYPE,
-  amount: '',
-  paymentMode: 'bank',
-  chequeNumber: '',
-  chequeDate: '',
-  slipNumber: '',
-  billNumber: '',
-  remarks: ''
-});
+const emptyForm = () => {
+  const series = DEFAULT_BANK_CASH_SERIES;
+  const entryDate = today();
+  return {
+    series,
+    entryType: bankCashEntryType(series) as 'payment' | 'receipt',
+    entryDate,
+    voucherNumber: '',
+    companyName: '',
+    bankName: '',
+    partyType: bankCashDefaultPartyType(series) as 'customer' | 'supplier' | 'other',
+    partyName: '',
+    transactionType: series,
+    billTypeFilter: '',
+    amount: '',
+    paymentMode: bankCashPaymentMode(series) as 'bank' | 'cash',
+    chequeNumber: '',
+    chequeDate: entryDate,
+    slipNumber: slipNumberFromDate(entryDate),
+    referenceNumber: '',
+    billNumber: '',
+    remarks: ''
+  };
+};
 
 export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
+  const editIdFromUrl = useMemo(() => new URLSearchParams(window.location.search).get('edit'), []);
   const [viewMode, setViewMode] = useState<ViewMode>('entry');
   const [entries, setEntries] = useState<BankEntry[]>([]);
   const [pendingBills, setPendingBills] = useState<BankPendingBill[]>([]);
   const [completedParties, setCompletedParties] = useState<CompletedOrderParty[]>([]);
   const [purchaseParties, setPurchaseParties] = useState<PurchaseBillParty[]>([]);
-  const [bankAccounts, setBankAccounts] = useState<Array<{ name: string; balance: number }>>([]);
+  const [bankAccounts, setBankAccounts] = useState<Array<{ name: string; balance: number; accountType?: string }>>([]);
   const [bankBalance, setBankBalance] = useState(1000000);
   const [partyBalance, setPartyBalance] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -168,6 +187,9 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
   const [pendingNoteCount, setPendingNoteCount] = useState(0);
   const [selectedAdjustIds, setSelectedAdjustIds] = useState<Set<string>>(new Set());
   const [quickBillPick, setQuickBillPick] = useState('');
+  const [showAddBank, setShowAddBank] = useState(false);
+  const [newBankName, setNewBankName] = useState('');
+  const [restoreAllocations, setRestoreAllocations] = useState<BankPendingBill[] | null>(null);
 
   const loadEntries = async () => {
     setLoading(true);
@@ -238,9 +260,37 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
         partyType: partyType as any,
         transactionType: transactionType || undefined
       });
-      setPendingBills(sortPendingItems(bills.map(bill => ({ ...bill, adjustAmount: 0 }))));
+      setPendingBills(prev => {
+        const seeded = sortPendingItems(bills.map(bill => ({ ...bill, adjustAmount: 0 })));
+        if (!restoreAllocations?.length) return seeded;
+        const byId = new Map<string, BankPendingBill>(
+          restoreAllocations.map(item => [item.billId, item])
+        );
+        const merged = seeded.map(bill => {
+          const saved = byId.get(bill.billId);
+          if (!saved) return bill;
+          return {
+            ...bill,
+            adjustAmount: saved.adjustAmount || 0,
+            pendingAmount: Math.max(bill.pendingAmount, saved.adjustAmount || 0)
+          };
+        });
+        for (const saved of restoreAllocations) {
+          if (!merged.some(row => row.billId === saved.billId)) {
+            merged.push({ ...saved });
+          }
+        }
+        return sortPendingItems(merged);
+      });
       setPendingNoteCount(noteCount ?? bills.filter(b => b.billType === 'credit_debit_note').length);
-      setSelectedAdjustIds(new Set());
+      if (restoreAllocations?.length) {
+        setSelectedAdjustIds(new Set(
+          restoreAllocations.filter(item => (item.adjustAmount || 0) > 0).map(item => item.billId)
+        ));
+        setRestoreAllocations(null);
+      } else {
+        setSelectedAdjustIds(new Set());
+      }
       setQuickBillPick('');
     } catch (err: any) {
       setPendingBills([]);
@@ -251,7 +301,26 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
     } finally {
       setLoadingBills(false);
     }
-  }, []);
+  }, [restoreAllocations]);
+
+  const applySeries = (seriesValue: string, keepParty = false) => {
+    const series = normalizeBankCashSeries(seriesValue);
+    const entryType = bankCashEntryType(series);
+    const paymentMode = bankCashPaymentMode(series);
+    const partyType = bankCashDefaultPartyType(series);
+    const cashAccount = postingSaleOrPurchaseAccount(series) || 'CASH A/C';
+    setForm(f => ({
+      ...f,
+      series,
+      transactionType: series,
+      entryType,
+      paymentMode,
+      partyType: keepParty ? f.partyType : partyType,
+      partyName: keepParty ? f.partyName : '',
+      bankName: paymentMode === 'cash' ? cashAccount : f.bankName,
+      slipNumber: slipNumberFromDate(f.entryDate)
+    }));
+  };
 
   useEffect(() => {
     void loadMasterData();
@@ -266,8 +335,16 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
 
   useEffect(() => {
     void refreshBalances(form.bankName, form.partyName, form.partyType);
-    void loadPendingBills(form.partyName, form.partyType, form.transactionType);
-  }, [form.bankName, form.partyName, form.partyType, form.transactionType, refreshBalances, loadPendingBills]);
+    void loadPendingBills(form.partyName, form.partyType, form.billTypeFilter || undefined);
+  }, [form.bankName, form.partyName, form.partyType, form.billTypeFilter, refreshBalances, loadPendingBills]);
+
+  useEffect(() => {
+    setForm(f => {
+      const nextSlip = slipNumberFromDate(f.entryDate);
+      if (f.slipNumber === nextSlip) return f;
+      return { ...f, slipNumber: nextSlip };
+    });
+  }, [form.entryDate]);
 
   const summary = useMemo(() => {
     const selected = pendingBills.filter(bill => selectedAdjustIds.has(bill.billId) && bill.adjustAmount > 0);
@@ -489,42 +566,79 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
   const startEdit = async (entry: BankEntry) => {
     setEditingId(entry.id);
     setViewMode('entry');
+    const series = normalizeBankCashSeries(
+      entry.transactionType
+      || (entry.entryType === 'payment'
+        ? (entry.paymentMode === 'cash' ? 'CASH PAYMENT' : 'BANK PAYMENT')
+        : (entry.paymentMode === 'cash' ? 'CASH RECEIPT' : 'BANK RECEIPT'))
+    );
+    const entryDate = entry.entryDate?.slice(0, 10) || today();
     setForm({
-      entryType: entry.entryType,
-      entryDate: entry.entryDate?.slice(0, 10) || today(),
+      series,
+      entryType: bankCashEntryType(series),
+      entryDate,
       voucherNumber: entry.voucherNumber || '',
       companyName: entry.companyName || '',
       bankName: entry.bankName || '',
-      partyType: (entry.partyType as any) || 'customer',
+      partyType: (entry.partyType as any) || bankCashDefaultPartyType(series),
       partyName: entry.partyName || '',
-      transactionType: entry.transactionType || (entry.partyType === 'supplier' ? DEFAULT_PURCHASE_TRANSACTION_TYPE : DEFAULT_SALES_TRANSACTION_TYPE),
+      transactionType: series,
+      billTypeFilter: '',
       amount: String(entry.amount || ''),
-      paymentMode: entry.paymentMode || 'bank',
+      paymentMode: bankCashPaymentMode(series),
       chequeNumber: entry.chequeNumber || '',
-      chequeDate: entry.chequeDate?.slice(0, 10) || '',
-      slipNumber: entry.slipNumber || '',
+      chequeDate: entry.chequeDate?.slice(0, 10) || entryDate,
+      slipNumber: entry.slipNumber || slipNumberFromDate(entryDate),
+      referenceNumber: entry.referenceNumber || '',
       billNumber: entry.billNumber || '',
       remarks: entry.remarks || ''
     });
     if (Array.isArray(entry.billAllocations) && entry.billAllocations.length > 0) {
-      const restored = entry.billAllocations.map(item => ({
+      setRestoreAllocations(entry.billAllocations.map(item => ({
         billId: item.billId,
         billType: item.billType,
         billNumber: item.billNumber,
         voucherNumber: item.voucherNumber,
         billDate: item.billDate,
-        days: item.days,
+        days: item.days || 0,
         grace: item.grace,
         adatDisc: item.adatDisc,
         billAmount: item.billAmount,
         pendingAmount: item.pendingAmount,
         taxableAmount: item.taxableAmount,
-        adjustAmount: item.adjustAmount
-      }));
-      setPendingBills(restored);
-      setSelectedAdjustIds(new Set(restored.filter(item => item.adjustAmount > 0).map(item => item.billId)));
+        adjustAmount: item.adjustAmount,
+        adjustDirection: item.adjustDirection,
+        noteKind: item.noteKind,
+        noteSide: item.noteSide
+      })));
+    } else {
+      setRestoreAllocations(null);
     }
   };
+
+  const onBankAccountSaved = (party: AccountParty) => {
+    const name = party.name;
+    setBankAccounts(prev => {
+      if (prev.some(account => account.name.toLowerCase() === name.toLowerCase())) return prev;
+      return [...prev, { name, balance: 0, accountType: party.accountType || 'BANK' }];
+    });
+    setForm(f => ({ ...f, bankName: name, paymentMode: 'bank' }));
+    setShowAddBank(false);
+    setNewBankName('');
+  };
+
+  useEffect(() => {
+    if (!editIdFromUrl) return;
+    void (async () => {
+      try {
+        const { entry } = await bankEntriesApi.getById(editIdFromUrl);
+        await startEdit(entry);
+      } catch (err: any) {
+        setError(err.message || 'Could not load bank entry for edit.');
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editIdFromUrl]);
 
   const resetForm = async () => {
     setEditingId(null);
@@ -562,11 +676,24 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
     setSaving(true);
     setError('');
     try {
+      const series = normalizeBankCashSeries(form.series || form.transactionType);
       const payload = {
-        ...form,
-        amount,
+        entryType: bankCashEntryType(series),
+        paymentMode: bankCashPaymentMode(series),
+        transactionType: series,
         entryDate: form.entryDate ? new Date(form.entryDate).toISOString() : new Date().toISOString(),
+        voucherNumber: form.voucherNumber,
+        companyName: form.companyName,
+        bankName: form.bankName,
+        partyType: form.partyType,
+        partyName: form.partyName,
+        amount,
+        chequeNumber: form.chequeNumber,
         chequeDate: form.chequeDate ? new Date(form.chequeDate).toISOString() : null,
+        slipNumber: form.slipNumber || slipNumberFromDate(form.entryDate),
+        referenceNumber: form.referenceNumber,
+        billNumber: form.billNumber,
+        remarks: form.remarks,
         billAllocations,
         grossAmount: summary.grossAmount,
         adjustPending: summary.adjustPending,
@@ -644,7 +771,23 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
           <ErpFormShell onSave={saveEntry} saving={saving} className="space-y-4">
           <div className="space-y-4">
             <section className="rounded-3xl border border-gray-100 bg-white p-5 shadow-sm">
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+                <div>
+                  <label className={labelClass}>Company</label>
+                  <input className={inputClass} value={form.companyName} onChange={e => setForm(f => ({ ...f, companyName: e.target.value }))} />
+                </div>
+                <div>
+                  <label className={labelClass}>Type</label>
+                  <select
+                    className={inputClass}
+                    value={form.series}
+                    onChange={e => applySeries(e.target.value)}
+                  >
+                    {BANK_CASH_SERIES.map(series => (
+                      <option key={series} value={series}>{series}</option>
+                    ))}
+                  </select>
+                </div>
                 <div>
                   <label className={labelClass}>V. No.</label>
                   <input className={inputClass} value={form.voucherNumber} onChange={e => setForm(f => ({ ...f, voucherNumber: e.target.value }))} />
@@ -654,35 +797,61 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                   <input className={inputClass} type="date" value={form.entryDate} onChange={e => setForm(f => ({ ...f, entryDate: e.target.value }))} />
                 </div>
                 <div>
-                  <label className={labelClass}>Company</label>
-                  <input className={inputClass} value={form.companyName} onChange={e => setForm(f => ({ ...f, companyName: e.target.value }))} />
-                </div>
-                <div>
-                  <label className={labelClass}>Bank Receipt / Payment</label>
-                  <select className={inputClass} value={form.entryType} onChange={e => setForm(f => ({ ...f, entryType: e.target.value as any }))}>
-                    <option value="receipt">Bank Receipt</option>
-                    <option value="payment">Bank Payment</option>
-                  </select>
+                  <label className={labelClass}>{form.entryType === 'receipt' ? 'Rec. Amt.' : 'Paid Amt.'}</label>
+                  <input className={inputClass} type="number" min="0" step="0.01" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} />
                 </div>
               </div>
 
-              <div className="mt-4 grid gap-4 md:grid-cols-2">
+              <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                 <div>
-                  <label className={labelClass}>A/C Name</label>
-                  <div className="grid grid-cols-[120px_1fr] gap-2">
+                  <label className={labelClass}>Bank / Cash (our account)</label>
+                  <div className="flex gap-2">
+                    <input
+                      className={inputClass}
+                      list="bank-account-options"
+                      placeholder={form.paymentMode === 'cash' ? 'CASH A/C' : 'IDBI BANK'}
+                      value={form.bankName}
+                      onChange={e => setForm(f => ({ ...f, bankName: e.target.value }))}
+                      disabled={form.paymentMode === 'cash'}
+                    />
+                    {form.paymentMode === 'bank' && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNewBankName(form.bankName.trim());
+                          setShowAddBank(true);
+                        }}
+                        className="inline-flex shrink-0 items-center gap-1 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-black text-indigo-700 hover:bg-indigo-100"
+                        title="Add new bank account"
+                      >
+                        <Plus className="h-4 w-4" />
+                        Add
+                      </button>
+                    )}
+                  </div>
+                  <datalist id="bank-account-options">
+                    {bankAccounts
+                      .filter(account => form.paymentMode === 'cash'
+                        ? String(account.accountType || account.name).toUpperCase().includes('CASH')
+                        : !String(account.accountType || account.name).toUpperCase().includes('CASH') || account.name === 'Default Bank')
+                      .map(account => (
+                        <option key={account.name} value={account.name} />
+                      ))}
+                  </datalist>
+                  <p className="mt-2 rounded-xl bg-sky-50 px-3 py-2 text-sm font-black text-sky-900">
+                    Cur. Bal.: {formatBalance(bankBalance)}
+                  </p>
+                </div>
+
+                <div>
+                  <label className={labelClass}>A/C Name (party)</label>
+                  <div className="grid grid-cols-[110px_1fr] gap-2">
                     <select
                       className={inputClass}
                       value={form.partyType}
                       onChange={e => {
                         const partyType = e.target.value as 'customer' | 'supplier' | 'other';
-                        setForm(f => ({
-                          ...f,
-                          partyType,
-                          partyName: '',
-                          transactionType: partyType === 'supplier'
-                            ? DEFAULT_PURCHASE_TRANSACTION_TYPE
-                            : DEFAULT_SALES_TRANSACTION_TYPE
-                        }));
+                        setForm(f => ({ ...f, partyType, partyName: '' }));
                       }}
                     >
                       <option value="customer">Customer</option>
@@ -701,120 +870,102 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                     )}
                   </div>
                   <p className="mt-2 rounded-xl bg-amber-50 px-3 py-2 text-sm font-black text-amber-900">
-                    Party Balance: {formatBalance(partyBalance)}
+                    Cur. Bal.: {formatBalance(partyBalance)}
                     {selectedPartySummary ? (
                       form.partyType === 'supplier'
-                        ? ` · ${(selectedPartySummary as PurchaseBillParty).billCount} scanned bill${(selectedPartySummary as PurchaseBillParty).billCount === 1 ? '' : 's'}`
-                        : ` · ${(selectedPartySummary as CompletedOrderParty).orderCount} completed order${(selectedPartySummary as CompletedOrderParty).orderCount === 1 ? '' : 's'}`
+                        ? ` · ${(selectedPartySummary as PurchaseBillParty).billCount} bill${(selectedPartySummary as PurchaseBillParty).billCount === 1 ? '' : 's'}`
+                        : ` · ${(selectedPartySummary as CompletedOrderParty).orderCount} order${(selectedPartySummary as CompletedOrderParty).orderCount === 1 ? '' : 's'}`
                     ) : ''}
                   </p>
                 </div>
 
                 <div>
-                  <label className={labelClass}>Bank / Cash</label>
-                  <div className="grid grid-cols-[120px_1fr] gap-2">
-                    <select className={inputClass} value={form.paymentMode} onChange={e => setForm(f => ({ ...f, paymentMode: e.target.value }))}>
-                      <option value="bank">Bank</option>
-                      <option value="cash">Cash</option>
-                    </select>
-                    <input
-                      className={inputClass}
-                      list="bank-account-options"
-                      placeholder="HDFC BANK LTD."
-                      value={form.bankName}
-                      onChange={e => setForm(f => ({ ...f, bankName: e.target.value }))}
-                    />
-                    <datalist id="bank-account-options">
-                      {bankAccounts.map(account => (
-                        <option key={account.name} value={account.name} />
-                      ))}
-                    </datalist>
-                  </div>
-                  <p className="mt-2 rounded-xl bg-sky-50 px-3 py-2 text-sm font-black text-sky-900">
-                    Bank Balance: {formatBalance(bankBalance)}
-                  </p>
-                </div>
-              </div>
-
-              <div className="mt-4 grid gap-4 md:grid-cols-[1fr_auto] md:items-end">
-                <div>
-                  <label className={labelClass}>{form.entryType === 'receipt' ? 'Rec. Amt.' : 'Pay. Amt.'}</label>
-                  <input className={inputClass} type="number" min="0" step="0.01" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} />
-                  {summary.breakdown.received > 0 && (
-                    <div className="mt-2 rounded-xl border border-indigo-100 bg-indigo-50/60 px-3 py-2 text-xs font-semibold text-indigo-950">
-                      <div className="flex justify-between gap-3">
-                        <span>Net adjustment needed</span>
-                        <span className="font-black">{formatMoney(summary.breakdown.netCashRequired)}</span>
-                      </div>
-                      {summary.breakdown.shortfall > 0 ? (
-                        <div className="mt-1 flex justify-between gap-3 text-red-700">
-                          <span>Short by</span>
-                          <span className="font-black">{formatMoney(summary.breakdown.shortfall)}</span>
-                        </div>
-                      ) : summary.breakdown.excess > 0 ? (
-                        <div className="mt-1 flex justify-between gap-3 text-emerald-700">
-                          <span>Unallocated (extra)</span>
-                          <span className="font-black">{formatMoney(summary.breakdown.excess)}</span>
-                        </div>
-                      ) : summary.breakdown.netCashRequired > 0 ? (
-                        <div className="mt-1 flex justify-between gap-3 text-emerald-700">
-                          <span>Fully applied</span>
-                          <span className="font-black">₹0.00 left</span>
-                        </div>
-                      ) : null}
+                  <label className={labelClass}>Draw / Cheque (other party&apos;s bank)</label>
+                  <input
+                    className={inputClass}
+                    placeholder="HDFC"
+                    value={form.referenceNumber}
+                    onChange={e => setForm(f => ({ ...f, referenceNumber: e.target.value }))}
+                  />
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    <div>
+                      <label className={labelClass}>Chq. No.</label>
+                      <input className={inputClass} value={form.chequeNumber} onChange={e => setForm(f => ({ ...f, chequeNumber: e.target.value }))} />
                     </div>
-                  )}
+                    <div>
+                      <label className={labelClass}>Chq. Date</label>
+                      <input className={inputClass} type="date" value={form.chequeDate} onChange={e => setForm(f => ({ ...f, chequeDate: e.target.value }))} />
+                    </div>
+                  </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={applyReceivedAmount}
-                  className="rounded-xl bg-indigo-50 px-4 py-2.5 text-sm font-black text-indigo-700 hover:bg-indigo-100"
-                >
-                  Auto-adjust selected bills
-                </button>
               </div>
-            </section>
 
-            <section className="rounded-3xl border border-gray-100 bg-white p-5 shadow-sm">
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
-                <div>
-                  <label className={labelClass}>Chq. No.</label>
-                  <input className={inputClass} value={form.chequeNumber} onChange={e => setForm(f => ({ ...f, chequeNumber: e.target.value }))} />
-                </div>
-                <div>
-                  <label className={labelClass}>Chq. Date</label>
-                  <input className={inputClass} type="date" value={form.chequeDate} onChange={e => setForm(f => ({ ...f, chequeDate: e.target.value }))} />
-                </div>
+              <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                 <div>
                   <label className={labelClass}>Slip No.</label>
-                  <input className={inputClass} value={form.slipNumber} onChange={e => setForm(f => ({ ...f, slipNumber: e.target.value }))} />
+                  <input
+                    className={inputClass}
+                    value={form.slipNumber}
+                    onChange={e => setForm(f => ({ ...f, slipNumber: e.target.value }))}
+                    title="Auto from date (DDMM), e.g. 16/07 → 1607"
+                  />
                 </div>
                 <div>
-                  <label className={labelClass}>Type</label>
-                  <select className={inputClass} value={form.transactionType} onChange={e => setForm(f => ({ ...f, transactionType: e.target.value }))}>
+                  <label className={labelClass}>Bill type filter</label>
+                  <select
+                    className={inputClass}
+                    value={form.billTypeFilter}
+                    onChange={e => setForm(f => ({ ...f, billTypeFilter: e.target.value }))}
+                  >
+                    <option value="">All pending bills</option>
                     {ERP_TRANSACTION_TYPES.map(type => (
                       <option key={type.value} value={type.value}>{type.value}</option>
                     ))}
                   </select>
                 </div>
                 <div>
-                  <label className={labelClass}>Bill No.</label>
-                  <input className={inputClass} placeholder="Manual bill ref." value={form.billNumber} onChange={e => setForm(f => ({ ...f, billNumber: e.target.value }))} />
-                </div>
-                <div>
                   <label className={labelClass}>Remark</label>
                   <input className={inputClass} value={form.remarks} onChange={e => setForm(f => ({ ...f, remarks: e.target.value }))} />
                 </div>
+                <div className="flex items-end">
+                  <button
+                    type="button"
+                    onClick={applyReceivedAmount}
+                    className="w-full rounded-xl bg-indigo-50 px-4 py-2.5 text-sm font-black text-indigo-700 hover:bg-indigo-100"
+                  >
+                    Auto-adjust selected bills
+                  </button>
+                </div>
               </div>
+
+              {summary.breakdown.received > 0 && (
+                <div className="mt-3 rounded-xl border border-indigo-100 bg-indigo-50/60 px-3 py-2 text-xs font-semibold text-indigo-950">
+                  <div className="flex justify-between gap-3">
+                    <span>Net adjustment needed</span>
+                    <span className="font-black">{formatMoney(summary.breakdown.netCashRequired)}</span>
+                  </div>
+                  {summary.breakdown.shortfall > 0 ? (
+                    <div className="mt-1 flex justify-between gap-3 text-red-700">
+                      <span>Short by</span>
+                      <span className="font-black">{formatMoney(summary.breakdown.shortfall)}</span>
+                    </div>
+                  ) : summary.breakdown.excess > 0 ? (
+                    <div className="mt-1 flex justify-between gap-3 text-emerald-700">
+                      <span>Unallocated (extra)</span>
+                      <span className="font-black">{formatMoney(summary.breakdown.excess)}</span>
+                    </div>
+                  ) : null}
+                </div>
+              )}
             </section>
 
             <section className="rounded-3xl border border-gray-100 bg-white shadow-sm">
               <div className="border-b px-5 py-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
-                    <h2 className="text-sm font-black uppercase tracking-wide text-gray-900">Select Bills to Adjust</h2>
+                    <h2 className="text-sm font-black uppercase tracking-wide text-gray-900">Bill-wise adjustment</h2>
                     <p className="text-xs text-gray-500">
-                      Choose TYPE to filter the list, then tick the bill(s) you want to adjust. Only selected bills are included in auto-adjust.
+                      Pending bills for this party. Tick bill(s), enter Rec./Paid amount, then Auto-adjust (or type Adjust amount). Ledger will show BILL NOS. and PAID ON.
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
@@ -1144,17 +1295,24 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                   </thead>
                   <tbody>
                     {entries.map(entry => (
-                      <tr key={entry.id} className="border-b">
+                      <tr
+                        key={entry.id}
+                        className="cursor-pointer border-b hover:bg-indigo-50/40"
+                        onClick={() => {
+                          window.history.replaceState({}, '', `/erp/bank?edit=${entry.id}`);
+                          void startEdit(entry);
+                        }}
+                      >
                         <td className="py-3 font-bold">{entry.voucherNumber || '-'}</td>
                         <td>{formatDate(entry.entryDate)}</td>
                         <td>
                           <span className={`rounded-full px-2 py-1 text-[10px] font-black uppercase ${entry.entryType === 'payment' ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>
-                            {entry.entryType}
+                            {entry.transactionType || entry.entryType}
                           </span>
                         </td>
                         <td>
                           <p className="font-bold text-gray-900">{entry.partyName}</p>
-                          <p className="text-xs text-gray-400">{entry.partyType || '-'}</p>
+                          <p className="text-xs text-gray-400">{entry.partyType || '-'}{entry.referenceNumber ? ` · Draw ${entry.referenceNumber}` : ''}</p>
                         </td>
                         <td>{entry.bankName || '-'}</td>
                         <td>{entry.chequeNumber || entry.slipNumber || '-'}</td>
@@ -1162,7 +1320,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                           {formatMoney(entry.amount)}
                         </td>
                         <td className="text-right font-semibold">{formatMoney(entry.adjustAdd || 0)}</td>
-                        <td className="text-right">
+                        <td className="text-right" onClick={e => e.stopPropagation()}>
                           <button type="button" onClick={() => void startEdit(entry)} className="mr-2 rounded-lg bg-indigo-50 p-2 text-indigo-700">
                             <Edit3 className="h-4 w-4" />
                           </button>
@@ -1179,6 +1337,18 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
           </section>
         )}
       </main>
+
+      <AccountsInformationDialog
+        open={showAddBank}
+        initialName={newBankName}
+        context="other"
+        suggestedAccountType="BANK"
+        onClose={() => {
+          setShowAddBank(false);
+          setNewBankName('');
+        }}
+        onSaved={onBankAccountSaved}
+      />
     </div>
   );
 };

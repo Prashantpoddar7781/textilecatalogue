@@ -895,6 +895,9 @@ export const bankEntriesApi = {
     const query = queryParams.toString();
     return request<{ entries: BankEntry[] }>(`/bank-entries${query ? `?${query}` : ''}`);
   },
+  getById: async (id: string) => {
+    return request<{ entry: BankEntry }>(`/bank-entries/${id}`);
+  },
   create: async (entry: Omit<BankEntry, 'id' | 'userId' | 'createdAt' | 'updatedAt'>) => {
     return request<{ entry: BankEntry }>('/bank-entries', {
       method: 'POST',
