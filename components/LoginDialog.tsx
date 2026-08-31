@@ -32,6 +32,8 @@ export const LoginDialog: React.FC<Props> = ({ onClose, onSuccess }) => {
         ? 'Reset Password'
         : 'Login';
 
+  const normalizedEmail = () => formData.email.trim().toLowerCase();
+
   const handlePasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -39,14 +41,15 @@ export const LoginDialog: React.FC<Props> = ({ onClose, onSuccess }) => {
     setLoading(true);
 
     try {
+      const email = normalizedEmail();
       if (authMode === 'login') {
-        const { token, user } = await authApi.login(formData.email, formData.password);
+        const { token, user } = await authApi.login(email, formData.password);
         localStorage.setItem('auth_token', token);
         onSuccess(token, user);
         onClose();
       } else if (authMode === 'signup') {
         const { token, user } = await authApi.register(
-          formData.email,
+          email,
           formData.password,
           formData.name,
           formData.firmName
@@ -70,8 +73,8 @@ export const LoginDialog: React.FC<Props> = ({ onClose, onSuccess }) => {
 
     try {
       const purpose = authMode === 'forgot' ? 'reset' : 'login';
-      await authApi.requestOtp(formData.email, purpose);
-      setNotice('OTP sent to your email.');
+      await authApi.requestOtp(normalizedEmail(), purpose);
+      setNotice('OTP sent to your email. Check Inbox and Spam/Promotions.');
     } catch (err: any) {
       setError(err.message || 'Could not send OTP');
     } finally {
@@ -86,7 +89,7 @@ export const LoginDialog: React.FC<Props> = ({ onClose, onSuccess }) => {
 
     try {
       const purpose = authMode === 'forgot' ? 'reset' : 'login';
-      const result = await authApi.verifyOtp(formData.email, purpose, formData.otp);
+      const result = await authApi.verifyOtp(normalizedEmail(), purpose, formData.otp.trim());
       if (purpose === 'reset') {
         if (!result.resetToken) throw new Error('Reset token missing');
         setResetToken(result.resetToken);
@@ -201,7 +204,11 @@ export const LoginDialog: React.FC<Props> = ({ onClose, onSuccess }) => {
                   className="w-full pl-9 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
                   placeholder="your@email.com"
                   value={formData.email}
-                  onChange={e => setFormData({...formData, email: e.target.value})}
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  inputMode="email"
+                  onChange={e => setFormData({ ...formData, email: e.target.value.replace(/\s+/g, '') })}
                 />
               </div>
             </div>

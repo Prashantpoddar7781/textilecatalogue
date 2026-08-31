@@ -191,8 +191,17 @@ router.post('/otp/request', [
       }
     });
 
-    await sendOtpEmail(email, otp);
+    // Reply first so mobile WebViews never sit on a long Resend/SMTP round-trip.
     res.json({ ok: true, message: 'OTP sent' });
+    setImmediate(() => {
+      sendOtpEmail(email, otp).catch((error) => {
+        console.error('OTP email send failed:', {
+          email,
+          purpose,
+          message: error?.message || String(error)
+        });
+      });
+    });
   } catch (error) {
     if (
       error?.message?.includes('SMTP_') ||

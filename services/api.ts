@@ -9,12 +9,26 @@ class ApiError extends Error {
   }
 }
 
-async function request<T>(
+function formatApiErrorPayload(error: any, status: number): string {
+  if (typeof error?.error === 'string' && error.error.trim()) return error.error;
+  if (typeof error?.message === 'string' && error.message.trim()) return error.message;
+  if (Array.isArray(error?.errors) && error.errors.length > 0) {
+    const first = error.errors[0];
+    if (typeof first?.msg === 'string') return first.msg;
+    if (typeof first?.message === 'string') return first.message;
+  }
+  if (status === 404 && (error?.error === 'Route not found' || error?.message === 'Route not found')) {
+    return 'Backend API route missing. Redeploy the Railway backend service, wait 1–2 minutes, then refresh.';
+  }
+  return 'Request failed';
+}
+
+async function requestOnce<T>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<T> {
   const token = localStorage.getItem('auth_token');
-  
+
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
     ...options.headers,
@@ -34,15 +48,41 @@ async function request<T>(
     if (response.status === 402 && typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('subscription-required', { detail: error }));
     }
-    throw new ApiError(
-      response.status,
-      response.status === 404 && (error.error === 'Route not found' || error.message === 'Route not found')
-        ? 'Backend API route missing. Redeploy the Railway backend service, wait 1–2 minutes, then refresh.'
-        : (error.error || error.message || 'Request failed')
-    );
+    throw new ApiError(response.status, formatApiErrorPayload(error, response.status));
   }
 
   return response.json();
+}
+
+async function request<T>(
+  endpoint: string,
+  options: RequestInit = {}
+): Promise<T> {
+  try {
+    return await requestOnce<T>(endpoint, options);
+  } catch (err: any) {
+    const isNetworkFailure =
+      err instanceof TypeError
+      || /failed to fetch|networkerror|load failed|network request failed/i.test(String(err?.message || ''));
+    // One retry helps flaky mobile WebView / transient Railway edge drops.
+    if (isNetworkFailure) {
+      try {
+        return await requestOnce<T>(endpoint, options);
+      } catch (retryErr: any) {
+        const retryNetwork =
+          retryErr instanceof TypeError
+          || /failed to fetch|networkerror|load failed|network request failed/i.test(String(retryErr?.message || ''));
+        if (retryNetwork) {
+          throw new ApiError(
+            0,
+            'Cannot reach ThreadX servers. Check internet, wait a moment, then try again. If only one email fails, type the email manually (do not paste) and retry.'
+          );
+        }
+        throw retryErr;
+      }
+    }
+    throw err;
+  }
 }
 
 // Auth API
