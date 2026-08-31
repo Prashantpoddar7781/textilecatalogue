@@ -36,7 +36,6 @@ import {
   slipNumberFromDate
 } from '../constants/bankCashSeries.js';
 import { allocateNextTypeBillNumber } from '../utils/transactionBilling.js';
-import { getPendingCreditDebitNotes, mergePendingBillsWithNotes } from '../utils/creditDebitNotes.js';
 import { ensurePartyMaster } from '../utils/partyMaster.js';
 
 const router = express.Router();
@@ -327,34 +326,16 @@ async function getPendingPurchaseBills(userId, partyName, transactionType) {
     .sort((a, b) => String(a.billNumber).localeCompare(String(b.billNumber), undefined, { numeric: true }));
 }
 
-function sumPendingNotesAdjustments(notes) {
-  return notes.reduce((sum, note) => {
-    const sign = note.adjustDirection === 'deduct' ? -1 : 1;
-    return sum + sign * note.pendingAmount;
-  }, 0);
-}
-
 async function getPartyBalance(userId, partyName, partyType) {
   if (!partyName) return 0;
+  // Bill-wise bank entry currently adjusts bills only (credit/debit notes come later).
   if (partyType === 'supplier') {
-    const [bills, notes] = await Promise.all([
-      getPendingPurchaseBills(userId, partyName),
-      getPendingCreditDebitNotes(prisma, userId, partyName, partyType)
-    ]);
-    return roundMoneyLocal(
-      bills.reduce((sum, bill) => sum + bill.pendingAmount, 0)
-      + sumPendingNotesAdjustments(notes)
-    );
+    const bills = await getPendingPurchaseBills(userId, partyName);
+    return roundMoneyLocal(bills.reduce((sum, bill) => sum + bill.pendingAmount, 0));
   }
 
-  const [bills, notes] = await Promise.all([
-    getPendingOrderBills(userId, partyName),
-    getPendingCreditDebitNotes(prisma, userId, partyName, partyType)
-  ]);
-  return roundMoneyLocal(
-    bills.reduce((sum, bill) => sum + bill.pendingAmount, 0)
-    + sumPendingNotesAdjustments(notes)
-  );
+  const bills = await getPendingOrderBills(userId, partyName);
+  return roundMoneyLocal(bills.reduce((sum, bill) => sum + bill.pendingAmount, 0));
 }
 
 router.get('/completed-order-parties', authenticateToken, requireActiveSubscription, async (req, res, next) => {
@@ -451,13 +432,11 @@ router.get('/pending-bills', authenticateToken, requireActiveSubscription, async
       ? await getPendingPurchaseBills(userId, partyName, transactionType)
       : await getPendingOrderBills(userId, partyName, transactionType);
 
-    const notes = await getPendingCreditDebitNotes(prisma, userId, partyName, partyType);
-    const merged = mergePendingBillsWithNotes(bills, notes);
-
+    // Credit/debit note adjustment on bank entries is deferred — return bills only.
     res.json({
-      bills: merged,
-      notes,
-      noteCount: notes.length,
+      bills,
+      notes: [],
+      noteCount: 0,
       billCount: bills.length
     });
   } catch (error) {
