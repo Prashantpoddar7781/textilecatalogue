@@ -897,12 +897,25 @@ export const bankEntriesApi = {
     const query = queryParams.toString();
     return request<{ bankBalance: number; partyBalance: number }>(`/bank-entries/balances${query ? `?${query}` : ''}`);
   },
-  getPendingBills: async (params: { partyName: string; partyType?: 'customer' | 'supplier' | 'other'; transactionType?: string }) => {
+  getPendingBills: async (params: {
+    partyName: string;
+    partyType?: 'customer' | 'supplier' | 'other';
+    transactionType?: string;
+    excludeEntryId?: string;
+  }) => {
     const queryParams = new URLSearchParams();
     queryParams.set('partyName', params.partyName);
     if (params.partyType) queryParams.set('partyType', params.partyType);
     if (params.transactionType) queryParams.set('transactionType', params.transactionType);
-    return request<{ bills: BankPendingBill[]; notes?: BankPendingBill[]; noteCount?: number; billCount?: number }>(`/bank-entries/pending-bills?${queryParams.toString()}`);
+    if (params.excludeEntryId) queryParams.set('excludeEntryId', params.excludeEntryId);
+    return request<{
+      bills: BankPendingBill[];
+      unadjusted?: BankPendingBill[];
+      notes?: BankPendingBill[];
+      noteCount?: number;
+      billCount?: number;
+      unadjCount?: number;
+    }>(`/bank-entries/pending-bills?${queryParams.toString()}`);
   },
   getOutstandingReport: async (params: Record<string, string | undefined>) => {
     const query = new URLSearchParams();

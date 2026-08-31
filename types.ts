@@ -974,7 +974,7 @@ export interface PurchaseBillParty {
 
 export interface BankPendingBill {
   billId: string;
-  billType: 'order' | 'sales_invoice' | 'purchase_bill' | string;
+  billType: 'order' | 'sales_invoice' | 'purchase_bill' | 'unadj_payment' | string;
   billNumber: string;
   transactionType?: string | null;
   voucherNumber?: string | null;
@@ -986,7 +986,7 @@ export interface BankPendingBill {
   pendingAmount: number;
   taxableAmount?: number;
   adjustAmount: number;
-  entryKind?: 'bill' | 'credit_note' | 'debit_note' | string;
+  entryKind?: 'bill' | 'credit_note' | 'debit_note' | 'unadj_payment' | string;
   noteKind?: 'credit' | 'debit' | string;
   noteSide?: 'sales' | 'purchase' | string;
   adjustDirection?: 'add' | 'deduct' | string;

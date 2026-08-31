@@ -48,6 +48,23 @@ export function slipNumberFromDate(dateValue) {
   return `${dd}${mm}`;
 }
 
+/** Prior bank entry used as an unadjusted payment/receipt in bill-wise settlement. */
+export const UNADJ_BILL_TYPE = 'unadj_payment';
+
+export function isUnadjAllocation(item) {
+  if (!item) return false;
+  const billType = String(item.billType || '').trim().toLowerCase();
+  const entryKind = String(item.entryKind || '').trim().toLowerCase();
+  return billType === UNADJ_BILL_TYPE || entryKind === UNADJ_BILL_TYPE || billType === 'unadj payment';
+}
+
+/** Empire-style unadj bill no — voucher 4 → "4 B". */
+export function formatUnadjBillNumber(voucherNumber) {
+  const v = String(voucherNumber ?? '').trim();
+  if (!v) return 'B';
+  return `${v} B`;
+}
+
 export function formatBillNosRemark(allocations) {
   if (!Array.isArray(allocations) || allocations.length === 0) return '';
   const nos = allocations
@@ -58,12 +75,35 @@ export function formatBillNosRemark(allocations) {
   return `BILL NOS. ${nos.join(', ')}`;
 }
 
-export function formatPaidOnRemark(dateValue) {
+function formatLedgerDate(dateValue) {
   if (!dateValue) return '';
   const date = dateValue instanceof Date ? dateValue : new Date(dateValue);
   if (Number.isNaN(date.getTime())) return '';
   const dd = String(date.getDate()).padStart(2, '0');
   const mm = String(date.getMonth() + 1).padStart(2, '0');
   const yy = String(date.getFullYear()).slice(-2);
-  return `PAID ON : ${dd}/${mm}/${yy}`;
+  return `${dd}/${mm}/${yy}`;
+}
+
+export function formatPaidOnRemark(dateValue) {
+  const stamp = formatLedgerDate(dateValue);
+  return stamp ? `PAID ON : ${stamp}` : '';
+}
+
+/** Remark on an early part payment/receipt after a later settlement consumes it. */
+export function formatAdjustedOnRemark(dateValue) {
+  const stamp = formatLedgerDate(dateValue);
+  return stamp ? `ADJUSTED ON : ${stamp}` : '';
+}
+
+/** Unadjusted surplus created by a bank entry (amount not applied to real bills). */
+export function unadjAmountCreated(entry) {
+  if (!entry) return 0;
+  const amount = Math.round((Number(entry.amount) || 0) * 100) / 100;
+  const allocations = Array.isArray(entry.billAllocations) ? entry.billAllocations : [];
+  const billAdjusted = allocations.reduce((sum, item) => {
+    if (!item || item.billType === 'credit_debit_note' || isUnadjAllocation(item)) return sum;
+    return sum + (Math.round((Number(item.adjustAmount) || 0) * 100) / 100);
+  }, 0);
+  return Math.round(Math.max(amount - billAdjusted, 0) * 100) / 100;
 }

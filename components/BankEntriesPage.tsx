@@ -9,8 +9,10 @@ import {
   bankCashEntryType,
   bankCashPaymentMode,
   DEFAULT_BANK_CASH_SERIES,
+  isUnadjAllocation,
   normalizeBankCashSeries,
-  slipNumberFromDate
+  slipNumberFromDate,
+  UNADJ_BILL_TYPE
 } from '../constants/bankCashSeries';
 import { AccountsInformationDialog } from './AccountsInformationDialog';
 import { ErpFormShell } from './ErpFormShell';
@@ -30,7 +32,14 @@ const formatMoney = (value: number) =>
 
 const roundMoneyLocal = (value: number) => Math.round((Number(value) || 0) * 100) / 100;
 
-const formatBalance = (value: number) => `${formatMoney(Math.abs(value))} ${value >= 0 ? 'DR' : 'CR'}`;
+/** Customer positive = DR (they owe us). Supplier positive = CR (we owe them). */
+const formatPartyBalance = (value: number, partyType?: string) => {
+  const abs = formatMoney(Math.abs(value));
+  if (partyType === 'supplier') return `${abs} ${value >= 0 ? 'CR' : 'DR'}`;
+  return `${abs} ${value >= 0 ? 'DR' : 'CR'}`;
+};
+
+const formatBankBalance = (value: number) => `${formatMoney(Math.abs(value))} ${value >= 0 ? 'DR' : 'CR'}`;
 
 const formatDate = (value?: string | null) =>
   value ? new Date(value).toLocaleDateString('en-IN') : '-';
@@ -84,6 +93,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
   const [showAddBank, setShowAddBank] = useState(false);
   const [newBankName, setNewBankName] = useState('');
   const [restoreAllocations, setRestoreAllocations] = useState<BankPendingBill[] | null>(null);
+  const [amountTouched, setAmountTouched] = useState(false);
 
   const loadEntries = async () => {
     setLoading(true);
@@ -112,14 +122,21 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
       ]);
       setCompletedParties(partiesResult.parties || []);
       setPurchaseParties(purchasePartiesResult.parties || []);
-      setBankAccounts(accountsResult.accounts || []);
+      const accounts = accountsResult.accounts || [];
+      setBankAccounts(accounts);
+      const preferredBank = accounts.find(account =>
+        String(account.accountType || '').toUpperCase() === 'BANK'
+        || (!/cash/i.test(account.name) && String(account.accountType || '').toUpperCase() !== 'CASH')
+      )?.name;
       setForm(f => ({
         ...f,
         voucherNumber: voucherResult.voucherNumber,
         companyName: voucherResult.companyName,
         bankName: f.paymentMode === 'cash'
           ? (postingSaleOrPurchaseAccount(f.series) || 'CASH A/C')
-          : (f.bankName || profileResult?.profile?.bankName || accountsResult.accounts?.[0]?.name || 'Default Bank')
+          : (f.bankName && !/cash/i.test(f.bankName)
+            ? f.bankName
+            : (profileResult?.profile?.bankName || preferredBank || accounts[0]?.name || 'Default Bank'))
       }));
     } catch (err: any) {
       console.warn('Failed to load bank master data', err);
@@ -141,7 +158,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
     }
   }, []);
 
-  const loadPendingBills = useCallback(async (partyName: string, partyType: string) => {
+  const loadPendingBills = useCallback(async (partyName: string, partyType: string, excludeEntryId?: string | null) => {
     if (!partyName.trim()) {
       setPendingBills([]);
       setQuickBillNo('');
@@ -151,12 +168,23 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
     try {
       const { bills } = await bankEntriesApi.getPendingBills({
         partyName,
-        partyType: partyType as any
+        partyType: partyType as any,
+        excludeEntryId: excludeEntryId || undefined
       });
       const onlyBills = (bills || []).filter(bill => bill.billType !== 'credit_debit_note');
       const seeded = onlyBills
-        .map(bill => ({ ...bill, adjustAmount: 0 }))
-        .sort((a, b) => String(a.billNumber).localeCompare(String(b.billNumber), undefined, { numeric: true }));
+        .map(bill => ({
+          ...bill,
+          adjustAmount: 0,
+          adjustDirection: isUnadjAllocation(bill) ? 'deduct' : (bill.adjustDirection || 'add'),
+          entryKind: isUnadjAllocation(bill) ? UNADJ_BILL_TYPE : bill.entryKind
+        }))
+        .sort((a, b) => {
+          const aUnadj = isUnadjAllocation(a) ? 1 : 0;
+          const bUnadj = isUnadjAllocation(b) ? 1 : 0;
+          if (aUnadj !== bUnadj) return aUnadj - bUnadj;
+          return String(a.billNumber).localeCompare(String(b.billNumber), undefined, { numeric: true });
+        });
 
       if (restoreAllocations?.length) {
         const byId = new Map(restoreAllocations.map(item => [item.billId, item]));
@@ -207,6 +235,8 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
       slipNumber: slipNumberFromDate(f.entryDate)
     }));
     setPendingBills([]);
+    setAmountTouched(false);
+    setQuickBillNo('');
   };
 
   useEffect(() => {
@@ -220,8 +250,8 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
 
   useEffect(() => {
     void refreshBalances(form.bankName, form.partyName, form.partyType);
-    void loadPendingBills(form.partyName, form.partyType);
-  }, [form.bankName, form.partyName, form.partyType, refreshBalances, loadPendingBills]);
+    void loadPendingBills(form.partyName, form.partyType, editingId);
+  }, [form.bankName, form.partyName, form.partyType, editingId, refreshBalances, loadPendingBills]);
 
   useEffect(() => {
     setForm(f => {
@@ -242,32 +272,85 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
     [pendingBills]
   );
 
+  const isUnadjRow = (bill: BankPendingBill) => isUnadjAllocation(bill);
+
   const summary = useMemo(() => {
-    const adjustPending = roundMoneyLocal(
-      pendingBills.reduce((sum, bill) => sum + (bill.pendingAmount || 0), 0)
+    const billAdjust = roundMoneyLocal(
+      adjustedBills
+        .filter(bill => !isUnadjRow(bill))
+        .reduce((sum, bill) => sum + (bill.adjustAmount || 0), 0)
     );
-    const netBillAmount = roundMoneyLocal(
-      adjustedBills.reduce((sum, bill) => sum + (bill.adjustAmount || 0), 0)
+    const unadjAdjust = roundMoneyLocal(
+      adjustedBills
+        .filter(bill => isUnadjRow(bill))
+        .reduce((sum, bill) => sum + (bill.adjustAmount || 0), 0)
     );
+    const unadjAvailable = roundMoneyLocal(
+      pendingBills
+        .filter(bill => isUnadjRow(bill))
+        .reduce((sum, bill) => sum + (bill.pendingAmount || 0), 0)
+    );
+    const billPending = roundMoneyLocal(
+      pendingBills
+        .filter(bill => !isUnadjRow(bill))
+        .reduce((sum, bill) => sum + (bill.pendingAmount || 0), 0)
+    );
+    const grossAmount = roundMoneyLocal(billAdjust + unadjAdjust);
+    const netBillAmount = roundMoneyLocal(billAdjust - unadjAdjust);
     const taxableValuePaidBills = roundMoneyLocal(
-      adjustedBills.reduce((sum, bill) => {
-        const ratio = bill.billAmount > 0 ? (bill.adjustAmount || 0) / bill.billAmount : 0;
-        return sum + (bill.taxableAmount || 0) * ratio;
-      }, 0)
+      adjustedBills
+        .filter(bill => !isUnadjRow(bill))
+        .reduce((sum, bill) => {
+          const ratio = bill.billAmount > 0 ? (bill.adjustAmount || 0) / bill.billAmount : 0;
+          return sum + (bill.taxableAmount || 0) * ratio;
+        }, 0)
     );
     const received = roundMoneyLocal(Number(form.amount) || 0);
+    const unadjRemaining = roundMoneyLocal(Math.max(unadjAvailable - unadjAdjust, 0));
+    const adjustPending = unadjRemaining > 0
+      ? roundMoneyLocal(-unadjRemaining)
+      : billPending;
     const adjustLess = roundMoneyLocal(Math.max(netBillAmount - received, 0));
-    const adjustAdd = roundMoneyLocal(Math.max(received - netBillAmount, 0));
+    const adjustAdd = roundMoneyLocal(Math.max(received - Math.max(netBillAmount, 0), 0));
     return {
-      grossAmount: 0,
+      grossAmount,
       adjustPending,
       netBillAmount,
       adjustLess,
       adjustAdd,
       taxableValuePaidBills,
-      received
+      received,
+      billAdjust,
+      unadjAdjust,
+      unadjAvailable
     };
   }, [pendingBills, adjustedBills, form.amount]);
+
+  /** Keep Rec/Paid Amt in sync with bill − unadj net unless the user typed an amount. */
+  useEffect(() => {
+    if (amountTouched) return;
+    if (summary.billAdjust <= 0 && summary.unadjAdjust <= 0) return;
+    const next = Math.max(summary.netBillAmount, 0);
+    setForm(f => {
+      const current = roundMoneyLocal(Number(f.amount) || 0);
+      if (current === next) return f;
+      return { ...f, amount: next > 0 ? String(next) : '' };
+    });
+  }, [summary.netBillAmount, summary.billAdjust, summary.unadjAdjust, amountTouched]);
+
+  const quickBillMatches = useMemo(() => {
+    const q = quickBillNo.trim().toLowerCase();
+    if (!q) return pendingBills;
+    // Empire: typing "U" lists UNADJ PAYMENT rows (previous part payments).
+    if (q === 'u' || q.startsWith('unadj') || q === 'un') {
+      return pendingBills.filter(bill => isUnadjRow(bill));
+    }
+    return pendingBills.filter(bill =>
+      String(bill.billNumber).toLowerCase().includes(q)
+      || String(bill.voucherNumber || '').toLowerCase().includes(q)
+      || String(bill.transactionType || '').toLowerCase().includes(q)
+    );
+  }, [pendingBills, quickBillNo]);
 
   const pickBill = (billId: string) => {
     setPendingBills(prev => {
@@ -278,15 +361,6 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
         if (bill.billId !== billId) return bill;
         return { ...bill, adjustAmount: already ? 0 : bill.pendingAmount };
       });
-    });
-    setForm(f => {
-      const target = pendingBills.find(bill => bill.billId === billId);
-      if (!target) return f;
-      const nextAdjust = (target.adjustAmount || 0) > 0 ? 0 : target.pendingAmount;
-      if (nextAdjust > 0 && !(Number(f.amount) > 0)) {
-        return { ...f, amount: String(nextAdjust) };
-      }
-      return f;
     });
   };
 
@@ -308,6 +382,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
   const startEdit = async (entry: BankEntry) => {
     setEditingId(entry.id);
     setViewMode('entry');
+    setAmountTouched(true);
     const series = normalizeBankCashSeries(
       entry.transactionType
       || (entry.entryType === 'payment'
@@ -341,6 +416,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
             billId: item.billId,
             billType: item.billType,
             billNumber: item.billNumber,
+            transactionType: isUnadjAllocation(item) ? 'UNADJ PAYMENT' : undefined,
             voucherNumber: item.voucherNumber,
             billDate: item.billDate,
             days: item.days || 0,
@@ -349,7 +425,9 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
             billAmount: item.billAmount,
             pendingAmount: item.pendingAmount,
             taxableAmount: item.taxableAmount,
-            adjustAmount: item.adjustAmount
+            adjustAmount: item.adjustAmount,
+            entryKind: isUnadjAllocation(item) ? UNADJ_BILL_TYPE : item.entryKind,
+            adjustDirection: isUnadjAllocation(item) ? 'deduct' : (item.adjustDirection || 'add')
           }))
       );
     } else {
@@ -386,6 +464,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
     setPendingBills([]);
     setRestoreAllocations(null);
     setQuickBillNo('');
+    setAmountTouched(false);
     setForm(emptyForm());
     await loadMasterData();
   };
@@ -404,16 +483,27 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
       alert(form.entryType === 'receipt' ? 'Enter Rec. Amt.' : 'Enter Paid Amt.');
       return;
     }
-    const billAllocations = adjustedBills.map(bill => ({ ...bill }));
-    if (billAllocations.length === 0) {
-      alert('Pick at least one bill to adjust (click the bill row or enter Bill No.).');
-      return;
+    const billAllocations = adjustedBills.map(bill => ({
+      ...bill,
+      billType: isUnadjRow(bill) ? UNADJ_BILL_TYPE : bill.billType,
+      entryKind: isUnadjRow(bill) ? UNADJ_BILL_TYPE : bill.entryKind,
+      adjustDirection: isUnadjRow(bill) ? 'deduct' : (bill.adjustDirection || 'add')
+    }));
+
+    // Part payment path: no bill picks → entire amount becomes Unadjusted Payment (Empire).
+    // Settlement path: bills ± prior unadj → net should match Rec/Paid Amt.
+    if (billAllocations.length > 0 && summary.netBillAmount - amount > 0.05) {
+      const ok = window.confirm(
+        `Adjusted amt (${formatMoney(summary.netBillAmount)}) is more than ${form.entryType === 'receipt' ? 'cheque/rec' : 'paid'} amt (${formatMoney(amount)}). Continue?`
+      );
+      if (!ok) return;
     }
 
     setSaving(true);
     setError('');
     try {
       const series = normalizeBankCashSeries(form.series || form.transactionType);
+      const firstRealBill = billAllocations.find(bill => !isUnadjRow(bill));
       const payload = {
         entryType: bankCashEntryType(series),
         paymentMode: bankCashPaymentMode(series),
@@ -434,10 +524,12 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
         grossAmount: summary.grossAmount,
         adjustPending: summary.adjustPending,
         netBillAmount: summary.netBillAmount,
-        adjustAdd: summary.netBillAmount,
+        adjustAdd: summary.adjustAdd,
         taxableValuePaidBills: summary.taxableValuePaidBills,
-        linkedType: billAllocations[0]?.billType || 'none',
-        linkedId: billAllocations[0]?.billId || null
+        linkedType: firstRealBill && ['order', 'sales_invoice', 'purchase_bill'].includes(String(firstRealBill.billType))
+          ? firstRealBill.billType
+          : 'none',
+        linkedId: firstRealBill?.billId || null
       };
       if (editingId) {
         await bankEntriesApi.update(editingId, payload as any);
@@ -534,8 +626,16 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                     min="0"
                     step="0.01"
                     value={form.amount}
-                    onChange={e => setForm(f => ({ ...f, amount: e.target.value }))}
+                    onChange={e => {
+                      setAmountTouched(true);
+                      setForm(f => ({ ...f, amount: e.target.value }));
+                    }}
                   />
+                  {summary.unadjAvailable > 0 && (
+                    <p className="mt-1 text-[11px] font-semibold text-violet-700">
+                      Unadj. pending: {formatMoney(summary.unadjAvailable)} — type U in Bill No.
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -570,7 +670,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                       <option key={account.name} value={account.name} />
                     ))}
                   </datalist>
-                  <p className="mt-1 text-xs font-bold text-sky-800">Cur. Bal.: {formatBalance(bankBalance)}</p>
+                  <p className="mt-1 text-xs font-bold text-sky-800">Cur. Bal.: {formatBankBalance(bankBalance)}</p>
                 </div>
 
                 <div>
@@ -609,7 +709,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                       />
                     )}
                   </div>
-                  <p className="mt-1 text-xs font-bold text-amber-800">Cur. Bal.: {formatBalance(partyBalance)}</p>
+                  <p className="mt-1 text-xs font-bold text-amber-800">Cur. Bal.: {formatPartyBalance(partyBalance, form.partyType)}</p>
                 </div>
 
                 <div>
@@ -648,34 +748,54 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
               </div>
             </section>
 
-            {/* Bill pick — Empire: enter bill no or click row */}
+            {/* Bill pick — Empire: bills + UNADJ PAYMENT (type U) */}
             <section className="rounded-3xl border border-gray-100 bg-white shadow-sm">
               <div className="flex flex-wrap items-end justify-between gap-3 border-b px-5 py-4">
                 <div>
-                  <h2 className="text-sm font-black uppercase tracking-wide text-gray-900">Pending bills</h2>
+                  <h2 className="text-sm font-black uppercase tracking-wide text-gray-900">Pending bills / Unadj. payments</h2>
                   <p className="text-xs text-gray-500">
-                    Enter Bill No. or click a row. Adjust fills with pending amount (same as Empire bill pick).
+                    Part payment: save Rec/Paid Amt with no bill pick → becomes Unadj. Later settle by picking bills + type <span className="font-black text-violet-700">U</span> for prior payments.
+                    Or allocate sequentially (partial Adjust on bills).
                   </p>
                 </div>
-                <div className="flex items-end gap-2">
-                  <div>
-                    <label className={labelClass}>Bill No.</label>
-                    <select
-                      className="min-w-[200px] rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm font-semibold"
+                <div className="flex flex-wrap items-end gap-2">
+                  <div className="relative">
+                    <label className={labelClass}>Bill No. (type U for unadj)</label>
+                    <input
+                      className="min-w-[220px] rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm font-semibold outline-none focus:border-indigo-400"
+                      list="pending-bill-options"
+                      placeholder="Bill no. or U…"
                       value={quickBillNo}
-                      onChange={e => {
-                        const value = e.target.value;
-                        setQuickBillNo(value);
-                        if (value) pickBillByNumber(value);
+                      onChange={e => setQuickBillNo(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key !== 'Enter') return;
+                        e.preventDefault();
+                        const match = quickBillMatches[0];
+                        if (match) pickBillByNumber(match.billNumber);
                       }}
-                    >
-                      <option value="">Pick bill…</option>
-                      {pendingBills.map(bill => (
+                    />
+                    <datalist id="pending-bill-options">
+                      {quickBillMatches.map(bill => (
                         <option key={bill.billId} value={bill.billNumber}>
-                          {bill.billNumber} · {bill.transactionType || 'Bill'} · {formatMoney(bill.pendingAmount)}
+                          {bill.transactionType || 'Bill'} · {formatMoney(bill.pendingAmount)}
                         </option>
                       ))}
-                    </select>
+                    </datalist>
+                    {quickBillNo.trim() && quickBillMatches.length > 0 && (
+                      <div className="absolute z-20 mt-1 max-h-48 w-full overflow-y-auto rounded-xl border bg-white shadow-lg">
+                        {quickBillMatches.slice(0, 12).map(bill => (
+                          <button
+                            key={bill.billId}
+                            type="button"
+                            className={`flex w-full items-center justify-between px-3 py-2 text-left text-xs hover:bg-indigo-50 ${isUnadjRow(bill) ? 'text-violet-800' : 'text-gray-800'}`}
+                            onClick={() => pickBillByNumber(bill.billNumber)}
+                          >
+                            <span className="font-black">{bill.billNumber}</span>
+                            <span>{bill.transactionType || 'Bill'} · {formatMoney(bill.pendingAmount)}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   <button
                     type="button"
@@ -696,7 +816,9 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                 ) : !form.partyName ? (
                   <div className="px-5 py-12 text-center text-sm text-gray-400">Select A/C Name to load pending bills.</div>
                 ) : pendingBills.length === 0 ? (
-                  <div className="px-5 py-12 text-center text-sm text-gray-400">No pending bills for this party.</div>
+                  <div className="px-5 py-12 text-center text-sm text-gray-400">
+                    No pending bills. Enter Rec/Paid Amt and save for an unadjusted part payment/receipt.
+                  </div>
                 ) : (
                   <table className="min-w-full text-left text-sm">
                     <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-gray-500">
@@ -714,22 +836,39 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                     <tbody>
                       {pendingBills.map(bill => {
                         const picked = (bill.adjustAmount || 0) > 0;
+                        const unadj = isUnadjRow(bill);
                         return (
                           <tr
                             key={bill.billId}
-                            className={`cursor-pointer border-t ${picked ? 'bg-indigo-50/70' : 'hover:bg-gray-50'}`}
+                            className={`cursor-pointer border-t ${
+                              picked
+                                ? (unadj ? 'bg-violet-50/80' : 'bg-indigo-50/70')
+                                : (unadj ? 'bg-violet-50/30 hover:bg-violet-50/60' : 'hover:bg-gray-50')
+                            }`}
                             onClick={() => pickBill(bill.billId)}
                           >
-                            <td className="px-3 py-2.5 font-black text-gray-900">{bill.billNumber}</td>
+                            <td className={`px-3 py-2.5 font-black ${unadj ? 'text-violet-800' : 'text-gray-900'}`}>{bill.billNumber}</td>
                             <td className="px-3 py-2.5">{formatDate(bill.billDate)}</td>
-                            <td className="px-3 py-2.5 text-xs font-semibold text-gray-600">{bill.transactionType || '-'}</td>
+                            <td className={`px-3 py-2.5 text-xs font-semibold ${unadj ? 'text-violet-700' : 'text-gray-600'}`}>
+                              {bill.transactionType || '-'}
+                            </td>
                             <td className="px-3 py-2.5">{bill.voucherNumber || '-'}</td>
-                            <td className="px-3 py-2.5 text-right">{formatMoney(bill.taxableAmount || 0)}</td>
-                            <td className="px-3 py-2.5 text-right font-semibold">{formatMoney(bill.billAmount)}</td>
-                            <td className="px-3 py-2.5 text-right font-semibold text-amber-700">{formatMoney(bill.pendingAmount)}</td>
+                            <td className="px-3 py-2.5 text-right">
+                              {unadj ? formatMoney(-(bill.billAmount || 0)) : formatMoney(bill.taxableAmount || 0)}
+                            </td>
+                            <td className={`px-3 py-2.5 text-right font-semibold ${unadj ? 'text-violet-800' : ''}`}>
+                              {unadj ? formatMoney(-(bill.billAmount || 0)) : formatMoney(bill.billAmount)}
+                            </td>
+                            <td className={`px-3 py-2.5 text-right font-semibold ${unadj ? 'text-violet-700' : 'text-amber-700'}`}>
+                              {unadj ? formatMoney(-(bill.pendingAmount || 0)) : formatMoney(bill.pendingAmount)}
+                            </td>
                             <td className="px-3 py-2.5 text-right" onClick={e => e.stopPropagation()}>
                               <input
-                                className={`w-28 rounded-lg border px-2 py-1.5 text-right text-sm font-bold ${picked ? 'border-indigo-300 bg-white' : 'border-gray-200 bg-gray-50'}`}
+                                className={`w-28 rounded-lg border px-2 py-1.5 text-right text-sm font-bold ${
+                                  picked
+                                    ? (unadj ? 'border-violet-300 bg-white' : 'border-indigo-300 bg-white')
+                                    : 'border-gray-200 bg-gray-50'
+                                }`}
                                 type="number"
                                 min="0"
                                 step="0.01"
@@ -756,16 +895,22 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                 </div>
                 <div className="rounded-2xl bg-amber-50 px-4 py-3">
                   <p className={labelClass}>Adjust Pend.</p>
-                  <p className="text-lg font-black text-amber-900">{formatMoney(summary.adjustPending)}</p>
+                  <p className={`text-lg font-black ${summary.adjustPending < 0 ? 'text-violet-800' : 'text-amber-900'}`}>
+                    {formatMoney(summary.adjustPending)}
+                  </p>
                 </div>
                 <div className="rounded-2xl bg-indigo-50 px-4 py-3">
                   <p className={labelClass}>Net Bill Amt</p>
                   <p className="text-lg font-black text-indigo-900">{formatMoney(summary.netBillAmount)}</p>
                 </div>
                 <div className="rounded-2xl bg-sky-50 px-4 py-3">
-                  <p className={labelClass}>{summary.adjustAdd > 0 ? 'Adjust Add' : 'Adjust Less'}</p>
+                  <p className={labelClass}>
+                    {summary.unadjAdjust > 0 ? 'Adjust Less (Unadj)' : (summary.adjustAdd > 0 ? 'Adjust Add' : 'Adjust Less')}
+                  </p>
                   <p className="text-lg font-black text-sky-900">
-                    {formatMoney(summary.adjustAdd > 0 ? summary.adjustAdd : summary.adjustLess)}
+                    {summary.unadjAdjust > 0
+                      ? formatMoney(-summary.unadjAdjust)
+                      : formatMoney(summary.adjustAdd > 0 ? summary.adjustAdd : summary.adjustLess)}
                   </p>
                 </div>
                 <div className="rounded-2xl bg-emerald-50 px-4 py-3">

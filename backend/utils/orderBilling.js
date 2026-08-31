@@ -121,10 +121,13 @@ export function normalizeBillAllocations(value) {
   return value.filter(item => item && item.billId);
 }
 
-export async function getPaidAmountsByBillType(prismaClient, userId, billType) {
+export async function getPaidAmountsByBillType(prismaClient, userId, billType, options = {}) {
   const entryType = billType === 'purchase_bill' ? 'payment' : 'receipt';
+  const excludeEntryId = options?.excludeEntryId || null;
+  const where = { userId, entryType };
+  if (excludeEntryId) where.id = { not: excludeEntryId };
   const entries = await prismaClient.bankEntry.findMany({
-    where: { userId, entryType },
+    where,
     select: { billAllocations: true }
   });
 
@@ -132,6 +135,7 @@ export async function getPaidAmountsByBillType(prismaClient, userId, billType) {
   for (const entry of entries) {
     for (const allocation of normalizeBillAllocations(entry.billAllocations)) {
       if (allocation.billType !== billType) continue;
+      if (String(allocation.billType || '').toLowerCase() === 'unadj_payment') continue;
       const current = paidByBillId.get(allocation.billId) || 0;
       paidByBillId.set(allocation.billId, current + roundMoney(allocation.adjustAmount));
     }
