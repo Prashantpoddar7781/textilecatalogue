@@ -13,6 +13,10 @@ interface Props {
 
 type MenuKey = 'masters' | 'reports' | 'greySales' | 'accounts' | 'utilities' | null;
 
+/** Keep dropdowns inside the viewport so long menus (Reports) can scroll. */
+const menuPanelClass =
+  'absolute left-0 z-50 mt-1 max-h-[min(70vh,calc(100dvh-7rem))] min-w-[200px] overflow-y-auto overscroll-contain rounded-xl border border-gray-100 bg-white p-1.5 shadow-xl';
+
 export const ErpTopMenu: React.FC<Props> = ({
   title,
   onBackToCatalogue,
@@ -93,7 +97,7 @@ export const ErpTopMenu: React.FC<Props> = ({
               <ChevronDown className={`h-3.5 w-3.5 transition ${openMenu === 'masters' ? 'rotate-180' : ''}`} />
             </button>
             {openMenu === 'masters' && (
-              <div className="absolute left-0 z-50 mt-1 min-w-[200px] rounded-xl border border-gray-100 bg-white p-1.5 shadow-xl">
+              <div className={`${menuPanelClass} min-w-[200px]`}>
                 <button
                   type="button"
                   onClick={() => { window.location.href = '/erp/masters/company'; }}
@@ -126,7 +130,7 @@ export const ErpTopMenu: React.FC<Props> = ({
               <ChevronDown className={`h-3.5 w-3.5 transition ${openMenu === 'accounts' ? 'rotate-180' : ''}`} />
             </button>
             {openMenu === 'accounts' && (
-              <div className="absolute left-0 z-50 mt-1 min-w-[220px] rounded-xl border border-gray-100 bg-white p-1.5 shadow-xl">
+              <div className={`${menuPanelClass} min-w-[220px]`}>
                 <button
                   type="button"
                   onClick={() => { window.location.href = '/erp/ledger'; }}
@@ -159,7 +163,7 @@ export const ErpTopMenu: React.FC<Props> = ({
               <ChevronDown className={`h-3.5 w-3.5 transition ${openMenu === 'reports' ? 'rotate-180' : ''}`} />
             </button>
             {openMenu === 'reports' && (
-              <div className="absolute left-0 z-50 mt-1 min-w-[240px] rounded-xl border border-gray-100 bg-white p-1.5 shadow-xl">
+              <div className={`${menuPanelClass} min-w-[240px]`}>
                 <button
                   type="button"
                   onClick={() => { window.location.href = '/erp/reports/godown-inventory'; }}
@@ -280,7 +284,7 @@ export const ErpTopMenu: React.FC<Props> = ({
               <ChevronDown className={`h-3.5 w-3.5 transition ${openMenu === 'greySales' ? 'rotate-180' : ''}`} />
             </button>
             {openMenu === 'greySales' && (
-              <div className="absolute left-0 z-50 mt-1 min-w-[260px] rounded-xl border border-gray-100 bg-white p-1.5 shadow-xl">
+              <div className={`${menuPanelClass} min-w-[260px]`}>
                 <button
                   type="button"
                   onClick={() => { window.location.href = '/erp/grey-purchase-return'; }}
@@ -345,7 +349,7 @@ export const ErpTopMenu: React.FC<Props> = ({
               <ChevronDown className={`h-3.5 w-3.5 transition ${openMenu === 'utilities' ? 'rotate-180' : ''}`} />
             </button>
             {openMenu === 'utilities' && canOpenUtilities && (
-              <div className="absolute left-0 z-50 mt-1 min-w-[220px] rounded-xl border border-gray-100 bg-white p-1.5 shadow-xl">
+              <div className={`${menuPanelClass} min-w-[220px]`}>
                 <button
                   type="button"
                   onClick={() => { window.location.href = '/erp/utilities/users'; }}
