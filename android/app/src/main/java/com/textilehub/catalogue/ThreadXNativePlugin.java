@@ -1,6 +1,7 @@
 package com.textilehub.catalogue;
 
 import android.app.Activity;
+import android.content.ClipData;
 import android.content.ContentValues;
 import android.content.Intent;
 import android.net.Uri;
@@ -128,10 +129,25 @@ public class ThreadXNativePlugin extends Plugin {
                 return;
             }
 
-            Intent intent = new Intent(Intent.ACTION_SEND_MULTIPLE);
-            intent.setType("image/jpeg");
-            intent.putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris);
+            // Single ACTION_SEND keeps WhatsApp on the photo preview (HD quality picker).
+            Intent intent;
+            if (uris.size() == 1) {
+                intent = new Intent(Intent.ACTION_SEND);
+                intent.setType("image/jpeg");
+                intent.putExtra(Intent.EXTRA_STREAM, uris.get(0));
+            } else {
+                intent = new Intent(Intent.ACTION_SEND_MULTIPLE);
+                intent.setType("image/jpeg");
+                intent.putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris);
+            }
             intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+
+            // ClipData is required so WhatsApp receives read permission on every URI.
+            ClipData clipData = ClipData.newUri(getContext().getContentResolver(), "images", uris.get(0));
+            for (int i = 1; i < uris.size(); i++) {
+                clipData.addItem(new ClipData.Item(uris.get(i)));
+            }
+            intent.setClipData(clipData);
 
             Intent chooser = Intent.createChooser(intent, "Share designs");
             getActivity().startActivity(chooser);

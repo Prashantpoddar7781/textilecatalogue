@@ -83,7 +83,11 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
       if (shareJobs.length > 0) {
         try {
           const first = shareJobs[0];
-          const blob = await generateBrandedImage(first.design, first.imageUrl);
+          // Preview stays light; full-res export happens only on share (WhatsApp HD needs it).
+          const blob = await generateBrandedImage(first.design, first.imageUrl, {
+            maxEdge: 1080,
+            jpegQuality: 0.85
+          });
           if (!isMounted) return;
 
           const newUrl = URL.createObjectURL(blob);
@@ -110,7 +114,11 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
     };
   }, [options, shareJobs, selectedPriceType]);
 
-  const generateBrandedImage = async (design: TextileDesign, imageDataUrl?: string): Promise<Blob> => {
+  const generateBrandedImage = async (
+    design: TextileDesign,
+    imageDataUrl?: string,
+    exportOpts?: { maxEdge?: number; jpegQuality?: number }
+  ): Promise<Blob> => {
     return new Promise((resolve, reject) => {
       const img = new Image();
       img.crossOrigin = "anonymous";
@@ -122,13 +130,16 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
 
         /**
          * Photo fills canvas width (no side letterboxing); details sit in a black band below.
+         * Share exports keep near-original size so WhatsApp can offer HD quality.
          */
         const sw = img.naturalWidth || 800;
         const sh = img.naturalHeight || 1000;
-        const width = 1080;
-        const photoH = Math.round((sh / sw) * width);
+        const maxEdge = exportOpts?.maxEdge ?? 4096;
+        const jpegQuality = exportOpts?.jpegQuality ?? 0.97;
+        const width = Math.max(1, Math.min(sw, maxEdge));
+        const photoH = Math.max(1, Math.round((sh / sw) * width));
         const padding = Math.round(width * 0.04);
-        const fontSize = Math.max(22, Math.round(width * 0.028));
+        const fontSize = Math.max(28, Math.round(width * 0.028));
         const lineHeight = fontSize * 1.42;
 
         // 2. Prepare two columns: left = firm, fabric, price, description; right = catalogue + design
@@ -231,6 +242,8 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
         canvas.width = width;
         canvas.height = height;
 
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
         ctx.drawImage(img, 0, 0, sw, sh, 0, 0, width, photoH);
 
         ctx.fillStyle = '#000000';
@@ -264,7 +277,7 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
         canvas.toBlob((blob) => {
           if (blob) resolve(blob);
           else reject('Blob conversion failed');
-        }, 'image/jpeg', 0.92);
+        }, 'image/jpeg', jpegQuality);
       };
 
       img.onerror = () => reject('Image source failed to load');
