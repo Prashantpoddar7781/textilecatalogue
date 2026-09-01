@@ -114,6 +114,8 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
   const [newBankName, setNewBankName] = useState('');
   const [restoreAllocations, setRestoreAllocations] = useState<BankPendingBill[] | null>(null);
   const [amountTouched, setAmountTouched] = useState(false);
+  /** After user confirms, further bill picks take full pending even if over Rec/Paid Amt (case 2 → Unadj). */
+  const [allowOverAllocation, setAllowOverAllocation] = useState(false);
   const companyRef = useRef<HTMLInputElement>(null);
   const billTypeRef = useRef<HTMLInputElement>(null);
   const billNoRef = useRef<HTMLInputElement>(null);
@@ -300,6 +302,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
     }));
     setPendingBills([]);
     setAmountTouched(false);
+    setAllowOverAllocation(false);
     setQuickBillNo('');
     setBillType(defaultBillTypeForParty(partyType));
     setBillPickerOpen(false);
@@ -443,17 +446,104 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
     setBillTypeHighlight(0);
   }, [billTypeMatches]);
 
+  /**
+   * Empire allocation against Rec/Paid Amt:
+   * 1) Full settle — picks cover amount exactly.
+   * 2) Over-pick bills then Unadj — confirm once, then full bill amounts; Type U balances.
+   * 3) Partial — next bill gets only the remaining Rec/Paid Amt; rest stays pending.
+   */
+  const allocationAgainstAmount = (args: {
+    pending: number;
+    isUnadj: boolean;
+    billSum: number;
+    unadjSum: number;
+    received: number;
+  }): number | null => {
+    const pending = roundMoneyLocal(Math.max(args.pending, 0));
+    if (pending <= 0) return null;
+    const received = roundMoneyLocal(Math.max(args.received, 0));
+    const billSum = roundMoneyLocal(args.billSum);
+    const unadjSum = roundMoneyLocal(args.unadjSum);
+
+    if (args.isUnadj) {
+      // Unadj reduces net bill; take what is still needed to match received.
+      const needed = roundMoneyLocal(Math.max(billSum - unadjSum - received, 0));
+      if (needed <= 0) {
+        alert(
+          form.entryType === 'receipt'
+            ? 'Bills already match Rec. Amt. Unadj is not needed.'
+            : 'Bills already match Paid Amt. Unadj is not needed.'
+        );
+        return null;
+      }
+      return Math.min(pending, needed);
+    }
+
+    // No amount yet → take full bill; Rec/Paid Amt will follow net (unless user typed amount).
+    if (!amountTouched || received <= 0) {
+      return pending;
+    }
+
+    const room = roundMoneyLocal(received + unadjSum - billSum);
+    if (pending <= room) {
+      return pending;
+    }
+
+    if (allowOverAllocation) {
+      return pending;
+    }
+
+    if (room > 0) {
+      const takeFull = window.confirm(
+        `This bill (${formatMoney(pending)}) is more than amount left to adjust (${formatMoney(room)}).\n\n` +
+        `OK = take full bill (then pick Unadj Payment / Type U to balance)\n` +
+        `Cancel = adjust only ${formatMoney(room)} and leave the rest pending`
+      );
+      if (takeFull) {
+        setAllowOverAllocation(true);
+        return pending;
+      }
+      return room;
+    }
+
+    const takeFull = window.confirm(
+      `Adjusted amt already covers ${form.entryType === 'receipt' ? 'Rec' : 'Paid'} Amt (${formatMoney(received)}).\n\n` +
+      `OK = take full bill (${formatMoney(pending)}) and balance later with Unadj Payment\n` +
+      `Cancel = do not pick this bill`
+    );
+    if (!takeFull) return null;
+    setAllowOverAllocation(true);
+    return pending;
+  };
+
   const pickBill = (billId: string, opts?: { toggle?: boolean }) => {
-    setPendingBills(prev => {
-      const target = prev.find(bill => bill.billId === billId);
-      if (!target) return prev;
-      const already = (target.adjustAmount || 0) > 0;
-      if (already && opts?.toggle === false) return prev;
-      return prev.map(bill => {
-        if (bill.billId !== billId) return bill;
-        return { ...bill, adjustAmount: already && opts?.toggle !== false ? 0 : bill.pendingAmount };
-      });
+    const target = pendingBills.find(bill => bill.billId === billId);
+    if (!target) return;
+    const already = (target.adjustAmount || 0) > 0;
+    if (already) {
+      if (opts?.toggle === false) return;
+      setPendingBills(prev => prev.map(bill => (bill.billId === billId ? { ...bill, adjustAmount: 0 } : bill)));
+      return;
+    }
+
+    const billSum = pendingBills
+      .filter(bill => !isUnadjAllocation(bill))
+      .reduce((sum, bill) => sum + (bill.adjustAmount || 0), 0);
+    const unadjSum = pendingBills
+      .filter(bill => isUnadjAllocation(bill))
+      .reduce((sum, bill) => sum + (bill.adjustAmount || 0), 0);
+    const received = roundMoneyLocal(Number(form.amount) || 0);
+    const allocate = allocationAgainstAmount({
+      pending: target.pendingAmount,
+      isUnadj: isUnadjAllocation(target),
+      billSum,
+      unadjSum,
+      received
     });
+    if (allocate == null || allocate <= 0) return;
+    setPendingBills(prev => prev.map(bill => (
+      bill.billId === billId ? { ...bill, adjustAmount: allocate } : bill
+    )));
   };
 
   const pickBillByNumber = (billNumber: string) => {
@@ -578,6 +668,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
     setRestoreAllocations(null);
     setQuickBillNo('');
     setAmountTouched(false);
+    setAllowOverAllocation(false);
     setBillType(defaultBillTypeForParty(bankCashDefaultPartyType(DEFAULT_BANK_CASH_SERIES)));
     setBillPickerOpen(false);
     setBillTypePickerOpen(false);
@@ -608,12 +699,17 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
     }));
 
     // Part payment path: no bill picks → entire amount becomes Unadjusted Payment (Empire).
-    // Settlement path: bills ± prior unadj → net should match Rec/Paid Amt.
+    // Settlement path: bills − unadj must match Rec/Paid Amt (cannot save 1625 bill against 1000 receipt).
     if (billAllocations.length > 0 && summary.netBillAmount - amount > 0.05) {
-      const ok = window.confirm(
-        `Adjusted amt (${formatMoney(summary.netBillAmount)}) is more than ${form.entryType === 'receipt' ? 'cheque/rec' : 'paid'} amt (${formatMoney(amount)}). Continue?`
+      alert(
+        `Bill adjusted (${formatMoney(summary.netBillAmount)}) is more than ${form.entryType === 'receipt' ? 'Rec' : 'Paid'} Amt (${formatMoney(amount)}).\n\n` +
+        `Either:\n` +
+        `• Reduce Adjust on bills, or\n` +
+        `• Type U → pick prior Unadj Payment to balance (${formatMoney(summary.netBillAmount - amount)} still needed).`
       );
-      if (!ok) return;
+      setBillType(UNADJ_PAYMENT_TYPE);
+      window.setTimeout(() => focusInputStart(billNoRef.current), 0);
+      return;
     }
 
     setSaving(true);
@@ -750,10 +846,16 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                     value={form.amount}
                     onChange={e => {
                       setAmountTouched(true);
+                      setAllowOverAllocation(false);
                       setForm(f => ({ ...f, amount: e.target.value }));
                     }}
                   />
-                  {summary.unadjAvailable > 0 && (
+                  {summary.adjustLess > 0.05 && (
+                    <p className="mt-1 text-[11px] font-semibold text-rose-700">
+                      Bills exceed {form.entryType === 'receipt' ? 'Rec' : 'Paid'} by {formatMoney(summary.adjustLess)} — Type U and pick Unadj, or lower Adjust.
+                    </p>
+                  )}
+                  {summary.unadjAvailable > 0 && summary.adjustLess <= 0.05 && (
                     <p className="mt-1 text-[11px] font-semibold text-violet-700">
                       Unadj. pending: {formatMoney(summary.unadjAvailable)} — Type U then pick in Bill No.
                     </p>
@@ -821,7 +923,10 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                       list="bank-party-options"
                       placeholder="Type party name"
                       value={form.partyName}
-                      onChange={e => setForm(f => ({ ...f, partyName: e.target.value }))}
+                      onChange={e => {
+                        setAllowOverAllocation(false);
+                        setForm(f => ({ ...f, partyName: e.target.value }));
+                      }}
                       onKeyDown={e => {
                         if (e.key !== 'Enter' || !form.partyName.trim()) return;
                         // After party, jump to Bill Type (Empire keyboard flow).
@@ -881,8 +986,9 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                 <div>
                   <h2 className="text-sm font-black uppercase tracking-wide text-gray-900">Bill allocation</h2>
                   <p className="text-xs text-gray-500">
-                    Type <span className="font-black">FINISH PURCHASE</span> / <span className="font-black">FINISH SALES</span>, or <span className="font-black text-violet-700">U</span> for Unadj Payment.
-                    Then type in Bill No. — Enter picks. Part payment: leave bills empty and save Rec/Paid Amt.
+                    1) Full settle — pick bills = Rec/Paid Amt.
+                    2) Installments — save amount with no bills (Unadj); later pick all bills + Type U to clear Unadj.
+                    3) Partial bill — Rec/Paid first; next bill Adjust stops at remaining amount.
                   </p>
                 </div>
                 <div className="flex flex-wrap items-end gap-2">
@@ -1021,7 +1127,10 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                   <button
                     type="button"
                     data-erp-skip-nav
-                    onClick={() => setPendingBills(prev => prev.map(bill => ({ ...bill, adjustAmount: 0 })))}
+                    onClick={() => {
+                      setAllowOverAllocation(false);
+                      setPendingBills(prev => prev.map(bill => ({ ...bill, adjustAmount: 0 })));
+                    }}
                     className="rounded-xl border px-3 py-2.5 text-xs font-black text-gray-700"
                   >
                     Clear picks
@@ -1072,7 +1181,18 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                               {unadj ? formatMoney(-(bill.billAmount || 0)) : formatMoney(bill.billAmount)}
                             </td>
                             <td className={`px-3 py-2.5 text-right font-semibold ${unadj ? 'text-violet-700' : 'text-amber-700'}`}>
-                              {unadj ? formatMoney(-(bill.pendingAmount || 0)) : formatMoney(bill.pendingAmount)}
+                              {unadj
+                                ? formatMoney(-(bill.pendingAmount || 0))
+                                : (
+                                  <span title="Outstanding before this entry">
+                                    {formatMoney(bill.pendingAmount)}
+                                    {(bill.adjustAmount || 0) > 0 && (bill.adjustAmount || 0) < (bill.pendingAmount || 0) && (
+                                      <span className="mt-0.5 block text-[10px] font-bold text-rose-600">
+                                        left {formatMoney((bill.pendingAmount || 0) - (bill.adjustAmount || 0))}
+                                      </span>
+                                    )}
+                                  </span>
+                                )}
                             </td>
                             <td className="px-3 py-2.5 text-right">
                               <input
