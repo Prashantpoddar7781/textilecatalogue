@@ -48,8 +48,8 @@ export function useErpFormKeyboard(onSave: () => void | Promise<void>, options: 
     if (!field) return;
     field.focus();
     if (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement) {
-      const value = field.value;
-      field.setSelectionRange?.(value.length, value.length);
+      // Cursor at start so keyboard entry can continue without the mouse.
+      field.setSelectionRange?.(0, 0);
     }
   }, []);
 

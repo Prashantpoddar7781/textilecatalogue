@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Edit3, Loader2, Plus, RefreshCw, Search, Trash2 } from 'lucide-react';
 import { bankEntriesApi, invoicesApi } from '../services/api';
 import { AccountParty, BankEntry, BankPendingBill, CompletedOrderParty, PurchaseBillParty } from '../types';
@@ -14,9 +14,24 @@ import {
   slipNumberFromDate,
   UNADJ_BILL_TYPE
 } from '../constants/bankCashSeries';
+import {
+  DEFAULT_PURCHASE_TRANSACTION_TYPE,
+  DEFAULT_SALES_TRANSACTION_TYPE,
+  getTransactionTypesForParty
+} from '../constants/erpTransactionTypes';
 import { AccountsInformationDialog } from './AccountsInformationDialog';
 import { ErpFormShell } from './ErpFormShell';
 import { ErpSaveButton } from './ErpSaveButton';
+
+const UNADJ_PAYMENT_TYPE = 'UNADJ PAYMENT';
+
+const defaultBillTypeForParty = (partyType?: string) =>
+  partyType === 'supplier' ? DEFAULT_PURCHASE_TRANSACTION_TYPE : DEFAULT_SALES_TRANSACTION_TYPE;
+
+const isUnadjBillTypeQuery = (value?: string | null) => {
+  const q = String(value || '').trim().toLowerCase();
+  return q === 'u' || q === 'un' || q.startsWith('unadj');
+};
 
 interface Props {
   onBack: () => void;
@@ -90,10 +105,24 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState('');
   const [quickBillNo, setQuickBillNo] = useState('');
+  const [billType, setBillType] = useState(defaultBillTypeForParty(bankCashDefaultPartyType(DEFAULT_BANK_CASH_SERIES)));
+  const [billTypePickerOpen, setBillTypePickerOpen] = useState(false);
+  const [billPickerOpen, setBillPickerOpen] = useState(false);
+  const [billTypeHighlight, setBillTypeHighlight] = useState(0);
+  const [billHighlight, setBillHighlight] = useState(0);
   const [showAddBank, setShowAddBank] = useState(false);
   const [newBankName, setNewBankName] = useState('');
   const [restoreAllocations, setRestoreAllocations] = useState<BankPendingBill[] | null>(null);
   const [amountTouched, setAmountTouched] = useState(false);
+  const companyRef = useRef<HTMLInputElement>(null);
+  const billTypeRef = useRef<HTMLInputElement>(null);
+  const billNoRef = useRef<HTMLInputElement>(null);
+
+  const focusInputStart = (el: HTMLInputElement | null) => {
+    if (!el) return;
+    el.focus();
+    el.setSelectionRange?.(0, 0);
+  };
 
   const loadEntries = async () => {
     setLoading(true);
@@ -158,7 +187,12 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
     }
   }, []);
 
-  const loadPendingBills = useCallback(async (partyName: string, partyType: string, excludeEntryId?: string | null) => {
+  const loadPendingBills = useCallback(async (
+    partyName: string,
+    partyType: string,
+    excludeEntryId?: string | null,
+    selectedBillType?: string
+  ) => {
     if (!partyName.trim()) {
       setPendingBills([]);
       setQuickBillNo('');
@@ -166,9 +200,12 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
     }
     setLoadingBills(true);
     try {
+      const typeFilter = String(selectedBillType || '').trim();
+      const useTypeFilter = typeFilter && !isUnadjBillTypeQuery(typeFilter);
       const { bills } = await bankEntriesApi.getPendingBills({
         partyName,
         partyType: partyType as any,
+        transactionType: useTypeFilter ? typeFilter : undefined,
         excludeEntryId: excludeEntryId || undefined
       });
       const onlyBills = (bills || []).filter(bill => bill.billType !== 'credit_debit_note');
@@ -203,12 +240,39 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
             merged.push({ ...saved });
           }
         }
-        setPendingBills(merged);
+        setPendingBills(prev => {
+          // Keep already-picked adjust amounts when reloading for a type change.
+          const pickedById = new Map(prev.filter(b => (b.adjustAmount || 0) > 0).map(b => [b.billId, b]));
+          return merged.map(bill => {
+            const picked = pickedById.get(bill.billId);
+            if (!picked) return bill;
+            return {
+              ...bill,
+              adjustAmount: Math.min(picked.adjustAmount || 0, bill.pendingAmount || picked.adjustAmount || 0),
+              pendingAmount: Math.max(bill.pendingAmount, picked.adjustAmount || 0)
+            };
+          });
+        });
         setRestoreAllocations(null);
       } else {
-        setPendingBills(seeded);
+        setPendingBills(prev => {
+          const pickedById = new Map(prev.filter(b => (b.adjustAmount || 0) > 0).map(b => [b.billId, b]));
+          if (pickedById.size === 0) return seeded;
+          const next = seeded.map(bill => {
+            const picked = pickedById.get(bill.billId);
+            if (!picked) return bill;
+            return {
+              ...bill,
+              adjustAmount: Math.min(picked.adjustAmount || 0, bill.pendingAmount || picked.adjustAmount || 0),
+              pendingAmount: Math.max(bill.pendingAmount, picked.adjustAmount || 0)
+            };
+          });
+          for (const picked of pickedById.values()) {
+            if (!next.some(row => row.billId === picked.billId)) next.push(picked);
+          }
+          return next;
+        });
       }
-      setQuickBillNo('');
     } catch (err: any) {
       setPendingBills([]);
       setError(err.message || 'Could not load pending bills.');
@@ -237,11 +301,15 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
     setPendingBills([]);
     setAmountTouched(false);
     setQuickBillNo('');
+    setBillType(defaultBillTypeForParty(partyType));
+    setBillPickerOpen(false);
+    setBillTypePickerOpen(false);
   };
 
   useEffect(() => {
     void loadMasterData();
     void loadEntries();
+    window.setTimeout(() => focusInputStart(companyRef.current), 0);
   }, []);
 
   useEffect(() => {
@@ -250,8 +318,8 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
 
   useEffect(() => {
     void refreshBalances(form.bankName, form.partyName, form.partyType);
-    void loadPendingBills(form.partyName, form.partyType, editingId);
-  }, [form.bankName, form.partyName, form.partyType, editingId, refreshBalances, loadPendingBills]);
+    void loadPendingBills(form.partyName, form.partyType, editingId, billType);
+  }, [form.bankName, form.partyName, form.partyType, editingId, billType, refreshBalances, loadPendingBills]);
 
   useEffect(() => {
     setForm(f => {
@@ -338,37 +406,75 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
     });
   }, [summary.netBillAmount, summary.billAdjust, summary.unadjAdjust, amountTouched]);
 
-  const quickBillMatches = useMemo(() => {
-    const q = quickBillNo.trim().toLowerCase();
-    if (!q) return pendingBills;
-    // Empire: typing "U" lists UNADJ PAYMENT rows (previous part payments).
-    if (q === 'u' || q.startsWith('unadj') || q === 'un') {
-      return pendingBills.filter(bill => isUnadjRow(bill));
+  const billTypeOptions = useMemo(() => {
+    const types = getTransactionTypesForParty(form.partyType).map(t => t.value);
+    return [UNADJ_PAYMENT_TYPE, ...types.filter(t => t !== UNADJ_PAYMENT_TYPE)];
+  }, [form.partyType]);
+
+  const billTypeMatches = useMemo(() => {
+    const q = billType.trim().toLowerCase();
+    if (!q) return billTypeOptions.slice(0, 12);
+    if (isUnadjBillTypeQuery(q)) {
+      return [UNADJ_PAYMENT_TYPE, ...billTypeOptions.filter(t => t !== UNADJ_PAYMENT_TYPE && t.toLowerCase().includes(q))];
     }
-    return pendingBills.filter(bill =>
+    return billTypeOptions.filter(t => t.toLowerCase().includes(q)).slice(0, 12);
+  }, [billType, billTypeOptions]);
+
+  const unadjMode = isUnadjBillTypeQuery(billType) || billType.trim().toUpperCase() === UNADJ_PAYMENT_TYPE;
+
+  const quickBillMatches = useMemo(() => {
+    const pool = unadjMode
+      ? pendingBills.filter(bill => isUnadjRow(bill))
+      : pendingBills.filter(bill => !isUnadjRow(bill));
+    const q = quickBillNo.trim().toLowerCase();
+    if (!q) return pool;
+    return pool.filter(bill =>
       String(bill.billNumber).toLowerCase().includes(q)
       || String(bill.voucherNumber || '').toLowerCase().includes(q)
       || String(bill.transactionType || '').toLowerCase().includes(q)
     );
-  }, [pendingBills, quickBillNo]);
+  }, [pendingBills, quickBillNo, unadjMode]);
 
-  const pickBill = (billId: string) => {
+  useEffect(() => {
+    setBillHighlight(0);
+  }, [quickBillMatches]);
+
+  useEffect(() => {
+    setBillTypeHighlight(0);
+  }, [billTypeMatches]);
+
+  const pickBill = (billId: string, opts?: { toggle?: boolean }) => {
     setPendingBills(prev => {
       const target = prev.find(bill => bill.billId === billId);
       if (!target) return prev;
       const already = (target.adjustAmount || 0) > 0;
+      if (already && opts?.toggle === false) return prev;
       return prev.map(bill => {
         if (bill.billId !== billId) return bill;
-        return { ...bill, adjustAmount: already ? 0 : bill.pendingAmount };
+        return { ...bill, adjustAmount: already && opts?.toggle !== false ? 0 : bill.pendingAmount };
       });
     });
   };
 
   const pickBillByNumber = (billNumber: string) => {
-    const bill = pendingBills.find(row => String(row.billNumber) === String(billNumber));
+    const bill = pendingBills.find(row => String(row.billNumber) === String(billNumber))
+      || quickBillMatches.find(row => String(row.billNumber) === String(billNumber));
     if (!bill) return;
-    pickBill(bill.billId);
+    pickBill(bill.billId, { toggle: false });
     setQuickBillNo('');
+    setBillPickerOpen(false);
+    window.setTimeout(() => focusInputStart(billNoRef.current), 0);
+  };
+
+  const commitBillType = (value: string) => {
+    const next = isUnadjBillTypeQuery(value) ? UNADJ_PAYMENT_TYPE : value.trim().toUpperCase();
+    const resolved = billTypeOptions.find(t => t.toUpperCase() === next)
+      || billTypeMatches[billTypeHighlight]
+      || (isUnadjBillTypeQuery(value) ? UNADJ_PAYMENT_TYPE : value.trim());
+    setBillType(resolved);
+    setBillTypePickerOpen(false);
+    setQuickBillNo('');
+    window.setTimeout(() => focusInputStart(billNoRef.current), 0);
   };
 
   const updateBillAdjust = (billId: string, value: string) => {
@@ -390,6 +496,13 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
         : (entry.paymentMode === 'cash' ? 'CASH RECEIPT' : 'BANK RECEIPT'))
     );
     const entryDate = entry.entryDate?.slice(0, 10) || today();
+    const partyType = (entry.partyType as any) || bankCashDefaultPartyType(series);
+    const firstAlloc = Array.isArray(entry.billAllocations) ? entry.billAllocations[0] : null;
+    setBillType(
+      firstAlloc && isUnadjAllocation(firstAlloc)
+        ? UNADJ_PAYMENT_TYPE
+        : (firstAlloc?.transactionType || defaultBillTypeForParty(partyType))
+    );
     setForm({
       series,
       entryType: bankCashEntryType(series),
@@ -397,7 +510,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
       voucherNumber: entry.voucherNumber || '',
       companyName: entry.companyName || '',
       bankName: entry.bankName || '',
-      partyType: (entry.partyType as any) || bankCashDefaultPartyType(series),
+      partyType,
       partyName: entry.partyName || '',
       transactionType: series,
       amount: String(entry.amount || ''),
@@ -465,8 +578,12 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
     setRestoreAllocations(null);
     setQuickBillNo('');
     setAmountTouched(false);
+    setBillType(defaultBillTypeForParty(bankCashDefaultPartyType(DEFAULT_BANK_CASH_SERIES)));
+    setBillPickerOpen(false);
+    setBillTypePickerOpen(false);
     setForm(emptyForm());
     await loadMasterData();
+    window.setTimeout(() => focusInputStart(companyRef.current), 0);
   };
 
   const saveEntry = async () => {
@@ -600,10 +717,15 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
                 <div className="xl:col-span-2">
                   <label className={labelClass}>Company</label>
-                  <input className={inputClass} value={form.companyName} onChange={e => setForm(f => ({ ...f, companyName: e.target.value }))} />
+                  <input
+                    ref={companyRef}
+                    className={inputClass}
+                    value={form.companyName}
+                    onChange={e => setForm(f => ({ ...f, companyName: e.target.value }))}
+                  />
                 </div>
                 <div>
-                  <label className={labelClass}>Type</label>
+                  <label className={labelClass}>Series</label>
                   <select className={inputClass} value={form.series} onChange={e => applySeries(e.target.value)}>
                     {BANK_CASH_SERIES.map(series => (
                       <option key={series} value={series}>{series}</option>
@@ -633,7 +755,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                   />
                   {summary.unadjAvailable > 0 && (
                     <p className="mt-1 text-[11px] font-semibold text-violet-700">
-                      Unadj. pending: {formatMoney(summary.unadjAvailable)} — type U in Bill No.
+                      Unadj. pending: {formatMoney(summary.unadjAvailable)} — Type U then pick in Bill No.
                     </p>
                   )}
                 </div>
@@ -654,6 +776,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                     {form.paymentMode === 'bank' && (
                       <button
                         type="button"
+                        data-erp-skip-nav
                         onClick={() => {
                           setNewBankName(form.bankName.trim());
                           setShowAddBank(true);
@@ -679,36 +802,40 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                     <select
                       className={inputClass}
                       value={form.partyType}
-                      onChange={e => setForm(f => ({
-                        ...f,
-                        partyType: e.target.value as 'customer' | 'supplier' | 'other',
-                        partyName: ''
-                      }))}
+                      onChange={e => {
+                        const partyType = e.target.value as 'customer' | 'supplier' | 'other';
+                        setBillType(defaultBillTypeForParty(partyType));
+                        setForm(f => ({
+                          ...f,
+                          partyType,
+                          partyName: ''
+                        }));
+                      }}
                     >
                       <option value="customer">Customer</option>
                       <option value="supplier">Supplier</option>
                       <option value="other">Other</option>
                     </select>
-                    {partyOptions.length > 0 ? (
-                      <select
-                        className={inputClass}
-                        value={form.partyName}
-                        onChange={e => setForm(f => ({ ...f, partyName: e.target.value }))}
-                      >
-                        <option value="">Select party</option>
-                        {partyOptions.map(name => (
-                          <option key={name} value={name}>{name}</option>
-                        ))}
-                      </select>
-                    ) : (
-                      <input
-                        className={inputClass}
-                        placeholder="Party name"
-                        value={form.partyName}
-                        onChange={e => setForm(f => ({ ...f, partyName: e.target.value }))}
-                      />
-                    )}
+                    <input
+                      className={inputClass}
+                      list="bank-party-options"
+                      placeholder="Type party name"
+                      value={form.partyName}
+                      onChange={e => setForm(f => ({ ...f, partyName: e.target.value }))}
+                      onKeyDown={e => {
+                        if (e.key !== 'Enter' || !form.partyName.trim()) return;
+                        // After party, jump to Bill Type (Empire keyboard flow).
+                        e.preventDefault();
+                        e.stopPropagation();
+                        focusInputStart(billTypeRef.current);
+                      }}
+                    />
                   </div>
+                  <datalist id="bank-party-options">
+                    {partyOptions.map(name => (
+                      <option key={name} value={name} />
+                    ))}
+                  </datalist>
                   <p className="mt-1 text-xs font-bold text-amber-800">Cur. Bal.: {formatPartyBalance(partyBalance, form.partyType)}</p>
                 </div>
 
@@ -748,57 +875,152 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
               </div>
             </section>
 
-            {/* Bill pick — Empire: bills + UNADJ PAYMENT (type U) */}
+            {/* Bill pick — Empire: Type + Bill No; list only after typing; show selected rows only */}
             <section className="rounded-3xl border border-gray-100 bg-white shadow-sm">
               <div className="flex flex-wrap items-end justify-between gap-3 border-b px-5 py-4">
                 <div>
-                  <h2 className="text-sm font-black uppercase tracking-wide text-gray-900">Pending bills / Unadj. payments</h2>
+                  <h2 className="text-sm font-black uppercase tracking-wide text-gray-900">Bill allocation</h2>
                   <p className="text-xs text-gray-500">
-                    Part payment: save Rec/Paid Amt with no bill pick → becomes Unadj. Later settle by picking bills + type <span className="font-black text-violet-700">U</span> for prior payments.
-                    Or allocate sequentially (partial Adjust on bills).
+                    Type <span className="font-black">FINISH PURCHASE</span> / <span className="font-black">FINISH SALES</span>, or <span className="font-black text-violet-700">U</span> for Unadj Payment.
+                    Then type in Bill No. — Enter picks. Part payment: leave bills empty and save Rec/Paid Amt.
                   </p>
                 </div>
                 <div className="flex flex-wrap items-end gap-2">
                   <div className="relative">
-                    <label className={labelClass}>Bill No. (type U for unadj)</label>
+                    <label className={labelClass}>Type</label>
                     <input
-                      className="min-w-[220px] rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm font-semibold outline-none focus:border-indigo-400"
-                      list="pending-bill-options"
-                      placeholder="Bill no. or U…"
-                      value={quickBillNo}
-                      onChange={e => setQuickBillNo(e.target.value)}
+                      ref={billTypeRef}
+                      className="min-w-[200px] rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm font-semibold outline-none focus:border-indigo-400"
+                      placeholder={form.partyType === 'supplier' ? 'FINISH PURCHASE / U' : 'FINISH SALES / U'}
+                      value={billType}
+                      onFocus={() => setBillTypePickerOpen(true)}
+                      onBlur={() => window.setTimeout(() => setBillTypePickerOpen(false), 150)}
+                      onChange={e => {
+                        setBillType(e.target.value);
+                        setBillTypePickerOpen(true);
+                      }}
                       onKeyDown={e => {
-                        if (e.key !== 'Enter') return;
-                        e.preventDefault();
-                        const match = quickBillMatches[0];
-                        if (match) pickBillByNumber(match.billNumber);
+                        if (e.key === 'ArrowDown') {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setBillTypePickerOpen(true);
+                          setBillTypeHighlight(i => Math.min(i + 1, Math.max(billTypeMatches.length - 1, 0)));
+                          return;
+                        }
+                        if (e.key === 'ArrowUp') {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setBillTypeHighlight(i => Math.max(i - 1, 0));
+                          return;
+                        }
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          const pick = billTypeMatches[billTypeHighlight] || billTypeMatches[0] || billType;
+                          commitBillType(pick);
+                        }
                       }}
                     />
-                    <datalist id="pending-bill-options">
-                      {quickBillMatches.map(bill => (
-                        <option key={bill.billId} value={bill.billNumber}>
-                          {bill.transactionType || 'Bill'} · {formatMoney(bill.pendingAmount)}
-                        </option>
-                      ))}
-                    </datalist>
-                    {quickBillNo.trim() && quickBillMatches.length > 0 && (
-                      <div className="absolute z-20 mt-1 max-h-48 w-full overflow-y-auto rounded-xl border bg-white shadow-lg">
-                        {quickBillMatches.slice(0, 12).map(bill => (
+                    {billTypePickerOpen && billTypeMatches.length > 0 && (
+                      <div className="absolute z-30 mt-1 max-h-52 w-full overflow-y-auto rounded-xl border bg-white shadow-lg">
+                        {billTypeMatches.map((type, index) => (
                           <button
-                            key={bill.billId}
+                            key={type}
                             type="button"
-                            className={`flex w-full items-center justify-between px-3 py-2 text-left text-xs hover:bg-indigo-50 ${isUnadjRow(bill) ? 'text-violet-800' : 'text-gray-800'}`}
-                            onClick={() => pickBillByNumber(bill.billNumber)}
+                            data-erp-skip-nav
+                            className={`flex w-full px-3 py-2 text-left text-xs font-bold hover:bg-indigo-50 ${
+                              index === billTypeHighlight ? 'bg-indigo-100 text-indigo-900' : (type === UNADJ_PAYMENT_TYPE ? 'text-violet-800' : 'text-gray-800')
+                            }`}
+                            onMouseDown={ev => {
+                              ev.preventDefault();
+                              commitBillType(type);
+                            }}
                           >
-                            <span className="font-black">{bill.billNumber}</span>
-                            <span>{bill.transactionType || 'Bill'} · {formatMoney(bill.pendingAmount)}</span>
+                            {type}
                           </button>
                         ))}
                       </div>
                     )}
                   </div>
+                  <div className="relative">
+                    <label className={labelClass}>Bill No.</label>
+                    <input
+                      ref={billNoRef}
+                      className="min-w-[220px] rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm font-semibold outline-none focus:border-indigo-400"
+                      placeholder={unadjMode ? 'Type to list unadj…' : 'Type bill no…'}
+                      value={quickBillNo}
+                      disabled={!form.partyName.trim()}
+                      onFocus={() => {
+                        if (form.partyName.trim() && quickBillNo.trim()) setBillPickerOpen(true);
+                      }}
+                      onBlur={() => window.setTimeout(() => setBillPickerOpen(false), 150)}
+                      onChange={e => {
+                        const value = e.target.value;
+                        setQuickBillNo(value);
+                        setBillPickerOpen(Boolean(value.trim()) && Boolean(form.partyName.trim()));
+                      }}
+                      onKeyDown={e => {
+                        if (e.key === 'ArrowDown') {
+                          if (!quickBillNo.trim()) return;
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setBillPickerOpen(true);
+                          setBillHighlight(i => Math.min(i + 1, Math.max(quickBillMatches.length - 1, 0)));
+                          return;
+                        }
+                        if (e.key === 'ArrowUp') {
+                          if (!quickBillNo.trim()) return;
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setBillHighlight(i => Math.max(i - 1, 0));
+                          return;
+                        }
+                        if (e.key === 'Enter') {
+                          if (quickBillNo.trim() && quickBillMatches.length > 0) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            const match = quickBillMatches[billHighlight] || quickBillMatches[0];
+                            if (match) pickBillByNumber(match.billNumber);
+                          }
+                          // Empty Bill No. → ErpFormShell advances to next field.
+                        }
+                      }}
+                    />
+                    {billPickerOpen && form.partyName.trim() && quickBillNo.trim() && (
+                      <div className="absolute z-30 mt-1 max-h-56 w-[320px] overflow-y-auto rounded-xl border bg-white shadow-lg">
+                        {loadingBills ? (
+                          <div className="px-3 py-3 text-xs text-gray-500">Loading…</div>
+                        ) : quickBillMatches.length === 0 ? (
+                          <div className="px-3 py-3 text-xs text-gray-500">
+                            {unadjMode ? 'No unadjusted payments.' : 'No matching pending bills.'}
+                          </div>
+                        ) : (
+                          quickBillMatches.slice(0, 15).map((bill, index) => (
+                            <button
+                              key={bill.billId}
+                              type="button"
+                              data-erp-skip-nav
+                              className={`flex w-full items-center justify-between px-3 py-2 text-left text-xs hover:bg-indigo-50 ${
+                                index === billHighlight
+                                  ? 'bg-indigo-100'
+                                  : ''
+                              } ${isUnadjRow(bill) ? 'text-violet-800' : 'text-gray-800'}`}
+                              onMouseDown={ev => {
+                                ev.preventDefault();
+                                pickBillByNumber(bill.billNumber);
+                              }}
+                            >
+                              <span className="font-black">{bill.billNumber}</span>
+                              <span>{bill.transactionType || 'Bill'} · {formatMoney(bill.pendingAmount)}</span>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
                   <button
                     type="button"
+                    data-erp-skip-nav
                     onClick={() => setPendingBills(prev => prev.map(bill => ({ ...bill, adjustAmount: 0 })))}
                     className="rounded-xl border px-3 py-2.5 text-xs font-black text-gray-700"
                   >
@@ -808,16 +1030,12 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
               </div>
 
               <div className="overflow-x-auto">
-                {loadingBills ? (
-                  <div className="flex items-center justify-center py-14 text-sm text-gray-500">
-                    <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                    Loading pending bills…
-                  </div>
-                ) : !form.partyName ? (
-                  <div className="px-5 py-12 text-center text-sm text-gray-400">Select A/C Name to load pending bills.</div>
-                ) : pendingBills.length === 0 ? (
-                  <div className="px-5 py-12 text-center text-sm text-gray-400">
-                    No pending bills. Enter Rec/Paid Amt and save for an unadjusted part payment/receipt.
+                {!form.partyName ? (
+                  <div className="px-5 py-10 text-center text-sm text-gray-400">Select A/C Name, then Type + Bill No. (keyboard / Enter).</div>
+                ) : adjustedBills.length === 0 ? (
+                  <div className="px-5 py-10 text-center text-sm text-gray-400">
+                    No bills selected yet. Type in Bill No. and press Enter to pick.
+                    Or leave empty and save Rec/Paid Amt as unadjusted part payment.
                   </div>
                 ) : (
                   <table className="min-w-full text-left text-sm">
@@ -834,18 +1052,12 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                       </tr>
                     </thead>
                     <tbody>
-                      {pendingBills.map(bill => {
-                        const picked = (bill.adjustAmount || 0) > 0;
+                      {adjustedBills.map(bill => {
                         const unadj = isUnadjRow(bill);
                         return (
                           <tr
                             key={bill.billId}
-                            className={`cursor-pointer border-t ${
-                              picked
-                                ? (unadj ? 'bg-violet-50/80' : 'bg-indigo-50/70')
-                                : (unadj ? 'bg-violet-50/30 hover:bg-violet-50/60' : 'hover:bg-gray-50')
-                            }`}
-                            onClick={() => pickBill(bill.billId)}
+                            className={`border-t ${unadj ? 'bg-violet-50/80' : 'bg-indigo-50/70'}`}
                           >
                             <td className={`px-3 py-2.5 font-black ${unadj ? 'text-violet-800' : 'text-gray-900'}`}>{bill.billNumber}</td>
                             <td className="px-3 py-2.5">{formatDate(bill.billDate)}</td>
@@ -862,12 +1074,11 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                             <td className={`px-3 py-2.5 text-right font-semibold ${unadj ? 'text-violet-700' : 'text-amber-700'}`}>
                               {unadj ? formatMoney(-(bill.pendingAmount || 0)) : formatMoney(bill.pendingAmount)}
                             </td>
-                            <td className="px-3 py-2.5 text-right" onClick={e => e.stopPropagation()}>
+                            <td className="px-3 py-2.5 text-right">
                               <input
+                                data-erp-skip-nav
                                 className={`w-28 rounded-lg border px-2 py-1.5 text-right text-sm font-bold ${
-                                  picked
-                                    ? (unadj ? 'border-violet-300 bg-white' : 'border-indigo-300 bg-white')
-                                    : 'border-gray-200 bg-gray-50'
+                                  unadj ? 'border-violet-300 bg-white' : 'border-indigo-300 bg-white'
                                 }`}
                                 type="number"
                                 min="0"
