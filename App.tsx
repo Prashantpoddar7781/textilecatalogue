@@ -52,7 +52,7 @@ import { PricingDialog } from './components/PricingDialog';
 import { BillingPage } from './components/BillingPage';
 import { designsApi, authApi, shareLinksApi, ordersApi, billingApi } from './services/api';
 import { getShareUrl } from './services/appUrl';
-import { openWhatsAppWithText } from './services/nativeApp';
+import { openWhatsAppWithText, isNativeAndroid, getPendingSharedImage, clearPendingSharedImage, addShareReceivedListener } from './services/nativeApp';
 import { hasCompleteErpAccess } from './services/erpSession';
 import { ErpSession, Order } from './types';
 
@@ -126,6 +126,7 @@ const App: React.FC = () => {
   const [designs, setDesigns] = useState<TextileDesign[]>([]);
   const [isReady, setIsReady] = useState(false);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
+  const [pendingShareImage, setPendingShareImage] = useState<string | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isShareOpen, setIsShareOpen] = useState(false);
   const [isShareLinkOpen, setIsShareLinkOpen] = useState(false);
@@ -182,6 +183,48 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    if (!isNativeAndroid()) return;
+    let cancelled = false;
+    let listener: { remove: () => Promise<void> } | null = null;
+    const timers: number[] = [];
+
+    const onCatalogueHome = () => {
+      const path = window.location.pathname;
+      return path === '/' || path === '';
+    };
+
+    const consumeShare = async (dataUrl?: string) => {
+      if (!dataUrl || cancelled) return;
+      if (!onCatalogueHome()) {
+        window.location.replace('/');
+        return;
+      }
+      setPendingShareImage(dataUrl);
+      await clearPendingSharedImage();
+    };
+
+    (async () => {
+      listener = await addShareReceivedListener((event) => {
+        void consumeShare(event?.dataUrl);
+      });
+      const pull = async () => {
+        const pending = await getPendingSharedImage();
+        await consumeShare(pending?.dataUrl);
+      };
+      await pull();
+      // Native plugin may finish reading the gallery URI after the WebView boots.
+      timers.push(window.setTimeout(() => { void pull(); }, 400));
+      timers.push(window.setTimeout(() => { void pull(); }, 1200));
+    })();
+
+    return () => {
+      cancelled = true;
+      timers.forEach((id) => window.clearTimeout(id));
+      void listener?.remove();
+    };
+  }, []);
+
+  useEffect(() => {
     if (user) {
       loadDesigns();
     } else {
@@ -229,7 +272,7 @@ const App: React.FC = () => {
     id: d.id,
     name: d.name || 'Untitled Design',
     catalogueId: d.catalogueId,
-    catalogueName: d.catalogue?.name,
+    catalogueName: d.catalogue?.name || d.catalogueName,
     image: d.image,
     designCode: d.designCode,
     color: d.color,
@@ -408,6 +451,7 @@ const App: React.FC = () => {
       
       setDesigns(prev => [mapDesign(created), ...prev]);
       setIsUploadOpen(false);
+      setPendingShareImage(null);
       // Reload catalogues in case new one was created
       const { catalogues: cats } = await designsApi.getCatalogues();
       setCatalogues(cats);
@@ -484,6 +528,7 @@ const App: React.FC = () => {
       ));
       setIsUploadOpen(false);
       setEditingDesign(null);
+      setPendingShareImage(null);
       // Reload catalogues in case new one was created
       const { catalogues: cats } = await designsApi.getCatalogues();
       setCatalogues(cats);
@@ -626,8 +671,19 @@ const App: React.FC = () => {
       return;
     }
     setEditingDesign(null);
+    setPendingShareImage(null);
     setIsUploadOpen(true);
   };
+
+  useEffect(() => {
+    if (!pendingShareImage || !user) return;
+    if (!canAddDesign) {
+      setIsPricingOpen(true);
+      return;
+    }
+    setEditingDesign(null);
+    setIsUploadOpen(true);
+  }, [pendingShareImage, user, canAddDesign]);
 
   if (!user) {
     return (
@@ -1625,12 +1681,16 @@ const App: React.FC = () => {
 
       {isUploadOpen && (
         <UploadForm 
+          key={editingDesign?.id || (pendingShareImage ? 'share-upload' : 'new-upload')}
           onClose={() => {
             setIsUploadOpen(false);
             setEditingDesign(null);
+            setPendingShareImage(null);
+            void clearPendingSharedImage();
           }} 
           onSubmit={editingDesign ? handleUpdateDesign : handleAddDesign}
           initialData={editingDesign}
+          initialImage={!editingDesign ? pendingShareImage : null}
           materialNameOptions={costingMaterialNameOptions}
           supplierNameOptions={costingSupplierNameOptions}
           karigarNameOptions={costingKarigarNameOptions}

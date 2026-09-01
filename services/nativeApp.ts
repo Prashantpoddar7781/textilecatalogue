@@ -1,4 +1,6 @@
-import { Capacitor, registerPlugin } from '@capacitor/core';
+import { Capacitor, registerPlugin, PluginListenerHandle } from '@capacitor/core';
+
+export type SharedImagePayload = { dataUrl?: string; mimeType?: string };
 
 interface ThreadXNativePlugin {
   takePhoto(): Promise<{ dataUrl?: string; mimeType?: string; cancelled?: boolean }>;
@@ -10,6 +12,13 @@ interface ThreadXNativePlugin {
     fileName: string;
     mimeType?: string;
   }): Promise<{ saved: boolean; fileName?: string }>;
+  /** Peek a gallery Share image that launched the app (does not clear it). */
+  getPendingSharedImage(): Promise<SharedImagePayload>;
+  clearPendingSharedImage(): Promise<void>;
+  addListener(
+    eventName: 'shareReceived',
+    listenerFunc: (event: SharedImagePayload) => void
+  ): Promise<PluginListenerHandle>;
 }
 
 const ThreadXNative = registerPlugin<ThreadXNativePlugin>('ThreadXNative');
@@ -28,6 +37,38 @@ export const openWhatsAppWithTextNative = async (text: string): Promise<void> =>
 
 export const shareImagesNative = async (dataUrls: string[]): Promise<void> => {
   await ThreadXNative.shareImages({ dataUrls });
+};
+
+/** Peek a gallery Share image that launched the app (cold start). */
+export const getPendingSharedImage = async (): Promise<SharedImagePayload | null> => {
+  if (!isNativeAndroid()) return null;
+  try {
+    const result = await ThreadXNative.getPendingSharedImage();
+    return result?.dataUrl ? result : null;
+  } catch {
+    return null;
+  }
+};
+
+export const clearPendingSharedImage = async (): Promise<void> => {
+  if (!isNativeAndroid()) return;
+  try {
+    await ThreadXNative.clearPendingSharedImage();
+  } catch {
+    // ignore
+  }
+};
+
+/** Listen for gallery Share while the app is already open. */
+export const addShareReceivedListener = async (
+  listener: (event: SharedImagePayload) => void
+): Promise<PluginListenerHandle | null> => {
+  if (!isNativeAndroid()) return null;
+  try {
+    return await ThreadXNative.addListener('shareReceived', listener);
+  } catch {
+    return null;
+  }
 };
 
 export const saveImageToDownloadsNative = async (

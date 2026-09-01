@@ -11,6 +11,9 @@ import android.util.Base64;
 
 import androidx.activity.result.ActivityResult;
 import androidx.core.content.FileProvider;
+import androidx.core.content.pm.ShortcutInfoCompat;
+import androidx.core.content.pm.ShortcutManagerCompat;
+import androidx.core.graphics.drawable.IconCompat;
 
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
@@ -26,10 +29,133 @@ import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.ArrayList;
+import java.util.Collections;
 
 @CapacitorPlugin(name = "ThreadXNative")
 public class ThreadXNativePlugin extends Plugin {
     private Uri cameraOutputUri;
+    /** Shared gallery image waiting for the web app to consume (cold start). */
+    private JSObject pendingSharedImage;
+    private String lastProcessedShareKey;
+
+    @Override
+    public void load() {
+        publishShareShortcut();
+        processShareIntent(getActivity() != null ? getActivity().getIntent() : null);
+    }
+
+    @Override
+    protected void handleOnStart() {
+        super.handleOnStart();
+        publishShareShortcut();
+        processShareIntent(getActivity() != null ? getActivity().getIntent() : null);
+    }
+
+    @Override
+    protected void handleOnNewIntent(Intent intent) {
+        super.handleOnNewIntent(intent);
+        if (getActivity() != null && intent != null) {
+            getActivity().setIntent(intent);
+        }
+        processShareIntent(intent);
+    }
+
+    /**
+     * Returns a pending shared image from gallery Share without consuming it.
+     */
+    @PluginMethod
+    public void getPendingSharedImage(PluginCall call) {
+        call.resolve(pendingSharedImage != null ? pendingSharedImage : new JSObject());
+    }
+
+    @PluginMethod
+    public void clearPendingSharedImage(PluginCall call) {
+        pendingSharedImage = null;
+        call.resolve();
+    }
+
+    private void publishShareShortcut() {
+        try {
+            Intent shortcutIntent = new Intent(getContext(), MainActivity.class);
+            shortcutIntent.setAction(Intent.ACTION_SEND);
+            shortcutIntent.setType("image/*");
+            ShortcutInfoCompat shortcut = new ShortcutInfoCompat.Builder(getContext(), "share_upload_design")
+                .setShortLabel("Upload design")
+                .setLongLabel("Upload design to ThreadX")
+                .setIcon(IconCompat.createWithResource(getContext(), R.mipmap.ic_launcher))
+                .setIntent(shortcutIntent)
+                .setCategories(Collections.singleton("com.textilehub.catalogue.share.IMAGE"))
+                .build();
+            ShortcutManagerCompat.pushDynamicShortcut(getContext(), shortcut);
+        } catch (Exception ignored) {
+            // Direct Share is best-effort; intent-filters still register the app.
+        }
+    }
+
+    private void processShareIntent(Intent intent) {
+        if (intent == null) return;
+        String action = intent.getAction();
+        if (!Intent.ACTION_SEND.equals(action) && !Intent.ACTION_SEND_MULTIPLE.equals(action)) {
+            return;
+        }
+        String type = intent.getType();
+        if (type != null && !type.startsWith("image/") && !"*/*".equals(type)) {
+            return;
+        }
+
+        Uri uri = null;
+        if (Intent.ACTION_SEND.equals(action)) {
+            uri = intent.getParcelableExtra(Intent.EXTRA_STREAM);
+        } else {
+            ArrayList<Uri> uris = intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM);
+            if (uris != null && !uris.isEmpty()) {
+                uri = uris.get(0);
+            }
+        }
+        if (uri == null && intent.getClipData() != null && intent.getClipData().getItemCount() > 0) {
+            uri = intent.getClipData().getItemAt(0).getUri();
+        }
+        if (uri == null) return;
+
+        String shareKey = action + "|" + uri;
+        if (shareKey.equals(lastProcessedShareKey)) {
+            return;
+        }
+
+        try {
+            JSObject data = uriToSharedImage(uri);
+            if (data == null) return;
+            lastProcessedShareKey = shareKey;
+            pendingSharedImage = data;
+            notifyListeners("shareReceived", data);
+        } catch (Exception error) {
+            // Ignore unreadable share URIs; user can still upload manually.
+        }
+    }
+
+    private JSObject uriToSharedImage(Uri uri) throws Exception {
+        try (InputStream input = getContext().getContentResolver().openInputStream(uri);
+             ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            if (input == null) return null;
+
+            byte[] buffer = new byte[8192];
+            int read;
+            while ((read = input.read(buffer)) != -1) {
+                output.write(buffer, 0, read);
+            }
+
+            String mimeType = getContext().getContentResolver().getType(uri);
+            if (mimeType == null || !mimeType.startsWith("image/")) {
+                mimeType = "image/jpeg";
+            }
+
+            String base64 = Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP);
+            JSObject data = new JSObject();
+            data.put("dataUrl", "data:" + mimeType + ";base64," + base64);
+            data.put("mimeType", mimeType);
+            return data;
+        }
+    }
 
     @PluginMethod
     public void takePhoto(PluginCall call) {

@@ -17,6 +17,8 @@ interface Props {
   onClose: () => void;
   onSubmit: (design: TextileDesign) => void | Promise<void>;
   initialData?: TextileDesign | null;
+  /** Prefill photo from gallery Share / external intent (opens crop like gallery pick). */
+  initialImage?: string | null;
   materialNameOptions?: string[];
   supplierNameOptions?: string[];
   karigarNameOptions?: string[];
@@ -26,6 +28,7 @@ export const UploadForm: React.FC<Props> = ({
   onClose,
   onSubmit,
   initialData,
+  initialImage = null,
   materialNameOptions = [],
   supplierNameOptions = [],
   karigarNameOptions = []
@@ -82,6 +85,8 @@ export const UploadForm: React.FC<Props> = ({
   const [enhancingPhoto, setEnhancingPhoto] = useState(false);
   const [photoEnhancement, setPhotoEnhancement] = useState<{ original: string; enhanced: string } | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const catalogueCreatePromiseRef = useRef<Promise<{ id: string; name: string } | null> | null>(null);
+  const catalogueCreateNameRef = useRef('');
 
   // Load catalogues on mount
   useEffect(() => {
@@ -214,11 +219,51 @@ export const UploadForm: React.FC<Props> = ({
     }
   };
 
+  const resolveCatalogueForSave = async (): Promise<{ id: string; name: string } | null> => {
+    if (formData.catalogueId) {
+      const existing = catalogues.find(c => c.id === formData.catalogueId);
+      return { id: formData.catalogueId, name: existing?.name || '' };
+    }
+    const name = newCatalogueName.trim();
+    if (!name) return null;
+
+    if (catalogueCreatePromiseRef.current && catalogueCreateNameRef.current === name.toLowerCase()) {
+      return catalogueCreatePromiseRef.current;
+    }
+
+    catalogueCreateNameRef.current = name.toLowerCase();
+    catalogueCreatePromiseRef.current = (async () => {
+      const local = catalogues.find(c => c.name.trim().toLowerCase() === name.toLowerCase());
+      if (local) return { id: local.id, name: local.name };
+      try {
+        const created = await cataloguesApi.create(name);
+        setCatalogues(prev => (prev.some(c => c.id === created.id) ? prev : [...prev, created]));
+        return { id: created.id, name: created.name };
+      } catch (error) {
+        try {
+          const { catalogues: cats } = await cataloguesApi.getAll();
+          const found = cats.find((c: { id: string; name: string }) =>
+            (c.name || '').trim().toLowerCase() === name.toLowerCase()
+          );
+          if (found) {
+            setCatalogues(prev => (prev.some(c => c.id === found.id) ? prev : [...prev, found]));
+            return { id: found.id, name: found.name };
+          }
+        } catch {
+          // ignore lookup failure and rethrow original create error
+        }
+        throw error;
+      }
+    })();
+
+    return catalogueCreatePromiseRef.current;
+  };
+
   const handleCreateCatalogue = async () => {
     if (!newCatalogueName.trim()) return;
     try {
-      const catalogue = await cataloguesApi.create(newCatalogueName.trim());
-      setCatalogues(prev => [...prev, catalogue]);
+      const catalogue = await resolveCatalogueForSave();
+      if (!catalogue) return;
       setFormData(prev => ({ ...prev, catalogueId: catalogue.id }));
       setShowNewCatalogue(false);
       setNewCatalogueName('');
@@ -227,6 +272,12 @@ export const UploadForm: React.FC<Props> = ({
       alert('Failed to create catalogue. Please try again.');
     }
   };
+
+  // Gallery Share / external photo → same crop path as picking from gallery.
+  useEffect(() => {
+    if (!initialImage || initialData || preview) return;
+    setCropSource(initialImage);
+  }, [initialImage, initialData, preview]);
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -456,31 +507,47 @@ export const UploadForm: React.FC<Props> = ({
         calculatedPrice: calculatedPriceOverrides[i] ?? calculatePrice(basePriceNum, ap)
       }));
 
-    const newDesign: TextileDesign = {
-      id: initialData?.id || Date.now().toString(),
-      name: designName,
-      catalogueId: formData.catalogueId || undefined,
-      catalogueName: catalogues.find(c => c.id === formData.catalogueId)?.name,
-      image: imageToUse,
-      color: formData.color || undefined,
-      stockQuantity: formData.stockQuantity ? Number(formData.stockQuantity) : undefined,
-      stockUnit: formData.stockUnit,
-      pcsPerParcel: formData.pcsPerParcel ? Number(formData.pcsPerParcel) : undefined,
-      moq: formData.moq ? Number(formData.moq) : undefined,
-      basePrice: basePriceNum,
-      additionalPrices: processedAdditionalPrices.length > 0 ? processedAdditionalPrices : undefined,
-      wholesalePrice: basePriceNum, // For backward compatibility
-      retailPrice: basePriceNum, // For backward compatibility
-      fabric: formData.fabric || 'Unknown',
-      description: formData.description || '',
-      createdAt: initialData?.createdAt || Date.now(),
-      aiModels: generatedModels.length > 0 ? generatedModels : undefined
-      ,
-      costingDetails: costingEnabled ? costingDetails : undefined
-    };
-
     setIsSubmitting(true);
     try {
+      let catalogueId = formData.catalogueId || undefined;
+      let catalogueName = catalogues.find(c => c.id === catalogueId)?.name;
+      try {
+        const catalogue = await resolveCatalogueForSave();
+        if (catalogue) {
+          catalogueId = catalogue.id;
+          catalogueName = catalogue.name;
+          setFormData(prev => ({ ...prev, catalogueId: catalogue.id }));
+          setShowNewCatalogue(false);
+          setNewCatalogueName('');
+        }
+      } catch (error) {
+        console.error('Failed to create catalogue:', error);
+        alert('Failed to create catalogue. Please try again.');
+        return;
+      }
+
+      const newDesign: TextileDesign = {
+        id: initialData?.id || Date.now().toString(),
+        name: designName,
+        catalogueId,
+        catalogueName,
+        image: imageToUse,
+        color: formData.color || undefined,
+        stockQuantity: formData.stockQuantity ? Number(formData.stockQuantity) : undefined,
+        stockUnit: formData.stockUnit,
+        pcsPerParcel: formData.pcsPerParcel ? Number(formData.pcsPerParcel) : undefined,
+        moq: formData.moq ? Number(formData.moq) : undefined,
+        basePrice: basePriceNum,
+        additionalPrices: processedAdditionalPrices.length > 0 ? processedAdditionalPrices : undefined,
+        wholesalePrice: basePriceNum, // For backward compatibility
+        retailPrice: basePriceNum, // For backward compatibility
+        fabric: formData.fabric || 'Unknown',
+        description: formData.description || '',
+        createdAt: initialData?.createdAt || Date.now(),
+        aiModels: generatedModels.length > 0 ? generatedModels : undefined,
+        costingDetails: costingEnabled ? costingDetails : undefined
+      };
+
       await onSubmit(newDesign);
     } finally {
       setIsSubmitting(false);
@@ -964,7 +1031,12 @@ export const UploadForm: React.FC<Props> = ({
                   placeholder="Enter catalogue name"
                   value={newCatalogueName}
                   onChange={e => setNewCatalogueName(e.target.value)}
-                  onKeyPress={e => e.key === 'Enter' && handleCreateCatalogue()}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      void handleCreateCatalogue();
+                    }
+                  }}
                 />
                 <button
                   type="button"

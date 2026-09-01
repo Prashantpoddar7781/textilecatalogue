@@ -2,6 +2,7 @@
 <resources>
     <string name="app_name">ThreadX</string>
     <string name="title_activity_main">ThreadX</string>
+    <string name="share_to_threadx">Upload to ThreadX</string>
     <string name="package_name">com.textilehub.catalogue</string>
     <string name="custom_url_scheme">com.textilehub.catalogue</string>
 </resources>
