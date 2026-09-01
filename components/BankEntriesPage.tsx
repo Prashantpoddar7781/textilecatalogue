@@ -467,6 +467,14 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
 
     if (args.isUnadj) {
       // Unadj reduces net bill; take what is still needed to match received.
+      if (billSum <= 0) {
+        alert(
+          'Select the pending bill(s) first.\n\n' +
+          'Then Type U and pick this Unadj Payment to bring Net Bill Amt down to your Rec/Paid Amt.\n\n' +
+          'To record money without any bill, leave Bill No. empty and press Save (creates Unadj).'
+        );
+        return null;
+      }
       const needed = roundMoneyLocal(Math.max(billSum - unadjSum - received, 0));
       if (needed <= 0) {
         alert(
@@ -533,9 +541,41 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
       .filter(bill => isUnadjAllocation(bill))
       .reduce((sum, bill) => sum + (bill.adjustAmount || 0), 0);
     const received = roundMoneyLocal(Number(form.amount) || 0);
+    const isUnadj = isUnadjAllocation(target);
+    const pending = roundMoneyLocal(target.pendingAmount || 0);
+
+    // Empire settle: Rec 300 + bill 500 + available Unadj 200 → pick bill once, auto-apply Unadj.
+    if (!isUnadj && amountTouched && received > 0) {
+      const room = roundMoneyLocal(received + unadjSum - billSum);
+      const shortfallIfFull = roundMoneyLocal(Math.max(pending - Math.max(room, 0), 0));
+      const availableUnadj = roundMoneyLocal(
+        pendingBills
+          .filter(bill => isUnadjAllocation(bill) && (bill.adjustAmount || 0) <= 0)
+          .reduce((sum, bill) => sum + (bill.pendingAmount || 0), 0)
+      );
+      if (shortfallIfFull > 0.05 && availableUnadj + 0.05 >= shortfallIfFull) {
+        let need = shortfallIfFull;
+        setAllowOverAllocation(true);
+        setPendingBills(prev => prev.map(bill => {
+          if (bill.billId === billId) {
+            return { ...bill, adjustAmount: pending };
+          }
+          if (!isUnadjAllocation(bill) || (bill.adjustAmount || 0) > 0 || need <= 0) {
+            return bill;
+          }
+          const take = roundMoneyLocal(Math.min(bill.pendingAmount || 0, need));
+          need = roundMoneyLocal(Math.max(need - take, 0));
+          return { ...bill, adjustAmount: take };
+        }));
+        setQuickBillNo('');
+        setBillPickerOpen(false);
+        return;
+      }
+    }
+
     const allocate = allocationAgainstAmount({
-      pending: target.pendingAmount,
-      isUnadj: isUnadjAllocation(target),
+      pending,
+      isUnadj,
       billSum,
       unadjSum,
       received
@@ -1142,9 +1182,22 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                 {!form.partyName ? (
                   <div className="px-5 py-10 text-center text-sm text-gray-400">Select A/C Name, then Type + Bill No. (keyboard / Enter).</div>
                 ) : adjustedBills.length === 0 ? (
-                  <div className="px-5 py-10 text-center text-sm text-gray-400">
-                    No bills selected yet. Type in Bill No. and press Enter to pick.
-                    Or leave empty and save Rec/Paid Amt as unadjusted part payment.
+                  <div className="px-5 py-10 text-center text-sm text-gray-500">
+                    <p className="font-semibold text-gray-700">No bills selected.</p>
+                    <p className="mt-1">
+                      Type Bill No. + Enter to pick, or leave empty and <span className="font-black text-indigo-700">Save</span> —
+                      Rec/Paid Amt becomes an <span className="font-black text-violet-700">Unadj Payment</span> (no bill required).
+                    </p>
+                    {roundMoneyLocal(Number(form.amount) || 0) > 0 && (
+                      <p className="mt-3 text-sm font-black text-violet-800">
+                        Save now → Unadj Payment of {formatMoney(Number(form.amount) || 0)}
+                      </p>
+                    )}
+                    {summary.unadjAvailable > 0 && (
+                      <p className="mt-2 text-xs font-semibold text-violet-700">
+                        Prior Unadj on account: {formatMoney(summary.unadjAvailable)}. To use it, pick the pending bill first, then Type U.
+                      </p>
+                    )}
                   </div>
                 ) : (
                   <table className="min-w-full text-left text-sm">
