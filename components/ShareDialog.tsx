@@ -4,7 +4,7 @@ import { X, MessageCircle, CheckSquare, Square, Loader2, Download, Eye, AlertCir
 import { TextileDesign, ShareOptions } from '../types';
 import { loadSharePreferences, saveSharePreferences } from '../services/sharePreferences';
 import { isNativeAndroid, openWhatsAppWithText, shareImagesNative, downloadBlob } from '../services/nativeApp';
-import { designFullSrc } from '../services/designMedia';
+import { designFullSrc, loadImageForCanvas } from '../services/designMedia';
 
 /** Which image to use per design when generating WhatsApp assets (original / variant index / all). */
 function getShareJobs(
@@ -120,14 +120,14 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
     imageDataUrl?: string,
     exportOpts?: { maxEdge?: number; jpegQuality?: number }
   ): Promise<Blob> => {
-    return new Promise((resolve, reject) => {
-      const img = new Image();
-      img.crossOrigin = "anonymous";
-      
-      img.onload = () => {
+    const source = imageDataUrl || designFullSrc(design);
+    const img = await loadImageForCanvas(source, design.id);
+    const objectUrlToRevoke = img.src.startsWith('blob:') ? img.src : null;
+
+    try {
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
-        if (!ctx) return reject('Canvas context not found');
+        if (!ctx) throw new Error('Canvas context not found');
 
         /**
          * Photo fills canvas width (no side letterboxing); details sit in a black band below.
@@ -275,15 +275,16 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
 
         ctx.textAlign = 'left';
 
-        canvas.toBlob((blob) => {
-          if (blob) resolve(blob);
-          else reject('Blob conversion failed');
-        }, 'image/jpeg', jpegQuality);
-      };
-
-      img.onerror = () => reject('Image source failed to load');
-      img.src = imageDataUrl || designFullSrc(design);
-    });
+        const blob = await new Promise<Blob>((resolve, reject) => {
+          canvas.toBlob((result) => {
+            if (result) resolve(result);
+            else reject(new Error('Blob conversion failed'));
+          }, 'image/jpeg', jpegQuality);
+        });
+        return blob;
+    } finally {
+      if (objectUrlToRevoke) URL.revokeObjectURL(objectUrlToRevoke);
+    }
   };
 
   const downloadOne = async (blob: Blob, name: string) => {

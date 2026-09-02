@@ -11,16 +11,50 @@ import {
   deleteDesignMedia,
   isPublicImageUrl
 } from '../utils/designImages.js';
+import { r2PublicBaseUrl, isR2Configured } from '../services/r2Storage.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
 
-function sendJpeg(res, buffer) {
+function sendJpeg(res, buffer, contentType = 'image/jpeg') {
   res.set('Access-Control-Allow-Origin', '*');
   res.set('Cross-Origin-Resource-Policy', 'cross-origin');
   res.set('Cache-Control', 'public, max-age=86400');
-  res.type('image/jpeg');
+  res.type(contentType || 'image/jpeg');
   res.send(buffer);
+}
+
+function isAllowedProxyImageUrl(url) {
+  if (!isPublicImageUrl(url)) return false;
+  try {
+    const parsed = new URL(url);
+    if (!['http:', 'https:'].includes(parsed.protocol)) return false;
+    const host = parsed.hostname.toLowerCase();
+    if (host.endsWith('.r2.dev') || host.endsWith('.r2.cloudflarestorage.com')) return true;
+    if (isR2Configured()) {
+      const baseHost = new URL(r2PublicBaseUrl()).hostname.toLowerCase();
+      if (host === baseHost) return true;
+    }
+    // Allow our own API media redirects / absolute API hosts
+    if (host.includes('railway.app') || host.includes('localhost') || host.includes('127.0.0.1')) {
+      return parsed.pathname.includes('/api/designs/') && parsed.pathname.includes('/media/');
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+async function streamRemoteImage(url, res) {
+  const response = await fetch(url);
+  if (!response.ok) {
+    const error = new Error(`Upstream image failed (${response.status})`);
+    error.status = 502;
+    throw error;
+  }
+  const contentType = response.headers.get('content-type') || 'image/jpeg';
+  const buffer = Buffer.from(await response.arrayBuffer());
+  sendJpeg(res, buffer, contentType);
 }
 
 /** When the client sends calculatedPrice (e.g. user rounded 103.95 → 104), keep it instead of recomputing from %. */
@@ -167,6 +201,63 @@ router.get('/public/:id', async (req, res, next) => {
   }
 });
 
+// Proxy remote design images (R2) through our API so Android/WebView canvas share works.
+// Must be registered before "/:id" so "media-proxy" is not treated as a design id.
+router.get('/media-proxy', optionalAuth, async (req, res, next) => {
+  try {
+    const url = String(req.query.url || '').trim();
+    if (!isAllowedProxyImageUrl(url)) {
+      return res.status(400).json({ error: 'Invalid image URL' });
+    }
+    await streamRemoteImage(url, res);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/:id/media/:kind', async (req, res, next) => {
+  try {
+    const kind = req.params.kind === 'full' ? 'full' : 'thumb';
+    const forceProxy = String(req.query.proxy || '') === '1';
+    const design = await prisma.design.findUnique({
+      where: { id: req.params.id }
+    });
+    if (!design) {
+      return res.status(404).json({ error: 'Design not found' });
+    }
+
+    const preferred = kind === 'full'
+      ? (design.imageFull || (isPublicImageUrl(design.image) ? design.image : '') || design.imageThumb)
+      : (design.imageThumb || design.imageFull || (isPublicImageUrl(design.image) ? design.image : ''));
+    if (isPublicImageUrl(preferred)) {
+      if (forceProxy) {
+        await streamRemoteImage(preferred, res);
+        return;
+      }
+      return res.redirect(302, preferred);
+    }
+
+    const result = await jpegForDesign(design, kind);
+    if (result.redirect) {
+      if (forceProxy) {
+        await streamRemoteImage(result.redirect, res);
+        return;
+      }
+      return res.redirect(302, result.redirect);
+    }
+    if (kind === 'thumb' && !design.imageThumb && result.buffer) {
+      const imageThumb = `data:image/jpeg;base64,${result.buffer.toString('base64')}`;
+      prisma.design.update({
+        where: { id: design.id },
+        data: { imageThumb }
+      }).catch(() => {});
+    }
+    sendJpeg(res, result.buffer);
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Get single design
 router.get('/:id', optionalAuth, requireActiveSubscriptionIfAuthenticated, async (req, res, next) => {
   try {
@@ -196,40 +287,6 @@ router.get('/:id', optionalAuth, requireActiveSubscriptionIfAuthenticated, async
     }
 
     res.json(presentDesign(design, { variant: 'full' }));
-  } catch (error) {
-    next(error);
-  }
-});
-
-router.get('/:id/media/:kind', async (req, res, next) => {
-  try {
-    const kind = req.params.kind === 'full' ? 'full' : 'thumb';
-    const design = await prisma.design.findUnique({
-      where: { id: req.params.id }
-    });
-    if (!design) {
-      return res.status(404).json({ error: 'Design not found' });
-    }
-
-    const preferred = kind === 'full'
-      ? (design.imageFull || (isPublicImageUrl(design.image) ? design.image : '') || design.imageThumb)
-      : (design.imageThumb || design.imageFull || (isPublicImageUrl(design.image) ? design.image : ''));
-    if (isPublicImageUrl(preferred)) {
-      return res.redirect(302, preferred);
-    }
-
-    const result = await jpegForDesign(design, kind);
-    if (result.redirect) {
-      return res.redirect(302, result.redirect);
-    }
-    if (kind === 'thumb' && !design.imageThumb && result.buffer) {
-      const imageThumb = `data:image/jpeg;base64,${result.buffer.toString('base64')}`;
-      prisma.design.update({
-        where: { id: design.id },
-        data: { imageThumb }
-      }).catch(() => {});
-    }
-    sendJpeg(res, result.buffer);
   } catch (error) {
     next(error);
   }
