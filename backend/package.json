@@ -8,7 +8,8 @@
     "start": "node server.js",
     "db:migrate": "prisma migrate dev",
     "db:generate": "prisma generate",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "migrate:images": "node scripts/migrateDesignImagesToR2.mjs"
   },
   "dependencies": {
     "@prisma/client": "^5.7.1",
@@ -21,7 +22,9 @@
     "jsonwebtoken": "^9.0.2",
     "multer": "^1.4.5-lts.1",
     "nodemailer": "^8.0.7",
-    "razorpay": "^2.9.6"
+    "razorpay": "^2.9.6",
+    "@aws-sdk/client-s3": "^3.758.0",
+    "sharp": "^0.33.5"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",

@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { X, ChevronLeft, ChevronRight, IndianRupee, Package } from 'lucide-react';
 import { TextileDesign } from '../types';
 import { DesignBarcode } from './DesignBarcode';
+import { designFullSrc } from '../services/designMedia';
 
 interface Props {
   design: TextileDesign | null;
@@ -11,7 +12,7 @@ interface Props {
 export const DesignFullscreenModal: React.FC<Props> = ({ design, onClose }) => {
   const images = useMemo(() => {
     if (!design) return [];
-    return [design.image, ...(design.aiModels || [])];
+    return [designFullSrc(design), ...(design.aiModels || [])];
   }, [design]);
 
   const [index, setIndex] = useState(0);

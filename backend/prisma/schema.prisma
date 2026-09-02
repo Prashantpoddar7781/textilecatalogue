@@ -108,7 +108,9 @@ model Design {
   catalogueId          String?
   catalogue            Catalogue?            @relation(fields: [catalogueId], references: [id], onDelete: SetNull)
   name                 String? // Design name (optional for backward compatibility)
-  image                String // Base64 or URL
+  image                String // Full image URL (legacy rows may still contain base64 until migrated)
+  imageThumb           String? // Small JPEG URL (or tiny data URL fallback) for catalogue grids
+  imageFull            String? // Full JPEG URL on object storage
   designCode           String? // Optional design code for AI matching
   color                String? // Optional color
   stockQuantity        Int?                  @default(1000) // Stock quantity

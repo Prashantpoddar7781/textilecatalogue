@@ -4,6 +4,7 @@ import { X, MessageCircle, CheckSquare, Square, Loader2, Download, Eye, AlertCir
 import { TextileDesign, ShareOptions } from '../types';
 import { loadSharePreferences, saveSharePreferences } from '../services/sharePreferences';
 import { isNativeAndroid, openWhatsAppWithText, shareImagesNative, downloadBlob } from '../services/nativeApp';
+import { designFullSrc } from '../services/designMedia';
 
 /** Which image to use per design when generating WhatsApp assets (original / variant index / all). */
 function getShareJobs(
@@ -18,13 +19,13 @@ function getShareJobs(
         jobs.push({ design: d, imageUrl: url });
       }
     } else if (raw === 'original' || !d.aiModels?.length) {
-      jobs.push({ design: d, imageUrl: d.image });
+      jobs.push({ design: d, imageUrl: designFullSrc(d) });
     } else {
       const idx = parseInt(raw, 10);
       if (!isNaN(idx) && d.aiModels[idx]) {
         jobs.push({ design: d, imageUrl: d.aiModels[idx] });
       } else {
-        jobs.push({ design: d, imageUrl: d.image });
+        jobs.push({ design: d, imageUrl: designFullSrc(d) });
       }
     }
   }
@@ -281,7 +282,7 @@ export const ShareDialog: React.FC<Props> = ({ selectedDesigns, userFirmName, on
       };
 
       img.onerror = () => reject('Image source failed to load');
-      img.src = imageDataUrl || design.image;
+      img.src = imageDataUrl || designFullSrc(design);
     });
   };
 

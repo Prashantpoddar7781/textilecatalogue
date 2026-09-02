@@ -3,9 +3,25 @@ import { PrismaClient } from '@prisma/client';
 import { body, validationResult, query } from 'express-validator';
 import { authenticateToken, optionalAuth } from '../middleware/auth.js';
 import { requireActiveSubscription, requireActiveSubscriptionIfAuthenticated, requireDesignCreationAllowance } from '../middleware/subscription.js';
+import {
+  DESIGN_LIST_SELECT,
+  jpegForDesign,
+  persistDesignMedia,
+  presentDesign,
+  deleteDesignMedia,
+  isPublicImageUrl
+} from '../utils/designImages.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
+
+function sendJpeg(res, buffer) {
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Cross-Origin-Resource-Policy', 'cross-origin');
+  res.set('Cache-Control', 'public, max-age=86400');
+  res.type('image/jpeg');
+  res.send(buffer);
+}
 
 /** When the client sends calculatedPrice (e.g. user rounded 103.95 → 104), keep it instead of recomputing from %. */
 function resolveAdditionalPriceCalculated(ap, basePriceNum) {
@@ -96,28 +112,13 @@ router.get('/', optionalAuth, requireActiveSubscriptionIfAuthenticated, async (r
         orderBy,
         skip,
         take: limitNum,
-        include: {
-          user: {
-            select: {
-              id: true,
-              name: true,
-              email: true,
-              firmName: true
-            }
-          },
-          catalogue: {
-            select: {
-              id: true,
-              name: true
-            }
-          }
-        }
+        select: DESIGN_LIST_SELECT
       }),
       prisma.design.count({ where })
     ]);
 
     res.json({
-      designs,
+      designs: designs.map((design) => presentDesign(design, { variant: 'list' })),
       pagination: {
         page: pageNum,
         limit: limitNum,
@@ -157,7 +158,7 @@ router.get('/public/:id', async (req, res, next) => {
     }
 
     res.json({
-      ...design,
+      ...presentDesign(design, { variant: 'full' }),
       catalogueName: design.catalogue?.name || null,
       catalogue: undefined
     });
@@ -194,7 +195,41 @@ router.get('/:id', optionalAuth, requireActiveSubscriptionIfAuthenticated, async
       return res.status(403).json({ error: 'Access denied' });
     }
 
-    res.json(design);
+    res.json(presentDesign(design, { variant: 'full' }));
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/:id/media/:kind', async (req, res, next) => {
+  try {
+    const kind = req.params.kind === 'full' ? 'full' : 'thumb';
+    const design = await prisma.design.findUnique({
+      where: { id: req.params.id }
+    });
+    if (!design) {
+      return res.status(404).json({ error: 'Design not found' });
+    }
+
+    const preferred = kind === 'full'
+      ? (design.imageFull || (isPublicImageUrl(design.image) ? design.image : '') || design.imageThumb)
+      : (design.imageThumb || design.imageFull || (isPublicImageUrl(design.image) ? design.image : ''));
+    if (isPublicImageUrl(preferred)) {
+      return res.redirect(302, preferred);
+    }
+
+    const result = await jpegForDesign(design, kind);
+    if (result.redirect) {
+      return res.redirect(302, result.redirect);
+    }
+    if (kind === 'thumb' && !design.imageThumb && result.buffer) {
+      const imageThumb = `data:image/jpeg;base64,${result.buffer.toString('base64')}`;
+      prisma.design.update({
+        where: { id: design.id },
+        data: { imageThumb }
+      }).catch(() => {});
+    }
+    sendJpeg(res, result.buffer);
   } catch (error) {
     next(error);
   }
@@ -259,12 +294,12 @@ router.post('/', authenticateToken, requireDesignCreationAllowance, [
         }))
       : null;
 
-    const design = await prisma.design.create({
+    const created = await prisma.design.create({
       data: {
         userId,
         name: name?.trim() || `Design ${new Date().toISOString()}`,
         catalogueId: catalogueId || null,
-        image,
+        image: isPublicImageUrl(image) ? image : 'uploading',
         designCode: designCode || null,
         color: color || null,
         stockQuantity: stockQuantity !== undefined ? parseInt(stockQuantity, 10) : 1000,
@@ -274,31 +309,54 @@ router.post('/', authenticateToken, requireDesignCreationAllowance, [
         basePrice: basePriceNum,
         additionalPrices: processedAdditionalPrices,
         costingDetails: costingDetails || null,
-        aiModels: Array.isArray(aiModels) && aiModels.length > 0 ? aiModels : null,
+        aiModels: null,
         wholesalePrice, // For backward compatibility
         retailPrice, // For backward compatibility
         fabric,
         description: description || null
-      },
-      include: {
-        user: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            firmName: true
-          }
-        },
-        catalogue: {
-          select: {
-            id: true,
-            name: true
-          }
-        }
       }
     });
 
-    res.status(201).json(design);
+    try {
+      const media = await persistDesignMedia({
+        userId,
+        designId: created.id,
+        image,
+        aiModels: Array.isArray(aiModels) && aiModels.length > 0 ? aiModels : undefined
+      });
+      const design = await prisma.design.update({
+        where: { id: created.id },
+        data: {
+          image: media.image || image,
+          imageThumb: media.imageThumb || undefined,
+          imageFull: media.imageFull || undefined,
+          aiModels: media.aiModels !== undefined
+            ? media.aiModels
+            : (Array.isArray(aiModels) && aiModels.length > 0 ? aiModels : null)
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              firmName: true
+            }
+          },
+          catalogue: {
+            select: {
+              id: true,
+              name: true
+            }
+          }
+        }
+      });
+
+      res.status(201).json(presentDesign(design, { variant: 'full' }));
+    } catch (error) {
+      await prisma.design.delete({ where: { id: created.id } }).catch(() => {});
+      throw error;
+    }
   } catch (error) {
     next(error);
   }
@@ -358,7 +416,6 @@ router.put('/:id', authenticateToken, requireActiveSubscription, [
     if (req.body.name !== undefined) updateData.name = req.body.name?.trim() || null;
     if (req.body.fabric !== undefined) updateData.fabric = req.body.fabric;
     if (req.body.description !== undefined) updateData.description = req.body.description;
-    if (req.body.image !== undefined) updateData.image = req.body.image;
     if (req.body.catalogueId !== undefined) updateData.catalogueId = req.body.catalogueId || null;
     if (req.body.designCode !== undefined) updateData.designCode = req.body.designCode || null;
     if (req.body.color !== undefined) updateData.color = req.body.color || null;
@@ -401,8 +458,15 @@ router.put('/:id', authenticateToken, requireActiveSubscription, [
     if (req.body.costingDetails !== undefined) {
       updateData.costingDetails = req.body.costingDetails || null;
     }
-    if (req.body.aiModels !== undefined) {
-      updateData.aiModels = Array.isArray(req.body.aiModels) && req.body.aiModels.length > 0 ? req.body.aiModels : null;
+    if (req.body.image !== undefined || req.body.aiModels !== undefined) {
+      const media = await persistDesignMedia({
+        userId,
+        designId: id,
+        image: req.body.image,
+        aiModels: req.body.aiModels,
+        previous: existing
+      });
+      Object.assign(updateData, media);
     }
 
     const design = await prisma.design.update({
@@ -426,7 +490,7 @@ router.put('/:id', authenticateToken, requireActiveSubscription, [
       }
     });
 
-    res.json(design);
+    res.json(presentDesign(design, { variant: 'full' }));
   } catch (error) {
     next(error);
   }
@@ -451,6 +515,7 @@ router.delete('/:id', authenticateToken, requireActiveSubscription, async (req, 
       return res.status(403).json({ error: 'Access denied' });
     }
 
+    await deleteDesignMedia(design);
     await prisma.design.delete({
       where: { id }
     });

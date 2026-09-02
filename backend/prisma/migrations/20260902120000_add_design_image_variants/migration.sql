@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "Design" ADD COLUMN IF NOT EXISTS "imageThumb" TEXT;
+ALTER TABLE "Design" ADD COLUMN IF NOT EXISTS "imageFull" TEXT;

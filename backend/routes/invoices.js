@@ -3,6 +3,7 @@ import { PrismaClient } from '@prisma/client';
 import { body, validationResult } from 'express-validator';
 import { authenticateToken } from '../middleware/auth.js';
 import { requireActiveSubscription } from '../middleware/subscription.js';
+import { publicImageRef } from '../utils/designImages.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -164,7 +165,7 @@ function buildOrderLines(order, defaultHsnCode, defaultGstRate) {
       designName: line.designName || null,
       designCode: line.designCode || null,
       fabric: line.fabric || null,
-      image: line.image || null,
+      image: publicImageRef(line.image) || null,
       hsnCode: defaultHsnCode || null,
       quantity: parseInt(line.quantity, 10) || 0,
       unit: 'pcs',
@@ -181,7 +182,7 @@ function buildOrderLines(order, defaultHsnCode, defaultGstRate) {
       designName: order.design.name || null,
       designCode: order.design.designCode || null,
       fabric: order.design.fabric || null,
-      image: order.design.image || null,
+      image: publicImageRef(order.design.imageFull || order.design.imageThumb) || null,
       hsnCode: defaultHsnCode || null,
       quantity: order.quantity || 0,
       unit: order.design.stockUnit || 'pcs',
@@ -403,7 +404,19 @@ router.post('/from-order/:orderId', authenticateToken, requireActiveSubscription
       },
       include: {
         customer: true,
-        design: true
+        design: {
+          select: {
+            id: true,
+            name: true,
+            designCode: true,
+            fabric: true,
+            stockUnit: true,
+            basePrice: true,
+            retailPrice: true,
+            imageThumb: true,
+            imageFull: true
+          }
+        }
       }
     });
 

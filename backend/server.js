@@ -29,6 +29,7 @@ import workReceiptRoutes from './routes/workReceipts.js';
 import salesOrderRoutes from './routes/salesOrders.js';
 import stockRoutes from './routes/stock.js';
 import gstRoutes from './routes/gst.js';
+import { startDesignImageMigration } from './utils/designImages.js';
 
 dotenv.config();
 
@@ -227,6 +228,7 @@ try {
     console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
     console.log(`🌐 Health check: http://${HOST}:${PORT}/health`);
     console.log(`🔐 Auth routes: http://${HOST}:${PORT}/api/auth/*`);
+    startDesignImageMigration(prisma);
   });
 
   server.on('error', (error) => {

@@ -274,6 +274,8 @@ const App: React.FC = () => {
     catalogueId: d.catalogueId,
     catalogueName: d.catalogue?.name || d.catalogueName,
     image: d.image,
+    imageThumb: d.imageThumb,
+    imageFull: d.imageFull || d.image,
     designCode: d.designCode,
     color: d.color,
     stockQuantity: d.stockQuantity,
@@ -467,8 +469,18 @@ const App: React.FC = () => {
 
   const [editingDesign, setEditingDesign] = useState<TextileDesign | null>(null);
 
-  const handleEditDesign = (design: TextileDesign) => {
-    setEditingDesign(design);
+  const hydrateDesign = async (design: TextileDesign): Promise<TextileDesign> => {
+    try {
+      const full = await designsApi.getById(design.id);
+      return mapDesign(full);
+    } catch {
+      return design;
+    }
+  };
+
+  const handleEditDesign = async (design: TextileDesign) => {
+    const full = await hydrateDesign(design);
+    setEditingDesign({ ...full, image: full.imageFull || full.image });
     setIsUploadOpen(true);
   };
 
@@ -502,29 +514,7 @@ const App: React.FC = () => {
       });
       
       setDesigns(prev => prev.map(d => 
-        d.id === editingDesign.id ? {
-          id: updated.id,
-          name: updated.name || 'Untitled Design',
-          catalogueId: updated.catalogueId,
-          catalogueName: updated.catalogue?.name,
-          image: updated.image,
-          designCode: updated.designCode,
-          color: updated.color,
-          stockQuantity: updated.stockQuantity,
-          stockUnit: updated.stockUnit,
-          pcsPerParcel: updated.pcsPerParcel,
-          moq: updated.moq,
-          basePrice: updated.basePrice || updated.retailPrice || 0,
-          additionalPrices: updated.additionalPrices,
-          wholesalePrice: updated.wholesalePrice || updated.basePrice || 0,
-          retailPrice: updated.retailPrice || updated.basePrice || 0,
-          fabric: updated.fabric,
-          description: updated.description || '',
-          firmName: updated.user?.firmName,
-          createdAt: new Date(updated.createdAt).getTime(),
-          aiModels: updated.aiModels as string[] | undefined,
-          costingDetails: updated.costingDetails || undefined
-        } : d
+        d.id === editingDesign.id ? mapDesign(updated) : d
       ));
       setIsUploadOpen(false);
       setEditingDesign(null);
@@ -573,6 +563,7 @@ const App: React.FC = () => {
       return;
     }
     setViewingDesign(design);
+    void hydrateDesign(design).then(setViewingDesign);
   };
 
   const handleDesignLongPress = (design: TextileDesign) => {
@@ -1584,7 +1575,10 @@ const App: React.FC = () => {
                 onImageLongPress={() => handleDesignLongPress(design)}
                 onDelete={() => handleDeleteDesign(design.id)}
                 onEdit={() => handleEditDesign(design)}
-                onView={() => setViewingDesign(design)}
+                onView={() => {
+                  setViewingDesign(design);
+                  void hydrateDesign(design).then(setViewingDesign);
+                }}
                 onShareLink={() => {
                   setSelectedDesignForLink(design);
                   setIsShareLinkOpen(true);

@@ -3,6 +3,7 @@ import React, { useRef } from 'react';
 import { Trash2, CheckCircle, IndianRupee, Edit, Link2, Package, Eye } from 'lucide-react';
 import { TextileDesign } from '../types';
 import { DesignBarcode } from './DesignBarcode';
+import { designThumbSrc } from '../services/designMedia';
 
 function formatInventory(design: TextileDesign): string {
   const qty = design.stockQuantity ?? 0;
@@ -81,10 +82,11 @@ export const DesignCard: React.FC<Props> = ({
         onContextMenu={(e) => e.preventDefault()}
       >
         <img
-          src={design.image}
+          src={designThumbSrc(design)}
           alt={design.fabric}
           className="w-full h-full object-cover pointer-events-none"
           loading="lazy"
+          decoding="async"
           draggable={false}
         />
 

@@ -4,10 +4,40 @@ import { body, validationResult } from 'express-validator';
 import { authenticateToken, optionalAuth } from '../middleware/auth.js';
 import { requireActiveSubscription, requireActiveSubscriptionIfAuthenticated } from '../middleware/subscription.js';
 import crypto from 'crypto';
+import { DESIGN_LIST_SELECT, DESIGN_PREVIEW_SELECT, presentDesign, presentDesignPreview } from '../utils/designImages.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
 const SHARE_LINK_SECURITY_MODES = ['normal', 'device_locked'];
+
+const shareLinkResponseInclude = {
+  design: { select: DESIGN_LIST_SELECT },
+  designs: {
+    include: {
+      design: { select: DESIGN_LIST_SELECT }
+    }
+  }
+};
+
+function stripUserEmail(design) {
+  if (!design?.user) return design;
+  const { email, ...user } = design.user;
+  return { ...design, user };
+}
+
+function presentShareLink(shareLink) {
+  if (!shareLink) return shareLink;
+  return {
+    ...shareLink,
+    design: shareLink.design ? stripUserEmail(presentDesign(shareLink.design, { variant: 'list' })) : shareLink.design,
+    designs: Array.isArray(shareLink.designs)
+      ? shareLink.designs.map((row) => ({
+          ...row,
+          design: row.design ? stripUserEmail(presentDesign(row.design, { variant: 'list' })) : row.design
+        }))
+      : shareLink.designs
+  };
+}
 
 // Generate unique token
 function generateToken() {
@@ -122,33 +152,10 @@ router.post('/', authenticateToken, requireActiveSubscription, [
           }
         }
       },
-      include: {
-        design: true,
-        designs: {
-          include: {
-            design: {
-              include: {
-                user: {
-                  select: {
-                    id: true,
-                    name: true,
-                    firmName: true
-                  }
-                },
-                catalogue: {
-                  select: {
-                    id: true,
-                    name: true
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
+      include: shareLinkResponseInclude
     });
 
-    res.status(201).json(shareLink);
+    res.status(201).json(presentShareLink(shareLink));
   } catch (error) {
     next(error);
   }
@@ -204,32 +211,10 @@ router.post('/collection', authenticateToken, requireActiveSubscription, [
           }
         }
       },
-      include: {
-        designs: {
-          include: {
-            design: {
-              include: {
-                user: {
-                  select: {
-                    id: true,
-                    name: true,
-                    firmName: true
-                  }
-                },
-                catalogue: {
-                  select: {
-                    id: true,
-                    name: true
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
+      include: shareLinkResponseInclude
     });
 
-    res.status(201).json(shareLink);
+    res.status(201).json(presentShareLink(shareLink));
   } catch (error) {
     next(error);
   }
@@ -264,7 +249,7 @@ router.get('/stats', authenticateToken, requireActiveSubscription, async (req, r
     const designs = designIds.length
       ? await prisma.design.findMany({
           where: { id: { in: designIds } },
-          select: { id: true, name: true, image: true, fabric: true }
+          select: DESIGN_PREVIEW_SELECT
         })
       : [];
     const designMap = Object.fromEntries(designs.map(d => [d.id, d]));
@@ -273,7 +258,7 @@ router.get('/stats', authenticateToken, requireActiveSubscription, async (req, r
       .map(({ designId, _count }) => ({
         designId,
         viewCount: _count.id,
-        design: designMap[designId] || null
+        design: designMap[designId] ? presentDesignPreview(designMap[designId]) : null
       }))
       .sort((a, b) => b.viewCount - a.viewCount)
       .slice(0, 20);
@@ -304,31 +289,17 @@ router.get('/', authenticateToken, requireActiveSubscription, async (req, res, n
     const shareLinks = await prisma.shareLink.findMany({
       where: { userId },
       include: {
-        design: {
-          select: {
-            id: true,
-            name: true,
-            image: true,
-            fabric: true
-          }
-        },
+        design: { select: DESIGN_PREVIEW_SELECT },
         designs: {
           include: {
-            design: {
-              select: {
-                id: true,
-                name: true,
-                image: true,
-                fabric: true
-              }
-            }
+            design: { select: DESIGN_PREVIEW_SELECT }
           }
         }
       },
       orderBy: { createdAt: 'desc' }
     });
 
-    res.json({ shareLinks });
+    res.json({ shareLinks: shareLinks.map(presentShareLink) });
   } catch (error) {
     next(error);
   }
@@ -410,46 +381,7 @@ router.get('/:token', optionalAuth, requireActiveSubscriptionIfAuthenticated, as
     const { token } = req.params;
     let shareLink = await prisma.shareLink.findUnique({
       where: { token },
-      include: {
-        design: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                name: true,
-                firmName: true
-              }
-            },
-            catalogue: {
-              select: {
-                id: true,
-                name: true
-              }
-            }
-          }
-        },
-        designs: {
-          include: {
-            design: {
-              include: {
-                user: {
-                  select: {
-                    id: true,
-                    name: true,
-                    firmName: true
-                  }
-                },
-                catalogue: {
-                  select: {
-                    id: true,
-                    name: true
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
+      include: shareLinkResponseInclude
     });
 
     if (!shareLink) {
@@ -476,11 +408,11 @@ router.get('/:token', optionalAuth, requireActiveSubscriptionIfAuthenticated, as
     const inStockDesigns = shareLink.designs?.filter(
       (sd) => sd.design && (sd.design.stockQuantity ?? 0) > 0
     ) || [];
-    const payload = {
+    const payload = presentShareLink({
       ...shareLink,
       designs: inStockDesigns,
       design: shareLink.design && (shareLink.design.stockQuantity ?? 0) > 0 ? shareLink.design : null
-    };
+    });
     res.json(payload);
   } catch (error) {
     next(error);

@@ -3,6 +3,7 @@ import { Loader2, AlertCircle, IndianRupee, ShoppingCart, X, Maximize2, Package 
 import { shareLinksApi, ordersApi } from '../services/api';
 import { getShareDeviceToken } from '../services/shareDeviceToken';
 import { ShareLink, TextileDesign } from '../types';
+import { designFullSrc, designThumbSrc } from '../services/designMedia';
 
 const SESSION_KEY = 'threadx_share_session';
 const BUYER_NAME_KEY_PREFIX = 'threadx_share_buyer_name_';
@@ -169,7 +170,7 @@ const FullScreenDesignView: React.FC<{
         onTouchEnd={handleTouchEnd}
       >
         <img
-          src={design.image}
+          src={designFullSrc(design)}
           alt={design.name || 'Design'}
           className="max-w-full max-h-full object-contain select-none"
           style={{
@@ -201,7 +202,7 @@ const DesignViewCard: React.FC<{
         className="block w-full aspect-[3/4] bg-gray-100 overflow-hidden relative group focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 rounded-t-xl"
       >
         <img
-          src={design.image}
+          src={designThumbSrc(design)}
           alt={design.name || 'Design'}
           className="w-full h-full object-cover group-hover:opacity-90 transition-opacity"
         />

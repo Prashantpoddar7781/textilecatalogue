@@ -2,6 +2,7 @@ import express from 'express';
 import { PrismaClient } from '@prisma/client';
 import { authenticateToken } from '../middleware/auth.js';
 import { requireActiveSubscription } from '../middleware/subscription.js';
+import { DESIGN_LIST_SELECT, presentDesign } from '../utils/designImages.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -50,13 +51,14 @@ router.get('/me/designs', authenticateToken, requireActiveSubscription, async (r
         where: { userId },
         orderBy: { createdAt: 'desc' },
         skip,
-        take: limitNum
+        take: limitNum,
+        select: DESIGN_LIST_SELECT
       }),
       prisma.design.count({ where: { userId } })
     ]);
 
     res.json({
-      designs,
+      designs: designs.map((design) => presentDesign(design, { variant: 'list' })),
       pagination: {
         page: pageNum,
         limit: limitNum,

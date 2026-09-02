@@ -41,7 +41,9 @@ export interface TextileDesign {
   catalogueId?: string;
   catalogueName?: string;
   name: string; // Design name
-  image: string; // Base64
+  image: string; // Thumbnail or full image URL
+  imageThumb?: string;
+  imageFull?: string;
   designCode?: string;
   color?: string;
   stockQuantity?: number;

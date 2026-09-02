@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, CheckCircle, Clock, Download, Edit3, FileText, MessageCircle, Plus, Package, RefreshCw, ScanLine, Search, ThumbsUp, X } from 'lucide-react';
-import { ordersApi } from '../services/api';
+import { ordersApi, API_BASE_URL } from '../services/api';
 import { findOrdersByDesignQuery } from '../services/orderDesignSearch';
 import { downloadOrderSummaryPdfBlob, orderToPdfInput, shareOrderSummaryPdf } from '../services/orderSummaryPdf';
 import { notifyOrdersUpdated, subscribeToOrdersUpdated } from '../services/ordersRealtime';
@@ -9,6 +9,13 @@ import { BarcodeOrderBuilder } from './BarcodeOrderBuilder';
 import { EditOrderDialog } from './EditOrderDialog';
 import { GenerateInvoiceDialog } from './GenerateInvoiceDialog';
 import { ManualOrderDialog } from './ManualOrderDialog';
+import { isUsableImageSrc } from '../services/designMedia';
+
+function orderImageSrc(image?: string | null, designId?: string | null) {
+  if (isUsableImageSrc(image)) return image as string;
+  if (designId) return `${API_BASE_URL}/designs/${designId}/media/thumb`;
+  return '';
+}
 
 /** How often the orders list polls for new orders from other staff/devices (ms). */
 const ORDERS_AUTO_REFRESH_MS = 8000;
@@ -411,10 +418,10 @@ export const OrdersPage: React.FC<Props> = ({ onBack, firmName }) => {
                       <div className="w-12 h-12 rounded-lg bg-amber-50 flex items-center justify-center border border-amber-100">
                         <Package className="w-6 h-6 text-amber-700" />
                       </div>
-                    ) : hasGroupedLines && orderLines[0]?.image ? (
+                    ) : hasGroupedLines && orderImageSrc(orderLines[0]?.image, orderLines[0]?.designId) ? (
                       <div className="relative">
                         <img
-                          src={orderLines[0].image}
+                          src={orderImageSrc(orderLines[0]?.image, orderLines[0]?.designId)}
                           alt={orderLines[0].designName || 'Design'}
                           className="w-12 h-12 rounded-lg object-cover"
                         />
@@ -424,9 +431,9 @@ export const OrdersPage: React.FC<Props> = ({ onBack, firmName }) => {
                           </span>
                         )}
                       </div>
-                    ) : order.design?.image ? (
+                    ) : orderImageSrc(order.design?.image, order.designId || order.design?.id) ? (
                       <img
-                        src={order.design.image}
+                        src={orderImageSrc(order.design?.image, order.designId || order.design?.id)}
                         alt={order.design?.name || 'Design'}
                         className="w-12 h-12 rounded-lg object-cover"
                       />
@@ -483,8 +490,8 @@ export const OrdersPage: React.FC<Props> = ({ onBack, firmName }) => {
                         <p className="text-[10px] font-black uppercase tracking-wide text-gray-500">Design lines</p>
                         {orderLines.map((line, idx) => (
                           <div key={`${line.designId}-${idx}`} className="flex items-center gap-2 rounded-lg bg-white p-2">
-                            {line.image && (
-                              <img src={line.image} alt={line.designName || 'Design'} className="h-9 w-9 rounded-md object-cover" />
+                            {orderImageSrc(line.image, line.designId) && (
+                              <img src={orderImageSrc(line.image, line.designId)} alt={line.designName || 'Design'} className="h-9 w-9 rounded-md object-cover" />
                             )}
                             <div className="min-w-0 flex-1">
                               <p className={`truncate font-semibold ${line.completed ? 'text-green-700 line-through decoration-green-500' : 'text-gray-800'}`}>

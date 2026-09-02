@@ -7,7 +7,7 @@ import { requireActiveSubscription } from '../middleware/subscription.js';
 import { allocateNextInvoiceNumber } from '../utils/orderBilling.js';
 import { normalizeTransactionType, DEFAULT_SALES_TRANSACTION_TYPE } from '../constants/erpTransactionTypes.js';
 import { allocateNextTypeBillNumber } from '../utils/transactionBilling.js';
-import { resolveCustomerForEntry } from '../utils/partyMaster.js';
+import { DESIGN_PREVIEW_SELECT, presentDesignPreview, publicImageRef } from '../utils/designImages.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -17,12 +17,7 @@ const ORDER_STATUSES = ['waiting_approval', 'pending', 'completed'];
 const orderInclude = {
   customer: true,
   design: {
-    select: {
-      id: true,
-      name: true,
-      image: true,
-      fabric: true
-    }
+    select: DESIGN_PREVIEW_SELECT
   },
   shareLink: {
     select: {
@@ -30,6 +25,36 @@ const orderInclude = {
       token: true
     }
   }
+};
+
+function presentOrder(order) {
+  if (!order) return order;
+  const lines = Array.isArray(order.orderLines)
+    ? order.orderLines.map((line) => ({
+        ...line,
+        image: publicImageRef(line.image)
+      }))
+    : order.orderLines;
+  return {
+    ...order,
+    design: presentDesignPreview(order.design),
+    orderLines: lines
+  };
+}
+
+function designImageForOrder(design) {
+  return publicImageRef(design.imageFull || design.imageThumb || design.image);
+}
+
+const orderDesignSelect = {
+  id: true,
+  name: true,
+  designCode: true,
+  imageThumb: true,
+  imageFull: true,
+  fabric: true,
+  basePrice: true,
+  retailPrice: true
 };
 
 const optionalString = (value) => {
@@ -229,15 +254,7 @@ router.post('/public', [
         id: designId,
         userId: shareLink.userId
       },
-      select: {
-        id: true,
-        name: true,
-        designCode: true,
-        image: true,
-        fabric: true,
-        basePrice: true,
-        retailPrice: true
-      }
+      select: orderDesignSelect
     });
 
     if (!design) {
@@ -248,7 +265,7 @@ router.post('/public', [
       designId,
       designName: design.name || 'Untitled Design',
       designCode: design.designCode || null,
-      image: design.image,
+      image: designImageForOrder(design),
       fabric: design.fabric,
       basePrice: design.basePrice || design.retailPrice || 0,
       retailPrice: design.retailPrice || design.basePrice || 0,
@@ -293,7 +310,7 @@ router.post('/public', [
         include: orderInclude
       });
 
-      return res.status(200).json({ order });
+      return res.status(200).json({ order: presentOrder(order) });
     }
 
     const order = await prisma.$transaction(async (tx) => {
@@ -315,7 +332,7 @@ router.post('/public', [
       });
     });
 
-    res.status(201).json({ order });
+    res.status(201).json({ order: presentOrder(order) });
   } catch (error) {
     next(error);
   }
@@ -369,7 +386,7 @@ router.post('/manual', authenticateToken, requireActiveSubscription, [
         });
       });
 
-      return res.status(201).json({ order });
+      return res.status(201).json({ order: presentOrder(order) });
     }
 
     const lines = req.body.lines;
@@ -401,15 +418,7 @@ router.post('/manual', authenticateToken, requireActiveSubscription, [
         userId,
         id: { in: [...new Set(parsedLines.map(line => line.designId))] }
       },
-      select: {
-        id: true,
-        name: true,
-        designCode: true,
-        image: true,
-        fabric: true,
-        basePrice: true,
-        retailPrice: true
-      }
+      select: orderDesignSelect
     });
     const designById = new Map(designs.map(design => [design.id, design]));
 
@@ -425,7 +434,7 @@ router.post('/manual', authenticateToken, requireActiveSubscription, [
         designId: line.designId,
         designName: design.name || 'Untitled Design',
         designCode: design.designCode || null,
-        image: design.image,
+        image: designImageForOrder(design),
         fabric: design.fabric,
         basePrice: design.basePrice || design.retailPrice || 0,
         retailPrice: design.retailPrice || design.basePrice || 0,
@@ -459,7 +468,7 @@ router.post('/manual', authenticateToken, requireActiveSubscription, [
       });
     });
 
-    return res.status(201).json({ order, orders: [order], manualBatchId: batchId });
+    return res.status(201).json({ order: presentOrder(order), orders: [presentOrder(order)], manualBatchId: batchId });
   } catch (error) {
     next(error);
   }
@@ -547,7 +556,7 @@ router.post('/erp-sales', authenticateToken, requireActiveSubscription, [
       });
     });
 
-    res.status(201).json({ order });
+    res.status(201).json({ order: presentOrder(order) });
   } catch (error) {
     next(error);
   }
@@ -574,7 +583,7 @@ router.get('/', authenticateToken, requireActiveSubscription, async (req, res, n
       orderBy: { createdAt: 'desc' }
     });
 
-    res.json({ orders });
+    res.json({ orders: orders.map(presentOrder) });
   } catch (error) {
     next(error);
   }
@@ -664,7 +673,8 @@ router.put('/:id', authenticateToken, requireActiveSubscription, async (req, res
         }
 
         const design = await prisma.design.findFirst({
-          where: { id: designId, userId }
+          where: { id: designId, userId },
+          select: orderDesignSelect
         });
         if (!design) {
           return res.status(400).json({ error: `Design not found or not yours: ${designId}` });
@@ -676,7 +686,7 @@ router.put('/:id', authenticateToken, requireActiveSubscription, async (req, res
           designId,
           designName: design.name || 'Untitled Design',
           designCode: design.designCode || null,
-          image: design.image,
+          image: designImageForOrder(design),
           fabric: design.fabric,
           basePrice: design.basePrice || design.retailPrice || 0,
           retailPrice: design.retailPrice || design.basePrice || 0,
@@ -699,7 +709,7 @@ router.put('/:id', authenticateToken, requireActiveSubscription, async (req, res
       include: orderInclude
     });
 
-    res.json({ order });
+    res.json({ order: presentOrder(order) });
   } catch (error) {
     if (error.status) {
       return res.status(error.status).json({ error: error.message });
@@ -739,7 +749,7 @@ router.put('/:id/status', authenticateToken, requireActiveSubscription, [
 
     if (existing.status === status) {
       const order = await prisma.order.findUnique({ where: { id }, include: orderInclude });
-      return res.json({ order });
+      return res.json({ order: presentOrder(order) });
     }
 
     const updated = await prisma.$transaction(async (tx) => {
@@ -792,7 +802,7 @@ router.put('/:id/status', authenticateToken, requireActiveSubscription, [
       include: orderInclude
     });
 
-    res.json({ order: orderWithDetails });
+    res.json({ order: presentOrder(orderWithDetails) });
   } catch (error) {
     next(error);
   }
@@ -861,7 +871,7 @@ router.put('/:id/lines/:lineIndex/completion', authenticateToken, requireActiveS
       include: orderInclude
     });
 
-    res.json({ order: orderWithDetails });
+    res.json({ order: presentOrder(orderWithDetails) });
   } catch (error) {
     next(error);
   }
@@ -910,7 +920,7 @@ router.post('/drafts/:id/confirm', authenticateToken, requireActiveSubscription,
       data: { status: 'confirmed' }
     });
 
-    res.json({ orders: createdOrders });
+    res.json({ orders: createdOrders.map(presentOrder) });
   } catch (error) {
     next(error);
   }
