@@ -24,9 +24,9 @@ async function withImageJobLock(fn) {
     if (next) next();
   }
 }
-const FULL_MAX_EDGE = 1600;
+const FULL_MAX_EDGE = 2560;
 const THUMB_MAX_EDGE = 480;
-const FULL_QUALITY = 80;
+const FULL_QUALITY = 85;
 const THUMB_QUALITY = 70;
 const MAX_INLINE_CHARS = 120000;
 
@@ -201,7 +201,22 @@ export async function persistDesignMedia({
     image &&
     (image === previous?.imageFull || image === previous?.image);
 
-  if (image && !incomingIsExistingThumb && (isEmbeddedImage(image) || (isPublicImageUrl(image) && !incomingIsExistingFull))) {
+  // When previous.image/imageFull/imageThumb are explicitly null, force a fresh
+  // encode+upload (used by backup remigration to 2560px).
+  const forceReupload = previous != null
+    && previous.image === null
+    && previous.imageFull === null
+    && previous.imageThumb === null;
+
+  if (
+    image
+    && !incomingIsExistingThumb
+    && (
+      forceReupload
+      || isEmbeddedImage(image)
+      || (isPublicImageUrl(image) && !incomingIsExistingFull)
+    )
+  ) {
     const { full, thumb } = await processDesignImage(image);
     const stored = await storeProcessedImage({
       userId,

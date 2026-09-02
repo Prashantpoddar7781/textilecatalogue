@@ -9,7 +9,8 @@
     "db:migrate": "prisma migrate dev",
     "db:generate": "prisma generate",
     "db:studio": "prisma studio",
-    "migrate:images": "node scripts/migrateDesignImagesToR2.mjs"
+    "migrate:images": "node scripts/migrateDesignImagesToR2.mjs",
+    "migrate:images-from-backup": "node scripts/remigrateDesignImagesFromBackup.mjs"
   },
   "dependencies": {
     "@prisma/client": "^5.7.1",
