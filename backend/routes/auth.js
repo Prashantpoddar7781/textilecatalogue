@@ -41,7 +41,7 @@ const buildAuthResponse = async (userId) => {
   const token = jwt.sign(
     { userId: normalizedUser.id, email: normalizedUser.email },
     process.env.JWT_SECRET || 'your-secret-key',
-    { expiresIn: '7d' }
+    { expiresIn: '180d' }
   );
 
   return {

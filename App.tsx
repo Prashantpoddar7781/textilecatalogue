@@ -51,6 +51,13 @@ import { LoginDialog } from './components/LoginDialog';
 import { PricingDialog } from './components/PricingDialog';
 import { BillingPage } from './components/BillingPage';
 import { designsApi, authApi, shareLinksApi, ordersApi, billingApi } from './services/api';
+import {
+  clearAuthSession,
+  getAuthToken,
+  getCachedAuthUser,
+  setAuthSession,
+  sleep
+} from './services/authSession';
 import { getShareUrl } from './services/appUrl';
 import { openWhatsAppWithText, isNativeAndroid, getPendingSharedImage, clearPendingSharedImage, addShareReceivedListener } from './services/nativeApp';
 import { hasCompleteErpAccess } from './services/erpSession';
@@ -163,23 +170,68 @@ const App: React.FC = () => {
     sortBy: 'newest'
   });
 
-  // Check authentication on mount
+  // Keep session across app/phone restarts. Only clear token on real auth failure (401/403),
+  // never on flaky network — that was logging sellers out by mistake.
   useEffect(() => {
-    const token = localStorage.getItem('auth_token');
-    if (token) {
-      authApi.getCurrentUser()
-        .then(({ user }) => {
-          setUser(user);
-        })
-        .catch(() => {
-          localStorage.removeItem('auth_token');
+    let cancelled = false;
+
+    const boot = async () => {
+      const token = getAuthToken();
+      const cachedUser = getCachedAuthUser();
+
+      if (!token) {
+        if (!cancelled) {
+          setIsReady(true);
           setIsLoginOpen(true);
-        })
-        .finally(() => setIsReady(true));
-    } else {
-      setIsReady(true);
-      setIsLoginOpen(true);
-    }
+        }
+        return;
+      }
+
+      if (cachedUser && !cancelled) {
+        setUser(cachedUser);
+        setIsLoginOpen(false);
+      }
+
+      for (let attempt = 1; attempt <= 3; attempt += 1) {
+        try {
+          const { user: freshUser } = await authApi.getCurrentUser();
+          if (cancelled) return;
+          setAuthSession(token, freshUser);
+          setUser(freshUser);
+          setIsLoginOpen(false);
+          setIsReady(true);
+          return;
+        } catch (error: any) {
+          const status = Number(error?.status || 0);
+          if (status === 401 || status === 403) {
+            if (!cancelled) {
+              clearAuthSession();
+              setUser(null);
+              setIsLoginOpen(true);
+              setIsReady(true);
+            }
+            return;
+          }
+          if (attempt < 3) await sleep(400 * attempt);
+        }
+      }
+
+      // Network still failing: stay logged in with cached session if we have one.
+      if (!cancelled) {
+        if (cachedUser) {
+          setUser(cachedUser);
+          setIsLoginOpen(false);
+        } else {
+          setIsLoginOpen(false);
+        }
+        setIsReady(true);
+      }
+    };
+
+    void boot();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -226,10 +278,33 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (user) {
-      loadDesigns();
+      void loadDesigns();
     } else {
       setDesigns([]);
     }
+  }, [user]);
+
+  // Keep catalogues in sync across phones/PCs without logout/login.
+  useEffect(() => {
+    if (!user) return;
+
+    const refresh = () => {
+      void loadDesigns({ background: true });
+    };
+
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') refresh();
+    };
+
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', onVisibility);
+    const intervalId = window.setInterval(refresh, 45000);
+
+    return () => {
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.clearInterval(intervalId);
+    };
   }, [user]);
 
   useEffect(() => {
@@ -307,11 +382,12 @@ const App: React.FC = () => {
     }
   };
 
-  // Load catalogue once; search/filters run instantly on the client (no API per keystroke).
-  const loadDesigns = async () => {
-    if (!localStorage.getItem('auth_token')) return;
+  // Catalogue load + silent refresh for multi-device sync (no logout needed).
+  const loadDesigns = async (opts?: { background?: boolean }) => {
+    if (!getAuthToken()) return;
+    const background = Boolean(opts?.background);
 
-    setLoading(true);
+    if (!background) setLoading(true);
     try {
       const { designs: fetchedDesigns } = await designsApi.getAll({
         sortBy: 'newest',
@@ -319,12 +395,15 @@ const App: React.FC = () => {
         limit: 2000
       });
       setDesigns(fetchedDesigns.map(mapDesign));
-      await loadFilterMetadata();
+      if (!background) await loadFilterMetadata();
+      else void loadFilterMetadata();
     } catch (error: any) {
       console.error('Failed to load designs:', error);
-      alert('Failed to load designs: ' + (error.message || 'Unknown error'));
+      if (!background) {
+        alert('Failed to load designs: ' + (error.message || 'Unknown error'));
+      }
     } finally {
-      setLoading(false);
+      if (!background) setLoading(false);
     }
   };
 
@@ -587,15 +666,16 @@ const App: React.FC = () => {
   }, [selectedIds.size]);
 
   const handleLoginSuccess = (token: string, userData: any) => {
+    setAuthSession(token, userData);
     setUser(userData);
     setIsLoginOpen(false);
-    loadDesigns();
-    loadOrders();
-    refreshSubscription();
+    void loadDesigns();
+    void loadOrders();
+    void refreshSubscription();
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('auth_token');
+    clearAuthSession();
     setUser(null);
     setDesigns([]);
     setOrders([]);
@@ -715,7 +795,7 @@ const App: React.FC = () => {
         refreshSubscription={refreshSubscription}
         onBack={() => { window.location.href = '/'; }}
         onAccountDeleted={() => {
-          localStorage.removeItem('auth_token');
+          clearAuthSession();
           window.location.href = '/';
         }}
       />

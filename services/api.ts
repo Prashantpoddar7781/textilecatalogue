@@ -54,35 +54,36 @@ async function requestOnce<T>(
   return response.json();
 }
 
+function isNetworkFailure(err: any): boolean {
+  return (
+    err instanceof TypeError
+    || /failed to fetch|networkerror|load failed|network request failed/i.test(String(err?.message || ''))
+  );
+}
+
 async function request<T>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<T> {
-  try {
-    return await requestOnce<T>(endpoint, options);
-  } catch (err: any) {
-    const isNetworkFailure =
-      err instanceof TypeError
-      || /failed to fetch|networkerror|load failed|network request failed/i.test(String(err?.message || ''));
-    // One retry helps flaky mobile WebView / transient Railway edge drops.
-    if (isNetworkFailure) {
-      try {
-        return await requestOnce<T>(endpoint, options);
-      } catch (retryErr: any) {
-        const retryNetwork =
-          retryErr instanceof TypeError
-          || /failed to fetch|networkerror|load failed|network request failed/i.test(String(retryErr?.message || ''));
-        if (retryNetwork) {
-          throw new ApiError(
-            0,
-            'Cannot reach ThreadX servers. Check internet, wait a moment, then try again. If only one email fails, type the email manually (do not paste) and retry.'
-          );
-        }
-        throw retryErr;
-      }
+  const maxAttempts = endpoint.startsWith('/auth/') ? 3 : 2;
+  let lastError: any;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await requestOnce<T>(endpoint, options);
+    } catch (err: any) {
+      lastError = err;
+      if (!isNetworkFailure(err) || attempt >= maxAttempts) break;
+      await new Promise((resolve) => setTimeout(resolve, 400 * attempt));
     }
-    throw err;
   }
+
+  if (isNetworkFailure(lastError)) {
+    throw new ApiError(
+      0,
+      'Cannot reach ThreadX servers. Check internet, wait a moment, then try again.'
+    );
+  }
+  throw lastError;
 }
 
 // Auth API

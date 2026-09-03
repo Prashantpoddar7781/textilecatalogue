@@ -1,6 +1,12 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { X, Mail, Lock, User, LogIn, KeyRound } from 'lucide-react';
 import { authApi } from '../services/api';
+import {
+  clearRememberedCredentials,
+  getRememberedCredentials,
+  setAuthSession,
+  setRememberedCredentials
+} from '../services/authSession';
 
 interface Props {
   onClose: () => void;
@@ -15,6 +21,7 @@ export const LoginDialog: React.FC<Props> = ({ onClose, onSuccess }) => {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [resetToken, setResetToken] = useState('');
+  const [rememberPassword, setRememberPassword] = useState(true);
   const [formData, setFormData] = useState({
     email: '',
     password: '',
@@ -23,6 +30,17 @@ export const LoginDialog: React.FC<Props> = ({ onClose, onSuccess }) => {
     firmName: '',
     otp: ''
   });
+
+  useEffect(() => {
+    const remembered = getRememberedCredentials();
+    if (!remembered) return;
+    setFormData(prev => ({
+      ...prev,
+      email: remembered.email,
+      password: remembered.password
+    }));
+    setRememberPassword(true);
+  }, []);
 
   const title = authMode === 'signup'
     ? 'Create Account'
@@ -34,6 +52,17 @@ export const LoginDialog: React.FC<Props> = ({ onClose, onSuccess }) => {
 
   const normalizedEmail = () => formData.email.trim().toLowerCase();
 
+  const persistLogin = (token: string, user: any, passwordForRemember?: string) => {
+    setAuthSession(token, user);
+    if (rememberPassword && passwordForRemember) {
+      setRememberedCredentials(normalizedEmail(), passwordForRemember);
+    } else if (!rememberPassword) {
+      clearRememberedCredentials();
+    }
+    onSuccess(token, user);
+    onClose();
+  };
+
   const handlePasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -44,9 +73,7 @@ export const LoginDialog: React.FC<Props> = ({ onClose, onSuccess }) => {
       const email = normalizedEmail();
       if (authMode === 'login') {
         const { token, user } = await authApi.login(email, formData.password);
-        localStorage.setItem('auth_token', token);
-        onSuccess(token, user);
-        onClose();
+        persistLogin(token, user, formData.password);
       } else if (authMode === 'signup') {
         const { token, user } = await authApi.register(
           email,
@@ -54,9 +81,7 @@ export const LoginDialog: React.FC<Props> = ({ onClose, onSuccess }) => {
           formData.name,
           formData.firmName
         );
-        localStorage.setItem('auth_token', token);
-        onSuccess(token, user);
-        onClose();
+        persistLogin(token, user, formData.password);
       }
     } catch (err: any) {
       setError(err.message || 'Authentication failed');
@@ -97,9 +122,7 @@ export const LoginDialog: React.FC<Props> = ({ onClose, onSuccess }) => {
         setNotice('OTP verified. Enter a new password.');
       } else {
         if (!result.token || !result.user) throw new Error('Login response missing');
-        localStorage.setItem('auth_token', result.token);
-        onSuccess(result.token, result.user);
-        onClose();
+        persistLogin(result.token, result.user);
       }
     } catch (err: any) {
       setError(err.message || 'Invalid OTP');
@@ -119,6 +142,7 @@ export const LoginDialog: React.FC<Props> = ({ onClose, onSuccess }) => {
       setNotice('Password updated. Please login with your new password.');
       setAuthMode('login');
       setFormData(prev => ({ ...prev, password: '', newPassword: '', otp: '' }));
+      clearRememberedCredentials();
     } catch (err: any) {
       setError(err.message || 'Could not reset password');
     } finally {
@@ -201,6 +225,8 @@ export const LoginDialog: React.FC<Props> = ({ onClose, onSuccess }) => {
                 <input
                   required
                   type="email"
+                  name="username"
+                  autoComplete="username"
                   className="w-full pl-9 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
                   placeholder="your@email.com"
                   value={formData.email}
@@ -222,6 +248,8 @@ export const LoginDialog: React.FC<Props> = ({ onClose, onSuccess }) => {
                 <input
                   required
                   type="password"
+                  name="password"
+                  autoComplete={authMode === 'login' ? 'current-password' : 'new-password'}
                   minLength={6}
                   className="w-full pl-9 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
                   placeholder="••••••••"
@@ -230,6 +258,18 @@ export const LoginDialog: React.FC<Props> = ({ onClose, onSuccess }) => {
                 />
               </div>
             </div>
+          )}
+
+          {authMode === 'login' && (
+            <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                checked={rememberPassword}
+                onChange={(e) => setRememberPassword(e.target.checked)}
+              />
+              Save password on this phone
+            </label>
           )}
 
           {(authMode === 'otp-login' || authMode === 'forgot') && (
@@ -362,4 +402,3 @@ export const LoginDialog: React.FC<Props> = ({ onClose, onSuccess }) => {
     </div>
   );
 };
-
