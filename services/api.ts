@@ -86,6 +86,19 @@ async function request<T>(
   throw lastError;
 }
 
+// Public app metadata (no auth)
+export const appApi = {
+  getAndroidVersion: async () => {
+    return request<{
+      packageId: string;
+      latestVersionCode: number;
+      latestVersionName: string;
+      playStoreUrl: string;
+      message: string;
+    }>('/app/android-version');
+  },
+};
+
 // Auth API
 export const authApi = {
   register: async (email: string, password: string, name?: string, firmName?: string) => {

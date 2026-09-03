@@ -29,6 +29,7 @@ import workReceiptRoutes from './routes/workReceipts.js';
 import salesOrderRoutes from './routes/salesOrders.js';
 import stockRoutes from './routes/stock.js';
 import gstRoutes from './routes/gst.js';
+import appRoutes from './routes/app.js';
 import { startDesignImageMigration } from './utils/designImages.js';
 
 dotenv.config();
@@ -199,7 +200,8 @@ try {
   app.use('/api/sales-orders', salesOrderRoutes);
   app.use('/api/stock', stockRoutes);
   app.use('/api/gst', gstRoutes);
-  console.log('Routes configured: /api/auth, /api/billing, /api/designs, /api/users, /api/catalogues, /api/contacts, /api/customers, /api/share-links, /api/orders, /api/invoices, /api/purchases, /api/bank-entries, /api/credit-debit-notes, /api/ledger, /api/erp-users, /api/erp-auth, /api/grey-purchases, /api/grey-dispatches, /api/grey-purchase-returns');
+  app.use('/api/app', appRoutes);
+  console.log('Routes configured: /api/auth, /api/billing, /api/designs, /api/users, /api/catalogues, /api/contacts, /api/customers, /api/share-links, /api/orders, /api/invoices, /api/purchases, /api/bank-entries, /api/credit-debit-notes, /api/ledger, /api/erp-users, /api/erp-auth, /api/grey-purchases, /api/grey-dispatches, /api/grey-purchase-returns, /api/app');
 } catch (error) {
   console.error('Error setting up routes:', error);
   // Server will still start, but routes may not work

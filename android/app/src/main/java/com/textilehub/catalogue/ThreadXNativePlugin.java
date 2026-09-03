@@ -4,6 +4,8 @@ import android.app.Activity;
 import android.content.ClipData;
 import android.content.ContentValues;
 import android.content.Intent;
+import android.content.pm.PackageInfo;
+import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.provider.MediaStore;
@@ -219,6 +221,55 @@ public class ThreadXNativePlugin extends Plugin {
             call.resolve();
         } catch (Exception error) {
             call.reject("Could not open WhatsApp", error);
+        }
+    }
+
+    @PluginMethod
+    public void getAppVersion(PluginCall call) {
+        try {
+            String packageName = getContext().getPackageName();
+            PackageInfo info = getContext().getPackageManager().getPackageInfo(packageName, 0);
+            long versionCode = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+                ? info.getLongVersionCode()
+                : info.versionCode;
+            JSObject response = new JSObject();
+            response.put("packageName", packageName);
+            response.put("versionName", info.versionName != null ? info.versionName : "");
+            response.put("versionCode", versionCode);
+            call.resolve(response);
+        } catch (PackageManager.NameNotFoundException error) {
+            call.reject("Could not read app version", error);
+        }
+    }
+
+    @PluginMethod
+    public void openPlayStore(PluginCall call) {
+        String packageName = call.getString("packageName", getContext().getPackageName());
+        String webUrl = call.getString(
+            "webUrl",
+            "https://play.google.com/store/apps/details?id=" + packageName
+        );
+        try {
+            Intent marketIntent = new Intent(
+                Intent.ACTION_VIEW,
+                Uri.parse("market://details?id=" + packageName)
+            );
+            marketIntent.setPackage("com.android.vending");
+            if (marketIntent.resolveActivity(getContext().getPackageManager()) != null) {
+                getActivity().startActivity(marketIntent);
+            } else {
+                Intent webIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(webUrl));
+                getActivity().startActivity(webIntent);
+            }
+            call.resolve();
+        } catch (Exception error) {
+            try {
+                Intent webIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(webUrl));
+                getActivity().startActivity(webIntent);
+                call.resolve();
+            } catch (Exception fallbackError) {
+                call.reject("Could not open Play Store", fallbackError);
+            }
         }
     }
 
