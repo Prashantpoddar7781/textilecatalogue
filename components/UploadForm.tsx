@@ -11,6 +11,7 @@ import { enhancePhotoForCatalogue } from '../services/photoEnhance';
 import { DEFAULT_AI_MODEL_IMAGE } from '../constants';
 import { ImageLightbox } from './ImageLightbox';
 import { ImageCropDialog } from './ImageCropDialog';
+import { SearchableFilterSelect } from './SearchableFilterSelect';
 import { CostingCalculator } from './CostingCalculator';
 
 interface Props {
@@ -994,26 +995,22 @@ export const UploadForm: React.FC<Props> = ({
             <label className="text-sm font-semibold text-gray-700">Catalogue</label>
             {!showNewCatalogue ? (
               <div className="flex gap-2">
-                <select
-                  className="flex-1 px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                <SearchableFilterSelect
+                  className="flex-1 min-w-0"
+                  triggerClassName="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-semibold inline-flex items-center justify-between gap-2"
                   value={formData.catalogueId}
-                  onChange={e => {
-                    const catalogueId = e.target.value;
+                  searchPlaceholder="Search catalogues…"
+                  onChange={(catalogueId) => {
                     setFormData(prev => ({ ...prev, catalogueId }));
                     if (catalogueId && !initialData) {
                       loadCatalogueDefaults(catalogueId);
                     }
                   }}
-                >
-                  <option value="">Select Catalogue (Optional)</option>
-                  {loadingCatalogues ? (
-                    <option>Loading...</option>
-                  ) : (
-                    catalogues.map(cat => (
-                      <option key={cat.id} value={cat.id}>{cat.name}</option>
-                    ))
-                  )}
-                </select>
+                  options={[
+                    { value: '', label: loadingCatalogues ? 'Loading…' : 'Select Catalogue (Optional)' },
+                    ...catalogues.map(cat => ({ value: cat.id, label: cat.name }))
+                  ]}
+                />
                 <button
                   type="button"
                   onClick={() => setShowNewCatalogue(true)}

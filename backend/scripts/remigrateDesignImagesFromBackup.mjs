@@ -1,5 +1,5 @@
 /**
- * Re-upload design photos at FULL_MAX_EDGE (2560px) using originals from a
+ * Re-upload design photos at FULL_MAX_EDGE (currently 4096px) using originals from a
  * Railway backup/restored Postgres, without overwriting live ERP data.
  *
  * Usage on Railway backend (or locally with both URLs set):

@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Plus, Search, Package, CheckCircle, SlidersHorizontal, LogOut, User, Crown, BarChart3, Menu, MessageCircle, Link2, LineChart, FileText, ScanLine, MonitorSmartphone } from 'lucide-react';
-import { TextileDesign, CatalogueFilters, SubscriptionStatus } from './types';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { Plus, Search, Package, CheckCircle, SlidersHorizontal, LogOut, User, Crown, BarChart3, Menu, MessageCircle, Link2, LineChart, FileText, ScanLine, MonitorSmartphone, X } from 'lucide-react';
+import { TextileDesign, CatalogueFilters, SubscriptionStatus, AdditionalPrice } from './types';
 import { UploadForm } from './components/UploadForm';
 import { DesignCard } from './components/DesignCard';
 import { DesignFullscreenModal } from './components/DesignFullscreenModal';
@@ -47,6 +47,7 @@ import { ErpExpensesPage } from './components/ErpExpensesPage';
 import { CreditDebitNotePage } from './components/CreditDebitNotePage';
 import { parseNoteTypeFromPath } from './constants/creditDebitNoteTypes';
 import { BankEntriesPage } from './components/BankEntriesPage';
+import { SearchableFilterSelect } from './components/SearchableFilterSelect';
 import { LoginDialog } from './components/LoginDialog';
 import { PricingDialog } from './components/PricingDialog';
 import { BillingPage } from './components/BillingPage';
@@ -64,6 +65,36 @@ import { hasCompleteErpAccess } from './services/erpSession';
 import { ErpSession, Order } from './types';
 
 const APP_LOGO_SRC = '/threadx-logo.png';
+
+const DEFAULT_FILTERS: CatalogueFilters = {
+  search: '',
+  fabric: 'All',
+  catalogue: 'All',
+  minPrice: 0,
+  maxPrice: 100000,
+  inventory: 'all',
+  sortBy: 'newest'
+};
+
+const serializeAdditionalPrices = (prices?: AdditionalPrice[]) =>
+  JSON.stringify(
+    (prices || [])
+      .map((ap) => ({
+        name: (ap.name || '').trim().toLowerCase(),
+        type: ap.type,
+        value: Number(ap.value) || 0,
+        calculatedPrice: typeof ap.calculatedPrice === 'number' && Number.isFinite(ap.calculatedPrice)
+          ? Math.round(ap.calculatedPrice * 100) / 100
+          : null
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name) || a.type.localeCompare(b.type))
+  );
+
+const designPriceChanged = (before: TextileDesign, after: TextileDesign) => {
+  const oldBase = Number(before.basePrice ?? before.retailPrice ?? 0);
+  const newBase = Number(after.basePrice ?? after.retailPrice ?? 0);
+  return oldBase !== newBase || serializeAdditionalPrices(before.additionalPrices) !== serializeAdditionalPrices(after.additionalPrices);
+};
 
 const App: React.FC = () => {
   // Check if we're on a share route
@@ -160,15 +191,12 @@ const App: React.FC = () => {
   const [isPricingOpen, setIsPricingOpen] = useState(false);
   const [fabrics, setFabrics] = useState<string[]>(['All']);
   const [catalogues, setCatalogues] = useState<{ id: string; name: string }[]>([]);
-  const [filters, setFilters] = useState<CatalogueFilters>({
-    search: '',
-    fabric: 'All',
-    catalogue: 'All',
-    minPrice: 0,
-    maxPrice: 100000,
-    inventory: 'all',
-    sortBy: 'newest'
-  });
+  const [filters, setFilters] = useState<CatalogueFilters>(DEFAULT_FILTERS);
+  const cataloguePriceConfirmRef = useRef<{ resolve: (applyToAll: boolean) => void } | null>(null);
+  const [cataloguePricePrompt, setCataloguePricePrompt] = useState<{
+    catalogueName: string;
+    count: number;
+  } | null>(null);
 
   // Keep session across app/phone restarts. Only clear token on real auth failure (401/403),
   // never on flaky network — that was logging sellers out by mistake.
@@ -438,14 +466,27 @@ const App: React.FC = () => {
   }, [designs, filters]);
 
   const hasActiveFilters = useMemo(() => {
-    const defaultMax = designs.length > 0 ? Math.max(...designs.map(d => d.retailPrice), 100000) : 100000;
     return filters.catalogue !== 'All'
       || filters.fabric !== 'All'
       || filters.inventory !== 'all'
+      || filters.sortBy !== 'newest'
       || filters.minPrice > 0
       || filters.search.trim() !== ''
-      || filters.maxPrice < defaultMax;
-  }, [designs, filters]);
+      || filters.maxPrice < maxPrice;
+  }, [filters, maxPrice]);
+
+  const clearAllFilters = () => {
+    setFilters({
+      ...DEFAULT_FILTERS,
+      maxPrice
+    });
+  };
+
+  const askApplyPriceToCatalogue = (catalogueName: string, count: number) =>
+    new Promise<boolean>((resolve) => {
+      cataloguePriceConfirmRef.current = { resolve };
+      setCataloguePricePrompt({ catalogueName, count });
+    });
 
   const inStockFilteredDesigns = useMemo(
     () => filteredDesigns.filter(d => (d.stockQuantity ?? 0) > 0),
@@ -565,6 +606,47 @@ const App: React.FC = () => {
 
   const handleUpdateDesign = async (design: TextileDesign) => {
     if (!editingDesign) return;
+
+    const pricePayload = {
+      basePrice: design.basePrice,
+      additionalPrices: (design.additionalPrices || []).map(ap => ({
+        name: ap.name,
+        type: ap.type,
+        value: ap.value,
+        ...(typeof ap.calculatedPrice === 'number' && Number.isFinite(ap.calculatedPrice)
+          ? { calculatedPrice: ap.calculatedPrice }
+          : {})
+      })),
+      wholesalePrice: design.basePrice,
+      retailPrice: design.basePrice
+    };
+
+    const catalogueId = editingDesign.catalogueId;
+    const stillSameCatalogue = Boolean(catalogueId) && (design.catalogueId || '') === catalogueId;
+    let siblings: TextileDesign[] = [];
+    let applyToCatalogue = false;
+    if (stillSameCatalogue && designPriceChanged(editingDesign, design)) {
+      siblings = designs.filter(d => d.catalogueId === catalogueId);
+      try {
+        const { designs: catDesigns } = await designsApi.getAll({
+          catalogue: catalogueId,
+          limit: 2000,
+          sortBy: 'newest'
+        });
+        if (Array.isArray(catDesigns) && catDesigns.length > 0) {
+          siblings = catDesigns.map(mapDesign);
+        }
+      } catch {
+        // Fall back to designs already loaded in the catalogue view.
+      }
+      if (siblings.length > 1) {
+        const catalogueName = catalogues.find(c => c.id === catalogueId)?.name
+          || design.catalogueName
+          || editingDesign.catalogueName
+          || 'this catalogue';
+        applyToCatalogue = await askApplyPriceToCatalogue(catalogueName, siblings.length);
+      }
+    }
     
     try {
       const updated = await designsApi.update(editingDesign.id, {
@@ -576,25 +658,33 @@ const App: React.FC = () => {
         stockUnit: design.stockUnit,
         pcsPerParcel: design.pcsPerParcel,
         moq: design.moq,
-        basePrice: design.basePrice,
-        additionalPrices: design.additionalPrices?.map(ap => ({
-          name: ap.name,
-          type: ap.type,
-          value: ap.value,
-          ...(typeof ap.calculatedPrice === 'number' && Number.isFinite(ap.calculatedPrice)
-            ? { calculatedPrice: ap.calculatedPrice }
-            : {})
-        })),
+        ...pricePayload,
         fabric: design.fabric,
         description: design.description,
         catalogueId: design.catalogueId,
         aiModels: design.aiModels,
         costingDetails: design.costingDetails
       });
+
+      const updatedById = new Map<string, TextileDesign>([[editingDesign.id, mapDesign(updated)]]);
+
+      if (applyToCatalogue) {
+        const others = siblings.filter(d => d.id !== editingDesign.id);
+        const results = await Promise.allSettled(
+          others.map((sibling) => designsApi.update(sibling.id, pricePayload))
+        );
+        results.forEach((result, index) => {
+          if (result.status === 'fulfilled') {
+            updatedById.set(others[index].id, mapDesign(result.value));
+          }
+        });
+        const failed = results.filter(r => r.status === 'rejected').length;
+        if (failed > 0) {
+          alert(`Saved this design. Could not update price on ${failed} other design${failed === 1 ? '' : 's'} in the catalogue.`);
+        }
+      }
       
-      setDesigns(prev => prev.map(d => 
-        d.id === editingDesign.id ? mapDesign(updated) : d
-      ));
+      setDesigns(prev => prev.map(d => updatedById.get(d.id) || d));
       setIsUploadOpen(false);
       setEditingDesign(null);
       setPendingShareImage(null);
@@ -1519,45 +1609,59 @@ const App: React.FC = () => {
             <span className="text-[10px] font-black text-gray-900 uppercase tracking-widest hidden sm:inline">Filter By</span>
           </div>
           
-          <select
-            className="bg-white border-2 border-gray-100 px-4 py-2.5 rounded-2xl text-xs font-bold outline-none appearance-none pr-10 relative bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2024%2024%22%20stroke%3D%22%236b7280%22%3E%3Cpath%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%222%22%20d%3D%22m19%209-7%207-7-7%22%2F%3E%3C%2Fsvg%3E')] bg-[length:1rem_1rem] bg-[right_0.75rem_center] bg-no-repeat shadow-sm touch-manipulation"
+          <SearchableFilterSelect
             value={filters.catalogue}
-            onChange={e => setFilters(f => ({ ...f, catalogue: e.target.value }))}
-          >
-            <option value="All">All Catalogues</option>
-            {catalogues.map(cat => (
-              <option key={cat.id} value={cat.id}>{cat.name}</option>
-            ))}
-          </select>
+            onChange={(catalogue) => setFilters(f => ({ ...f, catalogue }))}
+            searchPlaceholder="Search catalogues…"
+            options={[
+              { value: 'All', label: 'All Catalogues' },
+              ...catalogues.map(cat => ({ value: cat.id, label: cat.name }))
+            ]}
+          />
 
-          <select
-            className="bg-white border-2 border-gray-100 px-4 py-2.5 rounded-2xl text-xs font-bold outline-none appearance-none pr-10 relative bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2024%2024%22%20stroke%3D%22%236b7280%22%3E%3Cpath%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%222%22%20d%3D%22m19%209-7%207-7-7%22%2F%3E%3C%2Fsvg%3E')] bg-[length:1rem_1rem] bg-[right_0.75rem_center] bg-no-repeat shadow-sm touch-manipulation"
+          <SearchableFilterSelect
             value={filters.fabric}
-            onChange={e => setFilters(f => ({ ...f, fabric: e.target.value }))}
-          >
-            {fabrics.map(fab => (
-              <option key={fab} value={fab}>{fab === 'All' ? 'All Fabrics' : fab}</option>
-            ))}
-          </select>
+            onChange={(fabric) => setFilters(f => ({ ...f, fabric }))}
+            searchPlaceholder="Search fabrics…"
+            options={fabrics.map(fab => ({
+              value: fab,
+              label: fab === 'All' ? 'All Fabrics' : fab
+            }))}
+          />
 
-          <select
-            className="bg-white border-2 border-gray-100 px-4 py-2.5 rounded-2xl text-xs font-bold outline-none appearance-none pr-10 relative bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2024%2024%22%20stroke%3D%22%236b7280%22%3E%3Cpath%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%222%22%20d%3D%22m19%209-7%207-7-7%22%2F%3E%3C%2Fsvg%3E')] bg-[length:1rem_1rem] bg-[right_0.75rem_center] bg-no-repeat shadow-sm touch-manipulation"
+          <SearchableFilterSelect
             value={filters.sortBy}
-            onChange={e => setFilters(f => ({ ...f, sortBy: e.target.value as any }))}
-          >
-            <option value="newest">Latest Uploads</option>
-            <option value="price-low">Price: Low to High</option>
-            <option value="price-high">Price: High to Low</option>
-          </select>
+            onChange={(sortBy) => setFilters(f => ({ ...f, sortBy: sortBy as CatalogueFilters['sortBy'] }))}
+            searchable
+            searchPlaceholder="Search sort…"
+            options={[
+              { value: 'newest', label: 'Latest Uploads' },
+              { value: 'price-low', label: 'Price: Low to High' },
+              { value: 'price-high', label: 'Price: High to Low' }
+            ]}
+          />
 
-          <select
-            className="bg-white border-2 border-gray-100 px-4 py-2.5 rounded-2xl text-xs font-bold outline-none appearance-none pr-10 relative bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2024%2024%22%20stroke%3D%22%236b7280%22%3E%3Cpath%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%222%22%20d%3D%22m19%209-7%207-7-7%22%2F%3E%3C%2Fsvg%3E')] bg-[length:1rem_1rem] bg-[right_0.75rem_center] bg-no-repeat shadow-sm touch-manipulation"
+          <SearchableFilterSelect
             value={filters.inventory}
-            onChange={e => setFilters(f => ({ ...f, inventory: e.target.value as CatalogueFilters['inventory'] }))}
-          >
-            <option value="all">All Designs</option>
-            <option value="available">Only Available Designs</option>
-          </select>
+            onChange={(inventory) => setFilters(f => ({ ...f, inventory: inventory as CatalogueFilters['inventory'] }))}
+            searchable
+            searchPlaceholder="Search inventory…"
+            options={[
+              { value: 'all', label: 'All Designs' },
+              { value: 'available', label: 'Only Available Designs' }
+            ]}
+          />
+
+          {hasActiveFilters && (
+            <button
+              type="button"
+              onClick={clearAllFilters}
+              className="bg-white border-2 border-rose-100 text-rose-700 px-4 py-2.5 rounded-2xl text-xs font-black shadow-sm touch-manipulation inline-flex items-center gap-1.5 shrink-0 hover:bg-rose-50"
+            >
+              <X className="w-3.5 h-3.5" />
+              Clear all filters
+            </button>
+          )}
         </div>
         
         {designs.length > 0 && (
@@ -1627,6 +1731,14 @@ const App: React.FC = () => {
               >
                 <MessageCircle className="w-4 h-4" />
                 WhatsApp ({inStockFilteredDesigns.length})
+              </button>
+              <button
+                type="button"
+                onClick={clearAllFilters}
+                className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-xs font-black text-gray-700 hover:bg-gray-50"
+              >
+                <X className="w-4 h-4" />
+                Clear all filters
               </button>
             </div>
           </div>
@@ -1795,6 +1907,41 @@ const App: React.FC = () => {
             setBulkShareDesigns(null);
           }} 
         />
+      )}
+      {cataloguePricePrompt && (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl p-6">
+            <h3 className="text-lg font-black text-gray-900">Update catalogue prices?</h3>
+            <p className="mt-2 text-sm text-gray-600 leading-relaxed">
+              Apply this price to all <span className="font-black text-gray-900">{cataloguePricePrompt.count}</span> designs
+              in <span className="font-black text-gray-900">{cataloguePricePrompt.catalogueName}</span>?
+            </p>
+            <div className="mt-5 flex flex-col-reverse sm:flex-row gap-2">
+              <button
+                type="button"
+                className="flex-1 px-4 py-3 rounded-2xl border-2 border-gray-200 text-sm font-black text-gray-700 hover:bg-gray-50"
+                onClick={() => {
+                  cataloguePriceConfirmRef.current?.resolve(false);
+                  cataloguePriceConfirmRef.current = null;
+                  setCataloguePricePrompt(null);
+                }}
+              >
+                Only this design
+              </button>
+              <button
+                type="button"
+                className="flex-1 px-4 py-3 rounded-2xl bg-indigo-600 text-white text-sm font-black hover:bg-indigo-700"
+                onClick={() => {
+                  cataloguePriceConfirmRef.current?.resolve(true);
+                  cataloguePriceConfirmRef.current = null;
+                  setCataloguePricePrompt(null);
+                }}
+              >
+                Yes, update all {cataloguePricePrompt.count}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
       <PricingDialog
         isOpen={isPricingOpen}

@@ -24,9 +24,11 @@ async function withImageJobLock(fn) {
     if (next) next();
   }
 }
-const FULL_MAX_EDGE = 2560;
+// Near-camera quality for new uploads. List/grid still uses 480px thumbs, so
+// catalogue scroll stays fast; only fullscreen / share download the full file.
+const FULL_MAX_EDGE = 4096;
 const THUMB_MAX_EDGE = 480;
-const FULL_QUALITY = 85;
+const FULL_QUALITY = 95;
 const THUMB_QUALITY = 70;
 const MAX_INLINE_CHARS = 120000;
 
@@ -202,7 +204,7 @@ export async function persistDesignMedia({
     (image === previous?.imageFull || image === previous?.image);
 
   // When previous.image/imageFull/imageThumb are explicitly null, force a fresh
-  // encode+upload (used by backup remigration to 2560px).
+  // encode+upload (used by backup remigration to current FULL_MAX_EDGE).
   const forceReupload = previous != null
     && previous.image === null
     && previous.imageFull === null
