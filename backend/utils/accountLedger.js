@@ -11,7 +11,8 @@ import {
 } from './orderBilling.js';
 import { isPurchaseReturn } from './erpLineItems.js';
 import { isExpensePurchaseType } from '../constants/erpTransactionTypes.js';
-import { postingDiscountAccount, postingTdsAccount, resolveDiscountJournal } from '../constants/erpTransactionPostingRules.js';
+import { postingDiscountAccount, postingSaleOrPurchaseAccount, postingTdsAccount, resolveDiscountJournal } from '../constants/erpTransactionPostingRules.js';
+import { parseNoteType } from '../constants/creditDebitNoteTypes.js';
 import {
   formatAdjustedOnRemark,
   formatBillNosRemark,
@@ -746,7 +747,7 @@ export async function buildCustomerLedger(prisma, userId, partyName) {
       date: note.noteDate,
       voucherNumber: String(note.voucherNumber || note.noteNumber || '-'),
       billNumber: note.noteNumber || String(note.voucherNumber || '-'),
-      account: `${note.noteKind === 'credit' ? 'Credit' : 'Debit'} Note (Sales)`,
+      account: postingSaleOrPurchaseAccount(parseNoteType(`${note.noteKind} note (${note.noteSide})`)?.series) || 'DISCOUNT A/C SALES',
       particulars: `${note.noteKind === 'credit' ? 'Credit' : 'Debit'} note #${note.noteNumber || note.voucherNumber}${note.adjustBillNumber ? ` · Bill ${note.adjustBillNumber}` : ''}`,
       debitAmount: isCredit ? 0 : amount,
       creditAmount: isCredit ? amount : 0
@@ -1114,10 +1115,10 @@ export async function buildSupplierLedger(prisma, userId, supplierId) {
       date: note.noteDate,
       voucherNumber: String(note.voucherNumber || note.noteNumber || '-'),
       billNumber: note.noteNumber || String(note.voucherNumber || '-'),
-      account: `${note.noteKind === 'credit' ? 'Credit' : 'Debit'} Note (Purchase)`,
-      particulars: `${note.noteKind === 'credit' ? 'Credit' : 'Debit'} note #${note.noteNumber || note.voucherNumber}`,
-      debitAmount: isCredit ? amount : 0,
-      creditAmount: isCredit ? 0 : amount
+      account: postingSaleOrPurchaseAccount(parseNoteType(`${note.noteKind} note (${note.noteSide})`)?.series) || 'DISCOUNT A/C PURCHASE',
+      particulars: `${note.noteKind === 'credit' ? 'Credit' : 'Debit'} note #${note.noteNumber || note.voucherNumber}${note.adjustBillNumber ? ` · Bill ${note.adjustBillNumber}` : ''}`,
+      debitAmount: isCredit ? 0 : amount,
+      creditAmount: isCredit ? amount : 0
     });
   }
 
@@ -1772,6 +1773,8 @@ export async function getLedgerEntryDetail(prisma, userId, sourceType, sourceId)
       subtitle: note.partyName,
       sourceType,
       sourceId,
+      canEdit: true,
+      editPath: `/erp/notes?edit=${note.id}`,
       fields: buildDetailFields([
         { label: 'Date', value: toIsoDate(note.noteDate) },
         { label: 'Voucher', value: note.voucherNumber != null ? String(note.voucherNumber) : '' },

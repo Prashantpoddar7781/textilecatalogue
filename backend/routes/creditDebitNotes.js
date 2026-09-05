@@ -3,7 +3,8 @@ import { PrismaClient } from '@prisma/client';
 import { body, validationResult } from 'express-validator';
 import { authenticateToken } from '../middleware/auth.js';
 import { requireActiveSubscription } from '../middleware/subscription.js';
-import { CREDIT_DEBIT_NOTE_TYPES, parseNoteType } from '../constants/creditDebitNoteTypes.js';
+import { CREDIT_DEBIT_NOTE_TYPES, formatNoteNumber, parseNoteType } from '../constants/creditDebitNoteTypes.js';
+import { postingSaleOrPurchaseAccount } from '../constants/erpTransactionPostingRules.js';
 import { resolveCustomerForEntry, resolveSupplierForEntry } from '../utils/partyMaster.js';
 import { calculateNoteTotals } from '../utils/gstCalculation.js';
 import { roundMoney } from '../utils/orderBilling.js';
@@ -299,7 +300,8 @@ router.post('/', authenticateToken, requireActiveSubscription, [
 
     const payload = normalizePayload({
       ...req.body,
-      companyName: req.body.companyName || companyName
+      companyName: req.body.companyName || companyName,
+      saleAccount: req.body.saleAccount || postingSaleOrPurchaseAccount(noteType.series)
     }, businessState);
 
     const note = await prisma.$transaction(async (tx) => {
@@ -310,7 +312,7 @@ router.post('/', authenticateToken, requireActiveSubscription, [
           noteKind: noteType.noteKind,
           noteSide: noteType.noteSide,
           voucherNumber,
-          noteNumber: optionalString(req.body.noteNumber) || String(voucherNumber),
+          noteNumber: optionalString(req.body.noteNumber) || formatNoteNumber(noteType.series, voucherNumber),
           ...party,
           ...payload,
           ...billLink
@@ -330,6 +332,57 @@ router.get('/:id', authenticateToken, requireActiveSubscription, async (req, res
       where: { id: req.params.id, userId: req.user.userId }
     });
     if (!note) return res.status(404).json({ error: 'Note not found' });
+    res.json({ note });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.put('/:id', authenticateToken, requireActiveSubscription, [
+  body('noteType').optional().notEmpty(),
+  body('partyName').optional().trim()
+], async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const existing = await prisma.creditDebitNote.findFirst({
+      where: { id: req.params.id, userId: req.user.userId }
+    });
+    if (!existing) return res.status(404).json({ error: 'Note not found' });
+
+    const noteType = parseNoteType(req.body.noteType || `${existing.noteKind}_note_${existing.noteSide}`);
+    if (!noteType) {
+      return res.status(400).json({ error: 'Invalid note type' });
+    }
+
+    const [party, businessState, companyName, billLink] = await Promise.all([
+      resolveParty(req.user.userId, noteType, req.body),
+      getBusinessState(req.user.userId),
+      getCompanyName(req.user.userId),
+      resolveAdjustBillLink(req.user.userId, noteType.noteSide, req.body)
+    ]);
+
+    const payload = normalizePayload({
+      ...req.body,
+      companyName: req.body.companyName || existing.companyName || companyName,
+      saleAccount: req.body.saleAccount || existing.saleAccount || postingSaleOrPurchaseAccount(noteType.series)
+    }, businessState);
+
+    const note = await prisma.creditDebitNote.update({
+      where: { id: existing.id },
+      data: {
+        noteKind: noteType.noteKind,
+        noteSide: noteType.noteSide,
+        noteNumber: optionalString(req.body.noteNumber) || existing.noteNumber || formatNoteNumber(noteType.series, existing.voucherNumber),
+        ...party,
+        ...payload,
+        ...billLink
+      }
+    });
+
     res.json({ note });
   } catch (error) {
     next(error);

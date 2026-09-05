@@ -1007,6 +1007,15 @@ export const creditDebitNotesApi = {
       body: JSON.stringify(body)
     });
   },
+  getById: async (id: string) => {
+    return request<{ note: CreditDebitNote }>(`/credit-debit-notes/${id}`);
+  },
+  update: async (id: string, body: Record<string, unknown>) => {
+    return request<{ note: CreditDebitNote }>(`/credit-debit-notes/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(body)
+    });
+  },
   delete: async (id: string) => {
     return request<{ success: boolean }>(`/credit-debit-notes/${id}`, { method: 'DELETE' });
   }

@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowLeft, Edit3, Loader2, Plus, RefreshCw, Search, Trash2 } from 'lucide-react';
 import { bankEntriesApi, invoicesApi } from '../services/api';
 import { AccountParty, BankEntry, BankPendingBill, CompletedOrderParty, PurchaseBillParty } from '../types';
-import { postingSaleOrPurchaseAccount } from '../constants/erpTransactionPostingRules';
+import { postingSaleOrPurchaseAccount, warnsOnManualEntry } from '../constants/erpTransactionPostingRules';
 import {
   BANK_CASH_SERIES,
   bankCashDefaultPartyType,
@@ -116,6 +116,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
   const [amountTouched, setAmountTouched] = useState(false);
   /** After user confirms, further bill picks take full pending even if over Rec/Paid Amt (case 2 → Unadj). */
   const [allowOverAllocation, setAllowOverAllocation] = useState(false);
+  const [allocatedVoucher, setAllocatedVoucher] = useState('');
   const companyRef = useRef<HTMLInputElement>(null);
   const billTypeRef = useRef<HTMLInputElement>(null);
   const billNoRef = useRef<HTMLInputElement>(null);
@@ -159,6 +160,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
         String(account.accountType || '').toUpperCase() === 'BANK'
         || (!/cash/i.test(account.name) && String(account.accountType || '').toUpperCase() !== 'CASH')
       )?.name;
+      setAllocatedVoucher(String(voucherResult.voucherNumber || ''));
       setForm(f => ({
         ...f,
         voucherNumber: voucherResult.voucherNumber,
@@ -750,6 +752,17 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
       setBillType(UNADJ_PAYMENT_TYPE);
       window.setTimeout(() => focusInputStart(billNoRef.current), 0);
       return;
+    }
+
+    const seriesForWarn = normalizeBankCashSeries(form.series || form.transactionType);
+    if (
+      !editingId
+      && warnsOnManualEntry(seriesForWarn)
+      && allocatedVoucher
+      && String(form.voucherNumber || '').trim()
+      && String(form.voucherNumber).trim() !== allocatedVoucher
+    ) {
+      if (!confirm(`Voucher no. was changed from ${allocatedVoucher} to ${form.voucherNumber}. Continue?`)) return;
     }
 
     setSaving(true);

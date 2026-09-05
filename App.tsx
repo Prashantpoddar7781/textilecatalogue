@@ -138,6 +138,7 @@ const App: React.FC = () => {
   const erpFinalAccountsReportMatch = pathname.match(/^\/erp\/reports\/final-accounts\/?$/);
   const erpAccountsMasterMatch = pathname.match(/^\/erp\/masters\/accounts\/?$/);
   const erpOutstandingReportMatch = pathname.match(/^\/erp\/reports\/outstanding\/?$/);
+  const erpNotesHubMatch = pathname.match(/^\/erp\/notes\/?$/);
   const erpNotesMatch = pathname.match(/^\/erp\/notes\/([^/]+)\/?$/);
   const isErpRoute = Boolean(
     erpMatch || erpBankMatch || erpSalesMatch || erpSalesOrderMatch || erpPurchaseMatch || erpPurchaseScanMatch || erpExpensesMatch || erpLedgerMatch
@@ -148,7 +149,7 @@ const App: React.FC = () => {
     || erpFinishPurchaseReportMatch || erpExpensesReportMatch || erpFinalAccountsReportMatch
     || erpAccountsMasterMatch
     || erpOutstandingReportMatch
-    || erpNotesMatch || supplierLedgerMatch
+    || erpNotesHubMatch || erpNotesMatch || supplierLedgerMatch
   );
   const shareStatsMatch = pathname.match(/^\/share-stats\/?$/);
   const reportsMatch = pathname.match(/^\/reports\/?$/);
@@ -1199,11 +1200,15 @@ const App: React.FC = () => {
     );
   }
 
-  if (erpNotesMatch) {
-    const noteType = parseNoteTypeFromPath(erpNotesMatch[1]);
-    if (noteType) {
-      return <CreditDebitNotePage noteType={noteType} onBack={() => { window.location.href = '/erp'; }} />;
-    }
+  if (erpNotesHubMatch || erpNotesMatch) {
+    const noteType = erpNotesMatch ? parseNoteTypeFromPath(erpNotesMatch[1]) : parseNoteTypeFromPath(new URLSearchParams(window.location.search).get('type') || '');
+    return (
+      <CreditDebitNotePage
+        noteType={noteType}
+        erpSession={erpSession}
+        onBack={() => { window.location.href = '/erp'; }}
+      />
+    );
   }
 
   if (erpBankMatch) {

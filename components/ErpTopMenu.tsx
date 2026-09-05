@@ -147,6 +147,22 @@ export const ErpTopMenu: React.FC<Props> = ({
                   <Package className="h-4 w-4" />
                   Expenses
                 </button>
+                <button
+                  type="button"
+                  onClick={() => { window.location.href = '/erp/notes'; }}
+                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-gray-800 hover:bg-indigo-50 hover:text-indigo-700"
+                >
+                  <FileBarChart className="h-4 w-4" />
+                  Credit / Debit Note
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { window.location.href = '/erp/bank'; }}
+                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-gray-800 hover:bg-indigo-50 hover:text-indigo-700"
+                >
+                  <RotateCcw className="h-4 w-4" />
+                  Bank Payment / Receipt
+                </button>
               </div>
             )}
           </div>

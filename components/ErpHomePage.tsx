@@ -1,6 +1,5 @@
-import React, { useState } from 'react';
-import { Banknote, BookOpen, Boxes, ChevronDown, FileText, Package, PackageCheck, ReceiptText, Truck } from 'lucide-react';
-import { ADDITIONAL_ERP_FEATURES } from '../constants/creditDebitNoteTypes';
+import React from 'react';
+import { Banknote, BookOpen, Boxes, FileText, NotebookPen, Package, PackageCheck, ReceiptText, Truck } from 'lucide-react';
 import { accessLevelLabel } from '../services/erpSession';
 import { ErpSession } from '../types';
 import { ErpTopMenu } from './ErpTopMenu';
@@ -39,6 +38,13 @@ const sections = [
     icon: Banknote,
     href: '/erp/bank',
     status: 'Build today'
+  },
+  {
+    title: 'Credit / Debit Note',
+    description: 'Credit and debit notes on sales or purchase — pick the original bill like Empire.',
+    icon: NotebookPen,
+    href: '/erp/notes',
+    status: 'Ready'
   },
   {
     title: 'Account Ledgers',
@@ -85,8 +91,6 @@ const sections = [
 ];
 
 export const ErpHomePage: React.FC<Props> = ({ onBack, user, erpSession }) => {
-  const [featuresOpen, setFeaturesOpen] = useState(false);
-
   return (
     <div className="min-h-screen bg-[#F6F7FB]">
       <ErpTopMenu
@@ -116,34 +120,6 @@ export const ErpHomePage: React.FC<Props> = ({ onBack, user, erpSession }) => {
               <span className="rounded-full bg-white/10 px-3 py-1.5">
                 FY: {erpSession.accountingYear}
               </span>
-            </div>
-          )}
-        </section>
-
-        <section className="relative mt-6">
-          <button
-            type="button"
-            onClick={() => setFeaturesOpen(open => !open)}
-            className="flex w-full items-center justify-between rounded-2xl border border-indigo-200 bg-white px-5 py-4 text-left shadow-sm transition hover:border-indigo-300 hover:shadow-md"
-          >
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-widest text-indigo-600">Additional Features</p>
-              <p className="mt-1 text-sm font-bold text-gray-900">Credit / Debit Notes and more</p>
-            </div>
-            <ChevronDown className={`h-5 w-5 text-indigo-600 transition ${featuresOpen ? 'rotate-180' : ''}`} />
-          </button>
-          {featuresOpen && (
-            <div className="absolute z-20 mt-2 w-full rounded-2xl border border-gray-100 bg-white p-2 shadow-xl">
-              {ADDITIONAL_ERP_FEATURES.map(feature => (
-                <button
-                  key={feature.href}
-                  type="button"
-                  onClick={() => { window.location.href = feature.href; }}
-                  className="block w-full rounded-xl px-4 py-3 text-left text-sm font-semibold text-gray-800 hover:bg-indigo-50 hover:text-indigo-700"
-                >
-                  {feature.title}
-                </button>
-              ))}
             </div>
           )}
         </section>
