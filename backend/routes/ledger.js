@@ -6,6 +6,7 @@ import {
   buildCustomerLedger,
   buildSupplierLedger,
   buildUnifiedPartyLedger,
+  buildCompanySelfLedger,
   getAllLedgerParties,
   getCustomerLedgerParties,
   getLedgerEntryDetail,
@@ -74,13 +75,18 @@ router.get('/final-accounts/drill', authenticateToken, requireActiveSubscription
 router.get('/account', authenticateToken, requireActiveSubscription, async (req, res, next) => {
   try {
     const partyName = String(req.query.partyName || '').trim();
+    const partyType = String(req.query.partyType || '').trim().toLowerCase();
+    const fromDate = req.query.fromDate ? String(req.query.fromDate).trim() : null;
+    const toDate = req.query.toDate ? String(req.query.toDate).trim() : null;
+    if (partyType === 'company') {
+      const result = await buildCompanySelfLedger(prisma, req.user.userId, { fromDate, toDate });
+      return res.json(result);
+    }
     if (!partyName) {
       return res.status(400).json({ error: 'partyName is required' });
     }
     const supplierId = req.query.supplierId ? String(req.query.supplierId) : null;
     const customerId = req.query.customerId ? String(req.query.customerId) : null;
-    const fromDate = req.query.fromDate ? String(req.query.fromDate).trim() : null;
-    const toDate = req.query.toDate ? String(req.query.toDate).trim() : null;
     const result = await buildUnifiedPartyLedger(prisma, req.user.userId, {
       partyName,
       supplierId,

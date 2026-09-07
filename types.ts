@@ -855,7 +855,7 @@ export interface AccountLedgerEntry {
 }
 
 export interface AccountLedgerParty {
-  partyType: 'customer' | 'supplier' | 'both' | string;
+  partyType: 'customer' | 'supplier' | 'both' | 'bank' | 'company' | string;
   partyName: string;
   customerId?: string | null;
   supplierId?: string | null;
@@ -915,6 +915,7 @@ export interface BankBillAllocation {
   billId: string;
   billType: 'order' | 'sales_invoice' | 'purchase_bill' | string;
   billNumber: string;
+  transactionType?: string | null;
   voucherNumber?: string | null;
   billDate?: string | null;
   days: number;

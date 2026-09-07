@@ -42,6 +42,7 @@ import {
 } from '../constants/bankCashSeries.js';
 import { allocateNextTypeBillNumber } from '../utils/transactionBilling.js';
 import { ensurePartyMaster } from '../utils/partyMaster.js';
+import { getPendingCreditDebitNotes } from '../utils/creditDebitNotes.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -89,11 +90,7 @@ function normalizePayload(body) {
   const slipNumber = optionalString(body.slipNumber) || slipNumberFromDate(entryDate);
   const billNos = formatBillNosRemark(billAllocations);
   const billNumber = optionalString(body.billNumber)
-    || (billAllocations || [])
-      .filter(item => item && item.billType !== 'credit_debit_note' && (Number(item.adjustAmount) || 0) > 0)
-      .map(item => String(item.billNumber || '').trim())
-      .filter(Boolean)
-      .join(', ')
+    || (billNos ? billNos.replace(/^BILL NOS\.\s*/i, '') : null)
     || null;
 
   return {
@@ -413,18 +410,61 @@ async function getPendingPurchaseBills(userId, partyName, transactionType, exclu
     .sort((a, b) => String(a.billNumber).localeCompare(String(b.billNumber), undefined, { numeric: true }));
 }
 
+async function getPendingSalesReturns(userId, partyName, excludeEntryId = null) {
+  const [orders, paidByOrderId] = await Promise.all([
+    getCompletedOrders(userId),
+    getPaidAmountsByBillType(prisma, userId, 'order', excludeEntryId ? { excludeEntryId } : {})
+  ]);
+  return orders
+    .filter(order => matchesPartyName(order, partyName))
+    .filter(order => isSalesGoodsReturn(order.transactionType))
+    .map(order => ({
+      ...mapOrderToPendingBill(order, paidByOrderId),
+      transactionType: order.transactionType || 'SALES GOODS RETURN',
+      adjustDirection: 'deduct'
+    }))
+    .filter(bill => bill.pendingAmount > 0)
+    .sort((a, b) => String(a.billNumber).localeCompare(String(b.billNumber), undefined, { numeric: true }));
+}
+
+async function getPendingPurchaseReturns(userId, partyName, excludeEntryId = null) {
+  const [bills, paidByBillId] = await Promise.all([
+    getPurchaseBillRecords(userId),
+    getPaidAmountsByBillType(prisma, userId, 'purchase_bill', excludeEntryId ? { excludeEntryId } : {})
+  ]);
+  return bills
+    .filter(bill => matchesSupplierName(bill.supplier?.name, partyName))
+    .filter(bill => isPurchaseReturn(bill.transactionType))
+    .map(bill => ({
+      ...mapPurchaseBillToPendingBill(bill, paidByBillId),
+      transactionType: bill.transactionType || 'FINISH PURCHASE RETURN',
+      adjustDirection: 'deduct'
+    }))
+    .filter(item => item.pendingAmount > 0)
+    .sort((a, b) => String(a.billNumber).localeCompare(String(b.billNumber), undefined, { numeric: true }));
+}
+
+function signedPendingAmount(item) {
+  const amount = roundMoney(item?.pendingAmount || 0);
+  return String(item?.adjustDirection || '').toLowerCase() === 'deduct' ? -amount : amount;
+}
+
 async function getPartyBalance(userId, partyName, partyType) {
   if (!partyName) return 0;
-  // Empire: Cur. Bal. = pending bills − unadjusted payments/receipts already on account.
-  const [bills, unadjusted] = await Promise.all([
+  // Empire: Cur. Bal. = pending bills − unadj − deduct notes/returns + add notes.
+  const [bills, unadjusted, notes, returns] = await Promise.all([
     partyType === 'supplier'
       ? getPendingPurchaseBills(userId, partyName)
       : getPendingOrderBills(userId, partyName),
-    getPendingUnadjPayments(userId, partyName, partyType)
+    getPendingUnadjPayments(userId, partyName, partyType),
+    getPendingCreditDebitNotes(prisma, userId, partyName, partyType),
+    partyType === 'supplier'
+      ? getPendingPurchaseReturns(userId, partyName)
+      : getPendingSalesReturns(userId, partyName)
   ]);
-  const billPending = bills.reduce((sum, bill) => sum + (bill.pendingAmount || 0), 0);
+  const pending = [...bills, ...returns, ...notes].reduce((sum, item) => sum + signedPendingAmount(item), 0);
   const unadjPending = unadjusted.reduce((sum, row) => sum + (row.pendingAmount || 0), 0);
-  return roundMoneyLocal(billPending - unadjPending);
+  return roundMoneyLocal(pending - unadjPending);
 }
 
 router.get('/completed-order-parties', authenticateToken, requireActiveSubscription, async (req, res, next) => {
@@ -509,29 +549,29 @@ router.get('/pending-bills', authenticateToken, requireActiveSubscription, async
     const userId = req.user.userId;
     const partyName = optionalString(req.query.partyName);
     const partyType = PARTY_TYPES.includes(req.query.partyType) ? req.query.partyType : 'customer';
-    // Bill filter only — ignore BANK/CASH series names (those are the voucher type, not the bill type).
-    const rawType = optionalString(req.query.transactionType) || optionalString(req.query.billType);
-    const transactionType = isBankCashSeries(rawType) ? null : rawType;
     const excludeEntryId = optionalString(req.query.excludeEntryId);
 
     if (!partyName) {
-      return res.json({ bills: [], unadjusted: [], billCount: 0, unadjCount: 0 });
+      return res.json({ bills: [], unadjusted: [], notes: [], noteCount: 0, billCount: 0, unadjCount: 0 });
     }
 
-    const [bills, unadjusted] = await Promise.all([
+    const [bills, unadjusted, notes, returns] = await Promise.all([
       partyType === 'supplier'
-        ? getPendingPurchaseBills(userId, partyName, transactionType, excludeEntryId)
-        : getPendingOrderBills(userId, partyName, transactionType, excludeEntryId),
-      getPendingUnadjPayments(userId, partyName, partyType, excludeEntryId)
+        ? getPendingPurchaseBills(userId, partyName, null, excludeEntryId)
+        : getPendingOrderBills(userId, partyName, null, excludeEntryId),
+      getPendingUnadjPayments(userId, partyName, partyType, excludeEntryId),
+      getPendingCreditDebitNotes(prisma, userId, partyName, partyType, excludeEntryId),
+      partyType === 'supplier'
+        ? getPendingPurchaseReturns(userId, partyName, excludeEntryId)
+        : getPendingSalesReturns(userId, partyName, excludeEntryId)
     ]);
 
-    // Credit/debit note adjustment on bank entries is deferred — bills + unadj only.
     res.json({
-      bills: [...bills, ...unadjusted],
+      bills: [...bills, ...returns, ...unadjusted, ...notes],
       unadjusted,
-      notes: [],
-      noteCount: 0,
-      billCount: bills.length,
+      notes,
+      noteCount: notes.length,
+      billCount: bills.length + returns.length,
       unadjCount: unadjusted.length
     });
   } catch (error) {

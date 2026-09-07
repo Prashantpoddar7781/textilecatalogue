@@ -1,9 +1,12 @@
-import { getAdjustDirection } from '../constants/creditDebitNoteTypes.js';
+import { getAdjustDirection, parseNoteType } from '../constants/creditDebitNoteTypes.js';
 import { daysSince, matchesPartyName, matchesSupplierName, normalizeBillAllocations, roundMoney } from './orderBilling.js';
 
-export async function getPaidAmountsByCreditDebitNoteId(prismaClient, userId) {
+export async function getPaidAmountsByCreditDebitNoteId(prismaClient, userId, options = {}) {
+  const excludeEntryId = options?.excludeEntryId || null;
+  const where = { userId };
+  if (excludeEntryId) where.id = { not: excludeEntryId };
   const entries = await prismaClient.bankEntry.findMany({
-    where: { userId },
+    where,
     select: { billAllocations: true }
   });
   const paidByNoteId = new Map();
@@ -28,8 +31,10 @@ export function mapCreditDebitNoteToPendingItem(note, paidByNoteId) {
   const directPaid = note.isPaid ? roundMoney(note.paidAmount || billAmount) : roundMoney(note.paidAmount || 0);
   const paidAmount = roundMoney(Math.max(bankPaid, directPaid));
   const pendingAmount = roundMoney(Math.max(billAmount - paidAmount, 0));
+  const noteType = parseNoteType(`${note.noteKind} note (${note.noteSide})`);
   const adjustDirection = getAdjustDirection(note.noteKind, note.noteSide);
-  const typeLabel = `${note.noteKind === 'credit' ? 'Credit' : 'Debit'} Note (${note.noteSide === 'sales' ? 'Sales' : 'Purchase'})`;
+  const typeLabel = noteType?.value
+    || `${note.noteKind === 'credit' ? 'Credit' : 'Debit'} Note (${note.noteSide === 'sales' ? 'Sales' : 'Purchase'})`;
 
   return {
     billId: note.id,
@@ -164,7 +169,7 @@ async function resolvePartyAliases(prismaClient, userId, partyName, partyType) {
   return { names, customerIds, supplierIds };
 }
 
-export async function getPendingCreditDebitNotes(prismaClient, userId, partyName, partyType) {
+export async function getPendingCreditDebitNotes(prismaClient, userId, partyName, partyType, excludeEntryId = null) {
   if (!partyName?.trim() || partyType === 'other') {
     return [];
   }
@@ -174,7 +179,7 @@ export async function getPendingCreditDebitNotes(prismaClient, userId, partyName
       where: { userId, status: { not: 'cancelled' } },
       orderBy: [{ noteDate: 'asc' }, { createdAt: 'asc' }]
     }),
-    getPaidAmountsByCreditDebitNoteId(prismaClient, userId),
+    getPaidAmountsByCreditDebitNoteId(prismaClient, userId, { excludeEntryId }),
     resolvePartyAliases(prismaClient, userId, partyName, partyType)
   ]);
 

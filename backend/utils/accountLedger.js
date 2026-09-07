@@ -315,15 +315,36 @@ export async function getSupplierLedgerParties(prisma, userId) {
   });
 }
 
-/** Single-account list: customers + suppliers merged by name (Dynamic Ledger). */
+export async function getCompanyLedgerMeta(prisma, userId) {
+  const [profile, user] = await Promise.all([
+    prisma.businessProfile.findUnique({ where: { userId } }),
+    prisma.user.findUnique({ where: { id: userId }, select: { firmName: true, name: true } })
+  ]);
+  const partyName = String(
+    profile?.tradeName || profile?.legalName || user?.firmName || user?.name || 'Company'
+  ).trim() || 'Company';
+  return {
+    partyType: 'company',
+    partyName,
+    customerId: null,
+    supplierId: null,
+    gstNumber: profile?.gstNumber || null,
+    mobileNumber: profile?.mobileNumber || null,
+    entryCount: 0,
+    runningBalance: 0
+  };
+}
+
+/** Single-account list: company first, then customers + suppliers merged by name. */
 export async function getAllLedgerParties(prisma, userId) {
-  const [customers, suppliers, bankNames] = await Promise.all([
+  const [customers, suppliers, bankNames, company] = await Promise.all([
     getCustomerLedgerParties(prisma, userId),
     getSupplierLedgerParties(prisma, userId),
     prisma.bankEntry.findMany({
       where: { userId, bankName: { not: null } },
       select: { bankName: true, amount: true, entryType: true }
-    })
+    }),
+    getCompanyLedgerMeta(prisma, userId)
   ]);
   const map = new Map();
   for (const party of customers) {
@@ -393,11 +414,12 @@ export async function getAllLedgerParties(prisma, userId) {
       runningBalance: info.balance
     });
   }
-  return Array.from(map.values()).sort((a, b) => a.partyName.localeCompare(b.partyName));
+  const parties = Array.from(map.values()).sort((a, b) => a.partyName.localeCompare(b.partyName));
+  return [company, ...parties];
 }
 
 function finalizeLedgerRows(rawEntries, partyType, partyName, extra = {}, opening = null) {
-  const mode = partyType === 'customer' ? 'customer' : 'supplier';
+  const mode = partyType === 'supplier' || partyType === 'both' ? 'supplier' : 'customer';
   let openingRunning = 0;
   let openingDebit = 0;
   let openingCredit = 0;
@@ -619,6 +641,351 @@ export async function buildUnifiedPartyLedger(prisma, userId, { partyName, suppl
     {
       supplierId: resolvedSupplierId,
       customerId: customerId || null,
+      fromDate: fromDate || null,
+      toDate: toDate || null
+    },
+    { debit: openingDebit, credit: openingCredit }
+  );
+}
+
+function companyRow(row, partyName) {
+  const name = String(partyName || '').trim();
+  if (!name) return row;
+  return { ...row, account: name };
+}
+
+/** Full books of our company — every party voucher in one ledger. */
+export async function buildCompanySelfLedger(prisma, userId, { fromDate, toDate } = {}) {
+  const company = await getCompanyLedgerMeta(prisma, userId);
+  const [
+    orders,
+    invoices,
+    purchaseBills,
+    bankEntries,
+    salesNotes,
+    purchaseNotes,
+    greyPurchases,
+    greyReturns,
+    millReceipts,
+    workReceipts
+  ] = await Promise.all([
+    prisma.order.findMany({
+      where: {
+        userId,
+        status: 'completed',
+        OR: [{ transactionType: null }, { transactionType: { not: 'SALES ORDERS' } }]
+      },
+      include: { customer: true },
+      orderBy: [{ orderDate: 'asc' }, { createdAt: 'asc' }]
+    }),
+    prisma.salesInvoice.findMany({
+      where: { userId },
+      include: { customer: true, order: { select: { id: true, buyerName: true, typeBillNumber: true, transactionType: true } } },
+      orderBy: [{ invoiceDate: 'asc' }, { createdAt: 'asc' }]
+    }),
+    prisma.purchaseBill.findMany({
+      where: { userId, status: 'posted' },
+      include: { supplier: true },
+      orderBy: [{ billDate: 'asc' }, { createdAt: 'asc' }]
+    }),
+    prisma.bankEntry.findMany({
+      where: { userId },
+      orderBy: [{ entryDate: 'asc' }, { createdAt: 'asc' }]
+    }),
+    prisma.creditDebitNote.findMany({
+      where: { userId, noteSide: 'sales', status: { not: 'cancelled' } },
+      orderBy: [{ noteDate: 'asc' }, { createdAt: 'asc' }]
+    }),
+    prisma.creditDebitNote.findMany({
+      where: { userId, noteSide: 'purchase', status: { not: 'cancelled' } },
+      orderBy: [{ noteDate: 'asc' }, { createdAt: 'asc' }]
+    }),
+    prisma.greyPurchase.findMany({
+      where: { userId, status: { not: 'cancelled' } },
+      orderBy: [{ billDate: 'asc' }, { createdAt: 'asc' }]
+    }),
+    prisma.greyPurchaseReturn.findMany({
+      where: { userId, status: { not: 'cancelled' } },
+      include: { greyPurchase: { select: { billNo: true, partyName: true } } },
+      orderBy: [{ returnDate: 'asc' }, { createdAt: 'asc' }]
+    }),
+    prisma.millReceipt.findMany({
+      where: { userId, status: { not: 'cancelled' } },
+      orderBy: [{ receiptDate: 'asc' }, { createdAt: 'asc' }]
+    }),
+    prisma.workReceipt.findMany({
+      where: { userId, status: { not: 'cancelled' } },
+      orderBy: [{ receiptDate: 'asc' }, { createdAt: 'asc' }]
+    })
+  ]);
+
+  const invoicedOrderIds = new Set(invoices.map(inv => inv.orderId));
+  const paidByBill = paidInfoByBillId(bankEntries);
+  const settlementByUnadjId = unadjSettlementInfo(bankEntries);
+  const rawEntries = [];
+
+  for (const order of orders) {
+    if (invoicedOrderIds.has(order.id)) continue;
+    const amount = calculateOrderGrandTotal(order);
+    if (amount <= 0) continue;
+    const billNo = order.typeBillNumber != null ? String(order.typeBillNumber) : (order.orderNumber || order.invoiceNumber || order.id.slice(-6));
+    const goodsReturn = isSalesGoodsReturn(order.transactionType);
+    const disc = resolveDiscountJournal(order.transactionType, calculateOrderDiscountAmount(order));
+    const mainAmount = disc ? roundMoney(amount + disc.amount) : amount;
+    const paidInfo = paidByBill.get(order.id);
+    const paidOn = paidInfo && paidInfo.amount + 0.001 >= amount ? formatPaidOnRemark(paidInfo.date) : '';
+    const party = getOrderPartyName(order);
+    rawEntries.push(companyRow({
+      id: `order-${order.id}`,
+      sourceType: 'order',
+      sourceId: order.id,
+      date: order.orderDate || order.createdAt,
+      voucherNumber: order.orderNumber || String(order.invoiceNumber || '-'),
+      billNumber: billNo,
+      account: order.transactionType || 'SALES',
+      particulars: paidOn || (goodsReturn ? `Sales goods return #${billNo}` : `Sales bill / order #${billNo}`),
+      remarks: paidOn,
+      debitAmount: goodsReturn ? 0 : mainAmount,
+      creditAmount: goodsReturn ? mainAmount : 0
+    }, party));
+  }
+
+  for (const invoice of invoices) {
+    const buyerSnapshot = invoice.buyerSnapshot && typeof invoice.buyerSnapshot === 'object' ? invoice.buyerSnapshot : {};
+    const customerName = invoice.customer?.organizationName || buyerSnapshot.name || '';
+    const amount = roundMoney(invoice.grandTotal);
+    if (amount <= 0) continue;
+    const paidInfo = paidByBill.get(invoice.id) || (invoice.orderId ? paidByBill.get(invoice.orderId) : null);
+    const paidOn = paidInfo && paidInfo.amount + 0.001 >= amount ? formatPaidOnRemark(paidInfo.date) : '';
+    rawEntries.push(companyRow({
+      id: `invoice-${invoice.id}`,
+      sourceType: 'sales_invoice',
+      sourceId: invoice.id,
+      date: invoice.invoiceDate,
+      voucherNumber: invoice.order?.orderNumber || invoice.invoiceNumber,
+      billNumber: invoice.invoiceNumber,
+      account: invoice.order?.transactionType || 'SALES INVOICE',
+      particulars: paidOn || `Sales invoice #${invoice.invoiceNumber}`,
+      remarks: paidOn,
+      debitAmount: amount,
+      creditAmount: 0
+    }, customerName));
+  }
+
+  for (const bill of purchaseBills) {
+    const amount = roundMoney(bill.grandTotal);
+    if (amount <= 0) continue;
+    const purchaseReturn = isPurchaseReturn(bill.transactionType);
+    const disc = resolveDiscountJournal(bill.transactionType, bill.discountAmount);
+    const mainAmount = disc ? roundMoney(amount + disc.amount) : amount;
+    const paidInfo = paidByBill.get(bill.id);
+    const paidOn = !purchaseReturn && paidInfo && paidInfo.amount + 0.001 >= amount
+      ? formatPaidOnRemark(paidInfo.date)
+      : '';
+    rawEntries.push(companyRow({
+      id: `bill-${bill.id}`,
+      sourceType: 'purchase_bill',
+      sourceId: bill.id,
+      date: bill.billDate || bill.createdAt,
+      voucherNumber: bill.voucherNumber || '-',
+      billNumber: bill.billNumber || String(bill.typeBillNumber || '-'),
+      account: bill.purchaseAccount || bill.transactionType || 'FINISH PURCHASE',
+      particulars: paidOn || (purchaseReturn
+        ? `Purchase return #${bill.billNumber || bill.typeBillNumber || '-'}`
+        : `Purchase bill #${bill.billNumber || bill.typeBillNumber || '-'}`),
+      remarks: paidOn,
+      debitAmount: purchaseReturn ? mainAmount : 0,
+      creditAmount: purchaseReturn ? 0 : mainAmount
+    }, bill.supplier?.name || bill.supplierName));
+  }
+
+  for (const note of salesNotes) {
+    const amount = roundMoney(note.netAmountAfterTds || note.netAmount || note.grossAmount);
+    if (amount <= 0) continue;
+    const isCredit = note.noteKind === 'credit';
+    rawEntries.push(companyRow({
+      id: `note-${note.id}`,
+      sourceType: 'credit_debit_note',
+      sourceId: note.id,
+      date: note.noteDate,
+      voucherNumber: String(note.voucherNumber || note.noteNumber || '-'),
+      billNumber: note.noteNumber || String(note.voucherNumber || '-'),
+      account: postingSaleOrPurchaseAccount(parseNoteType(`${note.noteKind} note (${note.noteSide})`)?.series) || 'DISCOUNT A/C SALES',
+      particulars: `${note.noteKind === 'credit' ? 'Credit' : 'Debit'} note #${note.noteNumber || note.voucherNumber}`,
+      debitAmount: isCredit ? 0 : amount,
+      creditAmount: isCredit ? amount : 0
+    }, note.partyName));
+  }
+
+  for (const note of purchaseNotes) {
+    const amount = roundMoney(note.netAmountAfterTds || note.netAmount || note.grossAmount);
+    if (amount <= 0) continue;
+    const isCredit = note.noteKind === 'credit';
+    rawEntries.push(companyRow({
+      id: `note-${note.id}`,
+      sourceType: 'credit_debit_note',
+      sourceId: note.id,
+      date: note.noteDate,
+      voucherNumber: String(note.voucherNumber || note.noteNumber || '-'),
+      billNumber: note.noteNumber || String(note.voucherNumber || '-'),
+      account: postingSaleOrPurchaseAccount(parseNoteType(`${note.noteKind} note (${note.noteSide})`)?.series) || 'DISCOUNT A/C PURCHASE',
+      particulars: `${note.noteKind === 'credit' ? 'Credit' : 'Debit'} note #${note.noteNumber || note.voucherNumber}`,
+      debitAmount: isCredit ? 0 : amount,
+      creditAmount: isCredit ? amount : 0
+    }, note.partyName));
+  }
+
+  for (const grey of greyPurchases) {
+    const amount = roundMoney(grey.netAmount);
+    if (amount <= 0) continue;
+    rawEntries.push(companyRow({
+      id: `grey-${grey.id}`,
+      sourceType: 'grey_purchase',
+      sourceId: grey.id,
+      date: grey.billDate || grey.createdAt,
+      voucherNumber: String(grey.srNo || '-'),
+      billNumber: grey.billNo || String(grey.srNo || '-'),
+      account: 'GREY PURCHASE',
+      particulars: grey.quality ? String(grey.quality) : '',
+      remarks: grey.remarks || '',
+      debitAmount: 0,
+      creditAmount: amount
+    }, grey.partyName));
+  }
+
+  for (const ret of greyReturns) {
+    const amount = roundMoney(ret.netAmount);
+    if (amount <= 0) continue;
+    rawEntries.push(companyRow({
+      id: `grey-return-${ret.id}`,
+      sourceType: 'grey_purchase_return',
+      sourceId: ret.id,
+      date: ret.returnDate || ret.createdAt,
+      voucherNumber: String(ret.voucherNo || ret.challanNo || '-'),
+      billNumber: ret.billNo || ret.refBillNo || String(ret.voucherNo || '-'),
+      account: ret.saleAccount || 'GREY PURCHASE RETURN',
+      particulars: ret.quality ? String(ret.quality) : '',
+      remarks: ret.remarks || '',
+      debitAmount: amount,
+      creditAmount: 0
+    }, ret.partyName || ret.greyPurchase?.partyName));
+  }
+
+  for (const receipt of millReceipts) {
+    if (String(receipt.processType || '').toUpperCase() === 'RETURN') continue;
+    const tdsPercent = Number(receipt.tdsPercent) || 0;
+    let tdsAmount = roundMoney(receipt.tdsAmount || 0);
+    if (tdsAmount <= 0 && tdsPercent > 0) {
+      const base = roundMoney(receipt.tdsOnAmt || receipt.taxableAmount || receipt.jobAmount || 0);
+      tdsAmount = roundMoney(base * tdsPercent / 100);
+    }
+    const invoiceValue = roundMoney(
+      receipt.invoiceValue || (Number(receipt.netAfterTds || 0) + tdsAmount) || 0
+    );
+    if (invoiceValue <= 0 && tdsAmount <= 0) continue;
+    if (invoiceValue > 0) {
+      rawEntries.push(companyRow({
+        id: `mill-receipt-${receipt.id}`,
+        sourceType: 'mill_receipt',
+        sourceId: receipt.id,
+        date: receipt.receiptDate || receipt.createdAt,
+        voucherNumber: String(receipt.voucherNo || '-'),
+        billNumber: receipt.billNo || String(receipt.voucherNo || '-'),
+        account: 'JOB CHARGES',
+        particulars: receipt.quality || receipt.lotNo || '',
+        remarks: receipt.remarks || '',
+        debitAmount: 0,
+        creditAmount: invoiceValue
+      }, receipt.millName));
+    }
+    if (tdsAmount > 0) {
+      rawEntries.push(companyRow({
+        id: `mill-receipt-tds-${receipt.id}`,
+        sourceType: 'mill_receipt_tds',
+        sourceId: receipt.id,
+        date: receipt.receiptDate || receipt.createdAt,
+        voucherNumber: String(receipt.voucherNo || '-'),
+        billNumber: receipt.billNo || String(receipt.voucherNo || '-'),
+        account: postingTdsAccount(receipt.entryType) || 'TDS PAYABLE A/C',
+        particulars: `TDS ${roundMoney(tdsPercent)}%`,
+        debitAmount: tdsAmount,
+        creditAmount: 0
+      }, receipt.millName));
+    }
+  }
+
+  for (const receipt of workReceipts) {
+    const tdsPercent = Number(receipt.tdsPercent) || 0;
+    const taxable = roundMoney(receipt.taxableAmount || receipt.grossAmount || 0);
+    const tdsAmount = tdsPercent > 0 ? roundMoney(taxable * tdsPercent / 100) : 0;
+    const invoiceValue = roundMoney(
+      receipt.invoiceValue || (Number(receipt.netAfterTds || 0) + tdsAmount) || receipt.taxableAmount || 0
+    );
+    if (invoiceValue <= 0 && tdsAmount <= 0) continue;
+    if (invoiceValue > 0) {
+      rawEntries.push(companyRow({
+        id: `work-receipt-${receipt.id}`,
+        sourceType: 'work_receipt',
+        sourceId: receipt.id,
+        date: receipt.receiptDate || receipt.createdAt,
+        voucherNumber: String(receipt.voucherNo || '-'),
+        billNumber: receipt.billNo || receipt.challanNo || String(receipt.voucherNo || '-'),
+        account: 'EMB JOB CHARGES',
+        particulars: receipt.workType || '',
+        remarks: receipt.remarks || '',
+        debitAmount: 0,
+        creditAmount: invoiceValue
+      }, receipt.partyName));
+    }
+    if (tdsAmount > 0) {
+      rawEntries.push(companyRow({
+        id: `work-receipt-tds-${receipt.id}`,
+        sourceType: 'work_receipt_tds',
+        sourceId: receipt.id,
+        date: receipt.receiptDate || receipt.createdAt,
+        voucherNumber: String(receipt.voucherNo || '-'),
+        billNumber: receipt.billNo || receipt.challanNo || String(receipt.voucherNo || '-'),
+        account: postingTdsAccount(receipt.transactionType) || 'TDS PAYABLE A/C',
+        particulars: `TDS ${roundMoney(tdsPercent)}%`,
+        debitAmount: tdsAmount,
+        creditAmount: 0
+      }, receipt.partyName));
+    }
+  }
+
+  for (const entry of bankEntries) {
+    const row = bankEntryLedgerRow(entry, settlementByUnadjId);
+    if ((row.debitAmount || 0) + (row.creditAmount || 0) <= 0) continue;
+    rawEntries.push(companyRow(row, entry.partyName));
+  }
+
+  const from = toDayStart(fromDate);
+  const to = toDayEnd(toDate);
+  let openingDebit = 0;
+  let openingCredit = 0;
+  if (from) {
+    for (const row of rawEntries) {
+      const d = new Date(row.date);
+      if (d < from) {
+        openingDebit = roundMoney(openingDebit + (row.debitAmount || 0));
+        openingCredit = roundMoney(openingCredit + (row.creditAmount || 0));
+      }
+    }
+  }
+  const filtered = rawEntries.filter(row => {
+    const d = new Date(row.date);
+    if (from && d < from) return false;
+    if (to && d > to) return false;
+    return true;
+  });
+
+  return finalizeLedgerRows(
+    filtered,
+    'company',
+    company.partyName,
+    {
+      supplierId: null,
+      customerId: null,
       fromDate: fromDate || null,
       toDate: toDate || null
     },

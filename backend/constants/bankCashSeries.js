@@ -58,6 +58,19 @@ export function isUnadjAllocation(item) {
   return billType === UNADJ_BILL_TYPE || entryKind === UNADJ_BILL_TYPE || billType === 'unadj payment';
 }
 
+export function isNoteAllocation(item) {
+  if (!item) return false;
+  const billType = String(item.billType || '').trim().toLowerCase();
+  const entryKind = String(item.entryKind || '').trim().toLowerCase();
+  return billType === 'credit_debit_note' || entryKind === 'credit_note' || entryKind === 'debit_note';
+}
+
+export function isDeductAllocation(item) {
+  if (!item) return false;
+  if (isUnadjAllocation(item)) return true;
+  return String(item.adjustDirection || '').toLowerCase() === 'deduct';
+}
+
 /** Empire-style unadj bill no — voucher 4 → "4 B". */
 export function formatUnadjBillNumber(voucherNumber) {
   const v = String(voucherNumber ?? '').trim();
@@ -68,7 +81,7 @@ export function formatUnadjBillNumber(voucherNumber) {
 export function formatBillNosRemark(allocations) {
   if (!Array.isArray(allocations) || allocations.length === 0) return '';
   const nos = allocations
-    .filter(item => item && item.billType !== 'credit_debit_note' && (Number(item.adjustAmount) || 0) > 0)
+    .filter(item => item && (Number(item.adjustAmount) || 0) > 0)
     .map(item => String(item.billNumber || '').trim())
     .filter(Boolean);
   if (!nos.length) return '';

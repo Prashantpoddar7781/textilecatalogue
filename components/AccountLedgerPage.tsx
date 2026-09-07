@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, BookOpen, Loader2, RefreshCw, Search, X } from 'lucide-react';
+import { ArrowLeft, BookOpen, Building2, Loader2, RefreshCw, Search, X } from 'lucide-react';
 import { ledgerApi } from '../services/api';
 import { AccountLedgerEntry, AccountLedgerParty, ErpSession, LedgerEntryDetail } from '../types';
 import { ErpTopMenu } from './ErpTopMenu';
@@ -52,6 +52,11 @@ const defaultFyRange = () => {
   return { from, to };
 };
 
+const partyKey = (party: AccountLedgerParty) =>
+  party.partyType === 'company'
+    ? `${party.partyName}::company::`
+    : `${party.partyName}::${party.supplierId || ''}::${party.customerId || ''}`;
+
 export const AccountLedgerPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const fy = useMemo(() => defaultFyRange(), []);
   const [parties, setParties] = useState<AccountLedgerParty[]>([]);
@@ -76,7 +81,7 @@ export const AccountLedgerPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [error, setError] = useState('');
 
   const selectedParty = useMemo(
-    () => parties.find(p => `${p.partyName}::${p.supplierId || ''}::${p.customerId || ''}` === selectedKey) || null,
+    () => parties.find(p => partyKey(p) === selectedKey) || null,
     [parties, selectedKey]
   );
 
@@ -87,8 +92,8 @@ export const AccountLedgerPage: React.FC<Props> = ({ onBack, erpSession }) => {
       const { parties: fetched } = await ledgerApi.getParties('all');
       setParties(fetched || []);
       if (fetched?.length && !selectedKey) {
-        const first = fetched[0];
-        setSelectedKey(`${first.partyName}::${first.supplierId || ''}::${first.customerId || ''}`);
+        const first = fetched.find(party => party.partyType !== 'company') || fetched[0];
+        setSelectedKey(partyKey(first));
       }
     } catch (err: any) {
       setError(err.message || 'Could not load accounts.');
@@ -113,6 +118,7 @@ export const AccountLedgerPage: React.FC<Props> = ({ onBack, erpSession }) => {
     try {
       const result = await ledgerApi.getAccountLedger({
         partyName: selectedParty.partyName,
+        partyType: selectedParty.partyType,
         supplierId: selectedParty.supplierId,
         customerId: selectedParty.customerId,
         fromDate: fromDate || undefined,
@@ -144,12 +150,18 @@ export const AccountLedgerPage: React.FC<Props> = ({ onBack, erpSession }) => {
 
   const filteredParties = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return parties;
-    return parties.filter(party =>
-      party.partyName.toLowerCase().includes(q)
-      || (party.gstNumber || '').toLowerCase().includes(q)
-      || (party.mobileNumber || '').toLowerCase().includes(q)
-    );
+    const list = !q
+      ? parties
+      : parties.filter(party =>
+        party.partyName.toLowerCase().includes(q)
+        || (party.gstNumber || '').toLowerCase().includes(q)
+        || (party.mobileNumber || '').toLowerCase().includes(q)
+        || (party.partyType === 'company' && 'company'.startsWith(q))
+      );
+    return [
+      ...list.filter(party => party.partyType === 'company'),
+      ...list.filter(party => party.partyType !== 'company')
+    ];
   }, [parties, query]);
 
   const openEntryDetail = async (entry: AccountLedgerEntry) => {
@@ -188,7 +200,7 @@ export const AccountLedgerPage: React.FC<Props> = ({ onBack, erpSession }) => {
         <div className="grid gap-6 lg:grid-cols-[340px_1fr]">
           <section className="rounded-3xl border border-gray-100 bg-white p-4 shadow-sm">
             <h2 className="text-sm font-black uppercase tracking-wide text-gray-900">A/C Name</h2>
-            <p className="mt-1 text-[11px] font-semibold text-gray-500">Single account ledger · all parties</p>
+            <p className="mt-1 text-[11px] font-semibold text-gray-500">Company books, parties, and bank A/Cs</p>
             <div className="relative mt-3">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
               <input
@@ -209,17 +221,29 @@ export const AccountLedgerPage: React.FC<Props> = ({ onBack, erpSession }) => {
                   No accounts yet. Add sales, purchases, mill or work entries first.
                 </p>
               ) : filteredParties.map(party => {
-                const key = `${party.partyName}::${party.supplierId || ''}::${party.customerId || ''}`;
+                const key = partyKey(party);
                 const selected = selectedKey === key;
+                const isCompany = party.partyType === 'company';
                 return (
                   <button
                     key={key}
                     type="button"
                     onClick={() => setSelectedKey(key)}
-                    className={`w-full rounded-2xl border p-3 text-left ${selected ? 'border-sky-300 bg-sky-50' : 'border-gray-100 bg-gray-50'}`}
+                    className={`w-full rounded-2xl border p-3 text-left ${
+                      selected
+                        ? (isCompany ? 'border-indigo-300 bg-indigo-50' : 'border-sky-300 bg-sky-50')
+                        : (isCompany ? 'border-indigo-100 bg-indigo-50/40' : 'border-gray-100 bg-gray-50')
+                    }`}
                   >
-                    <p className="font-black text-gray-900">{party.partyName}</p>
-                    {party.gstNumber && <p className="text-xs text-gray-500">{party.gstNumber}</p>}
+                    <p className="flex items-center gap-2 font-black text-gray-900">
+                      {isCompany && <Building2 className="h-4 w-4 text-indigo-600" />}
+                      {party.partyName}
+                    </p>
+                    {isCompany ? (
+                      <p className="text-[11px] font-bold uppercase tracking-wide text-indigo-600">Your company</p>
+                    ) : party.gstNumber ? (
+                      <p className="text-xs text-gray-500">{party.gstNumber}</p>
+                    ) : null}
                   </button>
                 );
               })}
@@ -240,7 +264,11 @@ export const AccountLedgerPage: React.FC<Props> = ({ onBack, erpSession }) => {
                   <div>
                     <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">A/C</p>
                     <h2 className="text-2xl font-black text-gray-900">{selectedParty.partyName}</h2>
-                    <p className="text-sm text-gray-500">Single account ledger · Dynamic view</p>
+                    <p className="text-sm text-gray-500">
+                      {selectedParty.partyType === 'company'
+                        ? 'Company ledger · all parties and vouchers'
+                        : 'Single account ledger · Dynamic view'}
+                    </p>
                     <div className="mt-3 flex flex-wrap items-end gap-3">
                       <label className="text-xs font-bold text-gray-600">
                         From

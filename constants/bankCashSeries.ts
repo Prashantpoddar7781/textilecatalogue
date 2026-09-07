@@ -1,3 +1,6 @@
+import { CREDIT_DEBIT_NOTE_TYPES } from './creditDebitNoteTypes';
+import { DEFAULT_PURCHASE_TRANSACTION_TYPE, DEFAULT_SALES_TRANSACTION_TYPE, ERP_TRANSACTION_TYPES } from './erpTransactionTypes';
+
 /** Bank / Cash receipt & payment series from Transaction Types master. */
 
 export const BANK_CASH_SERIES = [
@@ -63,6 +66,69 @@ export function isUnadjAllocation(item?: { billType?: string | null; entryKind?:
   return billType === UNADJ_BILL_TYPE || entryKind === UNADJ_BILL_TYPE || billType === 'unadj payment';
 }
 
+export function isNoteAllocation(item?: { billType?: string | null; entryKind?: string | null } | null): boolean {
+  if (!item) return false;
+  const billType = String(item.billType || '').trim().toLowerCase();
+  const entryKind = String(item.entryKind || '').trim().toLowerCase();
+  return billType === 'credit_debit_note' || entryKind === 'credit_note' || entryKind === 'debit_note';
+}
+
+export function isDeductAllocation(item?: { billType?: string | null; entryKind?: string | null; adjustDirection?: string | null } | null): boolean {
+  if (!item) return false;
+  if (isUnadjAllocation(item)) return true;
+  return String(item.adjustDirection || '').toLowerCase() === 'deduct';
+}
+
+export const UNADJ_PAYMENT_TYPE = 'UNADJ PAYMENT';
+
+/** Default Type after Remark: receipt → Finish Sales, payment → Finish Purchase. */
+export function defaultBillTypeForEntry(entryType?: string | null): string {
+  return String(entryType || '').toLowerCase() === 'payment'
+    ? DEFAULT_PURCHASE_TRANSACTION_TYPE
+    : DEFAULT_SALES_TRANSACTION_TYPE;
+}
+
+/** Common Type pick after Remark: sales, purchase, returns, 4 notes, Unadj, frequent cash reasons. */
+export const BANK_SETTLEMENT_COMMON_TYPES = [
+  DEFAULT_SALES_TRANSACTION_TYPE,
+  DEFAULT_PURCHASE_TRANSACTION_TYPE,
+  'SALES GOODS RETURN',
+  'FINISH PURCHASE RETURN',
+  ...CREDIT_DEBIT_NOTE_TYPES.map(type => type.value),
+  UNADJ_PAYMENT_TYPE,
+  'GREY SALES',
+  'GREY PURCHASE',
+  'FINISH SALES (GST)',
+  'CASH SALES',
+  'GREY PURCHASE RETURN',
+  'SALARY EXP A/C'
+];
+
+export function getBankSettlementTypeOptions(): string[] {
+  const seen = new Set<string>();
+  const values: string[] = [];
+  for (const value of [...BANK_SETTLEMENT_COMMON_TYPES, ...ERP_TRANSACTION_TYPES.map(type => type.value)]) {
+    if (seen.has(value)) continue;
+    seen.add(value);
+    values.push(value);
+  }
+  return values;
+}
+
+/** First-letter match: U → Unadj, D → debit notes, C → credit notes. Exact types show the common palette. */
+export function matchBankSettlementTypes(query: string, options: string[]): string[] {
+  const q = String(query || '').trim().toLowerCase();
+  if (!q) return [];
+  const exact = options.find(type => type.toLowerCase() === q);
+  if (exact) {
+    const palette = [exact, ...BANK_SETTLEMENT_COMMON_TYPES.filter(type => type !== exact)];
+    return palette.slice(0, 14);
+  }
+  const starts = options.filter(type => type.toLowerCase().startsWith(q));
+  const rest = options.filter(type => !type.toLowerCase().startsWith(q) && type.toLowerCase().includes(q));
+  return [...starts, ...rest].slice(0, 12);
+}
+
 /** Empire-style unadj bill no — voucher 4 → "4 B". */
 export function formatUnadjBillNumber(voucherNumber?: string | number | null): string {
   const v = String(voucherNumber ?? '').trim();
@@ -73,7 +139,7 @@ export function formatUnadjBillNumber(voucherNumber?: string | number | null): s
 export function formatBillNosRemark(allocations?: Array<{ billNumber?: string | null; billType?: string | null; adjustAmount?: number }> | null): string {
   if (!Array.isArray(allocations) || allocations.length === 0) return '';
   const nos = allocations
-    .filter(item => item && item.billType !== 'credit_debit_note' && (Number(item.adjustAmount) || 0) > 0)
+    .filter(item => item && (Number(item.adjustAmount) || 0) > 0)
     .map(item => String(item.billNumber || '').trim())
     .filter(Boolean);
   if (!nos.length) return '';

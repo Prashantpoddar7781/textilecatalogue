@@ -790,13 +790,15 @@ export const ledgerApi = {
   },
   getAccountLedger: async (params: {
     partyName: string;
+    partyType?: string | null;
     supplierId?: string | null;
     customerId?: string | null;
     fromDate?: string | null;
     toDate?: string | null;
   }) => {
     const query = new URLSearchParams();
-    query.set('partyName', params.partyName);
+    if (params.partyName) query.set('partyName', params.partyName);
+    if (params.partyType) query.set('partyType', params.partyType);
     if (params.supplierId) query.set('supplierId', params.supplierId);
     if (params.customerId) query.set('customerId', params.customerId);
     if (params.fromDate) query.set('fromDate', params.fromDate);

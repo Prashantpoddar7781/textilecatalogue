@@ -41,6 +41,12 @@ export function formatNoteNumber(series, voucherNumber) {
   return voucher;
 }
 
-export function getAdjustDirection(noteKind) {
-  return noteKind === 'credit' ? 'deduct' : 'add';
+/** Bill-wise settlement: sales CN / purchase DN reduce the party; sales DN / purchase CN add. */
+export function getAdjustDirection(noteKind, noteSide) {
+  const kind = String(noteKind || '').toLowerCase();
+  const side = String(noteSide || '').toLowerCase();
+  if (side === 'purchase') {
+    return kind === 'debit' ? 'deduct' : 'add';
+  }
+  return kind === 'credit' ? 'deduct' : 'add';
 }
