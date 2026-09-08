@@ -1,4 +1,5 @@
 import { isExpensePurchaseType } from '../constants/erpTransactionTypes.js';
+import { applyInterestFields } from './interestCalculation.js';
 
 export const OPENING_BANK_BALANCE = 1000000;
 
@@ -165,7 +166,7 @@ export function mapPurchaseBillToPendingBill(bill, paidByBillId, asOfValue = Dat
   const days = daysSince(billDate, asOfValue);
   const bucket = agingBucket(days);
 
-  return {
+  return applyInterestFields({
     billId: bill.id,
     billType: 'purchase_bill',
     billNumber: displayNumber,
@@ -174,7 +175,7 @@ export function mapPurchaseBillToPendingBill(bill, paidByBillId, asOfValue = Dat
     billDate,
     days,
     agingBucket: bucket,
-    grace: 0,
+    grace: bill.grace,
     adatDisc: roundMoney(bill.discountAmount),
     billAmount,
     paidAmount: roundMoney(paidAmount),
@@ -189,7 +190,7 @@ export function mapPurchaseBillToPendingBill(bill, paidByBillId, asOfValue = Dat
     editPath: isExpensePurchaseType(bill.transactionType)
       ? `/erp/expenses?edit=${bill.id}`
       : `/erp/purchase?edit=${bill.id}`
-  };
+  }, bill.supplier || {});
 }
 
 export function mapOrderToPendingBill(order, paidByOrderId, asOfValue = Date.now()) {
@@ -213,7 +214,7 @@ export function mapOrderToPendingBill(order, paidByOrderId, asOfValue = Date.now
   const days = daysSince(billDate, asOfValue);
   const bucket = agingBucket(days);
 
-  return {
+  return applyInterestFields({
     billId: order.id,
     billType: 'order',
     billNumber: displayNumber,
@@ -222,7 +223,7 @@ export function mapOrderToPendingBill(order, paidByOrderId, asOfValue = Date.now
     billDate,
     days,
     agingBucket: bucket,
-    grace: Number(order.grace) || 0,
+    grace: order.grace,
     adatDisc: roundMoney(discountAmount),
     billAmount,
     paidAmount: roundMoney(paidAmount),
@@ -238,5 +239,5 @@ export function mapOrderToPendingBill(order, paidByOrderId, asOfValue = Date.now
     editPath: order.manualType === 'erp_sales'
       ? `/erp/sales?edit=${order.id}&kind=bill`
       : undefined
-  };
+  }, order.customer || {});
 }

@@ -175,6 +175,8 @@ model Customer {
   city              String?
   pincode           String?
   discountRate      Float?
+  dhara             Float?
+  interestRate      Float?
   orders            Order[]
   salesInvoices     SalesInvoice[]
   salesOrders       SalesOrder[]
@@ -498,6 +500,8 @@ model Supplier {
   accountType       String?
   accountGroup      String?
   graceDays         Int?
+  dhara             Float?
+  interestRate      Float?
   brokerName        String?
   contactPersonName String?
   remark            String?

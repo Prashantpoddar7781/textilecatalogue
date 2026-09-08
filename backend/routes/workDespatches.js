@@ -189,13 +189,19 @@ router.get('/meta', authenticateToken, requireActiveSubscription, async (req, re
         name: c.organizationName,
         gstNumber: c.gstNumber,
         state: c.state,
-        brokerName: c.agentName
+        brokerName: c.agentName,
+        dhara: c.dhara ?? c.discountRate,
+        graceDays: c.graceDays,
+        interestRate: c.interestRate
       })),
       ...suppliers.map(s => ({
         name: s.name,
         gstNumber: s.gstNumber,
         state: s.state,
-        brokerName: s.brokerName
+        brokerName: s.brokerName,
+        dhara: s.dhara,
+        graceDays: s.graceDays,
+        interestRate: s.interestRate
       }))
     ].filter(p => p.name);
 

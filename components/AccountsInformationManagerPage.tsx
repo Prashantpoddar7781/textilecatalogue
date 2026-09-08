@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import { ArrowLeft, Loader2, Plus, Search } from 'lucide-react';
-import { ERP_ACCOUNT_TYPES } from '../constants/accountTypes';
 import { partiesApi } from '../services/api';
 import { AccountParty, ErpSession } from '../types';
 import { AccountsInformationDialog } from './AccountsInformationDialog';
@@ -54,7 +53,7 @@ export const AccountsInformationManagerPage: React.FC<Props> = ({ onBack, erpSes
         <section className="mb-4 rounded-2xl border bg-white p-4 shadow-sm">
           <p className="text-[10px] font-black uppercase tracking-widest text-slate-700">Accounts Information Manager</p>
           <p className="mt-1 text-xs text-gray-500">
-            Set A/C Type (Creditors for Goods, Debtor types, Fixed Assets, etc.). Effect shows which statement the party belongs to.
+            Set A/C Type, DHARA (auto-fills bill discount), Grace Days (interest starts after this), and Int. Rate.
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             <div className="relative min-w-[240px] flex-1">
@@ -74,13 +73,14 @@ export const AccountsInformationManagerPage: React.FC<Props> = ({ onBack, erpSes
         </section>
 
         <section className="mb-4 overflow-x-auto rounded-2xl border bg-white shadow-sm">
-          <table className="w-full min-w-[720px] border-collapse text-xs">
+          <table className="w-full min-w-[880px] border-collapse text-xs">
             <thead>
               <tr className="bg-slate-100 text-[10px] font-black uppercase tracking-wide text-slate-800">
                 <th className="border px-2 py-2 text-left">Name</th>
                 <th className="border px-2 py-2 text-left">A/C Type</th>
-                <th className="border px-2 py-2 text-left">Effect On</th>
-                <th className="border px-2 py-2 text-left">Role</th>
+                <th className="border px-2 py-2 text-right">Dhara %</th>
+                <th className="border px-2 py-2 text-right">Grace</th>
+                <th className="border px-2 py-2 text-right">Int. Rate</th>
                 <th className="border px-2 py-2 text-left">City / State</th>
                 <th className="border px-2 py-2 text-left">GSTIN</th>
               </tr>
@@ -88,18 +88,17 @@ export const AccountsInformationManagerPage: React.FC<Props> = ({ onBack, erpSes
             <tbody>
               {loading && (
                 <tr>
-                  <td colSpan={6} className="p-10 text-center">
+                  <td colSpan={7} className="p-10 text-center">
                     <Loader2 className="mx-auto h-6 w-6 animate-spin text-slate-700" />
                   </td>
                 </tr>
               )}
               {!loading && parties.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="p-10 text-center font-bold text-gray-400">No parties yet.</td>
+                  <td colSpan={7} className="p-10 text-center font-bold text-gray-400">No parties yet.</td>
                 </tr>
               )}
               {!loading && parties.map(party => {
-                const effect = ERP_ACCOUNT_TYPES.find(t => t.value === party.accountType)?.effectOn || 'BALANCE SHEET';
                 return (
                   <tr
                     key={`${party.role}-${party.id}`}
@@ -108,8 +107,9 @@ export const AccountsInformationManagerPage: React.FC<Props> = ({ onBack, erpSes
                   >
                     <td className="border px-2 py-1.5 font-bold">{party.name}</td>
                     <td className="border px-2 py-1.5">{party.accountType || '-'}</td>
-                    <td className="border px-2 py-1.5">{effect}</td>
-                    <td className="border px-2 py-1.5 uppercase">{party.role}</td>
+                    <td className="border px-2 py-1.5 text-right tabular-nums">{Number(party.dhara ?? party.discountRate ?? 0).toFixed(2)}</td>
+                    <td className="border px-2 py-1.5 text-right tabular-nums">{party.graceDays ?? 0}</td>
+                    <td className="border px-2 py-1.5 text-right tabular-nums">{Number(party.interestRate ?? 0).toFixed(2)}</td>
                     <td className="border px-2 py-1.5">{[party.city, party.state].filter(Boolean).join(', ') || '-'}</td>
                     <td className="border px-2 py-1.5">{party.gstNumber || '-'}</td>
                   </tr>

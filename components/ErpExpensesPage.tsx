@@ -25,6 +25,7 @@ import { ErpFormShell } from './ErpFormShell';
 import { ErpSaveButton } from './ErpSaveButton';
 import { ErpTopMenu } from './ErpTopMenu';
 import { gstTypeLabel, isInterStateSupply } from '../utils/gstState';
+import { partyDhara, partyGraceDays } from '../utils/partyBillingTerms';
 
 interface Props {
   onBack: () => void;
@@ -49,7 +50,7 @@ const PURCHASE_ACCOUNT_SUGGESTIONS = Array.from(new Set([
   'REPAIR A/C'
 ])).sort((a, b) => a.localeCompare(b));
 
-const blankLine = (lineNo = 1, gstRate = 5, hsnCode = '5407'): SalesLineItem => ({
+const blankLine = (lineNo = 1, gstRate = 5, hsnCode = '5407', discountPercent = 0): SalesLineItem => ({
   lineNo,
   sourceLineNo: lineNo,
   itemName: '',
@@ -64,7 +65,7 @@ const blankLine = (lineNo = 1, gstRate = 5, hsnCode = '5407'): SalesLineItem => 
   rate: 0,
   amount: 0,
   rd: 0,
-  discountPercent: 0,
+  discountPercent,
   discountAmount: 0,
   manualAddLess: 0,
   gstRate,
@@ -294,7 +295,15 @@ export const ErpExpensesPage: React.FC<Props> = ({ onBack, erpSession }) => {
     setPartyMsme(supplier.msmeType || '');
     setState(nextState);
     setStation(supplier.city || '');
-    setLineItems(prev => prev.map(line => calcLine(line, businessState, nextState)));
+    if (!isEditMode) {
+      const pct = partyDhara(supplier);
+      const graceDays = partyGraceDays(supplier);
+      setDhara(String(pct));
+      setGrace(String(graceDays));
+      setLineItems(prev => prev.map(line => calcLine({ ...line, discountPercent: pct }, businessState, nextState)));
+    } else {
+      setLineItems(prev => prev.map(line => calcLine(line, businessState, nextState)));
+    }
   };
 
   const applyPartyByName = (name: string) => {
@@ -329,6 +338,9 @@ export const ErpExpensesPage: React.FC<Props> = ({ onBack, erpSession }) => {
         pincode: party.pincode,
         msmeType: party.msmeType,
         accountType: party.accountType,
+        dhara: party.dhara,
+        graceDays: party.graceDays,
+        interestRate: party.interestRate,
         createdAt: '',
         updatedAt: ''
       }];
@@ -339,7 +351,15 @@ export const ErpExpensesPage: React.FC<Props> = ({ onBack, erpSession }) => {
     setPartyMsme(party.msmeType || '');
     setState(party.state || '');
     setStation(party.city || '');
-    setLineItems(prev => prev.map(line => calcLine(line, businessState, party.state || '')));
+    if (!isEditMode) {
+      const pct = partyDhara(party);
+      const graceDays = partyGraceDays(party);
+      setDhara(String(pct));
+      setGrace(String(graceDays));
+      setLineItems(prev => prev.map(line => calcLine({ ...line, discountPercent: pct }, businessState, party.state || '')));
+    } else {
+      setLineItems(prev => prev.map(line => calcLine(line, businessState, party.state || '')));
+    }
   };
 
   const updateLine = (index: number, key: keyof SalesLineItem, value: string | number) => {
@@ -430,7 +450,7 @@ export const ErpExpensesPage: React.FC<Props> = ({ onBack, erpSession }) => {
         || result.bill.voucherNumber || result.bill.billNumber || '-';
       setSuccess(`Expense #${no} ${isEditMode ? 'updated' : 'saved'}. Credited supplier ledger.`);
       if (!isEditMode) {
-        setLineItems([blankLine(1, defaultGstRate, defaultHsnCode)]);
+        setLineItems([blankLine(1, defaultGstRate, defaultHsnCode, toNum(dhara))]);
         setSupplierBillNo('');
         setOrderRef('');
         setRemarks('');
@@ -587,7 +607,20 @@ export const ErpExpensesPage: React.FC<Props> = ({ onBack, erpSession }) => {
               <label><span className={labelClass}>Screen Series</span><input className={inputClass} value={screenSeries} onChange={e => setScreenSeries(e.target.value)} /></label>
               <label><span className={labelClass}>Party GSTIN</span><input className={inputClass} value={partyGstin} onChange={e => setPartyGstin(e.target.value)} /></label>
               <label><span className={labelClass}>MSME</span><input className={inputClass} value={partyMsme} onChange={e => setPartyMsme(e.target.value)} /></label>
-              <label><span className={labelClass}>Dhara</span><input className={inputClass} type="number" value={dhara} onChange={e => setDhara(e.target.value)} /></label>
+              <label>
+                <span className={labelClass}>Dhara</span>
+                <input
+                  className={inputClass}
+                  type="number"
+                  value={dhara}
+                  onChange={e => {
+                    const next = e.target.value;
+                    setDhara(next);
+                    const pct = toNum(next);
+                    setLineItems(prev => prev.map(line => calcLine({ ...line, discountPercent: pct }, businessState, state)));
+                  }}
+                />
+              </label>
               <label><span className={labelClass}>Grace</span><input className={inputClass} type="number" value={grace} onChange={e => setGrace(e.target.value)} /></label>
               <label><span className={labelClass}>HSN</span><input className={inputClass} value={hsnCode} onChange={e => setHsnCode(e.target.value)} /></label>
               <label className="md:col-span-2"><span className={labelClass}>Remark</span><input className={inputClass} value={remarks} onChange={e => setRemarks(e.target.value)} /></label>
@@ -601,7 +634,7 @@ export const ErpExpensesPage: React.FC<Props> = ({ onBack, erpSession }) => {
               </p>
               <button
                 type="button"
-                onClick={() => setLineItems(prev => [...prev, blankLine(Math.max(0, ...prev.map(line => toNum(line.lineNo))) + 1, defaultGstRate, defaultHsnCode)])}
+                onClick={() => setLineItems(prev => [...prev, blankLine(Math.max(0, ...prev.map(line => toNum(line.lineNo))) + 1, defaultGstRate, defaultHsnCode, toNum(dhara))])}
                 className="inline-flex items-center gap-1 rounded-lg bg-violet-600 px-3 py-1.5 text-[10px] font-black uppercase text-white"
               >
                 <Plus className="h-3.5 w-3.5" /> Add Line

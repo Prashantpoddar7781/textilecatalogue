@@ -139,6 +139,8 @@ export interface Customer {
   city?: string | null;
   pincode?: string | null;
   discountRate?: number | null;
+  dhara?: number | null;
+  interestRate?: number | null;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -443,6 +445,8 @@ export interface Supplier {
   accountType?: string | null;
   accountGroup?: string | null;
   graceDays?: number | null;
+  dhara?: number | null;
+  interestRate?: number | null;
   brokerName?: string | null;
   contactPersonName?: string | null;
   remark?: string | null;
@@ -471,6 +475,9 @@ export interface AccountParty {
   state?: string | null;
   pincode?: string | null;
   graceDays?: number | null;
+  dhara?: number | null;
+  interestRate?: number | null;
+  discountRate?: number | null;
   remark?: string | null;
   msmeType?: string | null;
   udyamNumber?: string | null;
@@ -865,6 +872,8 @@ export interface AccountLedgerParty {
   runningBalance?: number;
 }
 
+export type { InterestReport, InterestReportRow, InterestGraceSource } from './utils/interestCalculation';
+
 export interface LedgerEntryDetailField {
   label: string;
   value: string | number;
@@ -920,6 +929,9 @@ export interface BankBillAllocation {
   billDate?: string | null;
   days: number;
   grace?: number;
+  interestRate?: number;
+  interestDays?: number;
+  interestAmount?: number;
   adatDisc?: number;
   billAmount: number;
   pendingAmount: number;
@@ -984,6 +996,9 @@ export interface BankPendingBill {
   billDate?: string | null;
   days: number;
   grace?: number;
+  interestRate?: number;
+  interestDays?: number;
+  interestAmount?: number;
   adatDisc?: number;
   billAmount: number;
   pendingAmount: number;

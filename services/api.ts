@@ -846,6 +846,34 @@ export const ledgerApi = {
   },
   getEntryDetail: async (sourceType: string, sourceId: string) => {
     return request<{ detail: LedgerEntryDetail }>(`/ledger/entry/${sourceType}/${sourceId}`);
+  },
+  getInterestDefaults: async (params: {
+    partyName: string;
+    partyType?: string | null;
+    supplierId?: string | null;
+    customerId?: string | null;
+  }) => {
+    const query = new URLSearchParams();
+    query.set('partyName', params.partyName);
+    if (params.partyType) query.set('partyType', params.partyType);
+    if (params.supplierId) query.set('supplierId', params.supplierId);
+    if (params.customerId) query.set('customerId', params.customerId);
+    return request<{
+      partyName: string;
+      contactPersonName?: string | null;
+      address?: string | null;
+      city?: string | null;
+      state?: string | null;
+      masterGraceDays: number;
+      masterInterestRate: number;
+      dhara: number;
+    }>(`/ledger/interest-defaults?${query.toString()}`);
+  },
+  getInterestReport: async (payload: Record<string, any>) => {
+    return request<import('../utils/interestCalculation').InterestReport>('/ledger/interest-report', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
   }
 };
 

@@ -13,6 +13,7 @@ import {
   getSupplierLedgerParties
 } from '../utils/accountLedger.js';
 import { buildFinalAccounts, buildFinalAccountsDrill } from '../utils/finalAccounts.js';
+import { loadInterestDefaults, buildPartyInterestReport } from '../utils/interestReport.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -68,6 +69,30 @@ router.get('/final-accounts/drill', authenticateToken, requireActiveSubscription
     });
     res.json(result);
   } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/interest-defaults', authenticateToken, requireActiveSubscription, async (req, res, next) => {
+  try {
+    const result = await loadInterestDefaults(prisma, req.user.userId, {
+      partyName: String(req.query.partyName || '').trim(),
+      partyType: String(req.query.partyType || '').trim(),
+      customerId: req.query.customerId ? String(req.query.customerId) : null,
+      supplierId: req.query.supplierId ? String(req.query.supplierId) : null
+    });
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/interest-report', authenticateToken, requireActiveSubscription, async (req, res, next) => {
+  try {
+    const result = await buildPartyInterestReport(prisma, req.user.userId, req.body || {});
+    res.json(result);
+  } catch (error) {
+    if (error.status) return res.status(error.status).json({ error: error.message });
     next(error);
   }
 });

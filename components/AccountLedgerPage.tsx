@@ -2,7 +2,10 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, BookOpen, Building2, Loader2, RefreshCw, Search, X } from 'lucide-react';
 import { ledgerApi } from '../services/api';
 import { AccountLedgerEntry, AccountLedgerParty, ErpSession, LedgerEntryDetail } from '../types';
+import { InterestReport } from '../utils/interestCalculation';
 import { ErpTopMenu } from './ErpTopMenu';
+import { InterestReportOptionsDialog } from './InterestReportOptionsDialog';
+import { InterestReportView } from './InterestReportView';
 
 interface Props {
   onBack: () => void;
@@ -79,6 +82,8 @@ export const AccountLedgerPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [ledgerLoading, setLedgerLoading] = useState(false);
   const [query, setQuery] = useState('');
   const [error, setError] = useState('');
+  const [optionsOpen, setOptionsOpen] = useState(false);
+  const [interestReport, setInterestReport] = useState<InterestReport | null>(null);
 
   const selectedParty = useMemo(
     () => parties.find(p => partyKey(p) === selectedKey) || null,
@@ -114,6 +119,7 @@ export const AccountLedgerPage: React.FC<Props> = ({ onBack, erpSession }) => {
     }
     setLedgerLoading(true);
     clearEntryDetail();
+    setInterestReport(null);
     setError('');
     try {
       const result = await ledgerApi.getAccountLedger({
@@ -295,6 +301,15 @@ export const AccountLedgerPage: React.FC<Props> = ({ onBack, erpSession }) => {
                       >
                         Apply
                       </button>
+                      {selectedParty.partyType !== 'company' && (
+                        <button
+                          type="button"
+                          onClick={() => { setInterestReport(null); setOptionsOpen(true); }}
+                          className="rounded-xl bg-amber-600 px-3 py-2 text-xs font-black uppercase text-white"
+                        >
+                          Calculate Interest
+                        </button>
+                      )}
                     </div>
                   </div>
                   <div className="rounded-2xl bg-sky-50 px-4 py-3 text-right">
@@ -320,7 +335,11 @@ export const AccountLedgerPage: React.FC<Props> = ({ onBack, erpSession }) => {
                   </div>
                 </div>
 
-                {ledgerLoading ? (
+                {interestReport ? (
+                  <div className="mt-4">
+                    <InterestReportView report={interestReport} onBack={() => setInterestReport(null)} />
+                  </div>
+                ) : ledgerLoading ? (
                   <div className="flex items-center justify-center py-16 text-sm text-gray-500">
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     Loading ledger...
@@ -380,7 +399,7 @@ export const AccountLedgerPage: React.FC<Props> = ({ onBack, erpSession }) => {
                   </div>
                 )}
 
-                {(selectedEntry || detailLoading) && (
+                {!interestReport && (selectedEntry || detailLoading) && (
                   <div className="mt-6 rounded-3xl border border-sky-100 bg-sky-50/60 p-4">
                     <div className="flex items-start justify-between gap-3">
                       <div>
@@ -504,6 +523,15 @@ export const AccountLedgerPage: React.FC<Props> = ({ onBack, erpSession }) => {
           </section>
         </div>
       </main>
+
+      <InterestReportOptionsDialog
+        open={optionsOpen}
+        party={selectedParty}
+        fromDate={fromDate}
+        toDate={toDate}
+        onClose={() => setOptionsOpen(false)}
+        onReport={report => setInterestReport(report)}
+      />
     </div>
   );
 };

@@ -695,6 +695,9 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
           billDate: item.billDate,
           days: item.days || 0,
           grace: item.grace,
+          interestRate: item.interestRate,
+          interestDays: item.interestDays,
+          interestAmount: item.interestAmount,
           adatDisc: item.adatDisc,
           billAmount: item.billAmount,
           pendingAmount: item.pendingAmount,
@@ -1278,6 +1281,8 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                       <tr>
                         <th className="px-3 py-2">Bill</th>
                         <th className="px-3 py-2">Date</th>
+                        <th className="px-3 py-2">Days</th>
+                        <th className="px-3 py-2 text-right">Interest</th>
                         <th className="px-3 py-2">Type</th>
                         <th className="px-3 py-2">V.No</th>
                         <th className="px-3 py-2 text-right">Taxable</th>
@@ -1296,6 +1301,8 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                           >
                             <td className={`px-3 py-2.5 font-black ${deduct ? 'text-violet-800' : 'text-gray-900'}`}>{bill.billNumber}</td>
                             <td className="px-3 py-2.5">{formatDate(bill.billDate)}</td>
+                            <td className="px-3 py-2.5 tabular-nums">{bill.days || 0}{bill.grace ? ` / ${bill.grace}g` : ''}</td>
+                            <td className="px-3 py-2.5 text-right font-semibold text-violet-800">{formatMoney(bill.interestAmount || 0)}</td>
                             <td className={`px-3 py-2.5 text-xs font-semibold ${deduct ? 'text-violet-700' : 'text-gray-600'}`}>
                               {bill.transactionType || '-'}
                             </td>

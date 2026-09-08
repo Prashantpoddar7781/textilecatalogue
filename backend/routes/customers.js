@@ -31,6 +31,9 @@ const customerSelect = {
   city: true,
   pincode: true,
   discountRate: true,
+  dhara: true,
+  graceDays: true,
+  interestRate: true,
   createdAt: true,
   updatedAt: true
 };
@@ -71,7 +74,9 @@ router.post('/', authenticateToken, requireActiveSubscription, [
         state: optionalString(req.body.state),
         city: optionalString(req.body.city),
         pincode: optionalString(req.body.pincode),
-        discountRate: optionalNumber(req.body.discountRate)
+        dhara: optionalNumber(req.body.dhara ?? req.body.discountRate),
+        interestRate: optionalNumber(req.body.interestRate),
+        discountRate: optionalNumber(req.body.dhara ?? req.body.discountRate)
       },
       select: customerSelect
     });

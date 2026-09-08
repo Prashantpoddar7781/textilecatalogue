@@ -27,8 +27,8 @@ const money = (v: number) => Number(v || 0).toLocaleString('en-IN', {
 const formatDate = (v?: string | null) => (v ? new Date(v).toLocaleDateString('en-IN') : '-');
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
-const DETAIL_COL_COUNT = 15;
-const SUMMARY_COL_COUNT = 10;
+const DETAIL_COL_COUNT = 18;
+const SUMMARY_COL_COUNT = 11;
 
 const thClass = 'border border-amber-200 bg-amber-50 px-2 py-2 text-center text-[10px] font-black uppercase tracking-wide text-amber-950';
 const tdClass = 'border border-slate-200 px-2 py-1.5 align-middle';
@@ -254,12 +254,13 @@ export const OutstandingPaymentReportPage: React.FC<Props> = ({ onBack, erpSessi
             {view === 'summary' ? (
               <table className="w-full min-w-[1100px] border-collapse text-xs" style={{ tableLayout: 'fixed' }}>
                 <colgroup>
-                  <col style={{ width: '18%' }} />
+                  <col style={{ width: '16%' }} />
                   <col style={{ width: '6%' }} />
-                  <col style={{ width: '10%' }} />
-                  <col style={{ width: '10%' }} />
-                  <col style={{ width: '10%' }} />
-                  {AGING_BUCKETS.map(bucket => <col key={bucket} style={{ width: '9.2%' }} />)}
+                  <col style={{ width: '9%' }} />
+                  <col style={{ width: '9%' }} />
+                  <col style={{ width: '9%' }} />
+                  <col style={{ width: '9%' }} />
+                  {AGING_BUCKETS.map(bucket => <col key={bucket} style={{ width: '8.4%' }} />)}
                 </colgroup>
                 <thead>
                   <tr>
@@ -268,6 +269,7 @@ export const OutstandingPaymentReportPage: React.FC<Props> = ({ onBack, erpSessi
                     <th className={thClass}>Bill Amt</th>
                     <th className={thClass}>Received</th>
                     <th className={thClass}>Balance</th>
+                    <th className={thClass}>Interest</th>
                     {bucketHeaders.map(bucket => (
                       <th key={bucket} className={thBucket}>{bucket}</th>
                     ))}
@@ -296,6 +298,7 @@ export const OutstandingPaymentReportPage: React.FC<Props> = ({ onBack, erpSessi
                         <td className={tdNum}>{money(party.billAmount)}</td>
                         <td className={tdNum}>{money(party.paidAmount)}</td>
                         <td className={`${tdNum} font-black text-rose-700`}>{money(party.pendingAmount)}</td>
+                        <td className={`${tdNum} font-bold text-violet-800`}>{money(party.interestAmount)}</td>
                         {bucketHeaders.map(bucket => (
                           <td key={bucket} className={`${tdBucket} font-semibold ${Number(party[bucket]) > 0 ? 'bg-amber-50 text-amber-950' : 'text-slate-400'}`}>
                             {money(party[bucket])}
@@ -310,12 +313,14 @@ export const OutstandingPaymentReportPage: React.FC<Props> = ({ onBack, erpSessi
                           title={row.editPath ? 'Open bill' : undefined}
                         >
                           <td className={`${tdClass} pl-5 text-gray-700`}>
-                            Bill {row.billNumber} · {formatDate(row.billDate)} · {row.days}d ({row.agingBucket})
+                            Bill {row.billNumber} · {formatDate(row.billDate)} · {row.days}d / grace {row.grace || 0}
+                            {Number(row.interestAmount) > 0 ? ` · int ${money(row.interestAmount)}` : ''}
                           </td>
                           <td className={tdNum}>1</td>
                           <td className={tdNum}>{money(row.billAmount)}</td>
                           <td className={tdNum}>{money(row.paidAmount)}</td>
                           <td className={`${tdNum} font-bold text-rose-700`}>{money(row.pendingAmount)}</td>
+                          <td className={`${tdNum} font-semibold text-violet-800`}>{money(row.interestAmount)}</td>
                           {bucketHeaders.map(bucket => {
                             const value = Number(row.buckets?.[bucket]) || 0;
                             const active = row.agingBucket === bucket && value > 0;
@@ -340,6 +345,7 @@ export const OutstandingPaymentReportPage: React.FC<Props> = ({ onBack, erpSessi
                     <td className={`${tdNum} border-amber-800 font-black`}>{money(totals.billAmount)}</td>
                     <td className={`${tdNum} border-amber-800 font-black`}>{money(totals.paidAmount)}</td>
                     <td className={`${tdNum} border-amber-800 font-black`}>{money(totals.pendingAmount)}</td>
+                    <td className={`${tdNum} border-amber-800 font-black`}>{money(totals.interestAmount)}</td>
                     {bucketHeaders.map(bucket => (
                       <td key={bucket} className={`${tdBucket} border-amber-800 font-black`}>
                         {money(totals[bucket])}
@@ -349,19 +355,21 @@ export const OutstandingPaymentReportPage: React.FC<Props> = ({ onBack, erpSessi
                 </tfoot>
               </table>
             ) : (
-              <table className="w-full min-w-[1280px] border-collapse text-xs" style={{ tableLayout: 'fixed' }}>
+              <table className="w-full min-w-[1480px] border-collapse text-xs" style={{ tableLayout: 'fixed' }}>
                 <colgroup>
-                  <col style={{ width: '12%' }} />
-                  <col style={{ width: '8%' }} />
-                  <col style={{ width: '6%' }} />
+                  <col style={{ width: '11%' }} />
+                  <col style={{ width: '7%' }} />
                   <col style={{ width: '5%' }} />
+                  <col style={{ width: '4%' }} />
+                  <col style={{ width: '4%' }} />
+                  <col style={{ width: '5%' }} />
+                  <col style={{ width: '6%' }} />
                   <col style={{ width: '7%' }} />
-                  <col style={{ width: '8%' }} />
-                  <col style={{ width: '8%' }} />
-                  <col style={{ width: '8%' }} />
-                  {AGING_BUCKETS.map(bucket => <col key={bucket} style={{ width: '6.2%' }} />)}
-                  <col style={{ width: '8%' }} />
                   <col style={{ width: '7%' }} />
+                  <col style={{ width: '7%' }} />
+                  {AGING_BUCKETS.map(bucket => <col key={bucket} style={{ width: '5.4%' }} />)}
+                  <col style={{ width: '7%' }} />
+                  <col style={{ width: '6%' }} />
                 </colgroup>
                 <thead>
                   <tr>
@@ -369,10 +377,13 @@ export const OutstandingPaymentReportPage: React.FC<Props> = ({ onBack, erpSessi
                     <th className={thClass}>Bill Date</th>
                     <th className={thClass}>Bill No.</th>
                     <th className={thClass}>Days</th>
+                    <th className={thClass}>Grace</th>
+                    <th className={thClass}>Int. Days</th>
                     <th className={thClass}>Bucket</th>
                     <th className={thClass}>Bill Amt</th>
                     <th className={thClass}>Received</th>
                     <th className={thClass}>Balance</th>
+                    <th className={thClass}>Interest</th>
                     {bucketHeaders.map(bucket => (
                       <th key={bucket} className={thBucket}>{bucket}</th>
                     ))}
@@ -403,6 +414,7 @@ export const OutstandingPaymentReportPage: React.FC<Props> = ({ onBack, erpSessi
                             {view === 'date-wise' ? `Date: ${group}` : group}
                             <span className="ml-3 text-xs font-bold text-amber-800">
                               {groupRows.length} bill{groupRows.length === 1 ? '' : 's'} · Balance {money(groupRows.reduce((s, r) => s + (Number(r.pendingAmount) || 0), 0))}
+                              {' · Int '}{money(groupRows.reduce((s, r) => s + (Number(r.interestAmount) || 0), 0))}
                             </span>
                           </td>
                         </tr>
@@ -418,10 +430,13 @@ export const OutstandingPaymentReportPage: React.FC<Props> = ({ onBack, erpSessi
                           <td className={`${tdClass} text-center`}>{formatDate(row.billDate)}</td>
                           <td className={`${tdClass} text-center font-black text-indigo-800`}>{row.billNumber}</td>
                           <td className={`${tdNum}`}>{row.days}</td>
+                          <td className={`${tdNum}`}>{row.grace || 0}</td>
+                          <td className={`${tdNum}`}>{row.interestDays || 0}</td>
                           <td className={`${tdClass} text-center font-semibold text-amber-800`}>{row.agingBucket}</td>
                           <td className={tdNum}>{money(row.billAmount)}</td>
                           <td className={tdNum}>{money(row.paidAmount)}</td>
                           <td className={`${tdNum} font-black text-rose-700`}>{money(row.pendingAmount)}</td>
+                          <td className={`${tdNum} font-bold text-violet-800`}>{money(row.interestAmount)}</td>
                           {bucketHeaders.map(bucket => {
                             const value = Number(row.buckets?.[bucket]) || 0;
                             const active = row.agingBucket === bucket && value > 0;
@@ -443,10 +458,11 @@ export const OutstandingPaymentReportPage: React.FC<Props> = ({ onBack, erpSessi
                 </tbody>
                 <tfoot>
                   <tr className="bg-amber-900 text-white">
-                    <td colSpan={5} className={`${tdClass} border-amber-800 text-right font-black`}>Grand Total</td>
+                    <td colSpan={7} className={`${tdClass} border-amber-800 text-right font-black`}>Grand Total</td>
                     <td className={`${tdNum} border-amber-800 font-black`}>{money(totals.billAmount)}</td>
                     <td className={`${tdNum} border-amber-800 font-black`}>{money(totals.paidAmount)}</td>
                     <td className={`${tdNum} border-amber-800 font-black`}>{money(totals.pendingAmount)}</td>
+                    <td className={`${tdNum} border-amber-800 font-black`}>{money(totals.interestAmount)}</td>
                     {bucketHeaders.map(bucket => (
                       <td key={bucket} className={`${tdBucket} border-amber-800 font-black`}>
                         {money(totals[bucket])}

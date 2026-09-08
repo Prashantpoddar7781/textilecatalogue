@@ -20,6 +20,7 @@ import {
   normalizeBillAllocations,
   roundMoney
 } from '../utils/orderBilling.js';
+import { applyInterestFields } from '../utils/interestCalculation.js';
 import {
   ERP_TRANSACTION_TYPES,
   normalizeTransactionType,
@@ -256,20 +257,20 @@ async function getPendingOrderBills(userId, partyName, transactionType, excludeE
       const billAmount = roundMoney(invoice.grandTotal);
       const pendingAmount = roundMoney(Math.max(billAmount - paidAmount, 0));
       const billDate = invoice.invoiceDate;
-      return {
+      return applyInterestFields({
         billId: invoice.id,
         billType: 'sales_invoice',
         billNumber: invoice.invoiceNumber,
         voucherNumber: invoice.order?.orderNumber || invoice.invoiceNumber,
         billDate,
         days: daysSince(billDate),
-        grace: 0,
+        grace: invoice.customer?.graceDays,
         adatDisc: roundMoney(invoice.discountAmount),
         billAmount,
         pendingAmount,
         taxableAmount: roundMoney(invoice.taxableAmount),
         adjustAmount: 0
-      };
+      }, invoice.customer || {});
     })
     .filter(bill => bill.pendingAmount > 0);
 
@@ -683,7 +684,7 @@ router.get('/outstanding-report', authenticateToken, requireActiveSubscription, 
           const buyerSnapshot = invoice.buyerSnapshot && typeof invoice.buyerSnapshot === 'object'
             ? invoice.buyerSnapshot
             : {};
-          return {
+          return applyInterestFields({
             billId: invoice.id,
             billType: 'sales_invoice',
             billNumber: invoice.invoiceNumber,
@@ -691,7 +692,7 @@ router.get('/outstanding-report', authenticateToken, requireActiveSubscription, 
             billDate,
             days,
             agingBucket: agingBucket(days),
-            grace: 0,
+            grace: invoice.customer?.graceDays,
             billAmount,
             paidAmount: roundMoney(paidAmount),
             pendingAmount,
@@ -703,7 +704,7 @@ router.get('/outstanding-report', authenticateToken, requireActiveSubscription, 
             transportName: '',
             transactionType: 'SALES INVOICE',
             editPath: undefined
-          };
+          }, invoice.customer || {});
         })
         .filter(bill => includeSettled || bill.pendingAmount > 0.001);
 
@@ -762,12 +763,14 @@ router.get('/outstanding-report', authenticateToken, requireActiveSubscription, 
       billAmount: 0,
       paidAmount: 0,
       pendingAmount: 0,
+      interestAmount: 0,
       ...emptyBucketTotals()
     };
     for (const row of enriched) {
       totals.billAmount = roundMoneyLocal(totals.billAmount + (Number(row.billAmount) || 0));
       totals.paidAmount = roundMoneyLocal(totals.paidAmount + (Number(row.paidAmount) || 0));
       totals.pendingAmount = roundMoneyLocal(totals.pendingAmount + (Number(row.pendingAmount) || 0));
+      totals.interestAmount = roundMoneyLocal(totals.interestAmount + (Number(row.interestAmount) || 0));
       bumpBucket(totals, row.agingBucket, Number(row.pendingAmount) || 0);
     }
 
@@ -780,6 +783,7 @@ router.get('/outstanding-report', authenticateToken, requireActiveSubscription, 
         billAmount: 0,
         paidAmount: 0,
         pendingAmount: 0,
+        interestAmount: 0,
         ...emptyBucketTotals(),
         rows: []
       };
@@ -787,6 +791,7 @@ router.get('/outstanding-report', authenticateToken, requireActiveSubscription, 
       current.billAmount = roundMoneyLocal(current.billAmount + (Number(row.billAmount) || 0));
       current.paidAmount = roundMoneyLocal(current.paidAmount + (Number(row.paidAmount) || 0));
       current.pendingAmount = roundMoneyLocal(current.pendingAmount + (Number(row.pendingAmount) || 0));
+      current.interestAmount = roundMoneyLocal(current.interestAmount + (Number(row.interestAmount) || 0));
       bumpBucket(current, row.agingBucket, Number(row.pendingAmount) || 0);
       current.rows.push(row);
       partyMap.set(key, current);

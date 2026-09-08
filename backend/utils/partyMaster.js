@@ -15,6 +15,12 @@ const optionalInt = (value) => {
   return Number.isFinite(num) ? Math.trunc(num) : null;
 };
 
+const optionalFloat = (value) => {
+  if (value === undefined || value === null || value === '') return null;
+  const num = Number(value);
+  return Number.isFinite(num) ? num : null;
+};
+
 function normalizeName(value) {
   return optionalString(value)?.toLowerCase() || '';
 }
@@ -74,6 +80,8 @@ export async function findOrCreateSupplier(prisma, userId, payload = {}) {
       : null,
     accountGroup: optionalString(payload.accountGroup),
     graceDays: optionalInt(payload.graceDays),
+    dhara: optionalFloat(payload.dhara ?? payload.discountRate),
+    interestRate: optionalFloat(payload.interestRate),
     brokerName: optionalString(payload.brokerName),
     contactPersonName: optionalString(payload.contactPersonName),
     remark: optionalString(payload.remark)
@@ -97,6 +105,8 @@ export async function findOrCreateSupplier(prisma, userId, payload = {}) {
         accountType: data.accountType || existing.accountType || defaultAccountTypeForRole('supplier'),
         accountGroup: data.accountGroup || existing.accountGroup,
         graceDays: data.graceDays ?? existing.graceDays,
+        dhara: data.dhara ?? existing.dhara,
+        interestRate: data.interestRate ?? existing.interestRate,
         brokerName: data.brokerName || existing.brokerName,
         contactPersonName: data.contactPersonName || existing.contactPersonName,
         remark: data.remark || existing.remark
@@ -145,7 +155,9 @@ export async function findOrCreateCustomer(prisma, userId, payload = {}) {
     state: optionalString(payload.state),
     city: optionalString(payload.city),
     pincode: optionalString(payload.pincode),
-    discountRate: payload.discountRate != null ? Number(payload.discountRate) : null
+    dhara: optionalFloat(payload.dhara ?? payload.discountRate),
+    interestRate: optionalFloat(payload.interestRate),
+    discountRate: optionalFloat(payload.dhara ?? payload.discountRate)
   };
 
   if (existing) {
@@ -168,7 +180,9 @@ export async function findOrCreateCustomer(prisma, userId, payload = {}) {
         state: data.state || existing.state,
         city: data.city || existing.city,
         pincode: data.pincode || existing.pincode,
-        discountRate: data.discountRate ?? existing.discountRate
+        dhara: data.dhara ?? existing.dhara,
+        interestRate: data.interestRate ?? existing.interestRate,
+        discountRate: data.discountRate ?? existing.discountRate ?? existing.dhara
       }
     });
   }

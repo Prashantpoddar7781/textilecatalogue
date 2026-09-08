@@ -36,6 +36,9 @@ function mapParty(row, role) {
     state: row.state || null,
     pincode: row.pincode || null,
     graceDays: row.graceDays ?? null,
+    dhara: row.dhara ?? (role === 'customer' ? row.discountRate : null) ?? null,
+    interestRate: row.interestRate ?? null,
+    discountRate: role === 'customer' ? (row.discountRate ?? row.dhara ?? null) : (row.dhara ?? null),
     remark: row.remark || null,
     msmeType: row.msmeType || null,
     udyamNumber: row.udyamNumber || null,
@@ -129,6 +132,9 @@ router.post('/', authenticateToken, requireActiveSubscription, [
       state: req.body.state,
       pincode: req.body.pincode,
       graceDays: req.body.graceDays,
+      dhara: req.body.dhara,
+      interestRate: req.body.interestRate,
+      discountRate: req.body.dhara ?? req.body.discountRate,
       remark: req.body.remark,
       msmeType: req.body.msmeType,
       udyamNumber: req.body.udyamNumber
@@ -171,6 +177,9 @@ router.put('/:id', authenticateToken, requireActiveSubscription, async (req, res
         state: req.body.state,
         pincode: req.body.pincode,
         graceDays: req.body.graceDays,
+        dhara: req.body.dhara,
+        interestRate: req.body.interestRate,
+        discountRate: req.body.dhara ?? req.body.discountRate,
         remark: req.body.remark
       });
       return res.json({ party: mapParty(customer, 'customer') });
@@ -193,6 +202,8 @@ router.put('/:id', authenticateToken, requireActiveSubscription, async (req, res
       state: req.body.state,
       pincode: req.body.pincode,
       graceDays: req.body.graceDays,
+      dhara: req.body.dhara,
+      interestRate: req.body.interestRate,
       remark: req.body.remark,
       msmeType: req.body.msmeType,
       udyamNumber: req.body.udyamNumber

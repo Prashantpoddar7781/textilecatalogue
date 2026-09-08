@@ -23,6 +23,7 @@ import { ErpFormShell } from './ErpFormShell';
 import { ErpSaveButton } from './ErpSaveButton';
 import { ErpTopMenu } from './ErpTopMenu';
 import { isInterStateSupply } from '../utils/gstState';
+import { partyDhara } from '../utils/partyBillingTerms';
 
 interface Props {
   noteType?: CreditDebitNoteType;
@@ -464,6 +465,7 @@ export const CreditDebitNotePage: React.FC<Props> = ({ noteType: initialNoteType
                   if (c) {
                     setPartyName(c.organizationName);
                     if (c.state) setPlaceOfSupply(c.state);
+                    if (!editingId) setDiscountPercent(String(partyDhara(c) || ''));
                   }
                 }}>
                   <option value="">Select customer</option>
@@ -476,6 +478,7 @@ export const CreditDebitNotePage: React.FC<Props> = ({ noteType: initialNoteType
                   if (s) {
                     setPartyName(s.name);
                     if (s.state) setPlaceOfSupply(s.state);
+                    if (!editingId) setDiscountPercent(String(partyDhara(s) || ''));
                   }
                 }}>
                   <option value="">Select supplier</option>

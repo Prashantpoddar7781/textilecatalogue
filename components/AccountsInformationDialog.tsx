@@ -46,6 +46,8 @@ export const AccountsInformationDialog: React.FC<Props> = ({
   const [accountType, setAccountType] = useState(defaultType);
   const [accountGroup, setAccountGroup] = useState('');
   const [graceDays, setGraceDays] = useState('0');
+  const [dhara, setDhara] = useState('0');
+  const [interestRate, setInterestRate] = useState('0');
   const [address, setAddress] = useState('');
   const [addressLine2, setAddressLine2] = useState('');
   const [city, setCity] = useState('');
@@ -67,6 +69,8 @@ export const AccountsInformationDialog: React.FC<Props> = ({
     setAccountType(editParty?.accountType || suggestedAccountType || suggestedAccountTypeForContext(context));
     setAccountGroup(editParty?.accountGroup || '');
     setGraceDays(String(editParty?.graceDays ?? 0));
+    setDhara(String(editParty?.dhara ?? editParty?.discountRate ?? 0));
+    setInterestRate(String(editParty?.interestRate ?? 0));
     setAddress(editParty?.address || '');
     setAddressLine2(editParty?.addressLine2 || '');
     setCity(editParty?.city || '');
@@ -101,6 +105,9 @@ export const AccountsInformationDialog: React.FC<Props> = ({
         accountType,
         accountGroup: accountGroup.trim() || null,
         graceDays: Number(graceDays) || 0,
+        dhara: Number(dhara) || 0,
+        interestRate: Number(interestRate) || 0,
+        discountRate: Number(dhara) || 0,
         address: address.trim() || null,
         addressLine2: addressLine2.trim() || null,
         city: city.trim() || null,
@@ -152,6 +159,14 @@ export const AccountsInformationDialog: React.FC<Props> = ({
             <label className="xl:col-span-2">
               <span className={labelClass}>Name</span>
               <input className={inputClass} value={name} onChange={e => setName(e.target.value)} autoFocus />
+            </label>
+            <label>
+              <span className={labelClass}>Dhara %</span>
+              <input className={inputClass} type="number" step="0.01" value={dhara} onChange={e => setDhara(e.target.value)} />
+            </label>
+            <label>
+              <span className={labelClass}>Int. Rate %</span>
+              <input className={inputClass} type="number" step="0.01" value={interestRate} onChange={e => setInterestRate(e.target.value)} />
             </label>
             <label className="xl:col-span-2">
               <span className={labelClass}>A/C Type</span>

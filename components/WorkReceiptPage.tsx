@@ -8,6 +8,7 @@ import { AccountsInformationDialog, AddPartyConfirmDialog } from './AccountsInfo
 import { ErpFormShell } from './ErpFormShell';
 import { ErpSaveButton } from './ErpSaveButton';
 import { ErpTopMenu } from './ErpTopMenu';
+import { partyDhara } from '../utils/partyBillingTerms';
 
 interface Props {
   onBack: () => void;
@@ -61,7 +62,7 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [allowUnknownParty, setAllowUnknownParty] = useState(false);
   const [companyName, setCompanyName] = useState('');
   const [transactionTypes, setTransactionTypes] = useState<string[]>([]);
-  const [parties, setParties] = useState<Array<{ name: string; gstNumber?: string | null; state?: string | null; brokerName?: string | null; suggestedTdsPercent?: number | null }>>([]);
+  const [parties, setParties] = useState<Array<{ name: string; gstNumber?: string | null; state?: string | null; brokerName?: string | null; suggestedTdsPercent?: number | null; dhara?: number | null; graceDays?: number | null; interestRate?: number | null }>>([]);
   const [transactionType, setTransactionType] = useState('WORK REC. BILL');
   const gstDocumentType = getGstDocumentType(transactionType);
   const gstReturn = gstReturnSection(transactionType);
@@ -229,6 +230,7 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
     if (match.gstNumber) setPartyGstin(match.gstNumber);
     if (match.brokerName) setBrokerName(match.brokerName);
     if (match.state) setPlaceOfSupply(match.state);
+    if (!isEditMode) setDiscountPercent(String(partyDhara(match) || ''));
     applyTdsDefaults(transactionType, { party: name, gstin: match.gstNumber });
   };
 
@@ -255,9 +257,13 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
         gstNumber: party.gstNumber,
         state: party.state,
         brokerName: party.brokerName,
+        dhara: party.dhara,
+        graceDays: party.graceDays,
+        interestRate: party.interestRate,
         suggestedTdsPercent: suggested
       }];
     });
+    if (!isEditMode) setDiscountPercent(String(partyDhara(party) || ''));
     applyTdsDefaults(transactionType, {
       party: party.name,
       gstin: party.gstNumber,

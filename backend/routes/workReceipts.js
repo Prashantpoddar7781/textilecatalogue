@@ -152,6 +152,9 @@ router.get('/meta', authenticateToken, requireActiveSubscription, async (req, re
           gstNumber: c.gstNumber,
           state: c.state,
           brokerName: c.agentName,
+          dhara: c.dhara ?? c.discountRate,
+          graceDays: c.graceDays,
+          interestRate: c.interestRate,
           suggestedTdsPercent: suggestTdsPercentFromPan(pan)
         };
       }),
@@ -162,6 +165,9 @@ router.get('/meta', authenticateToken, requireActiveSubscription, async (req, re
           gstNumber: s.gstNumber,
           state: s.state,
           brokerName: s.brokerName,
+          dhara: s.dhara,
+          graceDays: s.graceDays,
+          interestRate: s.interestRate,
           suggestedTdsPercent: suggestTdsPercentFromPan(pan)
         };
       })

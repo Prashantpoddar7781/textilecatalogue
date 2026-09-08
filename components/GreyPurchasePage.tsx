@@ -11,6 +11,7 @@ import { ErpTopMenu } from './ErpTopMenu';
 import { ErpFormShell } from './ErpFormShell';
 import { ErpSaveButton } from './ErpSaveButton';
 import { TakaDetailsModal } from './TakaDetailsModal';
+import { partyDhara } from '../utils/partyBillingTerms';
 
 interface Props {
   onBack: () => void;
@@ -236,6 +237,7 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
       }
     }
     if (supplier.msmeType) setPartyMsme(supplier.msmeType);
+    if (!isEditMode) setDiscountPercent(String(partyDhara(supplier) || ''));
   };
 
   const onPartySaved = (party: AccountParty) => {
@@ -252,6 +254,9 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
       pincode: party.pincode,
       msmeType: party.msmeType,
       accountType: party.accountType,
+      dhara: party.dhara,
+      graceDays: party.graceDays,
+      interestRate: party.interestRate,
       createdAt: '',
       updatedAt: ''
     };
