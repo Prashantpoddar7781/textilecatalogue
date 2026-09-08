@@ -13,6 +13,13 @@ interface Props {
   onReport: (report: InterestReport) => void;
 }
 
+const todayIso = () => {
+  const now = new Date();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${now.getFullYear()}-${month}-${day}`;
+};
+
 const inputClass = 'w-full rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-sm font-semibold outline-none focus:border-indigo-400';
 const labelClass = 'mb-1 block text-[10px] font-black uppercase tracking-wide text-gray-500';
 
@@ -35,6 +42,7 @@ export const InterestReportOptionsDialog: React.FC<Props> = ({
   const [graceSource, setGraceSource] = useState<InterestGraceSource>('master');
   const [typedGrace, setTypedGrace] = useState('30');
   const [basedOnChequeDate, setBasedOnChequeDate] = useState(false);
+  const [asOnDate, setAsOnDate] = useState(todayIso);
 
   useEffect(() => {
     if (!open || !party?.partyName) return;
@@ -44,6 +52,7 @@ export const InterestReportOptionsDialog: React.FC<Props> = ({
     setBasedOnChequeDate(false);
     setGraceSource('master');
     setTypedGrace('30');
+    setAsOnDate(todayIso());
     setLoading(true);
     void ledgerApi.getInterestDefaults({
       partyName: party.partyName,
@@ -86,6 +95,7 @@ export const InterestReportOptionsDialog: React.FC<Props> = ({
         supplierId: party.supplierId,
         fromDate,
         toDate,
+        asOnDate,
         daysInYear: Number(daysInYear) || 365,
         interestRate: rate,
         graceSource,
@@ -149,8 +159,13 @@ export const InterestReportOptionsDialog: React.FC<Props> = ({
             <>
               <p className="text-xs font-semibold text-slate-600">
                 Party: <span className="font-black text-slate-900">{party?.partyName}</span>
-                {' · '}{fromDate} to {toDate}
+                {' · '}Ledger {fromDate} to {toDate}
               </p>
+              <label>
+                <span className={labelClass}>As on date</span>
+                <input className={inputClass} type="date" value={asOnDate} onChange={e => setAsOnDate(e.target.value)} />
+                <span className="mt-1 block text-[11px] font-semibold text-gray-400">Defaults to today. Days run through this date, not the ledger year-end.</span>
+              </label>
               <label>
                 <span className={labelClass}>Days in Year</span>
                 <input className={inputClass} type="number" value={daysInYear} onChange={e => setDaysInYear(e.target.value)} />

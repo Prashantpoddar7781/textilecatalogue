@@ -93,6 +93,7 @@ export interface InterestReport {
   };
   fromDate: string | null;
   toDate: string | null;
+  asOnDate?: string | null;
   daysInYear: number;
   interestRate: number;
   graceSource: InterestGraceSource;

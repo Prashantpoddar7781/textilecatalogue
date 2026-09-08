@@ -1,7 +1,7 @@
 import { isExpensePurchaseType } from '../constants/erpTransactionTypes.js';
 import { getCompanyLedgerMeta, buildUnifiedPartyLedger } from './accountLedger.js';
 import { roundMoney } from './orderBilling.js';
-import { buildInterestSides, toDateKey } from './interestCalculation.js';
+import { buildInterestSides, foldDiscountJournals, toDateKey } from './interestCalculation.js';
 
 function uniqueIds(rows, types) {
   return [...new Set(rows.filter(row => types.includes(row.sourceType)).map(row => row.sourceId).filter(Boolean))];
@@ -183,6 +183,7 @@ export async function buildPartyInterestReport(prisma, userId, input = {}) {
 
   const fromDate = toDateKey(input.fromDate);
   const toDate = toDateKey(input.toDate);
+  const asOnDate = toDateKey(input.asOnDate) || toDateKey(new Date());
   const interestRate = Number(input.interestRate);
   if (!(interestRate > 0)) {
     const error = new Error('Enter an interest rate, or save Int. Rate on the party master.');
@@ -206,9 +207,9 @@ export async function buildPartyInterestReport(prisma, userId, input = {}) {
     getCompanyLedgerMeta(prisma, userId)
   ]);
 
-  const entries = await enrichLedgerRows(prisma, userId, ledger.ledger || []);
+  const entries = foldDiscountJournals(await enrichLedgerRows(prisma, userId, ledger.ledger || []));
   const sides = buildInterestSides(entries, {
-    asOnDate: toDate,
+    asOnDate,
     daysInYear: input.daysInYear,
     interestRate,
     graceSource: input.graceSource,
@@ -232,6 +233,7 @@ export async function buildPartyInterestReport(prisma, userId, input = {}) {
     },
     fromDate,
     toDate,
+    asOnDate,
     basedOnChequeDate: Boolean(input.basedOnChequeDate),
     salesTotal,
     ...sides

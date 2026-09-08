@@ -89,6 +89,50 @@ const BILL_GRACE_SOURCE_TYPES = new Set([
   'credit_debit_note'
 ]);
 
+/** Disc A/C JVs split Dhara off the bill. Empire interest uses the net bill, not a receipt. */
+export const DISCOUNT_JOURNAL_PARENT = {
+  order_discount: 'order',
+  sales_invoice_discount: 'sales_invoice',
+  purchase_bill_discount: 'purchase_bill',
+  grey_purchase_discount: 'grey_purchase',
+  grey_purchase_return_discount: 'grey_purchase_return',
+  mill_receipt_discount: 'mill_receipt',
+  work_receipt_discount: 'work_receipt'
+};
+
+export function isDiscountJournalSource(sourceType) {
+  return Boolean(DISCOUNT_JOURNAL_PARENT[String(sourceType || '')]);
+}
+
+export function foldDiscountJournals(entries) {
+  const list = Array.isArray(entries) ? entries : [];
+  const discounts = list.filter(row => isDiscountJournalSource(row.sourceType));
+  if (!discounts.length) return list;
+
+  const byParent = new Map();
+  for (const row of discounts) {
+    const parentType = DISCOUNT_JOURNAL_PARENT[row.sourceType];
+    const key = `${parentType}:${row.sourceId || ''}`;
+    const current = byParent.get(key) || { debit: 0, credit: 0 };
+    current.debit = roundMoney(current.debit + (Number(row.debitAmount) || 0));
+    current.credit = roundMoney(current.credit + (Number(row.creditAmount) || 0));
+    byParent.set(key, current);
+  }
+
+  return list
+    .filter(row => !isDiscountJournalSource(row.sourceType))
+    .map(row => {
+      const disc = byParent.get(`${row.sourceType}:${row.sourceId || ''}`);
+      if (!disc) return row;
+      return {
+        ...row,
+        debitAmount: roundMoney(Math.max(0, (Number(row.debitAmount) || 0) - disc.credit)),
+        creditAmount: roundMoney(Math.max(0, (Number(row.creditAmount) || 0) - disc.debit))
+      };
+    })
+    .filter(row => (Number(row.debitAmount) || 0) > 0 || (Number(row.creditAmount) || 0) > 0);
+}
+
 export function sourceUsesSalePurchaseGrace(sourceType) {
   return BILL_GRACE_SOURCE_TYPES.has(String(sourceType || ''));
 }
@@ -132,6 +176,7 @@ export function buildInterestSides(entries, options = {}) {
 
     const startDate = isBill ? addDays(entryDate, grace) : entryDate;
     const days = inclusiveDays(startDate, asOnDate);
+    if (days <= 0) continue;
     const amount = debitAmount > 0 ? debitAmount : creditAmount;
     const interestAmount = calculateInterestAmount(amount, interestRate, days, daysInYear);
     const row = {

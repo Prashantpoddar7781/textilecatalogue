@@ -41,7 +41,7 @@ export const InterestReportView: React.FC<Props> = ({ report, onBack }) => {
           <p>INT. RATE: {Number(report.interestRate).toFixed(2)}%</p>
           <p>GRACE DAYS: {report.graceDays} ({report.graceSource === 'typed' ? 'typed' : 'master'})</p>
           <p>DAYS / YEAR: {report.daysInYear}</p>
-          <p>DATE-WISE: {formatDate(report.fromDate)} TO {formatDate(report.toDate)}</p>
+          <p>DATE-WISE: {formatDate(report.fromDate)} TO {formatDate(report.asOnDate || report.toDate)}</p>
         </div>
       </div>
 
