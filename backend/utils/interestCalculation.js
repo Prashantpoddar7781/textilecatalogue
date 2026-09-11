@@ -207,6 +207,7 @@ export function buildInterestSides(entries, options = {}) {
   const ledgerBalance = roundMoney(debitTotal - creditTotal);
 
   return {
+    viewKind: 'generate',
     daysInYear,
     interestRate,
     graceSource,
@@ -224,5 +225,177 @@ export function buildInterestSides(entries, options = {}) {
     interestType: netInterest >= 0 ? 'DR' : 'CR',
     balanceWithInterest: roundMoney(Math.abs(ledgerBalance) + Math.abs(netInterest)),
     balanceWithInterestType: roundMoney(ledgerBalance + netInterest) >= 0 ? 'DR' : 'CR'
+  };
+}
+
+function resolveOptionGraceDays(entry, options = {}) {
+  if (!sourceUsesSalePurchaseGrace(entry.sourceType)) return 0;
+  if (usesZeroGraceForInterest(entry.transactionType)) return 0;
+  if (options.graceSource === 'typed') return Math.max(0, Number(options.typedGraceDays) || 0);
+  return Math.max(0, Number(options.masterGraceDays) || 0);
+}
+
+function sortLedgerEntries(entries) {
+  return [...(entries || [])].sort((a, b) => {
+    const dateA = toDateKey(a.date) || '';
+    const dateB = toDateKey(b.date) || '';
+    if (dateA !== dateB) return dateA.localeCompare(dateB);
+    return String(a.id || '').localeCompare(String(b.id || ''));
+  });
+}
+
+/**
+ * Empire Interest Product:
+ * days from entry date (no grace in the day column),
+ * then subtract grace interest on total bill debits,
+ * then optional TDS on the net (nearest rupee).
+ */
+export function buildInterestProduct(entries, options = {}) {
+  const asOnDate = toDateKey(options.asOnDate);
+  const daysInYear = Number(options.daysInYear) > 0 ? Number(options.daysInYear) : 365;
+  const interestRate = Number(options.interestRate) || 0;
+  const basedOnChequeDate = Boolean(options.basedOnChequeDate);
+  const tdsPercent = Math.max(0, Number(options.tdsPercent) || 0);
+  const graceDays = options.graceSource === 'typed'
+    ? Math.max(0, Number(options.typedGraceDays) || 0)
+    : Math.max(0, Number(options.masterGraceDays) || 0);
+
+  const rows = [];
+  let runningBalance = 0;
+  let debitTotal = 0;
+  let creditTotal = 0;
+  let grossDebitInterest = 0;
+  let creditInterest = 0;
+  let graceBase = 0;
+
+  for (const entry of sortLedgerEntries(entries)) {
+    const debitAmount = roundMoney(entry.debitAmount || 0);
+    const creditAmount = roundMoney(entry.creditAmount || 0);
+    if (debitAmount <= 0 && creditAmount <= 0) continue;
+
+    const entryDate = toDateKey(basedOnChequeDate && entry.chequeDate ? entry.chequeDate : entry.date);
+    if (!entryDate || !asOnDate) continue;
+    const days = inclusiveDays(entryDate, asOnDate);
+    if (days <= 0) continue;
+
+    const debitInterest = debitAmount > 0
+      ? calculateInterestAmount(debitAmount, interestRate, days, daysInYear)
+      : 0;
+    const creditInt = creditAmount > 0
+      ? calculateInterestAmount(creditAmount, interestRate, days, daysInYear)
+      : 0;
+
+    runningBalance = roundMoney(runningBalance + debitAmount - creditAmount);
+    if (debitAmount > 0) {
+      debitTotal = roundMoney(debitTotal + debitAmount);
+      grossDebitInterest = roundMoney(grossDebitInterest + debitInterest);
+      if (resolveOptionGraceDays(entry, options) > 0) {
+        graceBase = roundMoney(graceBase + debitAmount);
+      }
+    }
+    if (creditAmount > 0) {
+      creditTotal = roundMoney(creditTotal + creditAmount);
+      creditInterest = roundMoney(creditInterest + creditInt);
+    }
+
+    rows.push({
+      id: entry.id,
+      sourceType: entry.sourceType,
+      sourceId: entry.sourceId,
+      date: entryDate,
+      billNumber: entry.billNumber || entry.voucherNumber || '-',
+      book: entry.account || entry.book || '',
+      debitAmount,
+      creditAmount,
+      days,
+      debitInterest,
+      creditInterest: creditInt,
+      runningBalance,
+      runningBalanceType: runningBalance >= 0 ? 'DR' : 'CR',
+      editPath: entry.editPath || null,
+      transactionType: entry.transactionType || entry.account || null
+    });
+  }
+
+  const graceInterest = calculateInterestAmount(graceBase, interestRate, graceDays, daysInYear);
+  const netInterest = roundMoney(grossDebitInterest - creditInterest - graceInterest);
+  const ledgerBalance = roundMoney(debitTotal - creditTotal);
+  const tdsAmount = tdsPercent > 0
+    ? Math.round((Math.abs(netInterest) * tdsPercent) / 100)
+    : 0;
+
+  return {
+    viewKind: 'product',
+    daysInYear,
+    interestRate,
+    graceSource: options.graceSource === 'typed' ? 'typed' : 'master',
+    graceDays,
+    asOnDate,
+    productRows: rows,
+    debitRows: [],
+    creditRows: [],
+    debitTotal,
+    creditTotal,
+    grossDebitInterest,
+    debitInterest: grossDebitInterest,
+    creditInterest,
+    graceBase,
+    graceInterest,
+    ledgerBalance,
+    ledgerBalanceType: ledgerBalance >= 0 ? 'DR' : 'CR',
+    interestAmount: Math.abs(netInterest),
+    interestType: netInterest >= 0 ? 'DR' : 'CR',
+    interestAction: netInterest >= 0 ? 'TO RECEIVE' : 'TO PAY',
+    tdsPercent,
+    tdsAmount,
+    balanceWithInterest: roundMoney(Math.abs(ledgerBalance) + Math.abs(netInterest)),
+    balanceWithInterestType: roundMoney(ledgerBalance + netInterest) >= 0 ? 'DR' : 'CR'
+  };
+}
+
+/** Empire Summary Only: one line per bill/receipt using Generate Report interest (after grace). */
+export function buildInterestSummary(sides = {}) {
+  const debitRows = sides.debitRows || [];
+  const creditRows = sides.creditRows || [];
+  const summaryRows = [
+    ...debitRows.map(row => ({
+      id: row.id,
+      sourceType: row.sourceType,
+      sourceId: row.sourceId,
+      date: row.date,
+      billNumber: row.billNumber,
+      currentBalance: row.amount,
+      currentBalanceType: 'DR',
+      interestAmount: row.interestAmount,
+      interestType: 'DR',
+      balanceWithInterest: roundMoney(row.amount + row.interestAmount),
+      balanceWithInterestType: 'DR',
+      editPath: row.editPath || null
+    })),
+    ...creditRows.map(row => ({
+      id: row.id,
+      sourceType: row.sourceType,
+      sourceId: row.sourceId,
+      date: row.date,
+      billNumber: row.billNumber,
+      currentBalance: row.amount,
+      currentBalanceType: 'CR',
+      interestAmount: row.interestAmount,
+      interestType: 'CR',
+      balanceWithInterest: roundMoney(row.amount + row.interestAmount),
+      balanceWithInterestType: 'CR',
+      editPath: row.editPath || null
+    }))
+  ].sort((a, b) => {
+    const dateA = a.date || '';
+    const dateB = b.date || '';
+    if (dateA !== dateB) return dateA.localeCompare(dateB);
+    return String(a.billNumber || '').localeCompare(String(b.billNumber || ''), undefined, { numeric: true });
+  });
+
+  return {
+    ...sides,
+    viewKind: 'summary',
+    summaryRows
   };
 }

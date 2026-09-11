@@ -872,7 +872,14 @@ export interface AccountLedgerParty {
   runningBalance?: number;
 }
 
-export type { InterestReport, InterestReportRow, InterestGraceSource } from './utils/interestCalculation';
+export type {
+  InterestReport,
+  InterestReportRow,
+  InterestProductRow,
+  InterestSummaryRow,
+  InterestGraceSource,
+  InterestViewKind
+} from './utils/interestCalculation';
 
 export interface LedgerEntryDetailField {
   label: string;

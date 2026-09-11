@@ -1,7 +1,7 @@
 import { isExpensePurchaseType } from '../constants/erpTransactionTypes.js';
 import { getCompanyLedgerMeta, buildUnifiedPartyLedger } from './accountLedger.js';
 import { roundMoney } from './orderBilling.js';
-import { buildInterestSides, foldDiscountJournals, toDateKey } from './interestCalculation.js';
+import { buildInterestProduct, buildInterestSides, buildInterestSummary, foldDiscountJournals, toDateKey } from './interestCalculation.js';
 
 function uniqueIds(rows, types) {
   return [...new Set(rows.filter(row => types.includes(row.sourceType)).map(row => row.sourceId).filter(Boolean))];
@@ -208,15 +208,21 @@ export async function buildPartyInterestReport(prisma, userId, input = {}) {
   ]);
 
   const entries = foldDiscountJournals(await enrichLedgerRows(prisma, userId, ledger.ledger || []));
-  const sides = buildInterestSides(entries, {
+  const optionBase = {
     asOnDate,
     daysInYear: input.daysInYear,
     interestRate,
     graceSource: input.graceSource,
     typedGraceDays: input.typedGraceDays,
     masterGraceDays: party.graceDays,
-    basedOnChequeDate: input.basedOnChequeDate
-  });
+    basedOnChequeDate: input.basedOnChequeDate,
+    tdsPercent: input.tdsPercent
+  };
+  const viewKind = String(input.viewKind || 'generate').toLowerCase();
+  const sides = viewKind === 'product'
+    ? buildInterestProduct(entries, optionBase)
+    : buildInterestSides(entries, optionBase);
+  const viewed = viewKind === 'summary' ? buildInterestSummary(sides) : sides;
 
   const salesTotal = roundMoney(
     (ledger.ledger || [])
@@ -236,6 +242,6 @@ export async function buildPartyInterestReport(prisma, userId, input = {}) {
     asOnDate,
     basedOnChequeDate: Boolean(input.basedOnChequeDate),
     salesTotal,
-    ...sides
+    ...viewed
   };
 }

@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Loader2, X } from 'lucide-react';
 import { ledgerApi } from '../services/api';
 import { AccountLedgerParty } from '../types';
-import { InterestGraceSource, InterestReport } from '../utils/interestCalculation';
+import { InterestGraceSource, InterestReport, InterestViewKind } from '../utils/interestCalculation';
 
 interface Props {
   open: boolean;
@@ -43,6 +43,7 @@ export const InterestReportOptionsDialog: React.FC<Props> = ({
   const [typedGrace, setTypedGrace] = useState('30');
   const [basedOnChequeDate, setBasedOnChequeDate] = useState(false);
   const [asOnDate, setAsOnDate] = useState(todayIso);
+  const [tdsPercent, setTdsPercent] = useState('0');
 
   useEffect(() => {
     if (!open || !party?.partyName) return;
@@ -53,6 +54,7 @@ export const InterestReportOptionsDialog: React.FC<Props> = ({
     setGraceSource('master');
     setTypedGrace('30');
     setAsOnDate(todayIso());
+    setTdsPercent('0');
     setLoading(true);
     void ledgerApi.getInterestDefaults({
       partyName: party.partyName,
@@ -75,7 +77,7 @@ export const InterestReportOptionsDialog: React.FC<Props> = ({
 
   if (!open) return null;
 
-  const generate = async () => {
+  const generate = async (viewKind: InterestViewKind) => {
     if (!party?.partyName) {
       setError('Select a party ledger first.');
       return;
@@ -100,7 +102,9 @@ export const InterestReportOptionsDialog: React.FC<Props> = ({
         interestRate: rate,
         graceSource,
         typedGraceDays: Number(typedGrace) || 0,
-        basedOnChequeDate
+        basedOnChequeDate,
+        viewKind,
+        tdsPercent: Number(tdsPercent) || 0
       });
       onReport(report);
       onClose();
@@ -202,6 +206,13 @@ export const InterestReportOptionsDialog: React.FC<Props> = ({
                 <input type="checkbox" checked={basedOnChequeDate} onChange={e => setBasedOnChequeDate(e.target.checked)} className="h-4 w-4" />
                 Based on Chq. Date
               </label>
+              <label>
+                <span className={labelClass}>TDS % (Interest Product)</span>
+                <input className={inputClass} type="number" step="0.01" value={tdsPercent} onChange={e => setTdsPercent(e.target.value)} />
+                <span className="mt-1 block text-[11px] font-semibold text-gray-400">
+                  Used when you click Interest Product. Leave 0 if you do not want TDS on the print.
+                </span>
+              </label>
             </>
           )}
         </div>
@@ -210,15 +221,25 @@ export const InterestReportOptionsDialog: React.FC<Props> = ({
           <button
             type="button"
             disabled={saving || loading || tab !== 'report'}
-            onClick={() => void generate()}
+            onClick={() => void generate('generate')}
             className="rounded-xl bg-indigo-700 px-4 py-2 text-xs font-black uppercase text-white disabled:opacity-50"
           >
             {saving ? 'Generating…' : 'Generate Report'}
           </button>
-          <button type="button" disabled className="rounded-xl border bg-white px-4 py-2 text-xs font-black uppercase text-slate-400" title="Coming next">
+          <button
+            type="button"
+            disabled={saving || loading || tab !== 'report'}
+            onClick={() => void generate('product')}
+            className="rounded-xl border border-indigo-200 bg-white px-4 py-2 text-xs font-black uppercase text-indigo-800 disabled:opacity-50"
+          >
             Interest Product
           </button>
-          <button type="button" disabled className="rounded-xl border bg-white px-4 py-2 text-xs font-black uppercase text-slate-400" title="Coming next">
+          <button
+            type="button"
+            disabled={saving || loading || tab !== 'report'}
+            onClick={() => void generate('summary')}
+            className="rounded-xl border border-indigo-200 bg-white px-4 py-2 text-xs font-black uppercase text-indigo-800 disabled:opacity-50"
+          >
             Summary Only
           </button>
         </div>

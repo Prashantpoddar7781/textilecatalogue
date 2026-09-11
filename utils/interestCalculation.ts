@@ -67,6 +67,7 @@ export function calculateInterestAmount(
 }
 
 export type InterestGraceSource = 'master' | 'typed';
+export type InterestViewKind = 'generate' | 'product' | 'summary';
 
 export interface InterestReportRow {
   id: string;
@@ -84,6 +85,39 @@ export interface InterestReportRow {
   transactionType?: string | null;
 }
 
+export interface InterestProductRow {
+  id: string;
+  sourceType?: string | null;
+  sourceId?: string | null;
+  date: string;
+  billNumber?: string | null;
+  book?: string | null;
+  debitAmount: number;
+  creditAmount: number;
+  days: number;
+  debitInterest: number;
+  creditInterest: number;
+  runningBalance: number;
+  runningBalanceType: 'DR' | 'CR';
+  editPath?: string | null;
+  transactionType?: string | null;
+}
+
+export interface InterestSummaryRow {
+  id: string;
+  sourceType?: string | null;
+  sourceId?: string | null;
+  date?: string | null;
+  billNumber?: string | null;
+  currentBalance: number;
+  currentBalanceType: 'DR' | 'CR';
+  interestAmount: number;
+  interestType: 'DR' | 'CR';
+  balanceWithInterest: number;
+  balanceWithInterestType: 'DR' | 'CR';
+  editPath?: string | null;
+}
+
 export interface InterestReport {
   companyName?: string;
   party: {
@@ -91,6 +125,7 @@ export interface InterestReport {
     accountName: string;
     address?: string | null;
   };
+  viewKind?: InterestViewKind;
   fromDate: string | null;
   toDate: string | null;
   asOnDate?: string | null;
@@ -101,10 +136,18 @@ export interface InterestReport {
   basedOnChequeDate?: boolean;
   debitRows: InterestReportRow[];
   creditRows: InterestReportRow[];
+  productRows?: InterestProductRow[];
+  summaryRows?: InterestSummaryRow[];
   debitTotal: number;
   creditTotal: number;
   debitInterest: number;
   creditInterest: number;
+  grossDebitInterest?: number;
+  graceBase?: number;
+  graceInterest?: number;
+  tdsPercent?: number;
+  tdsAmount?: number;
+  interestAction?: 'TO RECEIVE' | 'TO PAY';
   ledgerBalance: number;
   ledgerBalanceType: 'DR' | 'CR';
   interestAmount: number;
