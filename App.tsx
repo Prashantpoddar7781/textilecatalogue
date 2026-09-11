@@ -1,9 +1,12 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Plus, Search, Package, CheckCircle, SlidersHorizontal, LogOut, User, Crown, BarChart3, Menu, MessageCircle, Link2, LineChart, FileText, ScanLine, MonitorSmartphone, X } from 'lucide-react';
-import { TextileDesign, CatalogueFilters, SubscriptionStatus, AdditionalPrice } from './types';
+import { Plus, Search, Package, CheckCircle, SlidersHorizontal, LogOut, User, Crown, BarChart3, Menu, MessageCircle, Link2, LineChart, FileText, ScanLine, MonitorSmartphone, X, Eye } from 'lucide-react';
+import { TextileDesign, CatalogueFilters, SubscriptionStatus, AdditionalPrice, ShareOptions } from './types';
 import { UploadForm } from './components/UploadForm';
 import { DesignCard } from './components/DesignCard';
 import { DesignFullscreenModal } from './components/DesignFullscreenModal';
+import { ViewModeOptionsDialog } from './components/ViewModeOptionsDialog';
+import { ViewModeLightbox } from './components/ViewModeLightbox';
+import { designThumbSrc } from './services/designMedia';
 import { ShareDialog } from './components/ShareDialog';
 import { ShareLinkDialog } from './components/ShareLinkDialog';
 import { ShareView } from './components/ShareView';
@@ -172,6 +175,10 @@ const App: React.FC = () => {
   const [selectedDesignForLink, setSelectedDesignForLink] = useState<TextileDesign | null>(null);
   const [bulkShareDesigns, setBulkShareDesigns] = useState<TextileDesign[] | null>(null);
   const [viewingDesign, setViewingDesign] = useState<TextileDesign | null>(null);
+  const [viewMode, setViewMode] = useState(false);
+  const [viewModeOptionsOpen, setViewModeOptionsOpen] = useState(false);
+  const [viewAttach, setViewAttach] = useState<{ options: ShareOptions; selectedPriceType: string } | null>(null);
+  const [viewingId, setViewingId] = useState<string | null>(null);
   const [isLoginOpen, setIsLoginOpen] = useState(false);
   const [isSharingCollection, setIsSharingCollection] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -728,6 +735,13 @@ const App: React.FC = () => {
   };
 
   const handleDesignCardClick = (design: TextileDesign) => {
+    if (viewMode) {
+      setViewingId(design.id);
+      void hydrateDesign(design).then(full => {
+        setDesigns(prev => prev.map(item => item.id === full.id ? full : item));
+      });
+      return;
+    }
     if (selectionMode) {
       toggleSelection(design.id);
       return;
@@ -737,6 +751,7 @@ const App: React.FC = () => {
   };
 
   const handleDesignLongPress = (design: TextileDesign) => {
+    if (viewMode) return;
     if ((design.stockQuantity ?? 0) <= 0) {
       alert('This design is out of stock and cannot be shared.');
       return;
@@ -755,6 +770,35 @@ const App: React.FC = () => {
       setSelectionMode(false);
     }
   }, [selectedIds.size]);
+
+  const startViewMode = (options: ShareOptions, selectedPriceType: string) => {
+    setViewAttach({ options, selectedPriceType });
+    setViewMode(true);
+    setViewModeOptionsOpen(false);
+    setSelectedIds(new Set());
+    setSelectionMode(false);
+    setViewingDesign(null);
+  };
+
+  const exitViewMode = () => {
+    setViewMode(false);
+    setViewingId(null);
+  };
+
+  const viewLightboxIndex = viewingId
+    ? filteredDesigns.findIndex(d => d.id === viewingId)
+    : -1;
+
+  useEffect(() => {
+    if (!viewingId) return;
+    if (filteredDesigns.length === 0) {
+      setViewingId(null);
+      return;
+    }
+    if (!filteredDesigns.some(d => d.id === viewingId)) {
+      setViewingId(null);
+    }
+  }, [filteredDesigns, viewingId]);
 
   const handleLoginSuccess = (token: string, userData: any) => {
     setAuthSession(token, userData);
@@ -1240,23 +1284,45 @@ const App: React.FC = () => {
                 </div>
               </div>
               <div className="flex items-center gap-2 shrink-0">
-                <button
-                  type="button"
-                  onClick={handleOpenUpload}
-                  className="touch-target flex items-center gap-1.5 bg-gray-900 text-white px-4 rounded-2xl font-bold text-sm shadow-lg active:scale-95"
-                  aria-label="Add design"
-                >
-                  <Plus className="w-5 h-5" />
-                  <span>Add</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setMobileMenuOpen(true)}
-                  className="touch-target flex items-center justify-center rounded-2xl border border-gray-200 bg-white text-gray-800 shadow-sm"
-                  aria-label="Menu"
-                >
-                  <Menu className="w-6 h-6" />
-                </button>
+                {viewMode ? (
+                  <button
+                    type="button"
+                    onClick={exitViewMode}
+                    className="touch-target flex items-center gap-1.5 bg-indigo-700 text-white px-4 rounded-2xl font-bold text-sm shadow-lg active:scale-95"
+                  >
+                    <X className="w-5 h-5" />
+                    <span>Exit view</span>
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setViewModeOptionsOpen(true)}
+                      className="touch-target flex items-center gap-1.5 bg-white text-indigo-800 border border-indigo-200 px-3 rounded-2xl font-bold text-sm shadow-sm active:scale-95"
+                      aria-label="View mode"
+                    >
+                      <Eye className="w-5 h-5" />
+                      <span>View</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleOpenUpload}
+                      className="touch-target flex items-center gap-1.5 bg-gray-900 text-white px-4 rounded-2xl font-bold text-sm shadow-lg active:scale-95"
+                      aria-label="Add design"
+                    >
+                      <Plus className="w-5 h-5" />
+                      <span>Add</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMobileMenuOpen(true)}
+                      className="touch-target flex items-center justify-center rounded-2xl border border-gray-200 bg-white text-gray-800 shadow-sm"
+                      aria-label="Menu"
+                    >
+                      <Menu className="w-6 h-6" />
+                    </button>
+                  </>
+                )}
               </div>
             </div>
             <div className="relative">
@@ -1307,12 +1373,14 @@ const App: React.FC = () => {
               )}
             </div>
 
-            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2">
+              {!viewMode && (
               <div className="hidden lg:flex items-center gap-2 text-sm text-gray-600 max-w-[140px]">
                 <User className="w-4 h-4 shrink-0" />
                 <span className="font-medium truncate">{user.name || user.email}</span>
               </div>
-              {subscription && !subscription.isFree && (
+              )}
+              {!viewMode && subscription && !subscription.isFree && (
                 <button
                   type="button"
                   onClick={() => setIsPricingOpen(true)}
@@ -1329,6 +1397,8 @@ const App: React.FC = () => {
                 </button>
               )}
               <div className="flex items-center gap-2">
+                {!viewMode && (
+                <>
                 <button
                   type="button"
                   onClick={() => { window.location.href = '/billing'; }}
@@ -1378,6 +1448,29 @@ const App: React.FC = () => {
                 >
                   Orders
                 </button>
+                </>
+                )}
+                {viewMode ? (
+                  <button
+                    type="button"
+                    onClick={exitViewMode}
+                    className="flex items-center gap-1.5 bg-indigo-700 hover:bg-indigo-800 text-white px-3 py-2 rounded-2xl text-xs font-bold shadow-lg"
+                  >
+                    <X className="w-4 h-4" />
+                    Exit view
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setViewModeOptionsOpen(true)}
+                    className="flex items-center gap-1.5 bg-white hover:bg-indigo-50 text-indigo-800 border border-indigo-200 px-3 py-2 rounded-2xl text-xs font-bold shadow-sm"
+                  >
+                    <Eye className="w-4 h-4" />
+                    View mode
+                  </button>
+                )}
+                {!viewMode && (
+                <>
                 <button
                   type="button"
                   onClick={handleShareCollection}
@@ -1397,7 +1490,10 @@ const App: React.FC = () => {
                   <Plus className="w-4 h-4" />
                   Add
                 </button>
+                </>
+                )}
               </div>
+              {!viewMode && (
               <button
                 type="button"
                 onClick={handleLogout}
@@ -1406,6 +1502,7 @@ const App: React.FC = () => {
               >
                 <LogOut className="w-5 h-5 text-gray-600" />
               </button>
+              )}
             </div>
           </div>
         </div>
@@ -1427,6 +1524,18 @@ const App: React.FC = () => {
                 {user?.name || user?.email || 'Signed in'}
               </p>
               <nav className="flex flex-col gap-2">
+                <button
+                  type="button"
+                  className="touch-target flex w-full items-center gap-3 rounded-2xl border border-indigo-100 bg-indigo-50 px-4 text-left font-bold text-indigo-900 active:bg-indigo-100"
+                  onClick={() => {
+                    setMobileMenuOpen(false);
+                    if (viewMode) exitViewMode();
+                    else setViewModeOptionsOpen(true);
+                  }}
+                >
+                  <Eye className="w-5 h-5 text-indigo-600 shrink-0" />
+                  {viewMode ? 'Exit view mode' : 'View mode'}
+                </button>
                 <button
                   type="button"
                   className="touch-target flex w-full items-center gap-3 rounded-2xl border border-gray-100 bg-gray-50 px-4 text-left font-bold text-gray-900 active:bg-gray-100"
@@ -1582,7 +1691,7 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {showFreeDesignStatus && (
+      {showFreeDesignStatus && !viewMode && (
         <div className="bg-indigo-600 text-white">
           <div className="max-w-7xl mx-auto px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div>
@@ -1706,7 +1815,13 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {hasActiveFilters && inStockFilteredDesigns.length > 0 && (
+        {viewMode && (
+          <p className="mt-2 text-xs font-semibold text-indigo-700">
+            View mode · {filteredDesigns.length} design{filteredDesigns.length === 1 ? '' : 's'} · tap a photo, then swipe through this filter
+          </p>
+        )}
+
+        {!viewMode && hasActiveFilters && inStockFilteredDesigns.length > 0 && (
           <div className="mt-3 rounded-2xl border border-emerald-200 bg-emerald-50/80 px-4 py-3">
             <p className="text-sm font-black text-emerald-950">
               {inStockFilteredDesigns.length} design{inStockFilteredDesigns.length === 1 ? '' : 's'} match your filters
@@ -1762,7 +1877,27 @@ const App: React.FC = () => {
           </div>
         ) : filteredDesigns.length > 0 ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4 md:gap-6">
-            {filteredDesigns.map(design => (
+            {viewMode
+              ? filteredDesigns.map(design => (
+                <button
+                  key={design.id}
+                  type="button"
+                  onClick={() => handleDesignCardClick(design)}
+                  className="group relative bg-white rounded-2xl overflow-hidden ring-1 ring-gray-200/90 active:scale-95"
+                >
+                  <div className="aspect-[3/4] bg-gray-100">
+                    <img
+                      src={designThumbSrc(design)}
+                      alt={design.name || design.fabric || 'Design'}
+                      className="w-full h-full object-cover"
+                      loading="lazy"
+                      decoding="async"
+                      draggable={false}
+                    />
+                  </div>
+                </button>
+              ))
+              : filteredDesigns.map(design => (
               <DesignCard
                 key={design.id}
                 design={design}
@@ -1802,6 +1937,7 @@ const App: React.FC = () => {
             </div>
             <h3 className="text-gray-900 font-black text-xl">No designs yet</h3>
             <p className="text-gray-400 text-sm max-w-xs mt-2 font-medium">Tap + to add your first design to the catalogue.</p>
+            {!viewMode && (
             <button
               type="button"
               onClick={handleOpenUpload}
@@ -1810,11 +1946,12 @@ const App: React.FC = () => {
               <Plus className="w-4 h-4" />
               Add design
             </button>
+            )}
           </div>
         )}
       </main>
 
-      {selectedIds.size === 0 && (
+      {!viewMode && selectedIds.size === 0 && (
         <button
           type="button"
           onClick={handleOpenUpload}
@@ -1825,7 +1962,7 @@ const App: React.FC = () => {
         </button>
       )}
 
-      {selectedIds.size > 0 && (
+      {!viewMode && selectedIds.size > 0 && (
         <div className="fixed inset-x-0 bottom-0 z-50 md:inset-x-auto md:left-1/2 md:right-auto md:bottom-8 md:max-w-lg md:-translate-x-1/2 md:px-0 animate-in slide-in-from-bottom duration-300">
           <div className="mx-auto max-w-lg border-t border-white/10 bg-gray-900 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 shadow-[0_-8px_32px_rgba(0,0,0,0.2)] md:rounded-[2.5rem] md:border md:px-6 md:py-4 md:shadow-2xl md:ring-[12px] md:ring-black/5">
             <div className="flex items-center justify-between gap-3">
@@ -1866,7 +2003,34 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {viewingDesign && (
+      {viewMode && viewAttach && viewLightboxIndex >= 0 && (
+        <ViewModeLightbox
+          designs={filteredDesigns}
+          index={viewLightboxIndex}
+          options={viewAttach.options}
+          selectedPriceType={viewAttach.selectedPriceType}
+          userFirmName={user?.firmName}
+          onIndexChange={(nextIndex) => {
+            const next = filteredDesigns[nextIndex];
+            if (!next) return;
+            setViewingId(next.id);
+            void hydrateDesign(next).then(full => {
+              setDesigns(prev => prev.map(item => item.id === full.id ? full : item));
+            });
+          }}
+          onClose={() => setViewingId(null)}
+        />
+      )}
+
+      {viewModeOptionsOpen && (
+        <ViewModeOptionsDialog
+          designs={filteredDesigns.length ? filteredDesigns : designs}
+          onClose={() => setViewModeOptionsOpen(false)}
+          onStart={startViewMode}
+        />
+      )}
+
+      {viewingDesign && !viewMode && (
         <DesignFullscreenModal design={viewingDesign} onClose={() => setViewingDesign(null)} />
       )}
 
