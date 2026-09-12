@@ -106,8 +106,8 @@ export const DesignCard: React.FC<Props> = ({
         )}
 
         <div className="absolute top-2 left-2 flex flex-wrap gap-1 pointer-events-none">
-          <span className="bg-white/95 backdrop-blur shadow-sm text-gray-900 text-[10px] font-bold px-2 py-0.5 rounded-lg uppercase">
-            {design.fabric}
+          <span className="bg-white/95 backdrop-blur shadow-sm text-gray-900 text-[10px] font-bold px-2 py-0.5 rounded-lg max-w-[90%] truncate">
+            {design.catalogueName?.trim() || design.fabric}
           </span>
           {(design.stockQuantity ?? 0) <= 0 && (
             <span className="bg-red-500/95 text-white text-[10px] font-bold px-2 py-0.5 rounded-lg uppercase">
@@ -151,11 +151,6 @@ export const DesignCard: React.FC<Props> = ({
         <p className="text-xs font-bold text-gray-900 line-clamp-1 mt-1">
           {design.name || 'Untitled Design'}
         </p>
-        {design.catalogueName && (
-          <p className="text-[10px] text-indigo-600 font-medium mt-0.5">
-            {design.catalogueName}
-          </p>
-        )}
         <p className="text-xs text-gray-500 line-clamp-1 mt-1 font-medium italic">
           {design.description}
         </p>

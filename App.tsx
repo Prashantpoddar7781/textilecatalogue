@@ -1885,15 +1885,20 @@ const App: React.FC = () => {
                   onClick={() => handleDesignCardClick(design)}
                   className="group relative bg-white rounded-2xl overflow-hidden ring-1 ring-gray-200/90 active:scale-95"
                 >
-                  <div className="aspect-[3/4] bg-gray-100">
+                  <div className="aspect-[3/4] bg-gray-100 relative">
                     <img
                       src={designThumbSrc(design)}
-                      alt={design.name || design.fabric || 'Design'}
+                      alt={design.name || design.catalogueName || design.fabric || 'Design'}
                       className="w-full h-full object-cover"
                       loading="lazy"
                       decoding="async"
                       draggable={false}
                     />
+                    {(design.catalogueName?.trim() || design.fabric) && (
+                      <span className="absolute top-2 left-2 bg-white/95 backdrop-blur shadow-sm text-gray-900 text-[10px] font-bold px-2 py-0.5 rounded-lg max-w-[90%] truncate">
+                        {design.catalogueName?.trim() || design.fabric}
+                      </span>
+                    )}
                   </div>
                 </button>
               ))
@@ -2045,6 +2050,10 @@ const App: React.FC = () => {
           }} 
           onSubmit={editingDesign ? handleUpdateDesign : handleAddDesign}
           initialData={editingDesign}
+          onCatalogueRenamed={(catalogueId, name) => {
+            setCatalogues(prev => prev.map(c => (c.id === catalogueId ? { ...c, name } : c)));
+            setDesigns(prev => prev.map(d => (d.catalogueId === catalogueId ? { ...d, catalogueName: name } : d)));
+          }}
           initialImage={!editingDesign ? pendingShareImage : null}
           materialNameOptions={costingMaterialNameOptions}
           supplierNameOptions={costingSupplierNameOptions}

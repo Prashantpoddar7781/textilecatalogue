@@ -117,9 +117,19 @@ router.put('/:id', authenticateToken, requireActiveSubscription, [
       return res.status(404).json({ error: 'Catalogue not found' });
     }
 
+    const nextName = name?.trim();
+    if (nextName && nextName !== catalogue.name) {
+      const clash = await prisma.catalogue.findFirst({
+        where: { userId, name: nextName, NOT: { id } }
+      });
+      if (clash) {
+        return res.status(400).json({ error: 'Catalogue with this name already exists' });
+      }
+    }
+
     const updated = await prisma.catalogue.update({
       where: { id },
-      data: { name: name?.trim() }
+      data: { name: nextName || catalogue.name }
     });
 
     res.json(updated);

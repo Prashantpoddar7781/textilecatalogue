@@ -23,6 +23,7 @@ interface Props {
   materialNameOptions?: string[];
   supplierNameOptions?: string[];
   karigarNameOptions?: string[];
+  onCatalogueRenamed?: (catalogueId: string, name: string) => void;
 }
 
 export const UploadForm: React.FC<Props> = ({
@@ -32,7 +33,8 @@ export const UploadForm: React.FC<Props> = ({
   initialImage = null,
   materialNameOptions = [],
   supplierNameOptions = [],
-  karigarNameOptions = []
+  karigarNameOptions = [],
+  onCatalogueRenamed
 }) => {
   const emptyCostingDetails: DesignCostingDetails = { materials: [], jobs: [], otherCosts: [] };
   const [preview, setPreview] = useState<string | null>(initialData?.image || null);
@@ -42,6 +44,9 @@ export const UploadForm: React.FC<Props> = ({
   const [loadingCatalogues, setLoadingCatalogues] = useState(false);
   const [showNewCatalogue, setShowNewCatalogue] = useState(false);
   const [newCatalogueName, setNewCatalogueName] = useState('');
+  const [showRenameCatalogue, setShowRenameCatalogue] = useState(false);
+  const [renameCatalogueName, setRenameCatalogueName] = useState('');
+  const [renamingCatalogue, setRenamingCatalogue] = useState(false);
 
   const [formData, setFormData] = useState({
     name: '',
@@ -271,6 +276,31 @@ export const UploadForm: React.FC<Props> = ({
     } catch (error) {
       console.error('Failed to create catalogue:', error);
       alert('Failed to create catalogue. Please try again.');
+    }
+  };
+
+  const openRenameCatalogue = () => {
+    const current = catalogues.find(c => c.id === formData.catalogueId);
+    setRenameCatalogueName(current?.name || initialData?.catalogueName || '');
+    setShowNewCatalogue(false);
+    setShowRenameCatalogue(true);
+  };
+
+  const handleRenameCatalogue = async () => {
+    const name = renameCatalogueName.trim();
+    if (!name || !formData.catalogueId) return;
+    setRenamingCatalogue(true);
+    try {
+      const updated = await cataloguesApi.update(formData.catalogueId, name);
+      const nextName = updated?.name || name;
+      setCatalogues(prev => prev.map(c => (c.id === formData.catalogueId ? { ...c, name: nextName } : c)));
+      onCatalogueRenamed?.(formData.catalogueId, nextName);
+      setShowRenameCatalogue(false);
+    } catch (error: any) {
+      console.error('Failed to rename catalogue:', error);
+      alert(error?.message || 'Failed to rename catalogue. Please try again.');
+    } finally {
+      setRenamingCatalogue(false);
     }
   };
 
@@ -993,7 +1023,7 @@ export const UploadForm: React.FC<Props> = ({
           {/* Catalogue Selection - right below image */}
           <div className="space-y-1">
             <label className="text-sm font-semibold text-gray-700">Catalogue</label>
-            {!showNewCatalogue ? (
+            {!showNewCatalogue && !showRenameCatalogue ? (
               <div className="flex gap-2">
                 <SearchableFilterSelect
                   className="flex-1 min-w-0"
@@ -1011,14 +1041,63 @@ export const UploadForm: React.FC<Props> = ({
                     ...catalogues.map(cat => ({ value: cat.id, label: cat.name }))
                   ]}
                 />
+                {initialData && formData.catalogueId && (
+                  <button
+                    type="button"
+                    onClick={openRenameCatalogue}
+                    className="px-3 py-3 bg-amber-50 hover:bg-amber-100 text-amber-800 rounded-xl font-medium transition-colors"
+                  >
+                    Rename
+                  </button>
+                )}
                 <button
                   type="button"
-                  onClick={() => setShowNewCatalogue(true)}
+                  onClick={() => {
+                    setShowRenameCatalogue(false);
+                    setShowNewCatalogue(true);
+                  }}
                   className="px-4 py-3 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 rounded-xl font-medium transition-colors flex items-center gap-2"
                 >
                   <Plus className="w-4 h-4" />
                   New
                 </button>
+              </div>
+            ) : showRenameCatalogue ? (
+              <div className="space-y-2">
+                <p className="text-xs text-gray-500">Correct the catalogue spelling. This updates every design in this catalogue.</p>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    className="flex-1 px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                    placeholder="Correct catalogue name"
+                    value={renameCatalogueName}
+                    onChange={e => setRenameCatalogueName(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        void handleRenameCatalogue();
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    disabled={renamingCatalogue || !renameCatalogueName.trim()}
+                    onClick={() => void handleRenameCatalogue()}
+                    className="px-4 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-medium transition-colors disabled:opacity-50"
+                  >
+                    {renamingCatalogue ? 'Saving…' : 'Save name'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowRenameCatalogue(false);
+                      setRenameCatalogueName('');
+                    }}
+                    className="px-4 py-3 bg-gray-100 hover:bg-gray-200 rounded-xl font-medium transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
               </div>
             ) : (
               <div className="flex gap-2">
