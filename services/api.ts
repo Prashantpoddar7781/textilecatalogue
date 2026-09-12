@@ -1,15 +1,23 @@
 import { AccountLedgerEntry, AccountLedgerParty, BankEntry, BankPendingBill, BusinessProfile, CompletedOrderParty, Contact, Customer, CreditDebitNote, ErpAccessLevel, ErpSession, ErpUserAccount, GreyDispatch, GreyPurchase, GreyPurchaseReturn, GreyReceiptSummary, GreyTakaDetailRow, LedgerEntryDetail, MillPendingDispatch, MillReceipt, MillReceiptTakaRow, Order, PurchaseBill, PurchaseBillExtraction, PurchaseBillParty, SalesInvoice, Supplier, SupplierLedgerEntry } from '../types';
 
 const RAILWAY_API_URL = 'https://textilecatalogue-production.up.railway.app/api';
+const VERCEL_API_URL = 'https://textilecatalogue.vercel.app/api';
 const REQUEST_TIMEOUT_MS = 45000;
+
+function isNativeShell(): boolean {
+  if (typeof window === 'undefined') return false;
+  const protocol = window.location.protocol;
+  return protocol === 'capacitor:' || protocol === 'ionic:';
+}
 
 function resolveApiBaseUrl(): string {
   const configured = String(import.meta.env.VITE_API_URL || '').trim().replace(/\/$/, '');
   if (typeof window === 'undefined') return configured || RAILWAY_API_URL;
 
-  const { protocol, hostname } = window.location;
-  if (protocol === 'capacitor:' || protocol === 'ionic:') {
-    return configured || RAILWAY_API_URL;
+  const { hostname } = window.location;
+  if (isNativeShell()) {
+    // Play Store app: Vercel edge first (reliable on Indian mobile), Railway backup.
+    return VERCEL_API_URL;
   }
   if (hostname === 'localhost' || hostname === '127.0.0.1') {
     return configured || 'http://localhost:3001/api';
@@ -19,6 +27,12 @@ function resolveApiBaseUrl(): string {
     return '/api';
   }
   return configured || RAILWAY_API_URL;
+}
+
+function apiBaseCandidates(): string[] {
+  const primary = resolveApiBaseUrl();
+  const extras = isNativeShell() ? [VERCEL_API_URL, RAILWAY_API_URL] : [primary, RAILWAY_API_URL];
+  return [...new Set([primary, ...extras].filter(Boolean))];
 }
 
 export const API_BASE_URL = resolveApiBaseUrl();
@@ -46,7 +60,8 @@ function formatApiErrorPayload(error: any, status: number): string {
 
 async function requestOnce<T>(
   endpoint: string,
-  options: RequestInit = {}
+  options: RequestInit = {},
+  baseUrl: string = API_BASE_URL
 ): Promise<T> {
   const token = localStorage.getItem('auth_token');
   const method = String(options.method || 'GET').toUpperCase();
@@ -68,7 +83,7 @@ async function requestOnce<T>(
     : null;
   let response: Response;
   try {
-    response = await fetch(`${API_BASE_URL}${endpoint}`, {
+    response = await fetch(`${baseUrl}${endpoint}`, {
       ...options,
       headers,
       signal: options.signal || controller?.signal,
@@ -107,15 +122,22 @@ async function request<T>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<T> {
-  const maxAttempts = endpoint.startsWith('/auth/') || endpoint === '/health' ? 5 : 3;
+  const bases = apiBaseCandidates();
+  const rounds = endpoint.startsWith('/auth/') || endpoint === '/health' ? 5 : 3;
   let lastError: any;
-  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    try {
-      return await requestOnce<T>(endpoint, options);
-    } catch (err: any) {
-      lastError = err;
-      if (!isRetryable(err) || attempt >= maxAttempts) break;
-      await new Promise((resolve) => setTimeout(resolve, Math.min(1000 * 2 ** (attempt - 1), 8000)));
+  for (let round = 1; round <= rounds; round += 1) {
+    for (const baseUrl of bases) {
+      try {
+        return await requestOnce<T>(endpoint, options, baseUrl);
+      } catch (err: any) {
+        lastError = err;
+        if (!isRetryable(err)) {
+          throw err;
+        }
+      }
+    }
+    if (round < rounds) {
+      await new Promise((resolve) => setTimeout(resolve, Math.min(1000 * 2 ** (round - 1), 8000)));
     }
   }
 

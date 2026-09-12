@@ -7,9 +7,9 @@
  */
 export const ANDROID_PACKAGE_ID = 'com.textilehub.catalogue';
 
-export const ANDROID_LATEST_VERSION_CODE = Number(process.env.ANDROID_LATEST_VERSION_CODE || 32);
+export const ANDROID_LATEST_VERSION_CODE = Number(process.env.ANDROID_LATEST_VERSION_CODE || 33);
 
-export const ANDROID_LATEST_VERSION_NAME = String(process.env.ANDROID_LATEST_VERSION_NAME || '1.0.31');
+export const ANDROID_LATEST_VERSION_NAME = String(process.env.ANDROID_LATEST_VERSION_NAME || '1.0.32');
 
 export const ANDROID_PLAY_STORE_URL =
   process.env.ANDROID_PLAY_STORE_URL ||
