@@ -325,7 +325,7 @@ export const LoginDialog: React.FC<Props> = ({ onClose, onSuccess }) => {
             className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-xl font-bold shadow-lg transition-all disabled:opacity-50 flex items-center justify-center gap-2"
           >
             {loading ? (
-              'Please wait...'
+              'Connecting to server…'
             ) : (
               <>
                 <LogIn className="w-5 h-5" />

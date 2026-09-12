@@ -1,6 +1,27 @@
 import { AccountLedgerEntry, AccountLedgerParty, BankEntry, BankPendingBill, BusinessProfile, CompletedOrderParty, Contact, Customer, CreditDebitNote, ErpAccessLevel, ErpSession, ErpUserAccount, GreyDispatch, GreyPurchase, GreyPurchaseReturn, GreyReceiptSummary, GreyTakaDetailRow, LedgerEntryDetail, MillPendingDispatch, MillReceipt, MillReceiptTakaRow, Order, PurchaseBill, PurchaseBillExtraction, PurchaseBillParty, SalesInvoice, Supplier, SupplierLedgerEntry } from '../types';
 
-export const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://textilecatalogue-production.up.railway.app/api';
+const RAILWAY_API_URL = 'https://textilecatalogue-production.up.railway.app/api';
+const REQUEST_TIMEOUT_MS = 45000;
+
+function resolveApiBaseUrl(): string {
+  const configured = String(import.meta.env.VITE_API_URL || '').trim().replace(/\/$/, '');
+  if (typeof window === 'undefined') return configured || RAILWAY_API_URL;
+
+  const { protocol, hostname } = window.location;
+  if (protocol === 'capacitor:' || protocol === 'ionic:') {
+    return configured || RAILWAY_API_URL;
+  }
+  if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    return configured || 'http://localhost:3001/api';
+  }
+  // Same-origin /api on Vercel avoids Safari CORS/preflight "Failed to fetch" on login.
+  if (hostname.endsWith('.vercel.app') || hostname === 'textilecatalogue.vercel.app') {
+    return '/api';
+  }
+  return configured || RAILWAY_API_URL;
+}
+
+export const API_BASE_URL = resolveApiBaseUrl();
 
 class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -28,20 +49,33 @@ async function requestOnce<T>(
   options: RequestInit = {}
 ): Promise<T> {
   const token = localStorage.getItem('auth_token');
-
-  const headers: HeadersInit = {
-    'Content-Type': 'application/json',
-    ...options.headers,
+  const method = String(options.method || 'GET').toUpperCase();
+  const headers: Record<string, string> = {
+    ...(options.headers as Record<string, string> | undefined)
   };
+
+  if (options.body != null || ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+    headers['Content-Type'] = headers['Content-Type'] || 'application/json';
+  }
 
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-    ...options,
-    headers,
-  });
+  const controller = options.signal ? null : new AbortController();
+  const timer = controller
+    ? setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+    : null;
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}${endpoint}`, {
+      ...options,
+      headers,
+      signal: options.signal || controller?.signal,
+    });
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: response.statusText }));
@@ -57,23 +91,31 @@ async function requestOnce<T>(
 function isNetworkFailure(err: any): boolean {
   return (
     err instanceof TypeError
-    || /failed to fetch|networkerror|load failed|network request failed/i.test(String(err?.message || ''))
+    || err?.name === 'AbortError'
+    || /failed to fetch|networkerror|load failed|network request failed|the user aborted|aborted/i.test(
+      String(err?.message || '')
+    )
   );
+}
+
+function isRetryable(err: any): boolean {
+  if (isNetworkFailure(err)) return true;
+  return err instanceof ApiError && [408, 429, 502, 503, 504].includes(err.status);
 }
 
 async function request<T>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<T> {
-  const maxAttempts = endpoint.startsWith('/auth/') ? 3 : 2;
+  const maxAttempts = endpoint.startsWith('/auth/') || endpoint === '/health' ? 5 : 3;
   let lastError: any;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
       return await requestOnce<T>(endpoint, options);
     } catch (err: any) {
       lastError = err;
-      if (!isNetworkFailure(err) || attempt >= maxAttempts) break;
-      await new Promise((resolve) => setTimeout(resolve, 400 * attempt));
+      if (!isRetryable(err) || attempt >= maxAttempts) break;
+      await new Promise((resolve) => setTimeout(resolve, Math.min(1000 * 2 ** (attempt - 1), 8000)));
     }
   }
 
@@ -88,6 +130,9 @@ async function request<T>(
 
 // Public app metadata (no auth)
 export const appApi = {
+  pingHealth: async () => {
+    return request<{ status: string; timestamp?: string }>('/health');
+  },
   getAndroidVersion: async () => {
     return request<{
       packageId: string;

@@ -86,63 +86,15 @@ if (process.env.NODE_ENV === 'production' || process.env.RUN_MIGRATIONS === 'tru
 // Middleware setup
 console.log('Setting up middleware...');
 
-// CORS configuration - handle trailing slashes and multiple origins
-const allowedOrigins = [
-  process.env.FRONTEND_URL,
-  process.env.FRONTEND_URL?.replace(/\/$/, ''), // Remove trailing slash
-  process.env.FRONTEND_URL?.replace(/\/$/, '') + '/', // Add trailing slash
-  'http://localhost:3000',
-  'http://localhost',
-  'https://localhost',
-  'capacitor://localhost',
-  'ionic://localhost',
-  'https://textilecatalogue.vercel.app',
-  'https://textilecatalogue.vercel.app/',
-  ...(process.env.MOBILE_ALLOWED_ORIGINS || '')
-    .split(',')
-    .map(origin => origin.trim())
-    .filter(Boolean)
-].filter(Boolean);
-
-const isAllowedMobileOrigin = (origin) => {
-  if (origin === 'null') return true;
-  try {
-    const url = new URL(origin);
-    const isLocalHost = ['localhost', '127.0.0.1'].includes(url.hostname);
-    const isLocalScheme = ['http:', 'https:', 'capacitor:', 'ionic:'].includes(url.protocol);
-    return isLocalHost && isLocalScheme;
-  } catch {
-    return false;
-  }
-};
-
+// Reflect any browser origin. Auth is Bearer token (not cookies). Throwing
+// `new Error('Not allowed by CORS')` made Safari/iPad show "Failed to fetch"
+// / "Cannot reach ThreadX servers" even when Railway was up.
 app.use(cors({
-  origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
-    
-    // Check if origin is in allowed list
-    const isAllowed = allowedOrigins.some(allowed => {
-      // Remove trailing slashes for comparison
-      const normalizedOrigin = origin.replace(/\/$/, '');
-      const normalizedAllowed = allowed.replace(/\/$/, '');
-      return normalizedOrigin === normalizedAllowed;
-    });
-    
-    if (isAllowed || isAllowedMobileOrigin(origin)) {
-      callback(null, true);
-    } else {
-      // In development, allow all origins
-      if (process.env.NODE_ENV !== 'production') {
-        callback(null, true);
-      } else {
-        callback(new Error('Not allowed by CORS'));
-      }
-    }
-  },
+  origin: true,
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  maxAge: 86400
 }));
 app.use(express.json({
   limit: '50mb',
@@ -157,7 +109,7 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 console.log('Middleware configured');
 
 // Health check - must be before routes to ensure it's always available
-app.get('/health', (req, res) => {
+const sendHealth = (req, res) => {
   try {
     res.json({
       status: 'ok',
@@ -167,7 +119,9 @@ app.get('/health', (req, res) => {
   } catch (error) {
     res.status(500).json({ status: 'error', error: error.message });
   }
-});
+};
+app.get('/health', sendHealth);
+app.get('/api/health', sendHealth);
 
 console.log('Health check endpoint configured');
 
