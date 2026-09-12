@@ -105,16 +105,14 @@ export const DesignCard: React.FC<Props> = ({
           </div>
         )}
 
-        <div className="absolute top-2 left-2 right-2 flex items-start gap-1 pointer-events-none">
-          <span className="min-w-0 flex-1 bg-white/95 backdrop-blur shadow-sm text-gray-900 text-[10px] font-bold px-2 py-0.5 rounded-lg truncate">
-            {design.catalogueName?.trim() || design.fabric}
+        <span className="absolute top-2 left-2 max-w-[90%] bg-white/95 backdrop-blur shadow-sm text-gray-900 text-[10px] font-bold px-2 py-0.5 rounded-lg truncate pointer-events-none">
+          {design.catalogueName?.trim() || design.fabric}
+        </span>
+        {(design.stockQuantity ?? 0) <= 0 && (
+          <span className="absolute top-2 right-2 bg-red-500/95 text-white text-[10px] font-bold px-2 py-0.5 rounded-lg uppercase pointer-events-none">
+            {formatInventory(design)}
           </span>
-          {(design.stockQuantity ?? 0) <= 0 && (
-            <span className="shrink-0 bg-red-500/95 text-white text-[10px] font-bold px-2 py-0.5 rounded-lg uppercase">
-              {formatInventory(design)}
-            </span>
-          )}
-        </div>
+        )}
 
         {isSelected && (
           <div className="absolute inset-0 bg-indigo-600/10 flex items-center justify-center pointer-events-none">
