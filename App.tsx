@@ -606,6 +606,27 @@ const App: React.FC = () => {
     }
   };
 
+  const mergeHydratedDesign = (item: TextileDesign, full: TextileDesign): TextileDesign => ({
+    ...item,
+    ...full,
+    catalogueId: full.catalogueId || item.catalogueId,
+    catalogueName: full.catalogueName || item.catalogueName,
+    name: full.name && full.name !== 'Untitled Design' ? full.name : item.name,
+    fabric: full.fabric || item.fabric,
+    designCode: full.designCode || item.designCode,
+    description: full.description || item.description,
+    retailPrice: full.retailPrice || item.retailPrice,
+    // Keep the grid thumbnail; only upgrade the fullscreen image.
+    image: item.image,
+    imageThumb: item.imageThumb || full.imageThumb,
+    imageFull: full.imageFull || full.image || item.imageFull,
+    aiModels: full.aiModels?.length ? full.aiModels : item.aiModels
+  });
+
+  const applyHydratedDesign = (full: TextileDesign) => {
+    setDesigns(prev => prev.map(item => item.id === full.id ? mergeHydratedDesign(item, full) : item));
+  };
+
   const handleEditDesign = async (design: TextileDesign) => {
     const full = await hydrateDesign(design);
     setEditingDesign({ ...full, image: full.imageFull || full.image });
@@ -737,9 +758,7 @@ const App: React.FC = () => {
   const handleDesignCardClick = (design: TextileDesign) => {
     if (viewMode) {
       setViewingId(design.id);
-      void hydrateDesign(design).then(full => {
-        setDesigns(prev => prev.map(item => item.id === full.id ? full : item));
-      });
+      void hydrateDesign(design).then(applyHydratedDesign);
       return;
     }
     if (selectionMode) {
@@ -778,6 +797,9 @@ const App: React.FC = () => {
     setSelectedIds(new Set());
     setSelectionMode(false);
     setViewingDesign(null);
+    if (typeof document !== 'undefined' && document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
   };
 
   const exitViewMode = () => {
@@ -791,14 +813,10 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (!viewingId) return;
-    if (filteredDesigns.length === 0) {
-      setViewingId(null);
-      return;
-    }
-    if (!filteredDesigns.some(d => d.id === viewingId)) {
+    if (!designs.some(d => d.id === viewingId)) {
       setViewingId(null);
     }
-  }, [filteredDesigns, viewingId]);
+  }, [designs, viewingId]);
 
   const handleLoginSuccess = (token: string, userData: any) => {
     setAuthSession(token, userData);
@@ -1883,7 +1901,7 @@ const App: React.FC = () => {
                   key={design.id}
                   type="button"
                   onClick={() => handleDesignCardClick(design)}
-                  className="group relative bg-white rounded-2xl overflow-hidden ring-1 ring-gray-200/90 active:scale-95"
+                  className="group relative bg-white rounded-2xl overflow-hidden ring-1 ring-gray-200/90 touch-manipulation"
                 >
                   <div className="aspect-[3/4] bg-gray-100 relative">
                     <img
@@ -2019,9 +2037,7 @@ const App: React.FC = () => {
             const next = filteredDesigns[nextIndex];
             if (!next) return;
             setViewingId(next.id);
-            void hydrateDesign(next).then(full => {
-              setDesigns(prev => prev.map(item => item.id === full.id ? full : item));
-            });
+            void hydrateDesign(next).then(applyHydratedDesign);
           }}
           onClose={() => setViewingId(null)}
         />

@@ -271,7 +271,14 @@ router.get('/:id', optionalAuth, requireActiveSubscriptionIfAuthenticated, async
           select: {
             id: true,
             name: true,
-            email: true
+            email: true,
+            firmName: true
+          }
+        },
+        catalogue: {
+          select: {
+            id: true,
+            name: true
           }
         }
       }
