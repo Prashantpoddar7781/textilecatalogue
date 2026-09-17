@@ -6,6 +6,7 @@ import { requireActiveSubscription } from '../middleware/subscription.js';
 import { ensureMillParty, resolveSupplierForEntry } from '../utils/partyMaster.js';
 import { roundMoney } from '../utils/orderBilling.js';
 import { linesForSource, sourceLineKey } from '../utils/documentLinkAttribution.js';
+import { getGstDefaultsForTransactionType } from '../constants/erpTransactionTypes.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -39,8 +40,19 @@ async function getCompanyContext(userId) {
     prisma.businessProfile.findUnique({ where: { userId } })
   ]);
   return {
-    companyName: profile?.tradeName || profile?.legalName || user?.firmName || user?.name || ''
+    companyName: profile?.tradeName || profile?.legalName || user?.firmName || user?.name || '',
+    companyGstRate: Number(profile?.defaultGstRate) || 5,
+    companyHsnCode: profile?.defaultHsnCode || null
   };
+}
+
+/** HSN/SAC for a despatch series, from the Transaction Types master. */
+function typeHsnCode(transactionType, ctx) {
+  return getGstDefaultsForTransactionType(
+    transactionType || DESP_TYPES[0],
+    ctx.companyGstRate,
+    ctx.companyHsnCode
+  ).hsnCode;
 }
 
 export function normalizeWorkLines(raw, options = {}) {
@@ -399,7 +411,8 @@ router.post('/', authenticateToken, requireActiveSubscription, [
         brokerName: optionalString(req.body.brokerName),
         vehicleNo: optionalString(req.body.vehicleNo),
         workType: optionalString(req.body.workType),
-        hsnCode: optionalString(req.body.hsnCode) || '5407',
+        hsnCode: optionalString(req.body.hsnCode)
+          || typeHsnCode(optionalString(req.body.transactionType), ctx),
         remarks: optionalString(req.body.remarks),
         receivedBy: optionalString(req.body.receivedBy),
         deliveryDays: optionalNumber(req.body.deliveryDays) ?? 0,
@@ -429,6 +442,7 @@ router.put('/:id', authenticateToken, requireActiveSubscription, [
     if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
 
     const userId = req.user.userId;
+    const ctx = await getCompanyContext(userId);
     const existing = await prisma.workDespatch.findFirst({
       where: { id: req.params.id, userId, status: { not: 'cancelled' } }
     });
@@ -464,7 +478,9 @@ router.put('/:id', authenticateToken, requireActiveSubscription, [
         brokerName: optionalString(req.body.brokerName),
         vehicleNo: optionalString(req.body.vehicleNo),
         workType: optionalString(req.body.workType),
-        hsnCode: optionalString(req.body.hsnCode) || existing.hsnCode || '5407',
+        hsnCode: optionalString(req.body.hsnCode)
+          || existing.hsnCode
+          || typeHsnCode(optionalString(req.body.transactionType) || existing.transactionType, ctx),
         remarks: optionalString(req.body.remarks),
         receivedBy: optionalString(req.body.receivedBy),
         deliveryDays: optionalNumber(req.body.deliveryDays) ?? existing.deliveryDays ?? 0,

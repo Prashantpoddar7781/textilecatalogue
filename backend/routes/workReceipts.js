@@ -13,6 +13,7 @@ import { ensureMillParty, resolveSupplierForEntry } from '../utils/partyMaster.j
 import { roundMoney } from '../utils/orderBilling.js';
 import { resolvePartyPan, suggestTdsPercentFromPan } from '../utils/tds.js';
 import { normalizeWorkLines } from './workDespatches.js';
+import { getGstDefaultsForTransactionType } from '../constants/erpTransactionTypes.js';
 import {
   attributeLinesToSources,
   linkBehaviour,
@@ -54,8 +55,18 @@ async function getCompanyContext(userId) {
   return {
     companyName: profile?.tradeName || profile?.legalName || user?.firmName || user?.name || '',
     businessState: profile?.state || null,
-    defaultGstRate: 5
+    companyGstRate: Number(profile?.defaultGstRate) || 5,
+    companyHsnCode: profile?.defaultHsnCode || null
   };
+}
+
+/** GST % and HSN/SAC for a receipt series, from the Transaction Types master. */
+function typeGstDefaults(transactionType, ctx) {
+  return getGstDefaultsForTransactionType(
+    transactionType || REC_TYPES[0],
+    ctx.companyGstRate,
+    ctx.companyHsnCode
+  );
 }
 
 function resolvePlaceOfSupply({ partyGstin, placeOfSupply, stateCode }) {
@@ -99,7 +110,7 @@ function computeReceiptTotals(reqBody, lineItems, ctx, despatch = null) {
     otherLessBefore: optionalNumber(reqBody.otherLess) ?? 0,
     otherAddAfter: 0,
     otherLessAfter: 0,
-    gstRate: reqBody.gstRate ?? ctx.defaultGstRate,
+    gstRate: reqBody.gstRate ?? typeGstDefaults(optionalString(reqBody.transactionType), ctx).gstRate,
     placeOfSupply,
     businessState: ctx.businessState,
     partyGstin,
@@ -179,7 +190,11 @@ router.get('/meta', authenticateToken, requireActiveSubscription, async (req, re
       transactionTypes: REC_TYPES,
       states: INDIAN_STATES,
       parties,
-      defaultHsnCode: '9988',
+      // Per series, so a challan seeds the master's 0% while a bill seeds 5%.
+      gstDefaultsByType: REC_TYPES.reduce((acc, type) => {
+        acc[type] = typeGstDefaults(type, ctx);
+        return acc;
+      }, {}),
       linkBehaviourByType: REC_TYPES.reduce((acc, type) => {
         acc[type] = linkBehaviour(type);
         return acc;
@@ -511,7 +526,7 @@ async function saveReceipt(req, res, existing = null) {
     brokerName: optionalString(req.body.brokerName) || primary?.brokerName,
     vehicleNo: optionalString(req.body.vehicleNo),
     workType: optionalString(req.body.workType) || primary?.workType,
-    hsnCode: optionalString(req.body.hsnCode) || '9988',
+    hsnCode: optionalString(req.body.hsnCode) || typeGstDefaults(transactionType, ctx).hsnCode,
     remarks: optionalString(req.body.remarks),
     receivedBy: optionalString(req.body.receivedBy),
     billNo: optionalString(req.body.billNo),

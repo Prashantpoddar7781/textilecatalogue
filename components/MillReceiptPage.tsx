@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, ListOrdered, Loader2 } from 'lucide-react';
 import { millReceiptsApi } from '../services/api';
 import { getGstDocumentType, getItcEligibility, gstReturnSection, postingDiscountAccount, postingTdsAccount, postingTdsPercent, resolveDefaultTdsPercent } from '../constants/erpTransactionPostingRules';
+import { getGstDefaultsForTransactionType } from '../constants/erpTransactionTypes';
 import { AccountParty, ErpSession, MillPendingDispatch, MillReceiptTakaRow } from '../types';
 import { AccountsInformationDialog, AddPartyConfirmDialog } from './AccountsInformationDialog';
 import { ErpFormShell } from './ErpFormShell';
@@ -48,7 +49,9 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const tdsAccount = postingTdsAccount(entryType);
   const masterTdsPercent = postingTdsPercent(entryType);
   const discountAccount = postingDiscountAccount(entryType);
-  const [hsnCode, setHsnCode] = useState('9988');
+  const [hsnCode, setHsnCode] = useState(
+    () => getGstDefaultsForTransactionType('JOB WORK').hsnCode
+  );
   const [stateCode, setStateCode] = useState('');
   const [placeOfSupply, setPlaceOfSupply] = useState('');
   const [gstTypeLabel, setGstTypeLabel] = useState('');
@@ -80,7 +83,9 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [discountAmount, setDiscountAmount] = useState(0);
   const [otherLess, setOtherLess] = useState('');
   const [otherAdd, setOtherAdd] = useState('');
-  const [gstRate, setGstRate] = useState('5');
+  const [gstRate, setGstRate] = useState(
+    () => String(getGstDefaultsForTransactionType('JOB WORK').gstRate)
+  );
   const [cgstRate, setCgstRate] = useState('0');
   const [cgstAmount, setCgstAmount] = useState('0');
   const [sgstRate, setSgstRate] = useState('0');
@@ -236,8 +241,14 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
         if (cancelled) return;
         setCompanyName(meta.companyName || '');
         if (!isEditMode) setVoucherNo(String(meta.nextVoucherNo || 1));
-        setHsnCode(meta.defaultHsnCode || '9988');
-        setGstRate(String(meta.defaultGstRate ?? 5));
+        const startType = meta.entryTypes?.[0] || entryType;
+        const typeDefaults = getGstDefaultsForTransactionType(
+          startType,
+          Number(meta.defaultGstRate) || 5,
+          meta.defaultHsnCode || ''
+        );
+        setHsnCode(typeDefaults.hsnCode);
+        setGstRate(String(typeDefaults.gstRate));
         setMills(meta.mills || []);
         setMillParties(meta.millParties || []);
         if (meta.entryTypes?.[0]) setEntryType(meta.entryTypes[0]);
@@ -249,9 +260,13 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
           setMillName(entry.millName || '');
           setMillGstin(entry.millGstin || '');
           setPartyMsme(entry.partyMsme || '');
-          setEntryType(entry.entryType || 'JOB WORK');
+          const savedType = entry.entryType || 'JOB WORK';
+          setEntryType(savedType);
           setProcessType((entry.processType || 'FINISH').toUpperCase() === 'RETURN' ? 'RETURN' : 'FINISH');
-          setHsnCode(entry.hsnCode || meta.defaultHsnCode || '9988');
+          setHsnCode(
+            entry.hsnCode
+            || getGstDefaultsForTransactionType(savedType, Number(meta.defaultGstRate) || 5, meta.defaultHsnCode || '').hsnCode
+          );
           setVoucherNo(String(entry.voucherNo ?? ''));
           setReceiptDate(entry.receiptDate ? entry.receiptDate.slice(0, 10) : today());
           setBillNo(entry.billNo || '');

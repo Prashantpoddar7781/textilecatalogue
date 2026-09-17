@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, ListOrdered, Loader2, Plus, Trash2 } from 'lucide-react';
 import { getGstDocumentType, getItcEligibility, gstReturnSection, postingTdsAccount, postingTdsPercent, resolveDefaultTdsPercent, postingPartyAccountType, postingDiscountAccount } from '../constants/erpTransactionPostingRules';
+import { getGstDefaultsForTransactionType } from '../constants/erpTransactionTypes';
 import { workReceiptsApi } from '../services/api';
 import { resolvePartyPan, suggestTdsPercentFromPan } from '../utils/tds';
 import { AccountParty, ErpSession, LinkedSourceDocument, WorkLineItem } from '../types';
@@ -70,8 +71,12 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const tdsAccount = postingTdsAccount(transactionType);
   const masterTdsPercent = postingTdsPercent(transactionType);
   const discountAccount = postingDiscountAccount(transactionType);
+  const [companyGstRate, setCompanyGstRate] = useState(5);
+  const [companyHsnCode, setCompanyHsnCode] = useState('');
   const [voucherNo, setVoucherNo] = useState('1');
-  const [gstRate, setGstRate] = useState('5');
+  const [gstRate, setGstRate] = useState(
+    () => String(getGstDefaultsForTransactionType('WORK REC. BILL').gstRate)
+  );
   const [partyName, setPartyName] = useState('');
   const [partyGstin, setPartyGstin] = useState('');
   const [placeOfSupply, setPlaceOfSupply] = useState('');
@@ -82,7 +87,9 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [brokerName, setBrokerName] = useState('');
   const [vehicleNo, setVehicleNo] = useState('');
   const [workType, setWorkType] = useState('');
-  const [hsnCode, setHsnCode] = useState('9988');
+  const [hsnCode, setHsnCode] = useState(
+    () => getGstDefaultsForTransactionType('WORK REC. BILL').hsnCode
+  );
   const [remarks, setRemarks] = useState('');
   const [billNo, setBillNo] = useState('');
   // One bill may cover several despatch challans.
@@ -122,9 +129,15 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
         setCompanyName(meta.companyName || '');
         if (!isEditMode) setVoucherNo(String(meta.nextVoucherNo || 1));
         setTransactionTypes(meta.transactionTypes || []);
+        const companyGst = Number(meta.companyGstRate) || 5;
+        const companyHsn = meta.companyHsnCode || '';
+        setCompanyGstRate(companyGst);
+        setCompanyHsnCode(companyHsn);
+        const startType = (!isEditMode && meta.transactionTypes?.[0]) || transactionType;
         if (!isEditMode && meta.transactionTypes?.[0]) setTransactionType(meta.transactionTypes[0]);
-        setGstRate(String(meta.defaultGstRate ?? 5));
-        setHsnCode(meta.defaultHsnCode || '9988');
+        const startDefaults = getGstDefaultsForTransactionType(startType, companyGst, companyHsn);
+        setGstRate(String(startDefaults.gstRate));
+        setHsnCode(startDefaults.hsnCode);
         setParties(meta.parties || []);
 
         if (isEditMode && editId) {
@@ -132,9 +145,11 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
           if (cancelled) return;
           setSelectedSources(sources || []);
           setCompanyName(entry.companyName || meta.companyName || '');
-          setTransactionType(entry.transactionType || 'WORK REC. BILL');
+          const savedType = entry.transactionType || 'WORK REC. BILL';
+          const savedDefaults = getGstDefaultsForTransactionType(savedType, companyGst, companyHsn);
+          setTransactionType(savedType);
           setVoucherNo(String(entry.voucherNo ?? ''));
-          setGstRate(String(entry.gstRate ?? 5));
+          setGstRate(String(entry.gstRate ?? savedDefaults.gstRate));
           setPartyName(entry.partyName || '');
           setPartyGstin(entry.partyGstin || '');
           setPlaceOfSupply(entry.placeOfSupply || '');
@@ -144,7 +159,7 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
           setReceiptDate(entry.receiptDate ? entry.receiptDate.slice(0, 10) : today());
           setBrokerName(entry.brokerName || '');
           setWorkType(entry.workType || '');
-          setHsnCode(entry.hsnCode || '9988');
+          setHsnCode(entry.hsnCode || savedDefaults.hsnCode);
           setRemarks(entry.remarks || '');
           setBillNo(entry.billNo || '');
           setLines((entry.lineItems || []).map(row => {
@@ -601,6 +616,10 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
                     const next = e.target.value;
                     setTransactionType(next);
                     applyTdsDefaults(next, { party: partyName, gstin: partyGstin });
+                    // Challans carry no tax in the master; bills carry 5%.
+                    const d = getGstDefaultsForTransactionType(next, companyGstRate, companyHsnCode);
+                    setGstRate(String(d.gstRate));
+                    setHsnCode(d.hsnCode);
                   }}
                 >
                   {transactionTypes.map(t => <option key={t} value={t}>{t}</option>)}

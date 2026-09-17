@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Loader2, Plus, Trash2 } from 'lucide-react';
 import { postingPartyAccountType } from '../constants/erpTransactionPostingRules';
+import { getGstDefaultsForTransactionType } from '../constants/erpTransactionTypes';
 import { workDespatchesApi } from '../services/api';
 import { AccountParty, ErpSession, WorkLineItem } from '../types';
 import { AccountsInformationDialog, AddPartyConfirmDialog } from './AccountsInformationDialog';
@@ -62,7 +63,9 @@ export const WorkDespatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [brokerName, setBrokerName] = useState('');
   const [vehicleNo, setVehicleNo] = useState('');
   const [workType, setWorkType] = useState('EMB WORK');
-  const [hsnCode, setHsnCode] = useState('5407');
+  const [hsnCode, setHsnCode] = useState(
+    () => getGstDefaultsForTransactionType('WORK DESP CHALLAN').hsnCode
+  );
   const [remarks, setRemarks] = useState('');
   const [receivedBy, setReceivedBy] = useState('');
   const [deliveryDays, setDeliveryDays] = useState('0');
@@ -92,7 +95,8 @@ export const WorkDespatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
           const { entry } = await workDespatchesApi.getById(editId);
           if (cancelled) return;
           setCompanyName(entry.companyName || meta.companyName || '');
-          setTransactionType(entry.transactionType || 'WORK DESP CHALLAN');
+          const savedType = entry.transactionType || 'WORK DESP CHALLAN';
+          setTransactionType(savedType);
           setPartyName(entry.partyName || '');
           setPartyGstin(entry.partyGstin || '');
           setStateCode(entry.stateCode || '');
@@ -103,7 +107,7 @@ export const WorkDespatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
           setBrokerName(entry.brokerName || '');
           setVehicleNo(entry.vehicleNo || '');
           setWorkType(entry.workType || 'EMB WORK');
-          setHsnCode(entry.hsnCode || '5407');
+          setHsnCode(entry.hsnCode || getGstDefaultsForTransactionType(savedType).hsnCode);
           setRemarks(entry.remarks || '');
           setReceivedBy(entry.receivedBy || '');
           setDeliveryDays(String(entry.deliveryDays ?? 0));
@@ -288,7 +292,15 @@ export const WorkDespatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
               <label><span className={labelClass}>Company</span><input className={inputClass} value={companyName} onChange={e => setCompanyName(e.target.value)} /></label>
               <label>
                 <span className={labelClass}>Type</span>
-                <select className={inputClass} value={transactionType} onChange={e => setTransactionType(e.target.value)}>
+                <select
+                  className={inputClass}
+                  value={transactionType}
+                  onChange={e => {
+                    const next = e.target.value;
+                    setTransactionType(next);
+                    setHsnCode(getGstDefaultsForTransactionType(next).hsnCode);
+                  }}
+                >
                   {transactionTypes.map(t => <option key={t} value={t}>{t}</option>)}
                 </select>
               </label>

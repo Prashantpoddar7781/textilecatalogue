@@ -1754,8 +1754,10 @@ export const workReceiptsApi = {
     return request<{
       companyName: string;
       businessState?: string | null;
-      defaultGstRate: number;
-      defaultHsnCode?: string;
+      companyGstRate: number;
+      companyHsnCode?: string | null;
+      /** GST % and HSN per receipt series, from the Transaction Types master. */
+      gstDefaultsByType?: Record<string, { gstRate: number; hsnCode: string; itcEligibility: string | null }>;
       nextVoucherNo: number;
       transactionTypes: string[];
       states: string[];

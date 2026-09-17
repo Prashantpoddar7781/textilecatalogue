@@ -180,7 +180,8 @@ const ewayFromBill = (bill: Order): EwayBillInfo | null => (bill.ewayBillNo
   }
   : null);
 
-const itemDefaults = (mainScreen = '') => ({
+/** New Quality Information rows start on the series' GST/HSN, same as the bill line. */
+const itemDefaults = (mainScreen = '', gst?: { gstRate: number; hsnCode: string }) => ({
   name: mainScreen,
   mainScreen,
   packing: 'NAKED',
@@ -195,8 +196,8 @@ const itemDefaults = (mainScreen = '') => ({
   rate2: 0,
   rate3: 0,
   workCut: 0,
-  hsnSac: '5407',
-  gstRate: 5,
+  hsnSac: gst?.hsnCode ?? getGstDefaultsForTransactionType(DEFAULT_SALES_TRANSACTION_TYPE).hsnCode,
+  gstRate: gst?.gstRate ?? getGstDefaultsForTransactionType(DEFAULT_SALES_TRANSACTION_TYPE).gstRate,
   remark: ''
 });
 
@@ -693,7 +694,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
     if (window.confirm(`"${value}" is not in Quality Information. Add a new item now?`)) {
       setItemModalRow(index);
       setItemForm({
-        ...itemDefaults(value),
+        ...itemDefaults(value, { gstRate: defaultGstRate, hsnCode: defaultHsnCode }),
         name: line?.itemName?.trim() || value,
         mainScreen: value
       });
