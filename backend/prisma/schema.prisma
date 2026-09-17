@@ -286,6 +286,15 @@ model Order {
   dhara              Float?
   grace              Float?
   screenSeries       String?
+  /// NIC e-way bill stamped on this document once generated.
+  ewayBillNo            String?
+  ewayBillDate          DateTime?
+  ewayBillValidUpto     DateTime?
+  ewayBillStatus        String?
+  ewayBillMode          String?
+  ewayBillDistance      Int?
+  ewayBillTransporterId String?
+  ewayBillRaw           Json?
   salesInvoices      SalesInvoice[]
   createdAt          DateTime       @default(now())
 
@@ -439,6 +448,16 @@ model BusinessProfile {
   defaultHsnCode      String?
   defaultGstRate      Float    @default(5)
   terms               String?
+  /// E-way bill API access. mock = offline test numbers, sandbox/production = GSP.
+  ewbMode             String   @default("mock")
+  ewbProvider         String?
+  ewbBaseUrl          String?
+  ewbClientId         String?
+  ewbClientSecret     String?
+  ewbUsername         String?
+  ewbPassword         String?
+  ewbGstin            String?
+  ewbDefaultDistance  Int?
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 

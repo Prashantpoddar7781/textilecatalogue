@@ -196,6 +196,13 @@ export interface Order {
   dhara?: number | null;
   grace?: number | null;
   screenSeries?: string | null;
+  ewayBillNo?: string | null;
+  ewayBillDate?: string | null;
+  ewayBillValidUpto?: string | null;
+  ewayBillStatus?: string | null;
+  ewayBillMode?: string | null;
+  ewayBillDistance?: number | null;
+  ewayBillTransporterId?: string | null;
   createdAt: string;
   customer?: Customer | null;
   design?: TextileDesign;

@@ -792,6 +792,57 @@ export const salesOrdersApi = {
   }
 };
 
+export interface EwayBillInfo {
+  ewayBillNo: string;
+  ewayBillDate?: string | null;
+  validUpto?: string | null;
+  status?: string | null;
+  mode?: string | null;
+  distance?: number | null;
+  transporterId?: string | null;
+}
+
+export interface EwayBillTransportInput {
+  distance?: number | string;
+  transMode?: string;
+  vehicleNo?: string;
+  vehicleType?: string;
+  transporterId?: string;
+  transporterName?: string;
+  transDocNo?: string;
+  transDocDate?: string;
+}
+
+export const ewayBillsApi = {
+  /** Pre-flight for the Generate dialog: mode, prefill and what is still missing. */
+  getSalesPreview: async (billId: string, transport?: EwayBillTransportInput) => {
+    const query = new URLSearchParams();
+    Object.entries(transport || {}).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '') query.set(key, String(value));
+    });
+    const suffix = query.toString() ? `?${query.toString()}` : '';
+    return request<{
+      mode: 'mock' | 'sandbox' | 'production';
+      gstDocumentType: string | null;
+      docNo: string;
+      docDate: string | null;
+      partyName: string;
+      totals: { taxableAmount: number; cgstAmount: number; sgstAmount: number; igstAmount: number; netAmount: number };
+      prefill: Required<EwayBillTransportInput>;
+      blockers: string[];
+      errors: string[];
+      warnings: string[];
+      ewayBill: EwayBillInfo | null;
+    }>(`/eway-bills/sales/${billId}${suffix}`);
+  },
+  generateForSales: async (billId: string, transport: EwayBillTransportInput) => {
+    return request<{ ewayBill: EwayBillInfo; docNo: string; alert: string; warnings: string[] }>(
+      `/eway-bills/sales/${billId}`,
+      { method: 'POST', body: JSON.stringify(transport) }
+    );
+  }
+};
+
 // ERP Sales / Purchase entries
 export const erpApi = {
   createSalesEntry: async (body: {

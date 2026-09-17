@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Loader2, Plus, Trash2, X } from 'lucide-react';
-import { bankEntriesApi, salesOrdersApi } from '../services/api';
+import { EwayBillInfo, bankEntriesApi, salesOrdersApi } from '../services/api';
 import { AccountParty, Customer, ErpSession, Order, SalesItemMaster, SalesLineItem, SalesOrder } from '../types';
 import {
   DEFAULT_SALES_TRANSACTION_TYPE,
@@ -17,6 +17,7 @@ import {
 } from '../constants/erpTransactionPostingRules';
 import { AccountsInformationDialog, AddPartyConfirmDialog } from './AccountsInformationDialog';
 import { ErpFormShell } from './ErpFormShell';
+import { EwayBillDialog } from './EwayBillDialog';
 import { ErpSaveButton } from './ErpSaveButton';
 import { ErpTopMenu } from './ErpTopMenu';
 import { gstTypeLabel, isInterStateSupply } from '../utils/gstState';
@@ -167,6 +168,18 @@ function mergeBillLines(lines: SalesLineItem[]): SalesLineItem[] {
   });
 }
 
+const ewayFromBill = (bill: Order): EwayBillInfo | null => (bill.ewayBillNo
+  ? {
+    ewayBillNo: bill.ewayBillNo,
+    ewayBillDate: bill.ewayBillDate,
+    validUpto: bill.ewayBillValidUpto,
+    status: bill.ewayBillStatus,
+    mode: bill.ewayBillMode,
+    distance: bill.ewayBillDistance,
+    transporterId: bill.ewayBillTransporterId
+  }
+  : null);
+
 const itemDefaults = (mainScreen = '') => ({
   name: mainScreen,
   mainScreen,
@@ -266,6 +279,10 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [pendingNewParty, setPendingNewParty] = useState('');
   const [showAddConfirm, setShowAddConfirm] = useState(false);
   const [showAccountsDialog, setShowAccountsDialog] = useState(false);
+  const [savedBillId, setSavedBillId] = useState(editKind === 'bill' ? (editId || '') : '');
+  const [savedBillLabel, setSavedBillLabel] = useState('');
+  const [ewayBill, setEwayBill] = useState<EwayBillInfo | null>(null);
+  const [ewayOpen, setEwayOpen] = useState(false);
 
   const applyTypeGstDefaults = (type: string) => {
     const d = getGstDefaultsForTransactionType(type, companyGstRate, companyHsnCode);
@@ -277,6 +294,8 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
 
   const gstType = gstTypeLabel(state, businessState);
   const gstDocumentType = getGstDocumentType(transactionType);
+  // E-way applies to GST documents that move goods, per the Transaction Types master.
+  const canGenerateEway = isBillEntry && Boolean(gstDocumentType);
   const gstReturn = gstReturnSection(transactionType);
   const discountAccount = postingDiscountAccount(transactionType);
 
@@ -399,6 +418,12 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const applyBillDoc = (bill: Order, companyState: string, gstRate: number, hsn: string, sources: SalesOrder[] = []) => {
     setTransactionType(bill.transactionType || 'FINISH SALES');
     setTypeBillNumber(bill.typeBillNumber || null);
+    setSavedBillId(bill.id);
+    setSavedBillLabel(
+      formatSeriesBillNumber(bill.transactionType || 'FINISH SALES', bill.typeBillNumber)
+      || String(bill.invoiceNumber || '')
+    );
+    setEwayBill(ewayFromBill(bill));
     setCustomerId(bill.customerId || '');
     setPartyName(bill.buyerName || '');
     setPartyGstin(bill.customer?.gstNumber || '');
@@ -786,8 +811,12 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
         const result = editId && editKind === 'bill'
           ? await salesOrdersApi.updateBill(editId, body)
           : await salesOrdersApi.createBill(body);
+        setSavedBillId(result.bill.id);
+        setTypeBillNumber(result.bill.typeBillNumber ?? null);
         const no = formatSeriesBillNumber(transactionType, result.bill.typeBillNumber)
           || result.bill.invoiceNumber || '-';
+        setSavedBillLabel(String(no));
+        setEwayBill(ewayFromBill(result.bill));
         setSuccess(
           isGoodsReturn
             ? `Sales Goods Return #${no} ${isEditMode ? 'updated' : 'saved'}. Credited to party ledger.`
@@ -1178,7 +1207,44 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
             <label><span className={labelClass}>IGST Amt</span><input className={readonlyClass} value={totals.igst.toFixed(2)} readOnly /></label>
             <label><span className={labelClass}>Bill Amt</span><input className={readonlyClass} value={totals.net.toFixed(2)} readOnly /></label>
             <label><span className={labelClass}>Net Amt</span><input className={`${readonlyClass} font-black text-indigo-800`} value={totals.net.toFixed(2)} readOnly /></label>
+            {ewayBill && (
+              <label className="md:col-span-2">
+                <span className={labelClass}>E-Way Bill No.</span>
+                <input
+                  className={`${readonlyClass} font-black tracking-wider text-emerald-800`}
+                  value={ewayBill.ewayBillNo}
+                  readOnly
+                />
+              </label>
+            )}
           </section>
+
+          {canGenerateEway && (
+            <section className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50/50 p-4 shadow-sm">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-xs font-black uppercase tracking-wide text-emerald-900">Auto E-Way Bill</h2>
+                  <p className="mt-0.5 text-[11px] font-semibold text-emerald-800">
+                    {ewayBill
+                      ? `E-way bill ${ewayBill.ewayBillNo} generated for ${savedBillLabel || 'this bill'}${
+                        ewayBill.validUpto ? ` · valid upto ${new Date(ewayBill.validUpto).toLocaleDateString('en-IN')}` : ''
+                      }.`
+                      : savedBillId
+                        ? `Generate the e-way bill for ${savedBillLabel || 'this bill'} on ${gstDocumentType || 'this GST document'}.`
+                        : 'Save the bill first, then generate its e-way bill.'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setEwayOpen(true)}
+                  disabled={!savedBillId}
+                  className="rounded-xl bg-emerald-700 px-4 py-2.5 text-xs font-black uppercase text-white disabled:opacity-40"
+                >
+                  {ewayBill ? 'View E-Way Bill' : 'Generate E-Way Bill for this invoice'}
+                </button>
+              </div>
+            </section>
+          )}
 
           <ErpSaveButton
             saving={saving}
@@ -1190,6 +1256,16 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
           />
         </ErpFormShell>
       </main>
+
+      {ewayOpen && savedBillId && (
+        <EwayBillDialog
+          billId={savedBillId}
+          docNo={savedBillLabel || formatSeriesBillNumber(transactionType, typeBillNumber) || 'Sales bill'}
+          existing={ewayBill}
+          onClose={() => setEwayOpen(false)}
+          onGenerated={setEwayBill}
+        />
+      )}
 
       {pickerOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
