@@ -8,6 +8,7 @@ import { AccountsInformationDialog, AddPartyConfirmDialog } from './AccountsInfo
 import { ErpFormShell } from './ErpFormShell';
 import { ErpSaveButton } from './ErpSaveButton';
 import { ErpTopMenu } from './ErpTopMenu';
+import { useVoucherJump } from '../hooks/useVoucherJump';
 
 interface Props {
   onBack: () => void;
@@ -59,6 +60,13 @@ export const WorkDespatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [placeOfSupply, setPlaceOfSupply] = useState('');
   const [gstType, setGstType] = useState('');
   const [challanNo, setChallanNo] = useState('1');
+  const workDespatchVoucherJump = useVoucherJump({
+    module: 'work-despatch',
+    transactionType,
+    currentId: isEditMode ? editId : null,
+    shownNumber: challanNo,
+    onError: setError
+  });
   const [despatchDate, setDespatchDate] = useState(today());
   const [brokerName, setBrokerName] = useState('');
   const [vehicleNo, setVehicleNo] = useState('');
@@ -304,7 +312,15 @@ export const WorkDespatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
                   {transactionTypes.map(t => <option key={t} value={t}>{t}</option>)}
                 </select>
               </label>
-              <label><span className={labelClass}>Challan No.</span><input className={inputClass} value={challanNo} onChange={e => setChallanNo(e.target.value)} /></label>
+              <label>
+                <span className={labelClass}>Challan No.</span>
+                <input
+                  className={inputClass}
+                  value={challanNo}
+                  onChange={e => setChallanNo(e.target.value)}
+                  {...workDespatchVoucherJump.voucherFieldProps}
+                />
+              </label>
               <label><span className={labelClass}>Date</span><input type="date" className={inputClass} value={despatchDate} onChange={e => setDespatchDate(e.target.value)} /></label>
               <label className="md:col-span-2">
                 <span className={labelClass}>Party</span>

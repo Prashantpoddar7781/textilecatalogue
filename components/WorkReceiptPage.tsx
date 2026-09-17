@@ -10,6 +10,7 @@ import { ErpFormShell } from './ErpFormShell';
 import { ErpSaveButton } from './ErpSaveButton';
 import { ErpTopMenu } from './ErpTopMenu';
 import { partyDhara } from '../utils/partyBillingTerms';
+import { useVoucherJump } from '../hooks/useVoucherJump';
 
 interface Props {
   onBack: () => void;
@@ -74,6 +75,13 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [companyGstRate, setCompanyGstRate] = useState(5);
   const [companyHsnCode, setCompanyHsnCode] = useState('');
   const [voucherNo, setVoucherNo] = useState('1');
+  const workReceiptVoucherJump = useVoucherJump({
+    module: 'work-receipt',
+    transactionType,
+    currentId: isEditMode ? editId : null,
+    shownNumber: voucherNo,
+    onError: setError
+  });
   const [gstRate, setGstRate] = useState(
     () => String(getGstDefaultsForTransactionType('WORK REC. BILL').gstRate)
   );
@@ -625,7 +633,15 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
                   {transactionTypes.map(t => <option key={t} value={t}>{t}</option>)}
                 </select>
               </label>
-              <label><span className={labelClass}>Voucher</span><input className={readonlyClass} value={voucherNo} readOnly /></label>
+              <label>
+                <span className={labelClass}>Voucher</span>
+                <input
+                  className={inputClass}
+                  value={voucherNo}
+                  onChange={e => setVoucherNo(e.target.value)}
+                  {...workReceiptVoucherJump.voucherFieldProps}
+                />
+              </label>
               <label><span className={labelClass}>Date</span><input type="date" className={inputClass} value={receiptDate} onChange={e => setReceiptDate(e.target.value)} /></label>
               <label className="md:col-span-2">
                 <span className={labelClass}>Party</span>

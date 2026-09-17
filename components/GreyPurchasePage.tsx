@@ -12,6 +12,7 @@ import { ErpFormShell } from './ErpFormShell';
 import { ErpSaveButton } from './ErpSaveButton';
 import { TakaDetailsModal } from './TakaDetailsModal';
 import { partyDhara } from '../utils/partyBillingTerms';
+import { useVoucherJump } from '../hooks/useVoucherJump';
 
 interface Props {
   onBack: () => void;
@@ -49,6 +50,7 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [quality, setQuality] = useState('');
   const [srNo, setSrNo] = useState('1');
   const [typeBillNumber, setTypeBillNumber] = useState<number | null>(null);
+  const [voucherInput, setVoucherInput] = useState('');
   const [orderNo, setOrderNo] = useState('0');
   const [hsnCode, setHsnCode] = useState('');
   const [billNo, setBillNo] = useState('');
@@ -93,6 +95,16 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [showAccountsDialog, setShowAccountsDialog] = useState(false);
   const [allowUnknownParty, setAllowUnknownParty] = useState(false);
   const [success, setSuccess] = useState('');
+  const voucherJump = useVoucherJump({
+    module: 'grey-purchase',
+    transactionType: GREY_TYPE,
+    currentId: isEditMode ? editId : null,
+    shownNumber: typeBillNumber,
+    onError: setError
+  });
+  useEffect(() => {
+    setVoucherInput(formatSeriesBillNumber(GREY_TYPE, typeBillNumber) || '');
+  }, [typeBillNumber]);
 
   const gstInvalid = isWrongGstNumber(partyGstin);
   const needsManualState = !normalizeGstNumber(partyGstin) && !placeOfSupply;
@@ -468,9 +480,10 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
                 <label>
                   <span className={labelClass}>Voucher No.</span>
                   <input
-                    className={readonlyClass}
-                    value={formatSeriesBillNumber(GREY_TYPE, typeBillNumber) || '—'}
-                    readOnly
+                    className={inputClass}
+                    value={voucherInput}
+                    onChange={e => setVoucherInput(e.target.value)}
+                    {...voucherJump.voucherFieldProps}
                   />
                 </label>
                 <label className="xl:col-span-2">

@@ -8,6 +8,7 @@ import { DispatchTakaSelectModal } from './DispatchTakaSelectModal';
 import { ErpFormShell } from './ErpFormShell';
 import { ErpSaveButton } from './ErpSaveButton';
 import { ErpTopMenu } from './ErpTopMenu';
+import { useVoucherJump } from '../hooks/useVoucherJump';
 
 interface Props {
   onBack: () => void;
@@ -89,6 +90,12 @@ export const GreyPurchaseReturnPage: React.FC<Props> = ({ onBack, erpSession }) 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const voucherJump = useVoucherJump({
+    module: 'grey-purchase-return',
+    currentId: isEditMode ? editId : null,
+    shownNumber: voucherNo,
+    onError: setError
+  });
 
   const stockMts = useMemo(() => {
     const receipt = greyReceipts.find(r => r.id === greyPurchaseId);
@@ -414,7 +421,14 @@ export const GreyPurchaseReturnPage: React.FC<Props> = ({ onBack, erpSession }) 
               <div className="grid gap-3 md:grid-cols-4 xl:grid-cols-6">
                 <label><span className={labelClass}>Company</span><input className={inputClass} value={companyName} onChange={e => setCompanyName(e.target.value)} /></label>
                 <label><span className={labelClass}>Type</span><input className={readonlyClass} value={entryType} readOnly /></label>
-                <label><span className={labelClass}>Voucher No.</span><input className={readonlyClass} value={voucherNo} readOnly /></label>
+                <label><span className={labelClass}>Voucher No.</span>
+                  <input
+                    className={inputClass}
+                    value={voucherNo}
+                    onChange={e => setVoucherNo(e.target.value)}
+                    {...voucherJump.voucherFieldProps}
+                  />
+                </label>
                 <label>
                   <span className={labelClass}>Grey Type</span>
                   <select

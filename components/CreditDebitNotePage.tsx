@@ -24,6 +24,7 @@ import { ErpSaveButton } from './ErpSaveButton';
 import { ErpTopMenu } from './ErpTopMenu';
 import { isInterStateSupply } from '../utils/gstState';
 import { partyDhara } from '../utils/partyBillingTerms';
+import { useVoucherJump } from '../hooks/useVoucherJump';
 
 interface Props {
   noteType?: CreditDebitNoteType;
@@ -102,6 +103,13 @@ export const CreditDebitNotePage: React.FC<Props> = ({ noteType: initialNoteType
   const [loadingEdit, setLoadingEdit] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const noteVoucherJump = useVoucherJump({
+    module: 'note',
+    transactionType: noteType.value,
+    currentId: editingId,
+    shownNumber: voucherNumber,
+    onError: setError
+  });
 
   const rule = getPostingRule(noteType.series);
   const saleOrPurAccount = postingSaleOrPurchaseAccount(noteType.series) || '';
@@ -452,7 +460,12 @@ export const CreditDebitNotePage: React.FC<Props> = ({ noteType: initialNoteType
             </div>
             <div>
               <label className={labelClass}>Voucher No.</label>
-              <input className={inputClass} value={voucherNumber} onChange={e => setVoucherNumber(e.target.value)} />
+              <input
+                className={inputClass}
+                value={voucherNumber}
+                onChange={e => setVoucherNumber(e.target.value)}
+                {...noteVoucherJump.voucherFieldProps}
+              />
             </div>
             <div><label className={labelClass}>Note No.</label><input className={inputClass} value={noteNumber} onChange={e => setNoteNumber(e.target.value)} /></div>
             <div><label className={labelClass}>Date</label><input className={inputClass} type="date" value={noteDate} onChange={e => setNoteDate(e.target.value)} /></div>

@@ -9,6 +9,7 @@ import { ErpFormShell } from './ErpFormShell';
 import { ErpSaveButton } from './ErpSaveButton';
 import { ErpTopMenu } from './ErpTopMenu';
 import { MillReceiptTakaModal } from './MillReceiptTakaModal';
+import { useVoucherJump } from '../hooks/useVoucherJump';
 
 interface Props {
   onBack: () => void;
@@ -113,6 +114,12 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const millVoucherJump = useVoucherJump({
+    module: 'mill-receipt',
+    currentId: isEditMode ? editId : null,
+    shownNumber: voucherNo,
+    onError: setError
+  });
 
   useEffect(() => {
     if (isReturn) {
@@ -661,7 +668,12 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
               </div>
               <div>
                 <label className={labelClass}>Voucher</label>
-                <input className={readonlyClass} value={voucherNo} readOnly />
+                <input
+                  className={inputClass}
+                  value={voucherNo}
+                  onChange={e => setVoucherNo(e.target.value)}
+                  {...millVoucherJump.voucherFieldProps}
+                />
               </div>
               <div>
                 <label className={labelClass}>Date</label>

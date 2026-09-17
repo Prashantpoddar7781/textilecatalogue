@@ -843,6 +843,16 @@ export const ewayBillsApi = {
   }
 };
 
+export const vouchersApi = {
+  lookup: async (params: { module: string; voucher: string; transactionType?: string }) => {
+    const query = new URLSearchParams();
+    query.set('module', params.module);
+    query.set('voucher', params.voucher);
+    if (params.transactionType) query.set('transactionType', params.transactionType);
+    return request<{ id: string; editPath: string; kind?: string }>(`/vouchers/lookup?${query.toString()}`);
+  }
+};
+
 // ERP Sales / Purchase entries
 export const erpApi = {
   createSalesEntry: async (body: {

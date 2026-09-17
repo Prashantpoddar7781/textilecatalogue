@@ -22,6 +22,7 @@ import { ErpSaveButton } from './ErpSaveButton';
 import { ErpTopMenu } from './ErpTopMenu';
 import { gstTypeLabel, isInterStateSupply } from '../utils/gstState';
 import { partyDhara, partyGraceDays } from '../utils/partyBillingTerms';
+import { useVoucherJump } from '../hooks/useVoucherJump';
 
 interface Props {
   onBack: () => void;
@@ -284,6 +285,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [savedBillLabel, setSavedBillLabel] = useState('');
   const [ewayBill, setEwayBill] = useState<EwayBillInfo | null>(null);
   const [ewayOpen, setEwayOpen] = useState(false);
+  const [voucherInput, setVoucherInput] = useState('');
 
   const applyTypeGstDefaults = (type: string) => {
     const d = getGstDefaultsForTransactionType(type, companyGstRate, companyHsnCode);
@@ -297,6 +299,21 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const gstDocumentType = getGstDocumentType(transactionType);
   // E-way applies to GST documents that move goods, per the Transaction Types master.
   const canGenerateEway = isBillEntry && Boolean(gstDocumentType);
+  const voucherJump = useVoucherJump({
+    module: isSalesOrder ? 'sales-order' : 'sales',
+    transactionType: isSalesOrder ? undefined : transactionType,
+    currentId: isEditMode ? editId : null,
+    shownNumber: isSalesOrder ? (orderNo || nextOrderNo) : typeBillNumber,
+    onError: setError
+  });
+
+  useEffect(() => {
+    setVoucherInput(
+      isSalesOrder
+        ? String(orderNo || nextOrderNo)
+        : (formatSeriesBillNumber(transactionType, typeBillNumber) || '')
+    );
+  }, [isSalesOrder, orderNo, nextOrderNo, transactionType, typeBillNumber]);
   const gstReturn = gstReturnSection(transactionType);
   const discountAccount = postingDiscountAccount(transactionType);
 
@@ -916,11 +933,10 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
               <label>
                 <span className={labelClass}>{isSalesOrder ? 'Order No.' : 'Bill / Voucher No.'}</span>
                 <input
-                  className={readonlyClass}
-                  value={isSalesOrder
-                    ? (orderNo || nextOrderNo)
-                    : (formatSeriesBillNumber(transactionType, typeBillNumber) || '—')}
-                  readOnly
+                  className={inputClass}
+                  value={voucherInput}
+                  onChange={e => setVoucherInput(e.target.value)}
+                  {...voucherJump.voucherFieldProps}
                 />
               </label>
               <label><span className={labelClass}>Date</span><input type="date" className={inputClass} value={orderDate} onChange={e => setOrderDate(e.target.value)} /></label>

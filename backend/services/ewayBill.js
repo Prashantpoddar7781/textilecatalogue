@@ -246,7 +246,11 @@ export function validateEwayBillPayload(payload) {
     errors.push('Party GSTIN is not valid. Use a correct GSTIN, or clear it to bill an unregistered party (URP).');
   }
   if (!payload.toPincode) errors.push('Party pincode is missing. Add it in the party master.');
-  if (!payload.actToStateCode) errors.push('Party state could not be resolved to a GST state code.');
+  if (!payload.actToStateCode) {
+    errors.push(
+      `Party ${payload.toTrdName ? `"${payload.toTrdName}" ` : ''}has no GST state. Open Accounts and fill this party's GSTIN or State (e.g. Uttar Pradesh / 09), then try again.`
+    );
+  }
   if (!payload.toAddr1) errors.push('Party address is missing. Add it in the party master.');
 
   if (!payload.docNo) errors.push('Bill number is missing. Save the bill first.');

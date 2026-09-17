@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Edit3, Loader2, Plus, RefreshCw, Search, Trash2 } from 'lucide-react';
 import { bankEntriesApi, invoicesApi } from '../services/api';
+import { useVoucherJump } from '../hooks/useVoucherJump';
 import { AccountParty, BankEntry, BankPendingBill, CompletedOrderParty, PurchaseBillParty } from '../types';
 import { postingSaleOrPurchaseAccount, warnsOnManualEntry } from '../constants/erpTransactionPostingRules';
 import {
@@ -116,6 +117,13 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState('');
+  const bankVoucherJump = useVoucherJump({
+    module: 'bank',
+    transactionType: form.series || form.transactionType,
+    currentId: editingId,
+    shownNumber: form.voucherNumber,
+    onError: setError
+  });
   const [quickBillNo, setQuickBillNo] = useState('');
   const [billType, setBillType] = useState(defaultBillTypeForEntry(bankCashEntryType(DEFAULT_BANK_CASH_SERIES)));
   const [billTypePickerOpen, setBillTypePickerOpen] = useState(false);
@@ -130,6 +138,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
   const [allowOverAllocation, setAllowOverAllocation] = useState(false);
   const [allocatedVoucher, setAllocatedVoucher] = useState('');
   const companyRef = useRef<HTMLInputElement>(null);
+  const voucherRef = useRef<HTMLInputElement>(null);
   const billTypeRef = useRef<HTMLInputElement>(null);
   const billNoRef = useRef<HTMLInputElement>(null);
 
@@ -332,7 +341,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
   useEffect(() => {
     void loadMasterData();
     void loadEntries();
-    window.setTimeout(() => focusInputStart(companyRef.current), 0);
+    window.setTimeout(() => focusInputStart(voucherRef.current || companyRef.current), 0);
   }, []);
 
   useEffect(() => {
@@ -750,7 +759,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
     setBillTypePickerOpen(false);
     setForm(emptyForm());
     await loadMasterData();
-    window.setTimeout(() => focusInputStart(companyRef.current), 0);
+    window.setTimeout(() => focusInputStart(voucherRef.current || companyRef.current), 0);
   };
 
   const saveEntry = async () => {
@@ -921,7 +930,13 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                 </div>
                 <div>
                   <label className={labelClass}>V. No.</label>
-                  <input className={inputClass} value={form.voucherNumber} onChange={e => setForm(f => ({ ...f, voucherNumber: e.target.value }))} />
+                  <input
+                    ref={voucherRef}
+                    className={inputClass}
+                    value={form.voucherNumber}
+                    onChange={e => setForm(f => ({ ...f, voucherNumber: e.target.value }))}
+                    {...bankVoucherJump.voucherFieldProps}
+                  />
                 </div>
                 <div>
                   <label className={labelClass}>Date</label>

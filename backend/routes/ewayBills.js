@@ -83,7 +83,7 @@ async function loadSalesDocument(userId, billId) {
       addressLine1: text(bill.customer?.address),
       addressLine2: text(bill.customer?.addressLine2),
       city: text(bill.customer?.city || bill.station),
-      state: text(bill.customer?.state),
+      state: text(bill.customer?.state || bill.station),
       pincode: text(bill.customer?.pincode)
     }
   };

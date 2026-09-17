@@ -6,6 +6,7 @@ import { DispatchTakaSelectModal } from './DispatchTakaSelectModal';
 import { ErpFormShell } from './ErpFormShell';
 import { ErpSaveButton } from './ErpSaveButton';
 import { ErpTopMenu } from './ErpTopMenu';
+import { useVoucherJump } from '../hooks/useVoucherJump';
 
 interface Props {
   onBack: () => void;
@@ -60,6 +61,13 @@ export const GreyDispatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [receiptsLoading, setReceiptsLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const greyDispatchVoucherJump = useVoucherJump({
+    module: 'grey-dispatch',
+    transactionType,
+    currentId: isEditMode ? editId : null,
+    shownNumber: challanNo,
+    onError: setError
+  });
   const [success, setSuccess] = useState('');
 
   const stockMts = useMemo(() => {
@@ -381,7 +389,12 @@ export const GreyDispatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
                 </label>
                 <label>
                   <span className={labelClass}>Chal No.</span>
-                  <input className={readonlyClass} value={challanNo} readOnly title="Auto allotted" />
+                  <input
+                    className={inputClass}
+                    value={challanNo}
+                    onChange={e => setChallanNo(e.target.value)}
+                    {...greyDispatchVoucherJump.voucherFieldProps}
+                  />
                 </label>
                 <label>
                   <span className={labelClass}>Desp Date</span>

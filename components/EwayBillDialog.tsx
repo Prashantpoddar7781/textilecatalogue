@@ -160,7 +160,7 @@ export const EwayBillDialog: React.FC<Props> = ({ billId, docNo, existing, onClo
               {blockers.length > 0 && !result && (
                 <div className="mb-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3">
                   <p className="flex items-center gap-2 text-sm font-black text-rose-800">
-                    <AlertTriangle className="h-4 w-4" /> Fill this master data first
+                    <AlertTriangle className="h-4 w-4" /> Party / company master is incomplete
                   </p>
                   <ul className="mt-2 list-disc space-y-1 pl-5 text-xs font-semibold text-rose-700">
                     {blockers.map(item => <li key={item}>{item}</li>)}

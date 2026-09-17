@@ -25,6 +25,7 @@ import { ErpTopMenu } from './ErpTopMenu';
 import { gstTypeLabel, isInterStateSupply } from '../utils/gstState';
 import { partyDhara, partyGraceDays } from '../utils/partyBillingTerms';
 import { AccountParty } from '../types';
+import { useVoucherJump } from '../hooks/useVoucherJump';
 
 interface Props {
   onBack: () => void;
@@ -123,6 +124,7 @@ export const ErpPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
     () => getGstDefaultsForTransactionType(typeFromUrl || DEFAULT_PURCHASE_TRANSACTION_TYPE).gstRate
   );
   const [typeBillNumber, setTypeBillNumber] = useState<number | null>(null);
+  const [voucherInput, setVoucherInput] = useState('');
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [items, setItems] = useState<SalesItemMaster[]>([]);
   const [supplierId, setSupplierId] = useState('');
@@ -164,6 +166,16 @@ export const ErpPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
 
   const gstType = gstTypeLabel(state, businessState);
   const gstDocumentType = getGstDocumentType(transactionType);
+  const voucherJump = useVoucherJump({
+    module: 'purchase',
+    transactionType,
+    currentId: isEditMode ? editId : null,
+    shownNumber: typeBillNumber,
+    onError: setError
+  });
+  useEffect(() => {
+    setVoucherInput(formatSeriesBillNumber(transactionType, typeBillNumber) || '');
+  }, [transactionType, typeBillNumber]);
   const gstReturn = gstReturnSection(transactionType);
   const itcEligibility = getItcEligibility(transactionType);
   const tdsAccount = postingTdsAccount(transactionType);
@@ -516,9 +528,10 @@ export const ErpPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
               <label>
                 <span className={labelClass}>Bill / Voucher No.</span>
                 <input
-                  className={readonlyClass}
-                  value={formatSeriesBillNumber(transactionType, typeBillNumber) || '—'}
-                  readOnly
+                  className={inputClass}
+                  value={voucherInput}
+                  onChange={e => setVoucherInput(e.target.value)}
+                  {...voucherJump.voucherFieldProps}
                 />
               </label>
               <label><span className={labelClass}>Date</span><input type="date" className={inputClass} value={billDate} onChange={e => setBillDate(e.target.value)} /></label>

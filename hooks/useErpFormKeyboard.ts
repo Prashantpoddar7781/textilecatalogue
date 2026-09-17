@@ -82,6 +82,7 @@ export function useErpFormKeyboard(onSave: () => void | Promise<void>, options: 
 
     if (event.key === 'Enter') {
       if (target instanceof HTMLTextAreaElement && event.shiftKey) return;
+      if (target.hasAttribute('data-erp-voucher-jump')) return;
 
       event.preventDefault();
       if (currentIndex === fields.length - 1) {

@@ -42,11 +42,41 @@ export const GST_STATE_CODES: Record<string, string> = {
 
 const normalizeState = (value: string) => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
 
+const GST_STATE_ALIASES: Record<string, string> = {
+  jk: '01', hp: '02', 'h.p': '02', 'h.p.': '02',
+  pb: '03', ch: '04', chd: '04',
+  uk: '05', ua: '05',
+  hr: '06', dl: '07', delhi: '07',
+  rj: '08',
+  up: '09', 'u.p': '09', 'u.p.': '09',
+  br: '10', sk: '11', ar: '12', nl: '13', mn: '14', mz: '15', tr: '16', ml: '17', as: '18',
+  wb: '19', 'w.b': '19', 'w.b.': '19',
+  jh: '20', od: '21', or: '21', orissa: '21',
+  cg: '22', ct: '22', 'c.g': '22', 'c.g.': '22',
+  mp: '23', 'm.p': '23', 'm.p.': '23',
+  gj: '24', guj: '24',
+  mh: '27', 'm.h': '27', 'm.h.': '27',
+  ap: '37', ka: '29', kn: '29', ga: '30', ld: '31', kl: '32',
+  tn: '33', 't.n': '33', 't.n.': '33',
+  py: '34', an: '35', ts: '36', tg: '36', la: '38'
+};
+
 export function getStateCodeFromName(stateName: string) {
-  const target = normalizeState(stateName);
-  if (!target) return '';
+  const raw = String(stateName || '').trim();
+  if (!raw) return '';
+  const target = normalizeState(raw);
+  const aliasKey = target.replace(/\./g, '');
+  if (GST_STATE_ALIASES[target]) return GST_STATE_ALIASES[target];
+  if (GST_STATE_ALIASES[aliasKey]) return GST_STATE_ALIASES[aliasKey];
   const entry = Object.entries(GST_STATE_CODES).find(([, name]) => normalizeState(name) === target);
-  return entry ? entry[0] : '';
+  if (entry) return entry[0];
+  const paren = raw.match(/\(([^)]+)\)/);
+  if (paren) {
+    const inner = normalizeState(paren[1]).replace(/\./g, '');
+    if (GST_STATE_ALIASES[inner]) return GST_STATE_ALIASES[inner];
+    if (GST_STATE_ALIASES[normalizeState(paren[1])]) return GST_STATE_ALIASES[normalizeState(paren[1])];
+  }
+  return '';
 }
 
 /** Resolve "24", "24 Gujarat", "Gujarat", etc. to a comparable GST state code. */
