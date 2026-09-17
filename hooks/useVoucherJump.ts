@@ -43,7 +43,7 @@ export function useVoucherJump({
   const tryJump = useCallback(async (raw: string, currentField?: HTMLElement | null) => {
     const typed = parseVoucherNumber(raw);
     if (!typed) return 'next' as const;
-    const shown = parseVoucherNumber(String(shownNumber ?? '')) ?? Number(shownNumber) || null;
+    const shown = parseVoucherNumber(String(shownNumber ?? '')) ?? (Number(shownNumber) || null);
     if (currentId && shown && typed === shown) return 'next' as const;
     if (jumpingRef.current) return 'busy' as const;
 
@@ -100,7 +100,7 @@ export function useVoucherJump({
   const onVoucherBlur = useCallback((event: { currentTarget: HTMLInputElement }) => {
     const raw = event.currentTarget.value;
     const typed = parseVoucherNumber(raw);
-    const shown = parseVoucherNumber(String(shownNumber ?? '')) ?? Number(shownNumber) || null;
+    const shown = parseVoucherNumber(String(shownNumber ?? '')) ?? (Number(shownNumber) || null);
     if (!typed || (shown && typed === shown)) return;
     void tryJump(raw);
   }, [shownNumber, tryJump]);
