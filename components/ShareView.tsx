@@ -22,8 +22,14 @@ function getOrCreateSessionId(): string {
   return id;
 }
 
-function catalogueLabel(design: TextileDesign) {
-  return design.catalogueName?.trim() || design.fabric || '';
+function catalogueLabel(design: TextileDesign & { catalogue?: { id?: string; name?: string | null } | null }) {
+  return design.catalogueName?.trim() || design.catalogue?.name?.trim() || design.fabric || '';
+}
+
+function catalogueKey(design: TextileDesign & { catalogue?: { id?: string; name?: string | null } | null }) {
+  const name = design.catalogueName?.trim() || design.catalogue?.name?.trim() || '';
+  const id = design.catalogueId || design.catalogue?.id || '';
+  return { id: id || name, name };
 }
 
 export const ShareView: React.FC<{ token: string }> = ({ token }) => {
@@ -111,7 +117,7 @@ export const ShareView: React.FC<{ token: string }> = ({ token }) => {
 
   const firmName = designs[0]?.user?.firmName || designs[0]?.firmName || '';
   const headerCatalogue = useMemo(() => {
-    const names = [...new Set(designs.map(d => d.catalogueName?.trim()).filter(Boolean))] as string[];
+    const names = [...new Set(designs.map(d => catalogueKey(d).name).filter(Boolean))];
     if (names.length === 1) return names[0];
     if (names.length > 1) return 'Catalogue';
     return designs[0]?.fabric || 'Catalogue';
@@ -120,8 +126,8 @@ export const ShareView: React.FC<{ token: string }> = ({ token }) => {
   const catalogues = useMemo(() => {
     const map = new Map<string, string>();
     designs.forEach(d => {
-      if (d.catalogueId && d.catalogueName?.trim()) map.set(d.catalogueId, d.catalogueName.trim());
-      else if (d.catalogueName?.trim()) map.set(d.catalogueName.trim(), d.catalogueName.trim());
+      const { id, name } = catalogueKey(d);
+      if (name) map.set(id || name, name);
     });
     return [...map.entries()].map(([value, label]) => ({ value, label }));
   }, [designs]);
@@ -145,8 +151,8 @@ export const ShareView: React.FC<{ token: string }> = ({ token }) => {
   const filteredDesigns = useMemo(() => {
     return designs.filter(design => {
       if (catalogue !== 'All') {
-        const match = design.catalogueId === catalogue || design.catalogueName?.trim() === catalogue;
-        if (!match) return false;
+        const { id, name } = catalogueKey(design);
+        if (id !== catalogue && name !== catalogue) return false;
       }
       if (fabric !== 'All' && design.fabric !== fabric) return false;
       if (display.options.includeRetail) {

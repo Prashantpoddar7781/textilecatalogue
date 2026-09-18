@@ -291,6 +291,8 @@ export function presentDesign(design, { variant = 'full' } = {}) {
   const display = variant === 'list' ? (thumb || fullFromUrl) : (full || thumb);
   return {
     ...design,
+    catalogueName: design.catalogueName || design.catalogue?.name || null,
+    catalogueId: design.catalogueId || design.catalogue?.id || null,
     image: display,
     imageThumb: thumb || undefined,
     imageFull: fullFromUrl || (variant === 'full' && !isEmbeddedImage(display) ? display : undefined) || thumb || undefined,
