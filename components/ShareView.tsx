@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertCircle, Loader2, Search, ShoppingCart, SlidersHorizontal, X } from 'lucide-react';
+import { AlertCircle, Loader2, Pencil, ShoppingCart, SlidersHorizontal, X } from 'lucide-react';
 import { shareLinksApi, ordersApi } from '../services/api';
 import { getShareDeviceToken } from '../services/shareDeviceToken';
 import { ShareLink, TextileDesign } from '../types';
 import { designThumbSrc } from '../services/designMedia';
-import { getShareAttachLines, resolveShareDisplay } from '../utils/shareAttachDetails';
+import { getShareAttachLines, resolveAttachedPrice, resolveShareDisplay } from '../utils/shareAttachDetails';
 import { ViewModeLightbox } from './ViewModeLightbox';
 import { SearchableFilterSelect } from './SearchableFilterSelect';
 
@@ -43,16 +43,39 @@ export const ShareView: React.FC<{ token: string }> = ({ token }) => {
   });
   const [placingOrder, setPlacingOrder] = useState(false);
   const [orderSuccess, setOrderSuccess] = useState<string | null>(null);
-  const [search, setSearch] = useState('');
+  const [editingOrder, setEditingOrder] = useState(false);
+  const [orderedLines, setOrderedLines] = useState<Record<string, { quantity: number; remarks: string }>>({});
   const [catalogue, setCatalogue] = useState('All');
   const [fabric, setFabric] = useState('All');
-  const [sortBy, setSortBy] = useState<'name' | 'price-low' | 'price-high'>('name');
+  const [minPrice, setMinPrice] = useState(0);
+  const [maxPrice, setMaxPrice] = useState(100000);
+
+  const applyOrder = (order: any | null) => {
+    if (!order?.orderLines || !Array.isArray(order.orderLines)) {
+      setOrderedLines({});
+      return;
+    }
+    const next: Record<string, { quantity: number; remarks: string }> = {};
+    for (const line of order.orderLines) {
+      if (!line?.designId) continue;
+      next[line.designId] = {
+        quantity: Number(line.quantity) || 1,
+        remarks: String(line.remarks || '')
+      };
+    }
+    setOrderedLines(next);
+    if (order.buyerName) {
+      sessionStorage.setItem(`${BUYER_NAME_KEY_PREFIX}${token}`, order.buyerName);
+      setSavedBuyerName(order.buyerName);
+    }
+  };
 
   useEffect(() => {
     const storedName = sessionStorage.getItem(`${BUYER_NAME_KEY_PREFIX}${token}`) || '';
     setSavedBuyerName(storedName);
     setOrderForm(prev => ({ ...prev, buyerName: storedName }));
     loadShareLink();
+    ordersApi.getPublic(token, getOrCreateSessionId()).then(res => applyOrder(res.order)).catch(() => {});
   }, [token]);
 
   const loadShareLink = async () => {
@@ -108,22 +131,31 @@ export const ShareView: React.FC<{ token: string }> = ({ token }) => {
     return [...set].sort((a, b) => a.localeCompare(b));
   }, [designs]);
 
+  const priceMaxBound = useMemo(() => {
+    if (!display.options.includeRetail || designs.length === 0) return 100000;
+    const amounts = designs.map(d => resolveAttachedPrice(d, display.selectedPriceType).amount);
+    return Math.max(...amounts, 1000);
+  }, [designs, display]);
+
+  useEffect(() => {
+    setMinPrice(0);
+    setMaxPrice(priceMaxBound);
+  }, [priceMaxBound]);
+
   const filteredDesigns = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    let list = designs.filter(design => {
+    return designs.filter(design => {
       if (catalogue !== 'All') {
         const match = design.catalogueId === catalogue || design.catalogueName?.trim() === catalogue;
         if (!match) return false;
       }
       if (fabric !== 'All' && design.fabric !== fabric) return false;
-      if (!q) return true;
-      return [design.name, design.designCode, design.fabric, design.description, design.catalogueName]
-        .some(value => String(value || '').toLowerCase().includes(q));
+      if (display.options.includeRetail) {
+        const amount = resolveAttachedPrice(design, display.selectedPriceType).amount;
+        if (amount < minPrice || amount > maxPrice) return false;
+      }
+      return true;
     });
-    if (sortBy === 'price-low') list = [...list].sort((a, b) => (a.basePrice || 0) - (b.basePrice || 0));
-    else if (sortBy === 'price-high') list = [...list].sort((a, b) => (b.basePrice || 0) - (a.basePrice || 0));
-    return list;
-  }, [catalogue, designs, fabric, search, sortBy]);
+  }, [catalogue, designs, display, fabric, maxPrice, minPrice]);
 
   const useViewGrid = designs.length >= VIEW_MODE_THRESHOLD;
 
@@ -140,12 +172,14 @@ export const ShareView: React.FC<{ token: string }> = ({ token }) => {
     if (design) recordView(design.id);
   }, [filteredDesigns, lightboxIndex, recordView]);
 
-  const handleBuyNow = (design: TextileDesign) => {
+  const handleBuyNow = (design: TextileDesign, edit = false) => {
+    const existing = orderedLines[design.id];
     setOrderDesign(design);
+    setEditingOrder(Boolean(edit || existing));
     setOrderForm({
       buyerName: savedBuyerName,
-      quantity: 1,
-      remarks: ''
+      quantity: existing?.quantity || 1,
+      remarks: existing?.remarks || ''
     });
     setOrderSuccess(null);
   };
@@ -160,23 +194,53 @@ export const ShareView: React.FC<{ token: string }> = ({ token }) => {
 
     try {
       setPlacingOrder(true);
-      const result = await ordersApi.createPublic({
-        token,
-        designId: orderDesign.id,
-        buyerName,
-        orderSessionId: getOrCreateSessionId(),
-        quantity: Number(orderForm.quantity),
-        remarks: orderForm.remarks.trim() || undefined
-      });
-      if (result.order?.id) {
-        if (!savedBuyerName.trim()) {
-          sessionStorage.setItem(`${BUYER_NAME_KEY_PREFIX}${token}`, buyerName);
-          setSavedBuyerName(buyerName);
-        }
-        setOrderSuccess('Added to one order form. You can add more designs from this link.');
+      const sessionId = getOrCreateSessionId();
+      const result = editingOrder && orderedLines[orderDesign.id]
+        ? await ordersApi.updatePublic({
+            token,
+            orderSessionId: sessionId,
+            designId: orderDesign.id,
+            quantity: Number(orderForm.quantity),
+            remarks: orderForm.remarks.trim() || ''
+          })
+        : await ordersApi.createPublic({
+            token,
+            designId: orderDesign.id,
+            buyerName,
+            orderSessionId: sessionId,
+            quantity: Number(orderForm.quantity),
+            remarks: orderForm.remarks.trim() || undefined
+          });
+      applyOrder(result.order);
+      if (!savedBuyerName.trim()) {
+        sessionStorage.setItem(`${BUYER_NAME_KEY_PREFIX}${token}`, buyerName);
+        setSavedBuyerName(buyerName);
       }
+      setOrderSuccess(editingOrder ? 'Order updated.' : 'Added to one order form. You can add more designs from this link.');
     } catch (err: any) {
       alert(err.message || 'Failed to place order. Please try again.');
+    } finally {
+      setPlacingOrder(false);
+    }
+  };
+
+  const removeOrderedDesign = async () => {
+    if (!orderDesign) return;
+    if (!confirm('Remove this design from your order?')) return;
+    try {
+      setPlacingOrder(true);
+      const result = await ordersApi.updatePublic({
+        token,
+        orderSessionId: getOrCreateSessionId(),
+        designId: orderDesign.id,
+        remove: true
+      });
+      applyOrder(result.order);
+      setOrderDesign(null);
+      setOrderSuccess(null);
+      setEditingOrder(false);
+    } catch (err: any) {
+      alert(err.message || 'Could not remove this design.');
     } finally {
       setPlacingOrder(false);
     }
@@ -236,19 +300,6 @@ export const ShareView: React.FC<{ token: string }> = ({ token }) => {
               </span>
             </div>
           </div>
-          {showFilters && (
-            <div className="relative mt-3">
-              <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
-              <input
-                type="search"
-                enterKeyHint="search"
-                placeholder="Search catalogue…"
-                className="w-full pl-10 pr-4 py-3 bg-gray-100 border border-transparent focus:bg-white focus:border-indigo-500 rounded-2xl text-base outline-none"
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-              />
-            </div>
-          )}
         </div>
       </header>
 
@@ -259,7 +310,7 @@ export const ShareView: React.FC<{ token: string }> = ({ token }) => {
               <SlidersHorizontal className="w-3.5 h-3.5 text-indigo-500" />
               <span className="text-[10px] font-black text-gray-900 uppercase tracking-widest hidden sm:inline">Filter By</span>
             </div>
-            {catalogues.length > 1 && (
+            {catalogues.length > 0 && (
               <SearchableFilterSelect
                 value={catalogue}
                 onChange={setCatalogue}
@@ -270,7 +321,7 @@ export const ShareView: React.FC<{ token: string }> = ({ token }) => {
                 ]}
               />
             )}
-            {fabrics.length > 1 && (
+            {fabrics.length > 0 && (
               <SearchableFilterSelect
                 value={fabric}
                 onChange={setFabric}
@@ -281,26 +332,14 @@ export const ShareView: React.FC<{ token: string }> = ({ token }) => {
                 ]}
               />
             )}
-            {display.options.includeRetail && (
-              <SearchableFilterSelect
-                value={sortBy}
-                onChange={value => setSortBy(value as typeof sortBy)}
-                searchPlaceholder="Search sort…"
-                options={[
-                  { value: 'name', label: 'As shared' },
-                  { value: 'price-low', label: 'Price: Low to High' },
-                  { value: 'price-high', label: 'Price: High to Low' }
-                ]}
-              />
-            )}
-            {(search || catalogue !== 'All' || fabric !== 'All' || sortBy !== 'name') && (
+            {(catalogue !== 'All' || fabric !== 'All' || minPrice > 0 || maxPrice < priceMaxBound) && (
               <button
                 type="button"
                 onClick={() => {
-                  setSearch('');
                   setCatalogue('All');
                   setFabric('All');
-                  setSortBy('name');
+                  setMinPrice(0);
+                  setMaxPrice(priceMaxBound);
                 }}
                 className="bg-white border-2 border-rose-100 text-rose-700 px-4 py-2.5 rounded-2xl text-xs font-black shadow-sm shrink-0"
               >
@@ -308,6 +347,42 @@ export const ShareView: React.FC<{ token: string }> = ({ token }) => {
               </button>
             )}
           </div>
+          {display.options.includeRetail && (
+            <div className="mt-3 px-1">
+              <div className="bg-white border-2 border-gray-100 rounded-2xl p-3 shadow-sm">
+                <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest block mb-2">
+                  Price Range: ₹{minPrice.toLocaleString('en-IN')} - ₹{maxPrice.toLocaleString('en-IN')}
+                </label>
+                <div className="grid grid-cols-2 gap-2 mb-2">
+                  <input
+                    type="number"
+                    min="0"
+                    max={maxPrice}
+                    value={minPrice}
+                    onChange={e => setMinPrice(Math.max(0, Number(e.target.value)))}
+                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-500"
+                    placeholder="Min"
+                  />
+                  <input
+                    type="number"
+                    min={minPrice}
+                    value={maxPrice}
+                    onChange={e => setMaxPrice(Math.max(minPrice, Number(e.target.value)))}
+                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-500"
+                    placeholder="Max"
+                  />
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max={priceMaxBound}
+                  value={maxPrice}
+                  onChange={e => setMaxPrice(Number(e.target.value))}
+                  className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                />
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -338,13 +413,31 @@ export const ShareView: React.FC<{ token: string }> = ({ token }) => {
                     )}
                   </div>
                 </button>
-                <button
-                  type="button"
-                  onClick={() => handleBuyNow(design)}
-                  className="w-full py-2 text-[11px] font-black uppercase tracking-wide bg-green-600 text-white"
-                >
-                  Order Now
-                </button>
+                <div className="flex">
+                  {orderedLines[design.id] ? (
+                    <>
+                      <p className="flex-1 py-2 text-[11px] font-black uppercase tracking-wide bg-emerald-600 text-white text-center">
+                        Ordered
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => handleBuyNow(design, true)}
+                        className="px-3 bg-emerald-700 text-white"
+                        aria-label="Edit order"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => handleBuyNow(design)}
+                      className="w-full py-2 text-[11px] font-black uppercase tracking-wide bg-green-600 text-white"
+                    >
+                      Order Now
+                    </button>
+                  )}
+                </div>
               </div>
             ))}
           </div>
@@ -384,14 +477,30 @@ export const ShareView: React.FC<{ token: string }> = ({ token }) => {
                               {line.value}
                             </p>
                           ))}
-                          <button
-                            type="button"
-                            onClick={() => handleBuyNow(design)}
-                            className="w-full mt-2 py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white"
-                          >
-                            <ShoppingCart className="w-4 h-4" />
-                            Order Now
-                          </button>
+                          {orderedLines[design.id] ? (
+                            <div className="flex items-center gap-2 mt-2">
+                              <p className="flex-1 py-2 rounded-lg text-sm font-bold text-center bg-emerald-600 text-white uppercase">
+                                Ordered
+                              </p>
+                              <button
+                                type="button"
+                                onClick={() => handleBuyNow(design, true)}
+                                className="p-2 rounded-lg bg-emerald-50 text-emerald-800"
+                                aria-label="Edit order"
+                              >
+                                <Pencil className="w-4 h-4" />
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleBuyNow(design)}
+                              className="w-full mt-2 py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white"
+                            >
+                              <ShoppingCart className="w-4 h-4" />
+                              Order Now
+                            </button>
+                          )}
                         </div>
                       </div>
                     );
@@ -412,9 +521,14 @@ export const ShareView: React.FC<{ token: string }> = ({ token }) => {
           userFirmName={firmName}
           onIndexChange={setLightboxIndex}
           onClose={() => setLightboxIndex(null)}
+          orderedQuantity={filteredDesigns[lightboxIndex] ? orderedLines[filteredDesigns[lightboxIndex].id]?.quantity || null : null}
           onOrderNow={design => {
             setLightboxIndex(null);
             handleBuyNow(design);
+          }}
+          onEditOrder={design => {
+            setLightboxIndex(null);
+            handleBuyNow(design, true);
           }}
         />
       )}
@@ -423,7 +537,7 @@ export const ShareView: React.FC<{ token: string }> = ({ token }) => {
         <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl p-6 space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold text-gray-900">Order Now</h3>
+              <h3 className="text-lg font-bold text-gray-900">{editingOrder ? 'Edit order' : 'Order Now'}</h3>
               <button
                 type="button"
                 onClick={() => {
@@ -477,6 +591,7 @@ export const ShareView: React.FC<{ token: string }> = ({ token }) => {
                   if (orderSuccess) {
                     setOrderDesign(null);
                     setOrderSuccess(null);
+                    setEditingOrder(false);
                   } else {
                     submitOrder();
                   }
@@ -484,8 +599,18 @@ export const ShareView: React.FC<{ token: string }> = ({ token }) => {
                 disabled={placingOrder}
                 className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded-lg font-bold"
               >
-                {placingOrder ? 'Adding...' : orderSuccess ? 'Done' : 'Order Now'}
+                {placingOrder ? 'Saving...' : orderSuccess ? 'Done' : editingOrder ? 'Update order' : 'Order Now'}
               </button>
+              {editingOrder && !orderSuccess && (
+                <button
+                  type="button"
+                  onClick={removeOrderedDesign}
+                  disabled={placingOrder}
+                  className="w-full bg-white border border-rose-200 text-rose-700 py-2 rounded-lg font-bold"
+                >
+                  Cancel this design
+                </button>
+              )}
             </div>
           </div>
         </div>

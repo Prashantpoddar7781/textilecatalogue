@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Pencil, X } from 'lucide-react';
 import { ShareOptions, TextileDesign } from '../types';
 import { designFullSrc } from '../services/designMedia';
 import { getShareAttachLines } from '../utils/shareAttachDetails';
@@ -13,6 +13,8 @@ interface Props {
   onIndexChange: (index: number) => void;
   onClose: () => void;
   onOrderNow?: (design: TextileDesign) => void;
+  orderedQuantity?: number | null;
+  onEditOrder?: (design: TextileDesign) => void;
 }
 
 const SWIPE_MIN = 48;
@@ -25,7 +27,9 @@ export const ViewModeLightbox: React.FC<Props> = ({
   userFirmName,
   onIndexChange,
   onClose,
-  onOrderNow
+  onOrderNow,
+  orderedQuantity,
+  onEditOrder
 }) => {
   const design = designs[index];
   const startX = useRef<number | null>(null);
@@ -142,7 +146,7 @@ export const ViewModeLightbox: React.FC<Props> = ({
         </div>
       )}
 
-      {(lines.length > 0 || onOrderNow) && (
+      {(lines.length > 0 || onOrderNow || onEditOrder) && (
         <div className="px-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))] pt-3 bg-gradient-to-t from-black via-black/80 to-transparent text-white">
           {lines.length > 0 && (
             <div className="space-y-1">
@@ -154,14 +158,36 @@ export const ViewModeLightbox: React.FC<Props> = ({
               ))}
             </div>
           )}
-          {onOrderNow && (
-            <button
-              type="button"
-              onClick={() => onOrderNow(design)}
-              className="mt-3 w-full rounded-xl bg-green-600 py-3 text-sm font-black uppercase text-white"
-            >
-              Order Now
-            </button>
+          {(onOrderNow || onEditOrder) && (
+            orderedQuantity
+              ? (
+                <div className="mt-3 flex items-center gap-2">
+                  <p className="flex-1 rounded-xl bg-emerald-600 py-3 text-center text-sm font-black uppercase text-white">
+                    Ordered{orderedQuantity ? ` · ${orderedQuantity}` : ''}
+                  </p>
+                  {onEditOrder && (
+                    <button
+                      type="button"
+                      onClick={() => onEditOrder(design)}
+                      className="rounded-xl bg-white/20 p-3 text-white"
+                      aria-label="Edit order"
+                    >
+                      <Pencil className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+              )
+              : onOrderNow
+                ? (
+                  <button
+                    type="button"
+                    onClick={() => onOrderNow(design)}
+                    className="mt-3 w-full rounded-xl bg-green-600 py-3 text-sm font-black uppercase text-white"
+                  >
+                    Order Now
+                  </button>
+                )
+                : null
           )}
           <p className="mt-2 text-[11px] text-white/50">Swipe left or right for the next design in this filter</p>
         </div>

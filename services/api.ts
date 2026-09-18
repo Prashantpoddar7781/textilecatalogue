@@ -621,6 +621,23 @@ export const ordersApi = {
       body: JSON.stringify(data),
     });
   },
+  getPublic: async (token: string, orderSessionId: string) => {
+    const query = new URLSearchParams({ token, orderSessionId });
+    return request<{ order: any | null }>(`/orders/public?${query.toString()}`);
+  },
+  updatePublic: async (data: {
+    token: string;
+    orderSessionId: string;
+    designId: string;
+    quantity?: number;
+    remarks?: string;
+    remove?: boolean;
+  }) => {
+    return request<{ order: any | null }>('/orders/public', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
 };
 
 // Sales Invoices API

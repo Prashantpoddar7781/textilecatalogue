@@ -346,6 +346,122 @@ router.post('/public', [
   }
 });
 
+async function loadPublicSessionOrder(token, orderSessionId) {
+  const shareLink = await prisma.shareLink.findUnique({ where: { token } });
+  if (!shareLink) {
+    const error = new Error('Share link not found');
+    error.status = 404;
+    throw error;
+  }
+  if (!shareLink.isActive) {
+    const error = new Error('Share link is disabled');
+    error.status = 403;
+    throw error;
+  }
+  if (shareLink.expiresAt && new Date() > new Date(shareLink.expiresAt)) {
+    const error = new Error('Share link has expired');
+    error.status = 403;
+    throw error;
+  }
+
+  const sessionId = optionalString(orderSessionId);
+  if (!sessionId) {
+    const error = new Error('Missing order session');
+    error.status = 400;
+    throw error;
+  }
+
+  const publicBatchId = `share_${token}_${sessionId}`;
+  const order = await prisma.order.findFirst({
+    where: {
+      userId: shareLink.userId,
+      shareLinkId: shareLink.id,
+      manualBatchId: publicBatchId,
+      status: 'waiting_approval'
+    },
+    include: orderInclude,
+    orderBy: { createdAt: 'desc' }
+  });
+
+  return { shareLink, order, publicBatchId };
+}
+
+router.get('/public', async (req, res, next) => {
+  try {
+    const token = optionalString(req.query.token);
+    const orderSessionId = optionalString(req.query.orderSessionId);
+    if (!token) return res.status(400).json({ error: 'token is required' });
+    const { order } = await loadPublicSessionOrder(token, orderSessionId);
+    res.json({ order: order ? presentOrder(order) : null });
+  } catch (error) {
+    if (error.status) return res.status(error.status).json({ error: error.message });
+    next(error);
+  }
+});
+
+router.put('/public', [
+  body('token').notEmpty(),
+  body('orderSessionId').notEmpty().trim(),
+  body('designId').notEmpty(),
+  body('quantity').optional().isInt({ min: 0 }),
+  body('remarks').optional().trim(),
+  body('remove').optional()
+], async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { token, orderSessionId, designId } = req.body;
+    const remove = Boolean(req.body.remove) || Number(req.body.quantity) === 0;
+    const nextQuantity = parseInt(req.body.quantity, 10);
+    const nextRemarks = optionalString(req.body.remarks);
+    const { order } = await loadPublicSessionOrder(token, orderSessionId);
+
+    if (!order) {
+      return res.status(404).json({ error: 'No order found for this link yet.' });
+    }
+
+    const existingLines = normalizeOrderLines(order.orderLines);
+    const lineIndex = existingLines.findIndex(line => line.designId === designId);
+    if (lineIndex < 0) {
+      return res.status(404).json({ error: 'That design is not in this order.' });
+    }
+
+    const nextLines = remove
+      ? existingLines.filter((_, index) => index !== lineIndex)
+      : existingLines.map((line, index) => index === lineIndex
+        ? {
+            ...line,
+            quantity: Number.isFinite(nextQuantity) && nextQuantity > 0 ? nextQuantity : parseInt(line.quantity, 10),
+            remarks: nextRemarks !== null ? nextRemarks : line.remarks
+          }
+        : line
+      );
+
+    if (nextLines.length === 0) {
+      await prisma.order.delete({ where: { id: order.id } });
+      return res.json({ order: null });
+    }
+
+    const totalQuantity = nextLines.reduce((sum, line) => sum + (parseInt(line.quantity, 10) || 0), 0);
+    const updated = await prisma.order.update({
+      where: { id: order.id },
+      data: {
+        quantity: totalQuantity,
+        orderLines: nextLines
+      },
+      include: orderInclude
+    });
+
+    res.json({ order: presentOrder(updated) });
+  } catch (error) {
+    if (error.status) return res.status(error.status).json({ error: error.message });
+    next(error);
+  }
+});
+
 // Auth: create manual order (open parcel or design lines)
 router.post('/manual', authenticateToken, requireActiveSubscription, [
   body('kind').isIn(['open', 'design']),
