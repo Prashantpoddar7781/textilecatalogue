@@ -26,6 +26,14 @@ export async function allocateNextTypeBillNumber(tx, userId, transactionType, so
     return (result._max.typeBillNumber ?? 0) + 1;
   }
 
+  if (source === 'journal_voucher') {
+    const result = await tx.journalVoucher.aggregate({
+      where: { userId, transactionType: type },
+      _max: { typeBillNumber: true }
+    });
+    return (result._max.typeBillNumber ?? 0) + 1;
+  }
+
   const result = await tx.order.aggregate({
     where: { userId, transactionType: type },
     _max: { typeBillNumber: true }

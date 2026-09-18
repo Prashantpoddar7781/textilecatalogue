@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, BookOpen, Building2, ChevronDown, FileBarChart, LogOut, Package, PackageCheck, RotateCcw } from 'lucide-react';
+import { ArrowLeft, BookOpen, Building2, ChevronDown, FileBarChart, FileText, LogOut, Package, PackageCheck, RotateCcw } from 'lucide-react';
 import { clearErpSession, hasCompleteErpAccess } from '../services/erpSession';
 import { ErpSession } from '../types';
 
@@ -154,6 +154,14 @@ export const ErpTopMenu: React.FC<Props> = ({
                 >
                   <FileBarChart className="h-4 w-4" />
                   Credit / Debit Note
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { window.location.href = '/erp/journal'; }}
+                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-gray-800 hover:bg-indigo-50 hover:text-indigo-700"
+                >
+                  <FileText className="h-4 w-4" />
+                  Journal Voucher
                 </button>
                 <button
                   type="button"

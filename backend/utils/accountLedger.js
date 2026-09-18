@@ -11,7 +11,7 @@ import {
 } from './orderBilling.js';
 import { isPurchaseReturn } from './erpLineItems.js';
 import { isExpensePurchaseType } from '../constants/erpTransactionTypes.js';
-import { postingDiscountAccount, postingSaleOrPurchaseAccount, postingTdsAccount, resolveDiscountJournal } from '../constants/erpTransactionPostingRules.js';
+import { postingDiscountAccount, postingSaleOrPurchaseAccount, postingTdsAccount, resolveDiscountJournal, formatSeriesBillNumber } from '../constants/erpTransactionPostingRules.js';
 import { parseNoteType } from '../constants/creditDebitNoteTypes.js';
 import {
   formatAdjustedOnRemark,
@@ -21,6 +21,7 @@ import {
   unadjAmountCreated
 } from '../constants/bankCashSeries.js';
 import { matchesNoteParty } from './creditDebitNotes.js';
+import { JOURNAL_TRANSACTION_TYPE } from './journalVouchers.js';
 
 function paidInfoByBillId(bankEntries) {
   const map = new Map();
@@ -95,6 +96,61 @@ function bankEntryLedgerRow(entry, settlementByUnadjId = null) {
     slipNumber: entry.slipNumber || null,
     transactionLabel: entry.transactionType || (isReceipt ? 'BANK RECEIPT' : 'BANK PAYMENT')
   };
+}
+
+function namesMatch(left, right) {
+  return String(left || '').trim().toLowerCase() === String(right || '').trim().toLowerCase();
+}
+
+function journalBillNo(voucher) {
+  return voucher.voucherNumber
+    || formatSeriesBillNumber(JOURNAL_TRANSACTION_TYPE, voucher.typeBillNumber)
+    || String(voucher.typeBillNumber || '-');
+}
+
+function pushJournalLedgerRows(rawEntries, vouchers, { partyName, paidByBill } = {}) {
+  const target = String(partyName || '').trim();
+  for (const voucher of vouchers || []) {
+    const amount = roundMoney(voucher.amount);
+    if (amount <= 0) continue;
+    const billNo = journalBillNo(voucher);
+    const partyCredit = String(voucher.partySide || '').toLowerCase() === 'credit';
+    const asParty = namesMatch(voucher.partyName, target);
+    const asOpposite = namesMatch(voucher.oppositeAccount, target);
+    if (!asParty && !asOpposite) continue;
+    const paidInfo = paidByBill?.get(voucher.id);
+    const paidOn = paidInfo && paidInfo.amount + 0.001 >= amount ? formatPaidOnRemark(paidInfo.date) : '';
+    const narration = voucher.narration || voucher.remarks || '';
+    if (asParty) {
+      rawEntries.push({
+        id: `journal-${voucher.id}`,
+        sourceType: 'journal_voucher',
+        sourceId: voucher.id,
+        date: voucher.voucherDate || voucher.createdAt,
+        voucherNumber: billNo,
+        billNumber: billNo,
+        account: voucher.oppositeAccount || JOURNAL_TRANSACTION_TYPE,
+        particulars: paidOn || `Journal ${billNo} · ${voucher.oppositeAccount || ''}${narration ? ` · ${narration}` : ''}`,
+        remarks: paidOn || narration,
+        debitAmount: partyCredit ? 0 : amount,
+        creditAmount: partyCredit ? amount : 0
+      });
+    } else {
+      rawEntries.push({
+        id: `journal-opp-${voucher.id}`,
+        sourceType: 'journal_voucher',
+        sourceId: voucher.id,
+        date: voucher.voucherDate || voucher.createdAt,
+        voucherNumber: billNo,
+        billNumber: billNo,
+        account: voucher.partyName,
+        particulars: `Journal ${billNo} · ${voucher.partyName}${narration ? ` · ${narration}` : ''}`,
+        remarks: narration,
+        debitAmount: partyCredit ? amount : 0,
+        creditAmount: partyCredit ? 0 : amount
+      });
+    }
+  }
 }
 
 const sortByDate = (a, b) => {
@@ -183,6 +239,12 @@ export async function getCustomerLedgerParties(prisma, userId) {
 
   for (const entry of bankEntries) addParty(entry.partyName);
   for (const note of notes) addParty(note.partyName, { customerId: note.customerId || undefined });
+
+  const journals = await prisma.journalVoucher.findMany({
+    where: { userId, partyType: 'customer', status: { not: 'cancelled' } },
+    select: { partyName: true, customerId: true }
+  });
+  for (const voucher of journals) addParty(voucher.partyName, { customerId: voucher.customerId || undefined });
 
   return Array.from(partyMap.values()).sort((a, b) => a.partyName.localeCompare(b.partyName));
 }
@@ -413,6 +475,39 @@ export async function getAllLedgerParties(prisma, userId) {
       entryCount: info.count,
       runningBalance: info.balance
     });
+  }
+  const journals = await prisma.journalVoucher.findMany({
+    where: { userId, status: { not: 'cancelled' } },
+    select: { partyName: true, partyType: true, oppositeAccount: true, customerId: true, supplierId: true }
+  });
+  for (const voucher of journals) {
+    const partyKey = String(voucher.partyName || '').trim().toLowerCase();
+    if (partyKey && !map.has(partyKey)) {
+      map.set(partyKey, {
+        partyType: voucher.partyType === 'customer' ? 'customer' : 'supplier',
+        partyName: voucher.partyName,
+        customerId: voucher.customerId || null,
+        supplierId: voucher.supplierId || null,
+        gstNumber: null,
+        mobileNumber: null,
+        entryCount: 1,
+        runningBalance: 0
+      });
+    }
+    const oppName = String(voucher.oppositeAccount || '').trim();
+    const oppKey = oppName.toLowerCase();
+    if (oppName && !map.has(oppKey)) {
+      map.set(oppKey, {
+        partyType: 'supplier',
+        partyName: oppName,
+        customerId: null,
+        supplierId: null,
+        gstNumber: null,
+        mobileNumber: null,
+        entryCount: 1,
+        runningBalance: 0
+      });
+    }
   }
   const parties = Array.from(map.values()).sort((a, b) => a.partyName.localeCompare(b.partyName));
   return [company, ...parties];
@@ -835,6 +930,44 @@ export async function buildCompanySelfLedger(prisma, userId, { fromDate, toDate 
     }, note.partyName));
   }
 
+  const journals = await prisma.journalVoucher.findMany({
+    where: { userId, status: { not: 'cancelled' } },
+    orderBy: [{ voucherDate: 'asc' }, { createdAt: 'asc' }]
+  });
+  for (const voucher of journals) {
+    const amount = roundMoney(voucher.amount);
+    if (amount <= 0) continue;
+    const billNo = journalBillNo(voucher);
+    const partyCredit = String(voucher.partySide || '').toLowerCase() === 'credit';
+    const narration = voucher.narration || voucher.remarks || '';
+    rawEntries.push(companyRow({
+      id: `journal-${voucher.id}`,
+      sourceType: 'journal_voucher',
+      sourceId: voucher.id,
+      date: voucher.voucherDate || voucher.createdAt,
+      voucherNumber: billNo,
+      billNumber: billNo,
+      account: voucher.oppositeAccount || JOURNAL_TRANSACTION_TYPE,
+      particulars: `Journal ${billNo} · ${voucher.oppositeAccount || ''}${narration ? ` · ${narration}` : ''}`,
+      remarks: narration,
+      debitAmount: partyCredit ? 0 : amount,
+      creditAmount: partyCredit ? amount : 0
+    }, voucher.partyName));
+    rawEntries.push({
+      id: `journal-opp-${voucher.id}`,
+      sourceType: 'journal_voucher',
+      sourceId: voucher.id,
+      date: voucher.voucherDate || voucher.createdAt,
+      voucherNumber: billNo,
+      billNumber: billNo,
+      account: voucher.oppositeAccount || JOURNAL_TRANSACTION_TYPE,
+      particulars: `Journal ${billNo} · ${voucher.partyName}${narration ? ` · ${narration}` : ''}`,
+      remarks: narration,
+      debitAmount: partyCredit ? amount : 0,
+      creditAmount: partyCredit ? 0 : amount
+    });
+  }
+
   for (const grey of greyPurchases) {
     const amount = roundMoney(grey.netAmount);
     if (amount <= 0) continue;
@@ -1120,6 +1253,12 @@ export async function buildCustomerLedger(prisma, userId, partyName) {
       creditAmount: isCredit ? amount : 0
     });
   }
+
+  const customerJournals = await prisma.journalVoucher.findMany({
+    where: { userId, status: { not: 'cancelled' } },
+    orderBy: [{ voucherDate: 'asc' }, { createdAt: 'asc' }]
+  });
+  pushJournalLedgerRows(rawEntries, customerJournals, { partyName, paidByBill });
 
   const settlementByUnadjId = unadjSettlementInfo(bankEntries);
   for (const entry of bankEntries) {
@@ -1489,6 +1628,12 @@ export async function buildSupplierLedger(prisma, userId, supplierId) {
     });
   }
 
+  const supplierJournals = await prisma.journalVoucher.findMany({
+    where: { userId, status: { not: 'cancelled' } },
+    orderBy: [{ voucherDate: 'asc' }, { createdAt: 'asc' }]
+  });
+  pushJournalLedgerRows(rawEntries, supplierJournals, { partyName: supplier.name, paidByBill });
+
   const settlementByUnadjId = unadjSettlementInfo(bankEntries);
   for (const entry of bankEntries) {
     if (!matchesSupplierName(entry.partyName, supplier.name)) continue;
@@ -1525,6 +1670,7 @@ const VALID_SOURCE_TYPES = new Set([
   'purchase_bill_discount',
   'bank_entry',
   'credit_debit_note',
+  'journal_voucher',
   'grey_purchase',
   'grey_purchase_discount',
   'grey_purchase_return',
@@ -1550,8 +1696,9 @@ async function resolveBillNumbers(prisma, userId, allocations) {
   const orderIds = allocations.filter(item => item.billType === 'order').map(item => item.billId);
   const purchaseIds = allocations.filter(item => item.billType === 'purchase_bill').map(item => item.billId);
   const noteIds = allocations.filter(item => item.billType === 'credit_debit_note').map(item => item.billId);
+  const journalIds = allocations.filter(item => item.billType === 'journal_voucher').map(item => item.billId);
 
-  const [orders, bills, notes] = await Promise.all([
+  const [orders, bills, notes, journals] = await Promise.all([
     orderIds.length
       ? prisma.order.findMany({
         where: { userId, id: { in: orderIds } },
@@ -1568,6 +1715,12 @@ async function resolveBillNumbers(prisma, userId, allocations) {
       ? prisma.creditDebitNote.findMany({
         where: { userId, id: { in: noteIds } },
         select: { id: true, noteNumber: true, voucherNumber: true }
+      })
+      : [],
+    journalIds.length
+      ? prisma.journalVoucher.findMany({
+        where: { userId, id: { in: journalIds } },
+        select: { id: true, voucherNumber: true, typeBillNumber: true }
       })
       : []
   ]);
@@ -1588,6 +1741,10 @@ async function resolveBillNumbers(prisma, userId, allocations) {
     note.id,
     note.noteNumber || String(note.voucherNumber || note.id.slice(-6))
   ]));
+  const journalMap = new Map(journals.map(voucher => [
+    voucher.id,
+    voucher.voucherNumber || formatSeriesBillNumber(JOURNAL_TRANSACTION_TYPE, voucher.typeBillNumber) || String(voucher.typeBillNumber || voucher.id.slice(-6))
+  ]));
 
   return allocations.map(allocation => {
     const billNumber = allocation.billType === 'order'
@@ -1596,7 +1753,9 @@ async function resolveBillNumbers(prisma, userId, allocations) {
         ? billMap.get(allocation.billId)
         : allocation.billType === 'credit_debit_note'
           ? noteMap.get(allocation.billId)
-          : allocation.billNumber || allocation.billId?.slice(-6);
+          : allocation.billType === 'journal_voucher'
+            ? journalMap.get(allocation.billId)
+            : allocation.billNumber || allocation.billId?.slice(-6);
     return {
       billType: allocation.billType || '-',
       billNumber: billNumber || allocation.billId?.slice(-6) || '-',
@@ -2158,6 +2317,34 @@ export async function getLedgerEntryDetail(prisma, userId, sourceType, sourceId)
         { label: 'Net After TDS', value: note.netAmountAfterTds, isMoney: true },
         { label: 'Paid', value: note.paidAmount, isMoney: true },
         { label: 'Remarks', value: note.remarks }
+      ])
+    };
+  }
+
+  if (sourceType === 'journal_voucher') {
+    const voucher = await prisma.journalVoucher.findFirst({
+      where: { id: sourceId, userId }
+    });
+    if (!voucher) return null;
+    const billNo = journalBillNo(voucher);
+    const partyCredit = String(voucher.partySide || '').toLowerCase() === 'credit';
+    return {
+      title: `Journal Voucher ${billNo}`,
+      subtitle: voucher.partyName,
+      sourceType,
+      sourceId,
+      canEdit: true,
+      editPath: `/erp/journal?edit=${voucher.id}`,
+      fields: buildDetailFields([
+        { label: 'Date', value: toIsoDate(voucher.voucherDate || voucher.createdAt) },
+        { label: 'Type', value: voucher.transactionType || JOURNAL_TRANSACTION_TYPE },
+        { label: 'Voucher', value: billNo },
+        { label: 'Party Type', value: voucher.partyType },
+        { label: 'Party', value: voucher.partyName },
+        { label: 'Party side', value: partyCredit ? 'Credit' : 'Debit' },
+        { label: 'Opposite A/C', value: voucher.oppositeAccount },
+        { label: 'Amount', value: voucher.amount, isMoney: true },
+        { label: 'Narration', value: voucher.narration || voucher.remarks }
       ])
     };
   }

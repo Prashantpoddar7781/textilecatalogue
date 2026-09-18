@@ -13,11 +13,14 @@ import {
   DEFAULT_BANK_CASH_SERIES,
   getBankSettlementTypeOptions,
   isDeductAllocation,
+  isJournalAllocation,
+  isJournalBillTypeQuery,
   isNoteAllocation,
   isUnadjAllocation,
   matchBankSettlementTypes,
   normalizeBankCashSeries,
   slipNumberFromDate,
+  JOURNAL_TYPE,
   UNADJ_BILL_TYPE,
   UNADJ_PAYMENT_TYPE
 } from '../constants/bankCashSeries';
@@ -35,15 +38,22 @@ const matchesSelectedBillType = (bill: BankPendingBill, selectedType?: string | 
   const selected = String(selectedType || '').trim();
   if (!selected) return false;
   if (isUnadjBillTypeQuery(selected) || selected.toUpperCase() === UNADJ_PAYMENT_TYPE) {
-    return isUnadjAllocation(bill);
+    return isUnadjAllocation(bill) || (isJournalAllocation(bill) && String(bill.adjustDirection || '').toLowerCase() === 'deduct');
+  }
+  if (isJournalBillTypeQuery(selected) || selected.toUpperCase() === JOURNAL_TYPE) {
+    return isJournalAllocation(bill);
   }
   const note = parseNoteType(selected);
   if (note && /note/i.test(selected)) {
     return bill.billType === 'credit_debit_note' && parseNoteType(bill.transactionType)?.value === note.value;
   }
+  if (isJournalAllocation(bill)) {
+    return String(bill.oppositeAccount || '').trim().toUpperCase() === selected.toUpperCase();
+  }
   return String(bill.transactionType || '').trim().toUpperCase() === selected.toUpperCase()
     && bill.billType !== 'credit_debit_note'
-    && !isUnadjAllocation(bill);
+    && !isUnadjAllocation(bill)
+    && !isJournalAllocation(bill);
 };
 
 interface Props {
@@ -413,6 +423,9 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
       : billPending;
     const adjustLess = roundMoneyLocal(Math.max(netBillAmount - received, 0));
     const adjustAdd = roundMoneyLocal(Math.max(received - Math.max(netBillAmount, 0), 0));
+    const settlementComplete = (billAdjust > 0 || unadjAdjust > 0)
+      && received > 0.001
+      && Math.abs(netBillAmount - received) <= 0.05;
     return {
       grossAmount,
       adjustPending,
@@ -423,7 +436,8 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
       received,
       billAdjust,
       unadjAdjust,
-      unadjAvailable
+      unadjAvailable,
+      settlementComplete
     };
   }, [pendingBills, adjustedBills, form.amount]);
 
@@ -637,10 +651,12 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
   };
 
   const commitBillType = (value: string) => {
-    const next = isUnadjBillTypeQuery(value) ? UNADJ_PAYMENT_TYPE : value.trim().toUpperCase();
+    const next = isUnadjBillTypeQuery(value)
+      ? UNADJ_PAYMENT_TYPE
+      : (isJournalBillTypeQuery(value) ? JOURNAL_TYPE : value.trim().toUpperCase());
     const resolved = billTypeOptions.find(t => t.toUpperCase() === next)
       || billTypeMatches[billTypeHighlight]
-      || (isUnadjBillTypeQuery(value) ? UNADJ_PAYMENT_TYPE : value.trim());
+      || (isUnadjBillTypeQuery(value) ? UNADJ_PAYMENT_TYPE : (isJournalBillTypeQuery(value) ? JOURNAL_TYPE : value.trim()));
     setBillType(resolved);
     setBillTypePickerOpen(false);
     setQuickBillNo('');
@@ -671,7 +687,9 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
     setBillType(
       firstAlloc && isUnadjAllocation(firstAlloc)
         ? UNADJ_PAYMENT_TYPE
-        : (firstAlloc?.transactionType || defaultBillTypeForEntry(bankCashEntryType(series)))
+        : firstAlloc && isJournalAllocation(firstAlloc)
+          ? JOURNAL_TYPE
+          : (firstAlloc?.transactionType || defaultBillTypeForEntry(bankCashEntryType(series)))
     );
     setForm({
       series,
@@ -790,7 +808,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
         `Bill adjusted (${formatMoney(summary.netBillAmount)}) is more than ${form.entryType === 'receipt' ? 'Rec' : 'Paid'} Amt (${formatMoney(amount)}).\n\n` +
         `Either:\n` +
         `• Reduce Adjust on bills, or\n` +
-        `• Type U / C / D → pick Unadj or a credit/debit note to balance (${formatMoney(summary.netBillAmount - amount)} still needed).`
+        `• Type U / J / C / D → pick Unadj, Journal, or a credit/debit note to balance (${formatMoney(summary.netBillAmount - amount)} still needed).`
       );
       setBillType(UNADJ_PAYMENT_TYPE);
       window.setTimeout(() => focusInputStart(billNoRef.current), 0);
@@ -958,7 +976,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                   />
                   {summary.adjustLess > 0.05 && (
                     <p className="mt-1 text-[11px] font-semibold text-rose-700">
-                      Bills exceed {form.entryType === 'receipt' ? 'Rec' : 'Paid'} by {formatMoney(summary.adjustLess)} — Type U, C or D to pick Unadj / note, or lower Adjust.
+                      Bills exceed {form.entryType === 'receipt' ? 'Rec' : 'Paid'} by {formatMoney(summary.adjustLess)} — Type U, J, C or D to pick Unadj / Journal / note, or lower Adjust.
                     </p>
                   )}
                   {summary.unadjAvailable > 0 && summary.adjustLess <= 0.05 && (
@@ -1151,7 +1169,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                     />
                     {billTypePickerOpen && !billType.trim() && (
                       <div className="absolute z-30 mt-1 w-full rounded-xl border bg-white px-3 py-2 text-[11px] font-semibold text-gray-500 shadow-lg">
-                        Type a letter — U Unadj, C credit note, D debit note, S sales, P purchase
+                        Type a letter — U Unadj, J journal, C credit note, D debit note, S sales, P purchase
                       </div>
                     )}
                     {billTypePickerOpen && billTypeMatches.length > 0 && (
@@ -1164,7 +1182,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                             className={`flex w-full px-3 py-2 text-left text-xs font-bold hover:bg-indigo-50 ${
                               index === billTypeHighlight
                                 ? 'bg-indigo-100 text-indigo-900'
-                                : (type === UNADJ_PAYMENT_TYPE || /note/i.test(type) ? 'text-violet-800' : 'text-gray-800')
+                                : (type === UNADJ_PAYMENT_TYPE || type === JOURNAL_TYPE || /note/i.test(type) ? 'text-violet-800' : 'text-gray-800')
                             }`}
                             onMouseDown={ev => {
                               ev.preventDefault();
@@ -1247,7 +1265,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                             >
                               <span className="font-black">{bill.billNumber}</span>
                               <span>
-                                {bill.transactionType || 'Bill'} · {formatMoney(isDeductRow(bill) ? -(bill.pendingAmount || 0) : (bill.pendingAmount || 0))}
+                                {bill.transactionType || 'Bill'}{bill.oppositeAccount ? ` · ${bill.oppositeAccount}` : ''} · {formatMoney(isDeductRow(bill) ? -(bill.pendingAmount || 0) : (bill.pendingAmount || 0))}
                               </span>
                             </button>
                           ))
@@ -1319,7 +1337,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                             <td className="px-3 py-2.5 tabular-nums">{bill.days || 0}{bill.grace ? ` / ${bill.grace}g` : ''}</td>
                             <td className="px-3 py-2.5 text-right font-semibold text-violet-800">{formatMoney(bill.interestAmount || 0)}</td>
                             <td className={`px-3 py-2.5 text-xs font-semibold ${deduct ? 'text-violet-700' : 'text-gray-600'}`}>
-                              {bill.transactionType || '-'}
+                              {bill.oppositeAccount ? `${bill.transactionType || 'JOURNAL'} · ${bill.oppositeAccount}` : (bill.transactionType || '-')}
                             </td>
                             <td className="px-3 py-2.5">{bill.voucherNumber || '-'}</td>
                             <td className="px-3 py-2.5 text-right">
@@ -1386,10 +1404,12 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                   <p className={labelClass}>
                     {summary.unadjAdjust > 0 ? 'Adjust Less' : (summary.adjustAdd > 0 ? 'Adjust Add' : 'Adjust Less')}
                   </p>
-                  <p className="text-lg font-black text-sky-900">
-                    {summary.unadjAdjust > 0
-                      ? formatMoney(-summary.unadjAdjust)
-                      : formatMoney(summary.adjustAdd > 0 ? summary.adjustAdd : summary.adjustLess)}
+                  <p className={`text-lg font-black ${summary.settlementComplete ? 'text-emerald-600' : 'text-sky-900'}`}>
+                    {summary.settlementComplete
+                      ? formatMoney(0)
+                      : summary.unadjAdjust > 0
+                        ? formatMoney(-summary.unadjAdjust)
+                        : formatMoney(summary.adjustAdd > 0 ? summary.adjustAdd : summary.adjustLess)}
                   </p>
                 </div>
                 <div className="rounded-2xl bg-emerald-50 px-4 py-3">

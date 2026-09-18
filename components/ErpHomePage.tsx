@@ -47,6 +47,13 @@ const sections = [
     status: 'Ready'
   },
   {
+    title: 'Journal Voucher',
+    description: 'Ledger-only JV for salary, round-off and non-GST expenses. Settle from bank Type JOURNAL / Unadj.',
+    icon: BookOpen,
+    href: '/erp/journal',
+    status: 'Ready'
+  },
+  {
     title: 'Account Ledgers',
     description: 'Single account ledger — all parties in one dynamic view.',
     icon: BookOpen,

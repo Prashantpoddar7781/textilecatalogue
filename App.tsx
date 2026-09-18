@@ -48,6 +48,7 @@ import { AccountsInformationManagerPage } from './components/AccountsInformation
 import { OutstandingPaymentReportPage } from './components/OutstandingPaymentReportPage';
 import { ErpExpensesPage } from './components/ErpExpensesPage';
 import { CreditDebitNotePage } from './components/CreditDebitNotePage';
+import { JournalVoucherPage } from './components/JournalVoucherPage';
 import { parseNoteTypeFromPath } from './constants/creditDebitNoteTypes';
 import { BankEntriesPage } from './components/BankEntriesPage';
 import { SearchableFilterSelect } from './components/SearchableFilterSelect';
@@ -142,6 +143,7 @@ const App: React.FC = () => {
   const erpOutstandingReportMatch = pathname.match(/^\/erp\/reports\/outstanding\/?$/);
   const erpNotesHubMatch = pathname.match(/^\/erp\/notes\/?$/);
   const erpNotesMatch = pathname.match(/^\/erp\/notes\/([^/]+)\/?$/);
+  const erpJournalMatch = pathname.match(/^\/erp\/journal\/?$/);
   const isErpRoute = Boolean(
     erpMatch || erpBankMatch || erpSalesMatch || erpSalesOrderMatch || erpPurchaseMatch || erpPurchaseScanMatch || erpExpensesMatch || erpLedgerMatch
     || erpUtilitiesMatch || erpUsersMatch || erpCompanyMatch || erpGreyPurchaseMatch || erpGreyDispatchMatch || erpGreyPurchaseReturnMatch
@@ -151,7 +153,7 @@ const App: React.FC = () => {
     || erpFinishPurchaseReportMatch || erpExpensesReportMatch || erpFinalAccountsReportMatch
     || erpAccountsMasterMatch
     || erpOutstandingReportMatch
-    || erpNotesHubMatch || erpNotesMatch || supplierLedgerMatch
+    || erpNotesHubMatch || erpNotesMatch || erpJournalMatch || supplierLedgerMatch
   );
   const shareStatsMatch = pathname.match(/^\/share-stats\/?$/);
   const reportsMatch = pathname.match(/^\/reports\/?$/);
@@ -1253,6 +1255,15 @@ const App: React.FC = () => {
     return (
       <CreditDebitNotePage
         noteType={noteType}
+        erpSession={erpSession}
+        onBack={() => { window.location.href = '/erp'; }}
+      />
+    );
+  }
+
+  if (erpJournalMatch) {
+    return (
+      <JournalVoucherPage
         erpSession={erpSession}
         onBack={() => { window.location.href = '/erp'; }}
       />

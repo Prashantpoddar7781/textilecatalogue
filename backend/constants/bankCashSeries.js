@@ -115,7 +115,7 @@ export function unadjAmountCreated(entry) {
   const amount = Math.round((Number(entry.amount) || 0) * 100) / 100;
   const allocations = Array.isArray(entry.billAllocations) ? entry.billAllocations : [];
   const billAdjusted = allocations.reduce((sum, item) => {
-    if (!item || item.billType === 'credit_debit_note' || isUnadjAllocation(item)) return sum;
+    if (!item || item.billType === 'credit_debit_note' || isUnadjAllocation(item) || isDeductAllocation(item)) return sum;
     return sum + (Math.round((Number(item.adjustAmount) || 0) * 100) / 100);
   }, 0);
   return Math.round(Math.max(amount - billAdjusted, 0) * 100) / 100;

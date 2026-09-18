@@ -1032,6 +1032,10 @@ export interface BankPendingBill {
   linkedCreditAmount?: number;
   linkedDebitAmount?: number;
   netPendingAmount?: number;
+  oppositeAccount?: string | null;
+  partyName?: string | null;
+  partySide?: string | null;
+  editPath?: string | null;
 }
 
 export interface CreditDebitNote {
@@ -1082,6 +1086,28 @@ export interface CreditDebitNote {
   adjustBillId?: string | null;
   remarks?: string | null;
   isTally: boolean;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface JournalVoucher {
+  id: string;
+  userId: string;
+  transactionType: string;
+  typeBillNumber?: number | null;
+  voucherNumber?: string | null;
+  voucherDate: string;
+  companyName?: string | null;
+  partyType: 'customer' | 'supplier';
+  partyName: string;
+  customerId?: string | null;
+  supplierId?: string | null;
+  oppositeAccount: string;
+  partySide: 'debit' | 'credit';
+  amount: number;
+  narration?: string | null;
+  remarks?: string | null;
   status: string;
   createdAt: string;
   updatedAt: string;

@@ -81,6 +81,26 @@ export function isDeductAllocation(item?: { billType?: string | null; entryKind?
 
 export const UNADJ_PAYMENT_TYPE = 'UNADJ PAYMENT';
 
+export const JOURNAL_TYPE = 'JOURNAL';
+export const JOURNAL_BILL_TYPE = 'journal_voucher';
+
+export function isJournalAllocation(item?: { billType?: string | null; entryKind?: string | null; transactionType?: string | null } | null): boolean {
+  if (!item) return false;
+  const billType = String(item.billType || '').trim().toLowerCase();
+  const entryKind = String(item.entryKind || '').trim().toLowerCase();
+  const txn = String(item.transactionType || '').trim().toUpperCase();
+  return billType === JOURNAL_BILL_TYPE
+    || entryKind === JOURNAL_BILL_TYPE
+    || txn === JOURNAL_TYPE
+    || txn === 'JV'
+    || txn === 'JB';
+}
+
+export function isJournalBillTypeQuery(value?: string | null): boolean {
+  const q = String(value || '').trim().toLowerCase();
+  return q === 'j' || q === 'jv' || q === 'jb' || q === 'journal' || q === 'journal voucher';
+}
+
 /** Default Type after Remark: receipt → Finish Sales, payment → Finish Purchase. */
 export function defaultBillTypeForEntry(entryType?: string | null): string {
   return String(entryType || '').toLowerCase() === 'payment'
@@ -96,6 +116,7 @@ export const BANK_SETTLEMENT_COMMON_TYPES = [
   'FINISH PURCHASE RETURN',
   ...CREDIT_DEBIT_NOTE_TYPES.map(type => type.value),
   UNADJ_PAYMENT_TYPE,
+  JOURNAL_TYPE,
   'GREY SALES',
   'GREY PURCHASE',
   'FINISH SALES (GST)',
@@ -119,6 +140,10 @@ export function getBankSettlementTypeOptions(): string[] {
 export function matchBankSettlementTypes(query: string, options: string[]): string[] {
   const q = String(query || '').trim().toLowerCase();
   if (!q) return [];
+  if (isJournalBillTypeQuery(q)) {
+    const palette = [JOURNAL_TYPE, ...BANK_SETTLEMENT_COMMON_TYPES.filter(type => type !== JOURNAL_TYPE)];
+    return palette.slice(0, 14);
+  }
   const exact = options.find(type => type.toLowerCase() === q);
   if (exact) {
     const palette = [exact, ...BANK_SETTLEMENT_COMMON_TYPES.filter(type => type !== exact)];
@@ -176,7 +201,7 @@ export function unadjAmountCreated(entry?: {
   const amount = Math.round((Number(entry.amount) || 0) * 100) / 100;
   const allocations = Array.isArray(entry.billAllocations) ? entry.billAllocations : [];
   const billAdjusted = allocations.reduce((sum, item) => {
-    if (!item || item.billType === 'credit_debit_note' || isUnadjAllocation(item)) return sum;
+    if (!item || item.billType === 'credit_debit_note' || isUnadjAllocation(item) || isDeductAllocation(item)) return sum;
     return sum + (Math.round((Number(item.adjustAmount) || 0) * 100) / 100);
   }, 0);
   return Math.round(Math.max(amount - billAdjusted, 0) * 100) / 100;

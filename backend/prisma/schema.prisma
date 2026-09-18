@@ -44,6 +44,7 @@ model User {
   purchaseBills           PurchaseBill[]
   bankEntries             BankEntry[]
   creditDebitNotes        CreditDebitNote[]
+  journalVouchers         JournalVoucher[]
   erpUsers                ErpUser[]
   greyPurchases           GreyPurchase[]
   greyDispatches          GreyDispatch[]
@@ -1039,6 +1040,36 @@ model CreditDebitNote {
   @@index([partyName])
   @@index([noteDate])
   @@index([status])
+}
+
+model JournalVoucher {
+  id              String    @id @default(cuid())
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactionType String    @default("JOURNAL")
+  typeBillNumber  Int?
+  voucherNumber   String?
+  voucherDate     DateTime  @default(now())
+  companyName     String?
+  partyType       String // customer | supplier
+  partyName       String
+  customerId      String?
+  supplierId      String?
+  oppositeAccount String
+  partySide       String // debit | credit
+  amount          Float
+  narration       String?
+  remarks         String?
+  status          String    @default("posted")
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([partyName])
+  @@index([voucherDate])
+  @@index([transactionType])
+  @@index([status])
+  @@index([oppositeAccount])
 }
 
 model SubscriptionInvoice {

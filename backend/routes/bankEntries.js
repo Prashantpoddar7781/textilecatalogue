@@ -44,6 +44,11 @@ import {
 import { allocateNextTypeBillNumber } from '../utils/transactionBilling.js';
 import { ensurePartyMaster } from '../utils/partyMaster.js';
 import { getPendingCreditDebitNotes } from '../utils/creditDebitNotes.js';
+import {
+  getPaidAmountsByJournalId,
+  getPendingJournalVouchers,
+  mapJournalVoucherToPendingItem
+} from '../utils/journalVouchers.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -211,6 +216,23 @@ async function getCompletedOrderParties(userId) {
     partyMap.set(name.toLowerCase(), current);
   }
 
+  const [journals, paidByJournalId] = await Promise.all([
+    prisma.journalVoucher.findMany({
+      where: { userId, partyType: 'customer', status: { not: 'cancelled' } }
+    }),
+    getPaidAmountsByJournalId(prisma, userId)
+  ]);
+  for (const voucher of journals) {
+    const name = String(voucher.partyName || '').trim();
+    if (!name) continue;
+    const pending = mapJournalVoucherToPendingItem(voucher, paidByJournalId, 'customer');
+    const signed = pending.adjustDirection === 'deduct' ? -pending.pendingAmount : pending.pendingAmount;
+    const current = partyMap.get(name.toLowerCase()) || { name, orderCount: 0, pendingAmount: 0 };
+    current.orderCount += 1;
+    current.pendingAmount = roundMoneyLocal(current.pendingAmount + signed);
+    partyMap.set(name.toLowerCase(), current);
+  }
+
   return Array.from(partyMap.values())
     .filter(party => party.orderCount > 0)
     .sort((a, b) => a.name.localeCompare(b.name));
@@ -307,6 +329,23 @@ async function getPurchaseBillParties(userId) {
     };
     current.billCount += 1;
     current.pendingAmount = roundMoneyLocal(current.pendingAmount + signedPending);
+    partyMap.set(name.toLowerCase(), current);
+  }
+
+  const [journals, paidByJournalId] = await Promise.all([
+    prisma.journalVoucher.findMany({
+      where: { userId, partyType: 'supplier', status: { not: 'cancelled' } }
+    }),
+    getPaidAmountsByJournalId(prisma, userId)
+  ]);
+  for (const voucher of journals) {
+    const name = String(voucher.partyName || '').trim();
+    if (!name) continue;
+    const pending = mapJournalVoucherToPendingItem(voucher, paidByJournalId, 'supplier');
+    const signed = pending.adjustDirection === 'deduct' ? -pending.pendingAmount : pending.pendingAmount;
+    const current = partyMap.get(name.toLowerCase()) || { name, billCount: 0, pendingAmount: 0 };
+    current.billCount += 1;
+    current.pendingAmount = roundMoneyLocal(current.pendingAmount + signed);
     partyMap.set(name.toLowerCase(), current);
   }
 
@@ -453,7 +492,7 @@ function signedPendingAmount(item) {
 async function getPartyBalance(userId, partyName, partyType) {
   if (!partyName) return 0;
   // Empire: Cur. Bal. = pending bills − unadj − deduct notes/returns + add notes.
-  const [bills, unadjusted, notes, returns] = await Promise.all([
+  const [bills, unadjusted, notes, returns, journals] = await Promise.all([
     partyType === 'supplier'
       ? getPendingPurchaseBills(userId, partyName)
       : getPendingOrderBills(userId, partyName),
@@ -461,9 +500,10 @@ async function getPartyBalance(userId, partyName, partyType) {
     getPendingCreditDebitNotes(prisma, userId, partyName, partyType),
     partyType === 'supplier'
       ? getPendingPurchaseReturns(userId, partyName)
-      : getPendingSalesReturns(userId, partyName)
+      : getPendingSalesReturns(userId, partyName),
+    getPendingJournalVouchers(prisma, userId, partyName, partyType)
   ]);
-  const pending = [...bills, ...returns, ...notes].reduce((sum, item) => sum + signedPendingAmount(item), 0);
+  const pending = [...bills, ...returns, ...notes, ...journals].reduce((sum, item) => sum + signedPendingAmount(item), 0);
   const unadjPending = unadjusted.reduce((sum, row) => sum + (row.pendingAmount || 0), 0);
   return roundMoneyLocal(pending - unadjPending);
 }
@@ -556,7 +596,7 @@ router.get('/pending-bills', authenticateToken, requireActiveSubscription, async
       return res.json({ bills: [], unadjusted: [], notes: [], noteCount: 0, billCount: 0, unadjCount: 0 });
     }
 
-    const [bills, unadjusted, notes, returns] = await Promise.all([
+    const [bills, unadjusted, notes, returns, journals] = await Promise.all([
       partyType === 'supplier'
         ? getPendingPurchaseBills(userId, partyName, null, excludeEntryId)
         : getPendingOrderBills(userId, partyName, null, excludeEntryId),
@@ -564,16 +604,19 @@ router.get('/pending-bills', authenticateToken, requireActiveSubscription, async
       getPendingCreditDebitNotes(prisma, userId, partyName, partyType, excludeEntryId),
       partyType === 'supplier'
         ? getPendingPurchaseReturns(userId, partyName, excludeEntryId)
-        : getPendingSalesReturns(userId, partyName, excludeEntryId)
+        : getPendingSalesReturns(userId, partyName, excludeEntryId),
+      getPendingJournalVouchers(prisma, userId, partyName, partyType, excludeEntryId)
     ]);
 
     res.json({
-      bills: [...bills, ...returns, ...unadjusted, ...notes],
+      bills: [...bills, ...returns, ...unadjusted, ...notes, ...journals],
       unadjusted,
       notes,
+      journals,
       noteCount: notes.length,
       billCount: bills.length + returns.length,
-      unadjCount: unadjusted.length
+      unadjCount: unadjusted.length,
+      journalCount: journals.length
     });
   } catch (error) {
     next(error);
@@ -710,6 +753,22 @@ router.get('/outstanding-report', authenticateToken, requireActiveSubscription, 
 
       rows = [...orderRows, ...returnRows, ...invoiceRows];
     }
+
+    const [journals, paidByJournalId] = await Promise.all([
+      prisma.journalVoucher.findMany({
+        where: { userId, partyType, status: { not: 'cancelled' } }
+      }),
+      getPaidAmountsByJournalId(prisma, userId)
+    ]);
+    const journalRows = journals
+      .map(voucher => mapJournalVoucherToPendingItem(voucher, paidByJournalId, partyType, asOf))
+      .filter(row => includeSettled || Math.abs(row.pendingAmount) > 0.001)
+      .map(row => ({
+        ...row,
+        billAmount: row.adjustDirection === 'deduct' ? -row.billAmount : row.billAmount,
+        pendingAmount: row.adjustDirection === 'deduct' ? -row.pendingAmount : row.pendingAmount
+      }));
+    rows = [...rows, ...journalRows];
 
     rows = rows.filter(row => {
       if (partyName && !contains(row.partyName, partyName)) return false;

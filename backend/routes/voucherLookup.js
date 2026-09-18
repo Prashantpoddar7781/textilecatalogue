@@ -175,6 +175,14 @@ router.get('/lookup', authenticateToken, requireActiveSubscription, async (req, 
           `/erp/notes/${entry.noteKind}-note-${entry.noteSide}?edit=${entry.id}&type=${encodeURIComponent(type?.value || transactionType)}`
         );
       }
+    } else if (module === 'journal') {
+      if (!numeric) return res.status(404).json({ error: 'No journal voucher with that number.' });
+      const entry = await prisma.journalVoucher.findFirst({
+        where: { userId, typeBillNumber: numeric },
+        select: { id: true },
+        orderBy: { createdAt: 'desc' }
+      });
+      if (entry) found = hit(entry.id, `/erp/journal?edit=${entry.id}`);
     } else {
       return res.status(400).json({ error: `Unknown module "${module}".` });
     }

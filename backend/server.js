@@ -16,6 +16,7 @@ import invoiceRoutes from './routes/invoices.js';
 import purchaseRoutes from './routes/purchases.js';
 import bankEntryRoutes from './routes/bankEntries.js';
 import creditDebitNoteRoutes from './routes/creditDebitNotes.js';
+import journalVoucherRoutes from './routes/journalVouchers.js';
 import ledgerRoutes from './routes/ledger.js';
 import partyRoutes from './routes/parties.js';
 import erpUserRoutes from './routes/erpUsers.js';
@@ -143,6 +144,7 @@ try {
   app.use('/api/purchases', purchaseRoutes);
   app.use('/api/bank-entries', bankEntryRoutes);
   app.use('/api/credit-debit-notes', creditDebitNoteRoutes);
+  app.use('/api/journal-vouchers', journalVoucherRoutes);
   app.use('/api/ledger', ledgerRoutes);
   app.use('/api/parties', partyRoutes);
   app.use('/api/erp-users', erpUserRoutes);

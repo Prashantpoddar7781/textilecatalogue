@@ -1,4 +1,4 @@
-import { AccountLedgerEntry, AccountLedgerParty, BankEntry, BankPendingBill, BusinessProfile, CompletedOrderParty, Contact, Customer, CreditDebitNote, ErpAccessLevel, ErpSession, ErpUserAccount, GreyDispatch, GreyPurchase, GreyPurchaseReturn, GreyReceiptSummary, GreyTakaDetailRow, LedgerEntryDetail, MillPendingDispatch, MillReceipt, MillReceiptTakaRow, Order, PurchaseBill, PurchaseBillExtraction, PurchaseBillParty, SalesInvoice, Supplier, SupplierLedgerEntry } from '../types';
+import { AccountLedgerEntry, AccountLedgerParty, BankEntry, BankPendingBill, BusinessProfile, CompletedOrderParty, Contact, Customer, CreditDebitNote, ErpAccessLevel, ErpSession, ErpUserAccount, GreyDispatch, GreyPurchase, GreyPurchaseReturn, GreyReceiptSummary, GreyTakaDetailRow, JournalVoucher, LedgerEntryDetail, MillPendingDispatch, MillReceipt, MillReceiptTakaRow, Order, PurchaseBill, PurchaseBillExtraction, PurchaseBillParty, SalesInvoice, Supplier, SupplierLedgerEntry } from '../types';
 
 const RAILWAY_API_URL = 'https://textilecatalogue-production.up.railway.app/api';
 const VERCEL_API_URL = 'https://textilecatalogue.vercel.app/api';
@@ -1196,6 +1196,39 @@ export const creditDebitNotesApi = {
   },
   delete: async (id: string) => {
     return request<{ success: boolean }>(`/credit-debit-notes/${id}`, { method: 'DELETE' });
+  }
+};
+
+export const journalVouchersApi = {
+  getNextVoucher: async () => {
+    return request<{
+      transactionType: string;
+      typeBillNumber: number;
+      voucherNumber: string;
+      companyName: string;
+      warnOnManualEntry: boolean;
+    }>('/journal-vouchers/next-voucher');
+  },
+  getAll: async () => {
+    return request<{ vouchers: JournalVoucher[] }>('/journal-vouchers');
+  },
+  getById: async (id: string) => {
+    return request<{ voucher: JournalVoucher }>(`/journal-vouchers/${id}`);
+  },
+  create: async (body: Record<string, unknown>) => {
+    return request<{ voucher: JournalVoucher }>('/journal-vouchers', {
+      method: 'POST',
+      body: JSON.stringify(body)
+    });
+  },
+  update: async (id: string, body: Record<string, unknown>) => {
+    return request<{ voucher: JournalVoucher }>(`/journal-vouchers/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(body)
+    });
+  },
+  delete: async (id: string) => {
+    return request<{ success: boolean }>(`/journal-vouchers/${id}`, { method: 'DELETE' });
   }
 };
 

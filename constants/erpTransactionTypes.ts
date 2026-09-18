@@ -35,6 +35,7 @@ export const ERP_TRANSACTION_TYPES: ErpTransactionType[] = [
   { value: 'WORK REC. LACE SUIT BILLS', label: 'Work Rec. Lace Suit Bills', category: 'work' },
   { value: 'WORK REC. SUIT BILLS', label: 'Work Rec. Suit Bills', category: 'work' },
   { value: 'TRANSACTION', label: 'Transaction', category: 'other' },
+  { value: 'JOURNAL', label: 'Journal', category: 'other' },
   { value: 'REVERSE CHARGE SALES TO SELF', label: 'Reverse Charge Sales To Self', category: 'other' },
   { value: 'SALARY EXP A/C', label: 'Salary Exp A/C', category: 'other' }
 ];

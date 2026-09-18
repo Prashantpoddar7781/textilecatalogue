@@ -15,7 +15,8 @@ export type VoucherModule =
   | 'work-receipt'
   | 'work-despatch'
   | 'bank'
-  | 'note';
+  | 'note'
+  | 'journal';
 
 interface Options {
   module: VoucherModule;
