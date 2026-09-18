@@ -5,6 +5,7 @@ import { authenticateToken, optionalAuth } from '../middleware/auth.js';
 import { requireActiveSubscription, requireActiveSubscriptionIfAuthenticated } from '../middleware/subscription.js';
 import crypto from 'crypto';
 import { DESIGN_LIST_SELECT, DESIGN_PREVIEW_SELECT, presentDesign, presentDesignPreview } from '../utils/designImages.js';
+import { sanitizeShareOptions } from '../utils/shareOptions.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -101,6 +102,7 @@ router.post('/', authenticateToken, requireActiveSubscription, [
   body('designIds').optional().isArray({ min: 1 }),
   body('expiresAt').optional().isISO8601(),
   body('selectedPriceType').optional().trim(),
+  body('shareOptions').optional().isObject(),
   body('securityMode').optional().isIn(SHARE_LINK_SECURITY_MODES)
 ], async (req, res, next) => {
   try {
@@ -110,6 +112,7 @@ router.post('/', authenticateToken, requireActiveSubscription, [
     }
 
     const { designId, designIds, expiresAt, selectedPriceType } = req.body;
+    const shareOptions = sanitizeShareOptions(req.body.shareOptions);
     const securityMode = SHARE_LINK_SECURITY_MODES.includes(req.body.securityMode)
       ? req.body.securityMode
       : 'normal';
@@ -145,6 +148,7 @@ router.post('/', authenticateToken, requireActiveSubscription, [
         expiresAt: expiresAt ? new Date(expiresAt) : null,
         isActive: true,
         selectedPriceType: selectedPriceType || null,
+        shareOptions,
         securityMode,
         designs: {
           createMany: {
@@ -165,6 +169,7 @@ router.post('/', authenticateToken, requireActiveSubscription, [
 router.post('/collection', authenticateToken, requireActiveSubscription, [
   body('expiresAt').optional().isISO8601(),
   body('selectedPriceType').optional().trim(),
+  body('shareOptions').optional().isObject(),
   body('securityMode').optional().isIn(SHARE_LINK_SECURITY_MODES)
 ], async (req, res, next) => {
   try {
@@ -174,6 +179,7 @@ router.post('/collection', authenticateToken, requireActiveSubscription, [
     }
 
     const { expiresAt, selectedPriceType } = req.body;
+    const shareOptions = sanitizeShareOptions(req.body.shareOptions);
     const securityMode = SHARE_LINK_SECURITY_MODES.includes(req.body.securityMode)
       ? req.body.securityMode
       : 'normal';
@@ -204,6 +210,7 @@ router.post('/collection', authenticateToken, requireActiveSubscription, [
         expiresAt: expiresAt ? new Date(expiresAt) : null,
         isActive: true,
         selectedPriceType: selectedPriceType || null,
+        shareOptions,
         securityMode,
         designs: {
           createMany: {

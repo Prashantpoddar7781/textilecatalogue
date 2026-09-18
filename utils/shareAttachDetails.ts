@@ -1,4 +1,5 @@
 import { ShareOptions, TextileDesign } from '../types';
+import { DEFAULT_SHARE_OPTIONS } from '../services/sharePreferences';
 
 export function uniqueAdditionalPriceNames(designs: TextileDesign[]): string[] {
   const names = new Set<string>();
@@ -58,4 +59,40 @@ export function getShareAttachLines(
     lines.push({ label: 'Details', value: design.description.trim() });
   }
   return lines;
+}
+
+const OPTION_KEYS: (keyof ShareOptions)[] = [
+  'includeWholesale',
+  'includeRetail',
+  'includeFabric',
+  'includeDescription',
+  'includeFirmName',
+  'includeCatalogueName',
+  'includeDesignName'
+];
+
+export function sanitizeShareOptions(raw: unknown): ShareOptions {
+  const source = raw && typeof raw === 'object' ? (raw as Partial<ShareOptions>) : {};
+  const options = { ...DEFAULT_SHARE_OPTIONS };
+  for (const key of OPTION_KEYS) {
+    if (typeof source[key] === 'boolean') options[key] = source[key] as boolean;
+  }
+  return options;
+}
+
+/** Options stored on the link, or a legacy fallback from selectedPriceType. */
+export function resolveShareDisplay(
+  shareOptions: unknown,
+  selectedPriceType?: string | null
+): { options: ShareOptions; selectedPriceType: string } {
+  const hasStored = Boolean(shareOptions && typeof shareOptions === 'object');
+  const options = sanitizeShareOptions(shareOptions);
+  if (!hasStored) {
+    const showPrice = Boolean(selectedPriceType && selectedPriceType !== 'none');
+    options.includeRetail = showPrice;
+    options.includeDesignName = true;
+    options.includeFabric = true;
+  }
+  const priceType = selectedPriceType && selectedPriceType !== 'none' ? selectedPriceType : 'base';
+  return { options, selectedPriceType: priceType };
 }

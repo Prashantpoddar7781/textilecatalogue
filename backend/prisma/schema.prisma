@@ -204,6 +204,7 @@ model ShareLink {
   expiresAt         DateTime? // Optional expiration date
   isActive          Boolean               @default(true) // Can be disabled by user
   selectedPriceType String? // Which price type to show (base, or name of additional price)
+  shareOptions      Json? // ShareOptions: which details the public viewer should see
   securityMode      String                @default("normal") // normal | device_locked
   lockedDeviceToken String? // first viewer device token for secured links
   lockedAt          DateTime?

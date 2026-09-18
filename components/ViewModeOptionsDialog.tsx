@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { CheckSquare, Eye, Square, X } from 'lucide-react';
+import { Eye, X } from 'lucide-react';
 import { ShareOptions, TextileDesign } from '../types';
 import { loadSharePreferences, saveSharePreferences } from '../services/sharePreferences';
-import { uniqueAdditionalPriceNames } from '../utils/shareAttachDetails';
+import { ShareDetailsOptions } from './ShareDetailsOptions';
 
 interface Props {
   designs: TextileDesign[];
@@ -13,15 +13,10 @@ interface Props {
 export const ViewModeOptionsDialog: React.FC<Props> = ({ designs, onClose, onStart }) => {
   const [options, setOptions] = useState<ShareOptions>(() => loadSharePreferences().options);
   const [selectedPriceType, setSelectedPriceType] = useState(() => loadSharePreferences().selectedPriceType);
-  const extraPrices = uniqueAdditionalPriceNames(designs);
 
   useEffect(() => {
     saveSharePreferences({ options, selectedPriceType });
   }, [options, selectedPriceType]);
-
-  const toggle = (key: keyof ShareOptions) => {
-    setOptions(prev => ({ ...prev, [key]: !prev[key] }));
-  };
 
   return (
     <div className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center bg-black/70 p-0 sm:p-4">
@@ -37,65 +32,14 @@ export const ViewModeOptionsDialog: React.FC<Props> = ({ designs, onClose, onSta
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          <button
-            type="button"
-            onClick={() => toggle('includeRetail')}
-            className={`flex w-full items-center gap-3 p-4 rounded-2xl border-2 text-left ${
-              options.includeRetail ? 'border-indigo-600 bg-indigo-50' : 'border-gray-100 bg-gray-50 text-gray-400'
-            }`}
-          >
-            {options.includeRetail ? <CheckSquare className="w-5 h-5 text-indigo-600" /> : <Square className="w-5 h-5" />}
-            <span className="font-bold text-xs uppercase tracking-tight">Price</span>
-          </button>
-
-          {options.includeRetail && (
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => setSelectedPriceType('base')}
-                className={`p-3 rounded-xl border-2 text-left text-xs font-bold ${
-                  selectedPriceType === 'base' ? 'border-indigo-600 bg-indigo-50' : 'border-gray-200'
-                }`}
-              >
-                Base Price
-              </button>
-              {extraPrices.map(name => (
-                <button
-                  key={name}
-                  type="button"
-                  onClick={() => setSelectedPriceType(name)}
-                  className={`p-3 rounded-xl border-2 text-left text-xs font-bold ${
-                    selectedPriceType === name ? 'border-indigo-600 bg-indigo-50' : 'border-gray-200'
-                  }`}
-                >
-                  {name}
-                </button>
-              ))}
-            </div>
-          )}
-
-          <div className="grid grid-cols-2 gap-3">
-            {[
-              { key: 'includeCatalogueName' as const, label: 'Catalogue name' },
-              { key: 'includeDesignName' as const, label: 'Design name / No.' },
-              { key: 'includeFabric' as const, label: 'Fabric Info' },
-              { key: 'includeDescription' as const, label: 'Description' },
-              { key: 'includeFirmName' as const, label: 'Firm Name' }
-            ].map(opt => (
-              <button
-                key={opt.key}
-                type="button"
-                onClick={() => toggle(opt.key)}
-                className={`flex items-center gap-3 p-4 rounded-2xl border-2 text-left ${
-                  options[opt.key] ? 'border-indigo-600 bg-indigo-50' : 'border-gray-100 bg-gray-50 text-gray-400'
-                }`}
-              >
-                {options[opt.key] ? <CheckSquare className="w-5 h-5 text-indigo-600" /> : <Square className="w-5 h-5" />}
-                <span className="font-bold text-xs uppercase tracking-tight">{opt.label}</span>
-              </button>
-            ))}
-          </div>
+        <div className="flex-1 overflow-y-auto p-4">
+          <ShareDetailsOptions
+            designs={designs}
+            options={options}
+            selectedPriceType={selectedPriceType}
+            onOptionsChange={setOptions}
+            onPriceTypeChange={setSelectedPriceType}
+          />
         </div>
 
         <div className="p-4 border-t bg-gray-50">

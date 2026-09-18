@@ -54,7 +54,7 @@ import { SearchableFilterSelect } from './components/SearchableFilterSelect';
 import { LoginDialog } from './components/LoginDialog';
 import { PricingDialog } from './components/PricingDialog';
 import { BillingPage } from './components/BillingPage';
-import { designsApi, authApi, shareLinksApi, ordersApi, billingApi } from './services/api';
+import { designsApi, authApi, ordersApi, billingApi } from './services/api';
 import {
   clearAuthSession,
   getAuthToken,
@@ -62,8 +62,7 @@ import {
   setAuthSession,
   sleep
 } from './services/authSession';
-import { getShareUrl } from './services/appUrl';
-import { openWhatsAppWithText, isNativeAndroid, getPendingSharedImage, clearPendingSharedImage, addShareReceivedListener } from './services/nativeApp';
+import { isNativeAndroid, getPendingSharedImage, clearPendingSharedImage, addShareReceivedListener } from './services/nativeApp';
 import { hasCompleteErpAccess } from './services/erpSession';
 import { ErpSession, Order } from './types';
 
@@ -172,6 +171,7 @@ const App: React.FC = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isShareOpen, setIsShareOpen] = useState(false);
   const [isShareLinkOpen, setIsShareLinkOpen] = useState(false);
+  const [shareEntireCollection, setShareEntireCollection] = useState(false);
   const [selectedDesignForLink, setSelectedDesignForLink] = useState<TextileDesign | null>(null);
   const [bulkShareDesigns, setBulkShareDesigns] = useState<TextileDesign[] | null>(null);
   const [viewingDesign, setViewingDesign] = useState<TextileDesign | null>(null);
@@ -180,7 +180,6 @@ const App: React.FC = () => {
   const [viewAttach, setViewAttach] = useState<{ options: ShareOptions; selectedPriceType: string } | null>(null);
   const [viewingId, setViewingId] = useState<string | null>(null);
   const [isLoginOpen, setIsLoginOpen] = useState(false);
-  const [isSharingCollection, setIsSharingCollection] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [selectionMode, setSelectionMode] = useState(false);
   const [user, setUser] = useState<any>(null);
@@ -850,22 +849,9 @@ const App: React.FC = () => {
     }
   };
 
-  const handleShareCollection = async () => {
-    try {
-      setIsSharingCollection(true);
-      const shareLink = await shareLinksApi.createCollection();
-      const shareUrl = getShareUrl(shareLink.token);
-      try {
-        await navigator.clipboard.writeText(shareUrl);
-      } catch (e) {
-        console.warn('Clipboard write failed:', e);
-      }
-      await openWhatsAppWithText(shareUrl);
-    } catch (error: any) {
-      alert('Failed to create collection link: ' + (error.message || 'Unknown error'));
-    } finally {
-      setIsSharingCollection(false);
-    }
+  const handleShareCollection = () => {
+    setShareEntireCollection(true);
+    setIsShareLinkOpen(true);
   };
 
   const selectedDesigns = designs.filter(d => selectedIds.has(d.id));
@@ -1492,13 +1478,12 @@ const App: React.FC = () => {
                 <button
                   type="button"
                   onClick={handleShareCollection}
-                  disabled={isSharingCollection}
-                  title="Copy one link to your entire catalogue (opens WhatsApp)"
+                  title="Create one link to your entire catalogue"
                   className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded-2xl text-xs font-bold shadow-lg disabled:opacity-60"
                 >
                   <Link2 className="w-4 h-4 shrink-0" />
-                  <span className="hidden xl:inline">{isSharingCollection ? '…' : 'Catalogue link'}</span>
-                  <span className="xl:hidden">{isSharingCollection ? '…' : 'Link'}</span>
+                  <span className="hidden xl:inline">Catalogue link</span>
+                  <span className="xl:hidden">Link</span>
                 </button>
                 <button
                   type="button"
@@ -1634,11 +1619,10 @@ const App: React.FC = () => {
                 <div className="my-2 border-t border-gray-100" />
                 <button
                   type="button"
-                  disabled={isSharingCollection}
-                  className="touch-target flex w-full flex-col items-start gap-0.5 rounded-2xl bg-indigo-600 px-4 py-3 text-left font-black text-white shadow-lg disabled:opacity-60 active:bg-indigo-700"
-                  onClick={async () => {
+                  className="touch-target flex w-full flex-col items-start gap-0.5 rounded-2xl bg-indigo-600 px-4 py-3 text-left font-black text-white shadow-lg active:bg-indigo-700"
+                  onClick={() => {
                     setMobileMenuOpen(false);
-                    await handleShareCollection();
+                    handleShareCollection();
                   }}
                 >
                   <span className="flex items-center gap-2">
@@ -2092,11 +2076,15 @@ const App: React.FC = () => {
           }}
         />
       )}
-      {isShareLinkOpen && shareLinkDialogDesigns.length > 0 && (
+      {isShareLinkOpen && (shareEntireCollection || shareLinkDialogDesigns.length > 0) && (
         <ShareLinkDialog 
-          designs={shareLinkDialogDesigns}
+          designs={shareEntireCollection
+            ? designs.filter(d => (d.stockQuantity ?? 0) > 0)
+            : shareLinkDialogDesigns}
+          shareEntireCollection={shareEntireCollection}
           onClose={() => {
             setIsShareLinkOpen(false);
+            setShareEntireCollection(false);
             setSelectedDesignForLink(null);
             setBulkShareDesigns(null);
           }} 

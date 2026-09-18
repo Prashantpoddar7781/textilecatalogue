@@ -206,7 +206,8 @@ router.post('/public', [
   body('buyerName').notEmpty().trim(),
   body('buyerPhone').optional().trim(),
   body('orderSessionId').optional().trim(),
-  body('quantity').isInt({ min: 1 })
+  body('quantity').isInt({ min: 1 }),
+  body('remarks').optional().trim()
 ], async (req, res, next) => {
   try {
     const errors = validationResult(req);
@@ -218,6 +219,7 @@ router.post('/public', [
     const normalizedBuyerName = optionalString(buyerName);
     const normalizedPhone = optionalString(buyerPhone) || '-';
     const normalizedSessionId = optionalString(orderSessionId);
+    const lineRemarks = optionalString(req.body.remarks);
     const publicBatchId = normalizedSessionId ? `share_${token}_${normalizedSessionId}` : null;
     const parsedQuantity = parseInt(quantity, 10);
 
@@ -270,7 +272,7 @@ router.post('/public', [
       basePrice: design.basePrice || design.retailPrice || 0,
       retailPrice: design.retailPrice || design.basePrice || 0,
       quantity: parsedQuantity,
-      remarks: null,
+      remarks: lineRemarks || null,
       completed: false,
       completedAt: null
     };
@@ -292,10 +294,15 @@ router.post('/public', [
       const existingLines = normalizeOrderLines(existingOrder.orderLines);
       const lineIndex = existingLines.findIndex(line => line.designId === designId);
       const nextLines = lineIndex >= 0
-        ? existingLines.map((line, index) => index === lineIndex
-          ? { ...line, quantity: parseInt(line.quantity, 10) + parsedQuantity }
-          : line
-        )
+        ? existingLines.map((line, index) => {
+            if (index !== lineIndex) return line;
+            const mergedRemarks = [line.remarks, lineRemarks].filter(Boolean).join(' · ');
+            return {
+              ...line,
+              quantity: parseInt(line.quantity, 10) + parsedQuantity,
+              remarks: mergedRemarks || line.remarks || null
+            };
+          })
         : [...existingLines, newLine];
       const totalQuantity = nextLines.reduce((sum, line) => sum + parseInt(line.quantity, 10), 0);
 
@@ -323,6 +330,7 @@ router.post('/public', [
           buyerName: normalizedBuyerName,
           buyerPhone: normalizedPhone,
           quantity: parsedQuantity,
+          remarks: lineRemarks || null,
           orderLines: [newLine],
           manualBatchId: publicBatchId,
           ...billing,

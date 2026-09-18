@@ -1,24 +1,29 @@
 import React, { useState, useEffect } from 'react';
 import { X, Link2, Copy, Check, Trash2, Eye, EyeOff, Calendar, Clock, Globe2, ShieldCheck } from 'lucide-react';
-import { TextileDesign, ShareLink } from '../types';
+import { TextileDesign, ShareLink, ShareOptions } from '../types';
 import { shareLinksApi } from '../services/api';
 import { getShareUrl } from '../services/appUrl';
 import { openWhatsAppWithText } from '../services/nativeApp';
+import { loadSharePreferences, saveSharePreferences } from '../services/sharePreferences';
+import { ShareDetailsOptions } from './ShareDetailsOptions';
 
 interface Props {
   design?: TextileDesign;
   designs?: TextileDesign[];
+  shareEntireCollection?: boolean;
   onClose: () => void;
 }
 
-export const ShareLinkDialog: React.FC<Props> = ({ design, designs, onClose }) => {
+export const ShareLinkDialog: React.FC<Props> = ({ design, designs, shareEntireCollection, onClose }) => {
+  const prefs = loadSharePreferences();
   const [shareLinks, setShareLinks] = useState<ShareLink[]>([]);
   const [openCountByLinkId, setOpenCountByLinkId] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
   const [expiresIn, setExpiresIn] = useState<string>('7'); // days
   const [expiresInUnit, setExpiresInUnit] = useState<'days' | 'hours'>('days');
-  const [selectedPriceType, setSelectedPriceType] = useState<string>('none');
+  const [shareOptions, setShareOptions] = useState<ShareOptions>(prefs.options);
+  const [selectedPriceType, setSelectedPriceType] = useState<string>(prefs.selectedPriceType || 'base');
   const [securityMode, setSecurityMode] = useState<'normal' | 'device_locked'>('normal');
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
 
@@ -27,13 +32,16 @@ export const ShareLinkDialog: React.FC<Props> = ({ design, designs, onClose }) =
   const primaryDesign = design || designs?.[0];
 
   useEffect(() => {
-    if (primaryDesign) {
+    saveSharePreferences({ options: shareOptions, selectedPriceType });
+  }, [shareOptions, selectedPriceType]);
+
+  useEffect(() => {
+    if (primaryDesign || shareEntireCollection) {
       loadShareLinks();
     }
-  }, [primaryDesign?.id]);
+  }, [primaryDesign?.id, shareEntireCollection]);
 
   const loadShareLinks = async () => {
-    if (!primaryDesign) return;
     try {
       setLoading(true);
       const [listRes, statsRes] = await Promise.all([
@@ -42,11 +50,13 @@ export const ShareLinkDialog: React.FC<Props> = ({ design, designs, onClose }) =
       ]);
       const { shareLinks: links } = listRes;
       const designIds = designList.map(d => d.id);
-      const designLinks = links.filter(link => {
-        if (link.designId && designIds.includes(link.designId)) return true;
-        if (link.designs && link.designs.some(d => designIds.includes(d.design.id))) return true;
-        return false;
-      });
+      const designLinks = shareEntireCollection
+        ? links.filter(link => !link.designId && (link.designs?.length || 0) > 1)
+        : links.filter(link => {
+            if (link.designId && designIds.includes(link.designId)) return true;
+            if (link.designs && link.designs.some(d => designIds.includes(d.design.id))) return true;
+            return false;
+          });
       setShareLinks(designLinks);
       const openMap: Record<string, number> = {};
       if (statsRes?.linksWithOpens) {
@@ -62,29 +72,34 @@ export const ShareLinkDialog: React.FC<Props> = ({ design, designs, onClose }) =
   };
 
   const handleCreateLink = async () => {
-    if (designList.length === 0) return;
-    
+    if (!shareEntireCollection && designList.length === 0) return;
+
     try {
       setCreating(true);
       const expiresAt = calculateExpirationDate();
+      const priceType = shareOptions.includeRetail
+        ? (selectedPriceType === 'none' ? 'base' : selectedPriceType)
+        : 'none';
 
-      // Create a single link for all selected designs
-      const shareLink = await shareLinksApi.create({
-        designIds: designList.map(d => d.id),
-        expiresAt: expiresAt || undefined,
-        selectedPriceType: selectedPriceType === 'none'
-          ? 'none'
-          : selectedPriceType === 'base'
-            ? undefined
-            : selectedPriceType,
-        securityMode
-      });
+      const shareLink = shareEntireCollection
+        ? await shareLinksApi.createCollection({
+            expiresAt: expiresAt || undefined,
+            selectedPriceType: priceType,
+            shareOptions,
+            securityMode
+          })
+        : await shareLinksApi.create({
+            designIds: designList.map(d => d.id),
+            expiresAt: expiresAt || undefined,
+            selectedPriceType: priceType,
+            shareOptions,
+            securityMode
+          });
 
       if (shareLink) {
         setShareLinks(prev => [shareLink, ...prev]);
         setExpiresIn('7');
         setExpiresInUnit('days');
-        setSelectedPriceType('none');
         setSecurityMode('normal');
 
         // Auto-copy and open WhatsApp with the link
@@ -160,16 +175,6 @@ export const ShareLinkDialog: React.FC<Props> = ({ design, designs, onClose }) =
     return new Date() > new Date(link.expiresAt);
   };
 
-  const getPriceOptions = () => {
-    const options = [{ value: 'none', label: 'No price' }, { value: 'base', label: 'Base Price' }];
-    if (primaryDesign?.additionalPrices) {
-      primaryDesign.additionalPrices.forEach(ap => {
-        options.push({ value: ap.name, label: ap.name });
-      });
-    }
-    return options;
-  };
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/60 backdrop-blur-sm">
       <div className="bg-white w-full max-w-2xl rounded-2xl sm:rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[95vh] sm:max-h-[90vh]">
@@ -181,9 +186,11 @@ export const ShareLinkDialog: React.FC<Props> = ({ design, designs, onClose }) =
             <div>
               <h2 className="text-xl font-bold text-gray-900">Shareable Links</h2>
               <p className="text-sm text-gray-500">
-                {designList.length === 1 
-                  ? (primaryDesign?.name || 'Design')
-                  : `${designList.length} Designs Selected`}
+                {shareEntireCollection
+                  ? 'Full catalogue link'
+                  : designList.length === 1
+                    ? (primaryDesign?.name || 'Design')
+                    : `${designList.length} Designs Selected`}
               </p>
             </div>
           </div>
@@ -199,16 +206,15 @@ export const ShareLinkDialog: React.FC<Props> = ({ design, designs, onClose }) =
             
             <div className="space-y-3">
               <div>
-                <label className="text-sm font-medium text-gray-700 mb-1 block">Price Type to Display</label>
-                <select
-                  className="w-full px-4 py-2 bg-white border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
-                  value={selectedPriceType}
-                  onChange={e => setSelectedPriceType(e.target.value)}
-                >
-                  {getPriceOptions().map(opt => (
-                    <option key={opt.value} value={opt.value}>{opt.label}</option>
-                  ))}
-                </select>
+                <p className="text-sm font-medium text-gray-700 mb-2">What should appear on the link?</p>
+                <p className="text-xs text-gray-500 mb-3">Same choices as WhatsApp / view mode. The person who opens the link will see only these details.</p>
+                <ShareDetailsOptions
+                  designs={designList}
+                  options={shareOptions}
+                  selectedPriceType={selectedPriceType}
+                  onOptionsChange={setShareOptions}
+                  onPriceTypeChange={setSelectedPriceType}
+                />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -288,18 +294,20 @@ export const ShareLinkDialog: React.FC<Props> = ({ design, designs, onClose }) =
 
               <button
                 onClick={handleCreateLink}
-                disabled={creating || designList.length === 0}
+                disabled={creating || (!shareEntireCollection && designList.length === 0)}
                 className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-xl font-semibold transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
               >
                 {creating ? (
                   <>
                     <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    Creating {designList.length > 1 ? `${designList.length} Links` : 'Link'}...
+                    Creating Link...
                   </>
                 ) : (
                   <>
                     <Link2 className="w-4 h-4" />
-                    Create Share Link{designList.length > 1 ? `s (${designList.length})` : ''}
+                    {shareEntireCollection
+                      ? 'Create catalogue link'
+                      : `Create Share Link${designList.length > 1 ? `s (${designList.length})` : ''}`}
                   </>
                 )}
               </button>

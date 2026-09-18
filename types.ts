@@ -51,6 +51,7 @@ export interface TextileDesign {
   pcsPerParcel?: number;
   moq?: number;
   basePrice: number;
+  /** Optional extra prices from the seller's additional price list */
   additionalPrices?: AdditionalPrice[];
   wholesalePrice: number; // For backward compatibility
   retailPrice: number; // For backward compatibility
@@ -62,6 +63,7 @@ export interface TextileDesign {
   aiModels?: string[];
   /** Optional design costing breakdown */
   costingDetails?: DesignCostingDetails;
+  user?: { firmName?: string | null };
 }
 
 export interface Catalogue {
@@ -112,6 +114,7 @@ export interface ShareLink {
   expiresAt?: string;
   isActive: boolean;
   selectedPriceType?: string;
+  shareOptions?: ShareOptions | null;
   securityMode?: 'normal' | 'device_locked';
   lockedAt?: string | null;
   createdAt: string;

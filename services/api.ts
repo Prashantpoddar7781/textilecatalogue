@@ -444,6 +444,7 @@ export const shareLinksApi = {
     designIds?: string[];
     expiresAt?: string;
     selectedPriceType?: string;
+    shareOptions?: import('../types').ShareOptions;
     securityMode?: 'normal' | 'device_locked';
   }) => {
     return request<any>('/share-links', {
@@ -454,6 +455,7 @@ export const shareLinksApi = {
   createCollection: async (data?: {
     expiresAt?: string;
     selectedPriceType?: string;
+    shareOptions?: import('../types').ShareOptions;
     securityMode?: 'normal' | 'device_locked';
   }) => {
     return request<any>('/share-links/collection', {
@@ -612,6 +614,7 @@ export const ordersApi = {
     buyerPhone?: string;
     orderSessionId?: string;
     quantity: number;
+    remarks?: string;
   }) => {
     return request<{ order: any }>('/orders/public', {
       method: 'POST',

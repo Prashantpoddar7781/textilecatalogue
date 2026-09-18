@@ -1,12 +1,17 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Loader2, AlertCircle, IndianRupee, ShoppingCart, X, Maximize2, Package } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { AlertCircle, Loader2, Search, ShoppingCart, SlidersHorizontal, X } from 'lucide-react';
 import { shareLinksApi, ordersApi } from '../services/api';
 import { getShareDeviceToken } from '../services/shareDeviceToken';
 import { ShareLink, TextileDesign } from '../types';
-import { designFullSrc, designThumbSrc } from '../services/designMedia';
+import { designThumbSrc } from '../services/designMedia';
+import { getShareAttachLines, resolveShareDisplay } from '../utils/shareAttachDetails';
+import { ViewModeLightbox } from './ViewModeLightbox';
+import { SearchableFilterSelect } from './SearchableFilterSelect';
 
 const SESSION_KEY = 'threadx_share_session';
 const BUYER_NAME_KEY_PREFIX = 'threadx_share_buyer_name_';
+const APP_LOGO_SRC = '/threadx-logo.png';
+const VIEW_MODE_THRESHOLD = 8;
 
 function getOrCreateSessionId(): string {
   let id = sessionStorage.getItem(SESSION_KEY);
@@ -17,272 +22,31 @@ function getOrCreateSessionId(): string {
   return id;
 }
 
-function getTouchDistance(touches: TouchList): number {
-  if (touches.length < 2) return 0;
-  const a = touches[0];
-  const b = touches[1];
-  return Math.hypot(b.clientX - a.clientX, b.clientY - a.clientY);
+function catalogueLabel(design: TextileDesign) {
+  return design.catalogueName?.trim() || design.fabric || '';
 }
-
-const FullScreenDesignView: React.FC<{
-  design: TextileDesign;
-  token: string;
-  onClose: () => void;
-}> = ({ design, token, onClose }) => {
-  const [zoom, setZoom] = useState(1);
-  const [position, setPosition] = useState({ x: 0, y: 0 });
-  const positionRef = useRef(position);
-  const isDragging = useRef(false);
-  const isPinching = useRef(false);
-  const startPos = useRef({ x: 0, y: 0, imgX: 0, imgY: 0 });
-  const pinchStart = useRef({ dist: 0, zoom: 1 });
-  const containerRef = useRef<HTMLDivElement>(null);
-  positionRef.current = position;
-
-  // Record view when full-screen modal opens (once per session)
-  useEffect(() => {
-    const viewKey = `share_view_${token}_${design.id}`;
-    if (sessionStorage.getItem(viewKey)) return;
-    sessionStorage.setItem(viewKey, '1');
-    const sessionId = getOrCreateSessionId();
-    shareLinksApi.recordDesignView(token, design.id, sessionId).catch(() => {});
-  }, [token, design.id]);
-
-  const handleWheel = useCallback((e: React.WheelEvent) => {
-    if (e.ctrlKey || e.metaKey) {
-      e.preventDefault();
-      const delta = e.deltaY > 0 ? -0.1 : 0.1;
-      setZoom(z => Math.min(4, Math.max(0.5, z + delta)));
-    }
-  }, []);
-
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    if (zoom <= 1) return;
-    isDragging.current = true;
-    startPos.current = { x: e.clientX, y: e.clientY, imgX: position.x, imgY: position.y };
-  }, [zoom, position]);
-  const handleMouseMove = useCallback((e: React.MouseEvent) => {
-    if (!isDragging.current) return;
-    setPosition({
-      x: startPos.current.imgX + e.clientX - startPos.current.x,
-      y: startPos.current.imgY + e.clientY - startPos.current.y
-    });
-  }, []);
-  const handleMouseUp = useCallback(() => { isDragging.current = false; }, []);
-
-  const handleTouchStart = useCallback((e: React.TouchEvent) => {
-    if (e.touches.length === 2) {
-      isPinching.current = true;
-      isDragging.current = false;
-      pinchStart.current = { dist: getTouchDistance(e.touches), zoom };
-    } else if (e.touches.length === 1) {
-      isDragging.current = true;
-      startPos.current = {
-        x: e.touches[0].clientX,
-        y: e.touches[0].clientY,
-        imgX: positionRef.current.x,
-        imgY: positionRef.current.y
-      };
-    }
-  }, [zoom]);
-
-  const handleTouchMove = useCallback((e: React.TouchEvent) => {
-    if (e.touches.length === 2) {
-      e.preventDefault();
-      const dist = getTouchDistance(e.touches);
-      if (pinchStart.current.dist > 0) {
-        const scale = dist / pinchStart.current.dist;
-        const newZoom = Math.min(4, Math.max(0.5, pinchStart.current.zoom * scale));
-        setZoom(newZoom);
-      }
-    } else if (e.touches.length === 1 && isDragging.current) {
-      setPosition({
-        x: startPos.current.imgX + e.touches[0].clientX - startPos.current.x,
-        y: startPos.current.imgY + e.touches[0].clientY - startPos.current.y
-      });
-    }
-  }, []);
-
-  const handleTouchEnd = useCallback((e: React.TouchEvent) => {
-    if (e.touches.length < 2) isPinching.current = false;
-    if (e.touches.length === 0) {
-      isDragging.current = false;
-    } else if (e.touches.length === 1) {
-      startPos.current = {
-        x: e.touches[0].clientX,
-        y: e.touches[0].clientY,
-        imgX: positionRef.current.x,
-        imgY: positionRef.current.y
-      };
-    }
-  }, []);
-
-  const resetView = useCallback(() => {
-    setZoom(1);
-    setPosition({ x: 0, y: 0 });
-  }, []);
-
-  // Prevent browser zoom during pinch - need passive: false
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const preventZoom = (e: TouchEvent) => {
-      if (e.touches.length >= 2) e.preventDefault();
-    };
-    el.addEventListener('touchmove', preventZoom, { passive: false });
-    return () => el.removeEventListener('touchmove', preventZoom);
-  }, []);
-
-  return (
-    <div
-      className="fixed inset-0 z-50 bg-black/95 flex flex-col"
-      style={{ touchAction: 'none' }}
-      onWheel={handleWheel}
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
-      onMouseLeave={handleMouseUp}
-    >
-      <div className="absolute top-4 left-4 right-4 flex items-center justify-between z-10">
-        <h3 className="text-white font-bold truncate max-w-[60%]">{design.name || 'Design'}</h3>
-        <div className="flex items-center gap-2">
-          <span className="text-white text-sm font-medium min-w-[3rem] text-center">{Math.round(zoom * 100)}%</span>
-          <button
-            onClick={resetView}
-            className="p-2 bg-white/20 hover:bg-white/30 rounded-lg text-white text-xs font-medium transition-colors"
-          >
-            Reset
-          </button>
-          <button
-            onClick={onClose}
-            className="p-2 bg-white/20 hover:bg-white/30 rounded-lg text-white transition-colors"
-            aria-label="Close"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-      </div>
-      <div
-        ref={containerRef}
-        className="flex-1 overflow-hidden flex items-center justify-center cursor-grab active:cursor-grabbing"
-        onMouseDown={handleMouseDown}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-      >
-        <img
-          src={designFullSrc(design)}
-          alt={design.name || 'Design'}
-          className="max-w-full max-h-full object-contain select-none"
-          style={{
-            transform: `translate(${position.x}px, ${position.y}px) scale(${zoom})`,
-          }}
-          draggable={false}
-        />
-      </div>
-      <p className="text-center text-white/70 text-xs pb-4">
-        Pinch to zoom • Drag to pan
-      </p>
-    </div>
-  );
-};
-
-const DesignViewCard: React.FC<{
-  design: TextileDesign;
-  token: string;
-  getDisplayPrice: (d: TextileDesign) => { displayPrice: number; priceLabel: string } | null;
-  onBuyNow: (d: TextileDesign) => void;
-  onViewFullScreen: (d: TextileDesign) => void;
-}> = ({ design, token, getDisplayPrice, onBuyNow, onViewFullScreen }) => {
-  const priceInfo = getDisplayPrice(design);
-  return (
-    <div className="bg-gray-50 rounded-xl overflow-hidden">
-      <button
-        type="button"
-        onClick={() => onViewFullScreen(design)}
-        className="block w-full aspect-[3/4] bg-gray-100 overflow-hidden relative group focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 rounded-t-xl"
-      >
-        <img
-          src={designThumbSrc(design)}
-          alt={design.name || 'Design'}
-          className="w-full h-full object-cover group-hover:opacity-90 transition-opacity"
-        />
-        <div className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/20 transition-colors">
-          <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-2 bg-white/90 text-gray-900 px-4 py-2 rounded-full font-semibold text-sm">
-            <Maximize2 className="w-4 h-4" />
-            View full screen
-          </div>
-        </div>
-      </button>
-      <div className="p-4 space-y-3">
-        <div>
-          <h3 className="text-lg font-bold text-gray-900">
-            {design.name || 'Untitled Design'}
-          </h3>
-          {design.catalogueName && (
-            <p className="text-indigo-600 font-semibold text-xs uppercase tracking-wide">
-              {design.catalogueName}
-            </p>
-          )}
-        </div>
-        <div className="flex items-center justify-between">
-          {priceInfo ? (
-            <div>
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                {priceInfo.priceLabel}
-              </p>
-              <div className="flex items-center text-xl font-black text-gray-900">
-                <IndianRupee className="w-4 h-4" />
-                <span>{priceInfo.displayPrice.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
-              </div>
-            </div>
-          ) : (
-            <div />
-          )}
-          <div className="text-right">
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Fabric</p>
-            <p className="text-sm font-bold text-gray-900">{design.fabric}</p>
-          </div>
-        </div>
-        <div className={`flex items-center gap-1.5 text-sm font-semibold ${(design.stockQuantity ?? 0) <= 0 ? 'text-red-600' : 'text-gray-600'}`}>
-          <Package className="w-4 h-4" />
-          {`${design.stockQuantity ?? 0} ${design.stockUnit || 'pcs'}`}
-        </div>
-        {design.description && (
-          <p className="text-xs text-gray-600 line-clamp-2">{design.description}</p>
-        )}
-        <button
-          onClick={() => onBuyNow(design)}
-          disabled={(design.stockQuantity ?? 0) <= 0}
-          className={`w-full mt-2 py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 ${
-            (design.stockQuantity ?? 0) <= 0
-              ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-              : 'bg-green-600 hover:bg-green-700 text-white'
-          }`}
-        >
-          <ShoppingCart className="w-4 h-4" />
-          {(design.stockQuantity ?? 0) <= 0 ? 'Not Available' : 'Add to Order'}
-        </button>
-      </div>
-    </div>
-  );
-};
 
 export const ShareView: React.FC<{ token: string }> = ({ token }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [shareLink, setShareLink] = useState<ShareLink | null>(null);
   const [orderDesign, setOrderDesign] = useState<TextileDesign | null>(null);
-  const [fullScreenDesign, setFullScreenDesign] = useState<TextileDesign | null>(null);
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [savedBuyerName, setSavedBuyerName] = useState(() => {
     if (typeof window === 'undefined') return '';
     return sessionStorage.getItem(`${BUYER_NAME_KEY_PREFIX}${token}`) || '';
   });
   const [orderForm, setOrderForm] = useState({
     buyerName: savedBuyerName,
-    quantity: 1
+    quantity: 1,
+    remarks: ''
   });
   const [placingOrder, setPlacingOrder] = useState(false);
   const [orderSuccess, setOrderSuccess] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+  const [catalogue, setCatalogue] = useState('All');
+  const [fabric, setFabric] = useState('All');
+  const [sortBy, setSortBy] = useState<'name' | 'price-low' | 'price-high'>('name');
 
   useEffect(() => {
     const storedName = sessionStorage.getItem(`${BUYER_NAME_KEY_PREFIX}${token}`) || '';
@@ -298,7 +62,6 @@ export const ShareView: React.FC<{ token: string }> = ({ token }) => {
       const deviceToken = getShareDeviceToken();
       const link = await shareLinksApi.getByToken(token, deviceToken);
       setShareLink(link);
-      // Record open once per session (so admin sees "how many people opened")
       const openKey = `share_open_${token}`;
       if (!sessionStorage.getItem(openKey)) {
         const sessionId = getOrCreateSessionId();
@@ -313,73 +76,76 @@ export const ShareView: React.FC<{ token: string }> = ({ token }) => {
     }
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <Loader2 className="w-12 h-12 animate-spin text-indigo-600 mx-auto mb-4" />
-          <p className="text-gray-600">Loading shared design...</p>
-        </div>
-      </div>
-    );
-  }
+  const designs = useMemo(() => {
+    if (!shareLink) return [] as TextileDesign[];
+    return shareLink.designs?.map(d => d.design) || (shareLink.design ? [shareLink.design] : []);
+  }, [shareLink]);
 
-  if (error || !shareLink) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center max-w-md mx-auto px-4">
-          <div className="bg-red-100 p-4 rounded-full inline-block mb-4">
-            <AlertCircle className="w-12 h-12 text-red-600" />
-          </div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Link Not Available</h2>
-          <p className="text-gray-600">{error || 'This share link is not available or has expired.'}</p>
-        </div>
-      </div>
-    );
-  }
+  const display = useMemo(
+    () => resolveShareDisplay(shareLink?.shareOptions, shareLink?.selectedPriceType),
+    [shareLink]
+  );
 
-  const designs = shareLink.designs?.map(d => d.design) || (shareLink.design ? [shareLink.design as TextileDesign] : []);
-  const groupedDesigns = designs.reduce((acc: Record<string, TextileDesign[]>, design) => {
-    const key = design.fabric || 'Other';
-    if (!acc[key]) acc[key] = [];
-    acc[key].push(design);
-    return acc;
-  }, {});
-  const fabricGroups = Object.keys(groupedDesigns).sort((a, b) => a.localeCompare(b));
-  if (designs.length === 0) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <p className="text-gray-600">Design not found</p>
-        </div>
-      </div>
-    );
-  }
+  const firmName = designs[0]?.user?.firmName || designs[0]?.firmName || '';
+  const headerCatalogue = useMemo(() => {
+    const names = [...new Set(designs.map(d => d.catalogueName?.trim()).filter(Boolean))] as string[];
+    if (names.length === 1) return names[0];
+    if (names.length > 1) return 'Catalogue';
+    return designs[0]?.fabric || 'Catalogue';
+  }, [designs]);
 
-  const getDisplayPrice = (design: TextileDesign) => {
-    if (!shareLink.selectedPriceType || shareLink.selectedPriceType === 'none') {
-      return null;
-    }
+  const catalogues = useMemo(() => {
+    const map = new Map<string, string>();
+    designs.forEach(d => {
+      if (d.catalogueId && d.catalogueName?.trim()) map.set(d.catalogueId, d.catalogueName.trim());
+      else if (d.catalogueName?.trim()) map.set(d.catalogueName.trim(), d.catalogueName.trim());
+    });
+    return [...map.entries()].map(([value, label]) => ({ value, label }));
+  }, [designs]);
 
-    let displayPrice = design.basePrice || design.retailPrice || 0;
-    let priceLabel = 'Price';
+  const fabrics = useMemo(() => {
+    const set = new Set(designs.map(d => d.fabric).filter(Boolean));
+    return [...set].sort((a, b) => a.localeCompare(b));
+  }, [designs]);
 
-    if (shareLink.selectedPriceType !== 'base') {
-      const selectedPrice = design.additionalPrices?.find(ap => ap.name === shareLink.selectedPriceType);
-      if (selectedPrice && selectedPrice.calculatedPrice) {
-        displayPrice = selectedPrice.calculatedPrice;
-        priceLabel = selectedPrice.name;
+  const filteredDesigns = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    let list = designs.filter(design => {
+      if (catalogue !== 'All') {
+        const match = design.catalogueId === catalogue || design.catalogueName?.trim() === catalogue;
+        if (!match) return false;
       }
-    }
+      if (fabric !== 'All' && design.fabric !== fabric) return false;
+      if (!q) return true;
+      return [design.name, design.designCode, design.fabric, design.description, design.catalogueName]
+        .some(value => String(value || '').toLowerCase().includes(q));
+    });
+    if (sortBy === 'price-low') list = [...list].sort((a, b) => (a.basePrice || 0) - (b.basePrice || 0));
+    else if (sortBy === 'price-high') list = [...list].sort((a, b) => (b.basePrice || 0) - (a.basePrice || 0));
+    return list;
+  }, [catalogue, designs, fabric, search, sortBy]);
 
-    return { displayPrice, priceLabel };
-  };
+  const useViewGrid = designs.length >= VIEW_MODE_THRESHOLD;
+
+  const recordView = useCallback((designId: string) => {
+    const viewKey = `share_view_${token}_${designId}`;
+    if (sessionStorage.getItem(viewKey)) return;
+    sessionStorage.setItem(viewKey, '1');
+    shareLinksApi.recordDesignView(token, designId, getOrCreateSessionId()).catch(() => {});
+  }, [token]);
+
+  useEffect(() => {
+    if (lightboxIndex == null) return;
+    const design = filteredDesigns[lightboxIndex];
+    if (design) recordView(design.id);
+  }, [filteredDesigns, lightboxIndex, recordView]);
 
   const handleBuyNow = (design: TextileDesign) => {
     setOrderDesign(design);
     setOrderForm({
       buyerName: savedBuyerName,
-      quantity: 1
+      quantity: 1,
+      remarks: ''
     });
     setOrderSuccess(null);
   };
@@ -399,7 +165,8 @@ export const ShareView: React.FC<{ token: string }> = ({ token }) => {
         designId: orderDesign.id,
         buyerName,
         orderSessionId: getOrCreateSessionId(),
-        quantity: Number(orderForm.quantity)
+        quantity: Number(orderForm.quantity),
+        remarks: orderForm.remarks.trim() || undefined
       });
       if (result.order?.id) {
         if (!savedBuyerName.trim()) {
@@ -415,84 +182,260 @@ export const ShareView: React.FC<{ token: string }> = ({ token }) => {
     }
   };
 
-  return (
-    <div className="min-h-screen bg-gray-50 py-8 px-4">
-      <div className="max-w-4xl mx-auto">
-        <div className="bg-white rounded-2xl shadow-xl overflow-hidden">
-          {/* Header */}
-          <div className="p-6 sm:p-8 border-b border-gray-100">
-            <h1 className="text-2xl font-bold text-gray-900 mb-2">
-              {designs.length === 1 ? (designs[0].name || 'Untitled Design') : `${designs.length} Designs`}
-            </h1>
-            <p className="text-sm text-gray-500">Shared via ThreadX</p>
-          </div>
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#FDFDFF]">
+        <div className="text-center">
+          <Loader2 className="w-12 h-12 animate-spin text-indigo-600 mx-auto mb-4" />
+          <p className="text-gray-600">Loading shared design...</p>
+        </div>
+      </div>
+    );
+  }
 
-          {/* Designs Grid */}
-          <div className="p-6 sm:p-8 space-y-8">
-            {fabricGroups.map((fabric) => (
-              <div key={fabric} className="space-y-4">
-                <div className="flex items-center gap-2">
-                  <h3 className="text-xl font-black text-gray-900">{fabric}</h3>
-                  <span className="text-xs text-gray-400 font-semibold">
-                    {groupedDesigns[fabric].length} {groupedDesigns[fabric].length === 1 ? 'item' : 'items'}
-                  </span>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                  {groupedDesigns[fabric].map((design) => (
-                    <DesignViewCard
-                      key={design.id}
-                      design={design}
-                      token={token}
-                      getDisplayPrice={getDisplayPrice}
-                      onBuyNow={handleBuyNow}
-                      onViewFullScreen={setFullScreenDesign}
+  if (error || !shareLink) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#FDFDFF]">
+        <div className="text-center max-w-md mx-auto px-4">
+          <div className="bg-red-100 p-4 rounded-full inline-block mb-4">
+            <AlertCircle className="w-12 h-12 text-red-600" />
+          </div>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Link Not Available</h2>
+          <p className="text-gray-600">{error || 'This share link is not available or has expired.'}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (designs.length === 0) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#FDFDFF]">
+        <p className="text-gray-600">Design not found</p>
+      </div>
+    );
+  }
+
+  const showFilters = designs.length > 1;
+  const groupedOneByOne = filteredDesigns.reduce((acc: Record<string, TextileDesign[]>, design) => {
+    const key = design.fabric || 'Other';
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(design);
+    return acc;
+  }, {});
+
+  return (
+    <div className="min-h-screen bg-[#FDFDFF] pb-10">
+      <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-xl border-b shadow-sm">
+        <div className="max-w-7xl mx-auto px-4 py-3">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <img src={APP_LOGO_SRC} alt="ThreadX" className="w-10 h-10 rounded-xl object-cover shadow-lg shrink-0" />
+            <div className="min-w-0">
+              <h1 className="text-lg font-black text-gray-900 tracking-tight leading-none truncate">ThreadX</h1>
+              <span className="text-[9px] font-black text-indigo-500 uppercase tracking-widest truncate block">
+                {headerCatalogue}
+              </span>
+            </div>
+          </div>
+          {showFilters && (
+            <div className="relative mt-3">
+              <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
+              <input
+                type="search"
+                enterKeyHint="search"
+                placeholder="Search catalogue…"
+                className="w-full pl-10 pr-4 py-3 bg-gray-100 border border-transparent focus:bg-white focus:border-indigo-500 rounded-2xl text-base outline-none"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+              />
+            </div>
+          )}
+        </div>
+      </header>
+
+      {showFilters && (
+        <div className="max-w-7xl mx-auto px-4 py-4">
+          <div className="flex items-center gap-3 overflow-x-auto no-scrollbar pb-2">
+            <div className="bg-white border-2 border-gray-100 p-2 px-3 rounded-2xl flex items-center gap-2 shadow-sm shrink-0">
+              <SlidersHorizontal className="w-3.5 h-3.5 text-indigo-500" />
+              <span className="text-[10px] font-black text-gray-900 uppercase tracking-widest hidden sm:inline">Filter By</span>
+            </div>
+            {catalogues.length > 1 && (
+              <SearchableFilterSelect
+                value={catalogue}
+                onChange={setCatalogue}
+                searchPlaceholder="Search catalogues…"
+                options={[
+                  { value: 'All', label: 'All Catalogues' },
+                  ...catalogues
+                ]}
+              />
+            )}
+            {fabrics.length > 1 && (
+              <SearchableFilterSelect
+                value={fabric}
+                onChange={setFabric}
+                searchPlaceholder="Search fabrics…"
+                options={[
+                  { value: 'All', label: 'All Fabrics' },
+                  ...fabrics.map(name => ({ value: name, label: name }))
+                ]}
+              />
+            )}
+            {display.options.includeRetail && (
+              <SearchableFilterSelect
+                value={sortBy}
+                onChange={value => setSortBy(value as typeof sortBy)}
+                searchPlaceholder="Search sort…"
+                options={[
+                  { value: 'name', label: 'As shared' },
+                  { value: 'price-low', label: 'Price: Low to High' },
+                  { value: 'price-high', label: 'Price: High to Low' }
+                ]}
+              />
+            )}
+            {(search || catalogue !== 'All' || fabric !== 'All' || sortBy !== 'name') && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearch('');
+                  setCatalogue('All');
+                  setFabric('All');
+                  setSortBy('name');
+                }}
+                className="bg-white border-2 border-rose-100 text-rose-700 px-4 py-2.5 rounded-2xl text-xs font-black shadow-sm shrink-0"
+              >
+                Clear all filters
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      <main className="max-w-7xl mx-auto px-4">
+        {filteredDesigns.length === 0 ? (
+          <p className="py-16 text-center text-sm font-semibold text-gray-500">No designs match your filters.</p>
+        ) : useViewGrid ? (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4">
+            {filteredDesigns.map((design, index) => (
+              <div key={design.id} className="bg-white rounded-2xl overflow-hidden ring-1 ring-gray-200/90">
+                <button
+                  type="button"
+                  onClick={() => setLightboxIndex(index)}
+                  className="group relative w-full"
+                >
+                  <div className="aspect-[3/4] bg-gray-100 relative">
+                    <img
+                      src={designThumbSrc(design)}
+                      alt={design.name || catalogueLabel(design) || 'Design'}
+                      className="w-full h-full object-cover"
+                      loading="lazy"
+                      draggable={false}
                     />
-                  ))}
+                    {catalogueLabel(design) && (
+                      <span className="absolute top-2 left-2 bg-white/95 backdrop-blur shadow-sm text-gray-900 text-[10px] font-bold px-2 py-0.5 rounded-lg max-w-[90%] truncate">
+                        {catalogueLabel(design)}
+                      </span>
+                    )}
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleBuyNow(design)}
+                  className="w-full py-2 text-[11px] font-black uppercase tracking-wide bg-green-600 text-white"
+                >
+                  Order Now
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="space-y-8 max-w-4xl mx-auto">
+            {Object.keys(groupedOneByOne).sort((a, b) => a.localeCompare(b)).map(group => (
+              <div key={group} className="space-y-4">
+                {Object.keys(groupedOneByOne).length > 1 && (
+                  <h3 className="text-xl font-black text-gray-900">{group}</h3>
+                )}
+                <div className="grid grid-cols-1 gap-6">
+                  {groupedOneByOne[group].map(design => {
+                    const index = filteredDesigns.findIndex(item => item.id === design.id);
+                    const lines = getShareAttachLines(design, display.options, display.selectedPriceType, firmName);
+                    return (
+                      <div key={design.id} className="bg-white rounded-2xl overflow-hidden ring-1 ring-gray-200/90">
+                        <button
+                          type="button"
+                          onClick={() => setLightboxIndex(index)}
+                          className="block w-full aspect-[3/4] bg-gray-100 relative"
+                        >
+                          <img
+                            src={designThumbSrc(design)}
+                            alt={design.name || catalogueLabel(design) || 'Design'}
+                            className="w-full h-full object-cover"
+                          />
+                          {catalogueLabel(design) && (
+                            <span className="absolute top-2 left-2 bg-white/95 backdrop-blur shadow-sm text-gray-900 text-[10px] font-bold px-2 py-0.5 rounded-lg max-w-[90%] truncate">
+                              {catalogueLabel(design)}
+                            </span>
+                          )}
+                        </button>
+                        <div className="p-4 space-y-2">
+                          {lines.map(line => (
+                            <p key={`${design.id}-${line.label}`} className="text-sm font-semibold text-gray-800">
+                              <span className="text-[10px] font-black uppercase tracking-wide text-gray-400 mr-2">{line.label}</span>
+                              {line.value}
+                            </p>
+                          ))}
+                          <button
+                            type="button"
+                            onClick={() => handleBuyNow(design)}
+                            className="w-full mt-2 py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white"
+                          >
+                            <ShoppingCart className="w-4 h-4" />
+                            Order Now
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             ))}
           </div>
+        )}
+      </main>
 
-          {/* Firm Name */}
-          {designs[0]?.user?.firmName && (
-            <div className="p-6 sm:p-8 border-t border-gray-100">
-              <p className="text-sm text-gray-500">
-                From: <span className="font-semibold text-gray-700">{designs[0].user.firmName}</span>
-              </p>
-            </div>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="text-center mt-8 text-sm text-gray-500">
-          <p>Shared via ThreadX</p>
-        </div>
-      </div>
-
-      {fullScreenDesign && (
-        <FullScreenDesignView
-          design={fullScreenDesign}
-          token={token}
-          onClose={() => setFullScreenDesign(null)}
+      {lightboxIndex != null && filteredDesigns[lightboxIndex] && (
+        <ViewModeLightbox
+          designs={filteredDesigns}
+          index={lightboxIndex}
+          options={display.options}
+          selectedPriceType={display.selectedPriceType}
+          userFirmName={firmName}
+          onIndexChange={setLightboxIndex}
+          onClose={() => setLightboxIndex(null)}
+          onOrderNow={design => {
+            setLightboxIndex(null);
+            handleBuyNow(design);
+          }}
         />
       )}
-      
+
       {orderDesign && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl p-6 space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold text-gray-900">Add to Order</h3>
+              <h3 className="text-lg font-bold text-gray-900">Order Now</h3>
               <button
+                type="button"
                 onClick={() => {
                   setOrderDesign(null);
                   setOrderSuccess(null);
                 }}
                 className="text-gray-400 hover:text-gray-600"
               >
-                ✕
+                <X className="w-5 h-5" />
               </button>
             </div>
-            <p className="text-sm text-gray-600">{orderDesign.name || 'Design'}</p>
+            <p className="text-sm text-gray-600">{orderDesign.name || catalogueLabel(orderDesign) || 'Design'}</p>
             <p className="text-xs text-gray-500">
               {savedBuyerName
                 ? `Ordering as ${savedBuyerName}. Enter quantity only.`
@@ -521,7 +464,15 @@ export const ShareView: React.FC<{ token: string }> = ({ token }) => {
                 value={orderForm.quantity}
                 onChange={e => setOrderForm({ ...orderForm, quantity: Number(e.target.value) })}
               />
+              <textarea
+                placeholder="Remark (optional)"
+                className="w-full px-4 py-2 border rounded-lg text-sm"
+                rows={2}
+                value={orderForm.remarks}
+                onChange={e => setOrderForm({ ...orderForm, remarks: e.target.value })}
+              />
               <button
+                type="button"
                 onClick={() => {
                   if (orderSuccess) {
                     setOrderDesign(null);
@@ -533,7 +484,7 @@ export const ShareView: React.FC<{ token: string }> = ({ token }) => {
                 disabled={placingOrder}
                 className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded-lg font-bold"
               >
-                {placingOrder ? 'Adding...' : orderSuccess ? 'Done' : 'Add to Order'}
+                {placingOrder ? 'Adding...' : orderSuccess ? 'Done' : 'Order Now'}
               </button>
             </div>
           </div>

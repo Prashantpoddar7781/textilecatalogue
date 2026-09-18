@@ -12,6 +12,7 @@ interface Props {
   userFirmName?: string | null;
   onIndexChange: (index: number) => void;
   onClose: () => void;
+  onOrderNow?: (design: TextileDesign) => void;
 }
 
 const SWIPE_MIN = 48;
@@ -23,7 +24,8 @@ export const ViewModeLightbox: React.FC<Props> = ({
   selectedPriceType,
   userFirmName,
   onIndexChange,
-  onClose
+  onClose,
+  onOrderNow
 }) => {
   const design = designs[index];
   const startX = useRef<number | null>(null);
@@ -140,16 +142,27 @@ export const ViewModeLightbox: React.FC<Props> = ({
         </div>
       )}
 
-      {lines.length > 0 && (
+      {(lines.length > 0 || onOrderNow) && (
         <div className="px-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))] pt-3 bg-gradient-to-t from-black via-black/80 to-transparent text-white">
-          <div className="space-y-1">
-            {lines.map(line => (
-              <p key={`${line.label}-${line.value}`} className="text-sm font-semibold leading-snug">
-                <span className="text-white/60 font-bold uppercase text-[10px] tracking-wide mr-2">{line.label}</span>
-                {line.value}
-              </p>
-            ))}
-          </div>
+          {lines.length > 0 && (
+            <div className="space-y-1">
+              {lines.map(line => (
+                <p key={`${line.label}-${line.value}`} className="text-sm font-semibold leading-snug">
+                  <span className="text-white/60 font-bold uppercase text-[10px] tracking-wide mr-2">{line.label}</span>
+                  {line.value}
+                </p>
+              ))}
+            </div>
+          )}
+          {onOrderNow && (
+            <button
+              type="button"
+              onClick={() => onOrderNow(design)}
+              className="mt-3 w-full rounded-xl bg-green-600 py-3 text-sm font-black uppercase text-white"
+            >
+              Order Now
+            </button>
+          )}
           <p className="mt-2 text-[11px] text-white/50">Swipe left or right for the next design in this filter</p>
         </div>
       )}
