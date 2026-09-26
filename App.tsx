@@ -57,8 +57,13 @@ import { PricingDialog } from './components/PricingDialog';
 import { BillingPage } from './components/BillingPage';
 import { designsApi, authApi, ordersApi, billingApi } from './services/api';
 import {
+  CATALOGUE_NAME_SORT_ACTIONS,
   CATALOGUE_SORT_OPTIONS,
+  DESIGN_NAME_SORT_ACTIONS,
+  FABRIC_NAME_SORT_ACTIONS,
+  STOCK_SORT_OPTIONS,
   designPriceOf,
+  filterSortValue,
   formatOverlayPrice,
   matchesDesignFilter,
   sortDesigns,
@@ -1771,6 +1776,9 @@ const App: React.FC = () => {
               { value: 'All', label: 'All Catalogues' },
               ...catalogues.map(cat => ({ value: cat.id, label: cat.name }))
             ]}
+            sortActions={CATALOGUE_NAME_SORT_ACTIONS}
+            activeSort={filterSortValue(filters.sortBy, CATALOGUE_NAME_SORT_ACTIONS)}
+            onSortChange={(sortBy) => setFilters(f => ({ ...f, sortBy: sortBy as CatalogueFilters['sortBy'] }))}
           />
 
           <SearchableFilterSelect
@@ -1781,6 +1789,9 @@ const App: React.FC = () => {
               value: fab,
               label: fab === 'All' ? 'All Fabrics' : fab
             }))}
+            sortActions={FABRIC_NAME_SORT_ACTIONS}
+            activeSort={filterSortValue(filters.sortBy, FABRIC_NAME_SORT_ACTIONS)}
+            onSortChange={(sortBy) => setFilters(f => ({ ...f, sortBy: sortBy as CatalogueFilters['sortBy'] }))}
           />
 
           <SearchableFilterSelect
@@ -1791,10 +1802,29 @@ const App: React.FC = () => {
               { value: 'All', label: 'All Design names' },
               ...designNameOptions
             ]}
+            sortActions={DESIGN_NAME_SORT_ACTIONS}
+            activeSort={filterSortValue(filters.sortBy, DESIGN_NAME_SORT_ACTIONS)}
+            onSortChange={(sortBy) => setFilters(f => ({ ...f, sortBy: sortBy as CatalogueFilters['sortBy'] }))}
           />
 
           <SearchableFilterSelect
-            value={filters.sortBy}
+            value={filters.sortBy === 'stock-low' || filters.sortBy === 'stock-high' ? filters.sortBy : 'stock'}
+            onChange={(stock) => setFilters(f => ({
+              ...f,
+              sortBy: (stock === 'stock'
+                ? (f.sortBy === 'stock-low' || f.sortBy === 'stock-high' ? 'newest' : f.sortBy)
+                : stock) as CatalogueFilters['sortBy']
+            }))}
+            searchable={false}
+            options={STOCK_SORT_OPTIONS}
+          />
+
+          <SearchableFilterSelect
+            value={
+              filters.sortBy === 'newest' || filters.sortBy === 'price-low' || filters.sortBy === 'price-high'
+                ? filters.sortBy
+                : 'newest'
+            }
             onChange={(sortBy) => setFilters(f => ({ ...f, sortBy: sortBy as CatalogueFilters['sortBy'] }))}
             searchable
             searchPlaceholder="Search sort…"

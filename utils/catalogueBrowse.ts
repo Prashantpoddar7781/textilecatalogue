@@ -18,18 +18,38 @@ export type CatalogueSortBy =
 export const CATALOGUE_SORT_OPTIONS: Array<{ value: CatalogueSortBy; label: string }> = [
   { value: 'newest', label: 'Latest Uploads' },
   { value: 'price-low', label: 'Price: Low to High' },
-  { value: 'price-high', label: 'Price: High to Low' },
-  { value: 'catalogue-az', label: 'Catalogue name: A to Z' },
-  { value: 'catalogue-za', label: 'Catalogue name: Z to A' },
-  { value: 'fabric-az', label: 'Fabric name: A to Z' },
-  { value: 'fabric-za', label: 'Fabric name: Z to A' },
-  { value: 'design-az', label: 'Design name: A to Z' },
-  { value: 'design-za', label: 'Design name: Z to A' },
-  { value: 'design-num-asc', label: 'Design no.: Low to High' },
-  { value: 'design-num-desc', label: 'Design no.: High to Low' },
-  { value: 'stock-low', label: 'Stock: Low to High' },
-  { value: 'stock-high', label: 'Stock: High to Low' }
+  { value: 'price-high', label: 'Price: High to Low' }
 ];
+
+export const CATALOGUE_NAME_SORT_ACTIONS: Array<{ value: CatalogueSortBy; label: string }> = [
+  { value: 'catalogue-az', label: 'A to Z' },
+  { value: 'catalogue-za', label: 'Z to A' }
+];
+
+export const FABRIC_NAME_SORT_ACTIONS: Array<{ value: CatalogueSortBy; label: string }> = [
+  { value: 'fabric-az', label: 'A to Z' },
+  { value: 'fabric-za', label: 'Z to A' }
+];
+
+export const DESIGN_NAME_SORT_ACTIONS: Array<{ value: CatalogueSortBy; label: string }> = [
+  { value: 'design-az', label: 'A to Z' },
+  { value: 'design-za', label: 'Z to A' },
+  { value: 'design-num-asc', label: 'Low to High' },
+  { value: 'design-num-desc', label: 'High to Low' }
+];
+
+export const STOCK_SORT_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: 'stock', label: 'Stock' },
+  { value: 'stock-low', label: 'Low to High' },
+  { value: 'stock-high', label: 'High to Low' }
+];
+
+export function filterSortValue(
+  sortBy: string,
+  actions: Array<{ value: string }>
+): string | undefined {
+  return actions.some((action) => action.value === sortBy) ? sortBy : undefined;
+}
 
 export function designLabel(design: Pick<TextileDesign, 'name' | 'designCode'>): string {
   return String(design.name || design.designCode || '').trim();

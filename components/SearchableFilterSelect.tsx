@@ -7,6 +7,11 @@ export type FilterOption = {
   label: string;
 };
 
+export type FilterSortAction = {
+  value: string;
+  label: string;
+};
+
 interface Props {
   value: string;
   options: FilterOption[];
@@ -15,10 +20,61 @@ interface Props {
   className?: string;
   triggerClassName?: string;
   searchable?: boolean;
+  sortActions?: FilterSortAction[];
+  activeSort?: string;
+  onSortChange?: (value: string) => void;
 }
 
 const triggerClassName =
   "bg-white border-2 border-gray-100 px-4 py-2.5 rounded-2xl text-xs font-bold outline-none shadow-sm touch-manipulation inline-flex items-center gap-2 max-w-[14rem]";
+
+function localeCompare(a: string, b: string) {
+  return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+}
+
+function extractNumber(label: string): number | null {
+  const match = String(label).match(/(\d+(?:\.\d+)?)/);
+  if (!match) return null;
+  const value = Number(match[1]);
+  return Number.isFinite(value) ? value : null;
+}
+
+function sortFilterOptions(options: FilterOption[], sortValue?: string): FilterOption[] {
+  if (!sortValue || options.length < 2) return options;
+  const keepFirst = options[0]?.value === 'All' || /^all\b/i.test(options[0]?.label || '');
+  const head = keepFirst ? options.slice(0, 1) : [];
+  const tail = keepFirst ? options.slice(1) : [...options];
+  const byLabel = (a: FilterOption, b: FilterOption) => localeCompare(a.label, b.label);
+  const byNumber = (a: FilterOption, b: FilterOption) => {
+    const numA = extractNumber(a.label);
+    const numB = extractNumber(b.label);
+    if (numA != null && numB != null && numA !== numB) return numA - numB;
+    if (numA != null && numB == null) return -1;
+    if (numA == null && numB != null) return 1;
+    return byLabel(a, b);
+  };
+  switch (sortValue) {
+    case 'catalogue-az':
+    case 'fabric-az':
+    case 'design-az':
+      tail.sort(byLabel);
+      break;
+    case 'catalogue-za':
+    case 'fabric-za':
+    case 'design-za':
+      tail.sort((a, b) => byLabel(b, a));
+      break;
+    case 'design-num-asc':
+      tail.sort(byNumber);
+      break;
+    case 'design-num-desc':
+      tail.sort((a, b) => byNumber(b, a));
+      break;
+    default:
+      return options;
+  }
+  return [...head, ...tail];
+}
 
 export const SearchableFilterSelect: React.FC<Props> = ({
   value,
@@ -27,7 +83,10 @@ export const SearchableFilterSelect: React.FC<Props> = ({
   searchPlaceholder = 'Type to search…',
   className = '',
   triggerClassName: triggerClassNameOverride,
-  searchable = true
+  searchable = true,
+  sortActions,
+  activeSort,
+  onSortChange
 }) => {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -36,16 +95,22 @@ export const SearchableFilterSelect: React.FC<Props> = ({
   const panelRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const selectedLabel = useMemo(
-    () => options.find((option) => option.value === value)?.label || 'Select',
-    [options, value]
+  const selectedLabel = useMemo(() => {
+    const base = options.find((option) => option.value === value)?.label || 'Select';
+    const sortLabel = sortActions?.find((action) => action.value === activeSort)?.label;
+    return sortLabel ? `${base} · ${sortLabel}` : base;
+  }, [activeSort, options, sortActions, value]);
+
+  const orderedOptions = useMemo(
+    () => sortFilterOptions(options, activeSort),
+    [activeSort, options]
   );
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return options;
-    return options.filter((option) => option.label.toLowerCase().includes(q));
-  }, [options, query]);
+    if (!q) return orderedOptions;
+    return orderedOptions.filter((option) => option.label.toLowerCase().includes(q));
+  }, [orderedOptions, query]);
 
   const close = () => {
     setOpen(false);
@@ -143,6 +208,31 @@ export const SearchableFilterSelect: React.FC<Props> = ({
                   placeholder={searchPlaceholder}
                   className="w-full pl-8 pr-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm font-semibold outline-none focus:ring-2 focus:ring-indigo-500"
                 />
+              </div>
+            </div>
+          )}
+          {sortActions && sortActions.length > 0 && onSortChange && (
+            <div className="p-2 border-b border-gray-100 shrink-0">
+              <p className="px-1 pb-1.5 text-[10px] font-black uppercase tracking-widest text-gray-400">Sort</p>
+              <div className="grid grid-cols-2 gap-1.5">
+                {sortActions.map((action) => {
+                  const selected = action.value === activeSort;
+                  return (
+                    <button
+                      key={action.value}
+                      type="button"
+                      className={`px-2 py-2 rounded-xl text-[11px] font-black touch-manipulation ${
+                        selected ? 'bg-indigo-600 text-white' : 'bg-gray-50 text-gray-800 hover:bg-gray-100'
+                      }`}
+                      onClick={() => {
+                        onSortChange(action.value);
+                        close();
+                      }}
+                    >
+                      {action.label}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}

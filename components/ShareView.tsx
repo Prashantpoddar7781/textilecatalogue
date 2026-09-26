@@ -6,8 +6,11 @@ import { CatalogueSortBy, ShareLink, TextileDesign } from '../types';
 import { designThumbSrc } from '../services/designMedia';
 import { getShareAttachLines, resolveAttachedPrice, resolveShareDisplay } from '../utils/shareAttachDetails';
 import {
-  CATALOGUE_SORT_OPTIONS,
+  CATALOGUE_NAME_SORT_ACTIONS,
+  DESIGN_NAME_SORT_ACTIONS,
+  FABRIC_NAME_SORT_ACTIONS,
   designPriceOf,
+  filterSortValue,
   formatOverlayPrice,
   matchesDesignFilter,
   sortDesigns,
@@ -347,6 +350,9 @@ export const ShareView: React.FC<{ token: string }> = ({ token }) => {
                   { value: 'All', label: 'All Catalogues' },
                   ...catalogues
                 ]}
+                sortActions={CATALOGUE_NAME_SORT_ACTIONS}
+                activeSort={filterSortValue(sortBy, CATALOGUE_NAME_SORT_ACTIONS)}
+                onSortChange={(value) => setSortBy(value as CatalogueSortBy)}
               />
             )}
             {fabrics.length > 0 && (
@@ -358,6 +364,9 @@ export const ShareView: React.FC<{ token: string }> = ({ token }) => {
                   { value: 'All', label: 'All Fabrics' },
                   ...fabrics.map(name => ({ value: name, label: name }))
                 ]}
+                sortActions={FABRIC_NAME_SORT_ACTIONS}
+                activeSort={filterSortValue(sortBy, FABRIC_NAME_SORT_ACTIONS)}
+                onSortChange={(value) => setSortBy(value as CatalogueSortBy)}
               />
             )}
             {designNameOptions.length > 0 && (
@@ -369,15 +378,11 @@ export const ShareView: React.FC<{ token: string }> = ({ token }) => {
                   { value: 'All', label: 'All Design names' },
                   ...designNameOptions
                 ]}
+                sortActions={DESIGN_NAME_SORT_ACTIONS}
+                activeSort={filterSortValue(sortBy, DESIGN_NAME_SORT_ACTIONS)}
+                onSortChange={(value) => setSortBy(value as CatalogueSortBy)}
               />
             )}
-            <SearchableFilterSelect
-              value={sortBy}
-              onChange={(value) => setSortBy(value as CatalogueSortBy)}
-              searchable
-              searchPlaceholder="Search sort…"
-              options={CATALOGUE_SORT_OPTIONS}
-            />
             {(catalogue !== 'All' || fabric !== 'All' || designName !== 'All' || sortBy !== 'newest' || minPrice > 0 || maxPrice < priceMaxBound) && (
               <button
                 type="button"
