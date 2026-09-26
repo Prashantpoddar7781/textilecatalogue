@@ -69,6 +69,7 @@ import {
   sortDesigns,
   uniqueDesignFilterOptions
 } from './utils/catalogueBrowse';
+import { resolveAttachedPrice } from './utils/shareAttachDetails';
 import {
   clearAuthSession,
   getAuthToken,
@@ -484,8 +485,12 @@ const App: React.FC = () => {
       return matchesSearch && matchesFabric && matchesCatalogue && matchesDesign && matchesPrice && matchesInventory;
     });
 
-    return sortDesigns(list, filters.sortBy);
-  }, [designs, filters]);
+    return sortDesigns(list, filters.sortBy, (design) =>
+      viewMode && viewAttach
+        ? resolveAttachedPrice(design, viewAttach.selectedPriceType).amount
+        : designPriceOf(design)
+    );
+  }, [designs, filters, viewAttach, viewMode]);
 
   const designNameOptions = useMemo(() => uniqueDesignFilterOptions(designs), [designs]);
 
@@ -1976,7 +1981,11 @@ const App: React.FC = () => {
                       </span>
                     )}
                     <span className="absolute top-2 right-2 bg-white/95 backdrop-blur shadow-sm text-gray-900 text-[10px] font-bold px-2 py-0.5 rounded-lg truncate">
-                      {formatOverlayPrice(designPriceOf(design))}
+                      {formatOverlayPrice(
+                        viewAttach
+                          ? resolveAttachedPrice(design, viewAttach.selectedPriceType).amount
+                          : designPriceOf(design)
+                      )}
                     </span>
                   </div>
                 </button>

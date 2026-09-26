@@ -11,20 +11,35 @@ export function uniqueAdditionalPriceNames(designs: TextileDesign[]): string[] {
   return [...names];
 }
 
+function additionalPriceAmount(
+  design: TextileDesign,
+  extra: { type?: string; value?: number; calculatedPrice?: number }
+): number {
+  const base = Number(design.basePrice ?? design.retailPrice ?? 0) || 0;
+  const override = extra.calculatedPrice;
+  if (typeof override === 'number' && Number.isFinite(override)) return override;
+  const value = Number(extra.value) || 0;
+  if (extra.type === 'percentage') return base * (1 + value / 100);
+  if (extra.type === 'fixed') return base + value;
+  return base;
+}
+
 export function resolveAttachedPrice(
   design: TextileDesign,
   selectedPriceType: string
 ): { label: string; amount: number } {
-  let amount = design.basePrice || design.retailPrice || 0;
-  let label = 'Price';
-  if (selectedPriceType && selectedPriceType !== 'base') {
-    const selected = design.additionalPrices?.find(ap => ap.name === selectedPriceType);
-    if (selected && selected.calculatedPrice) {
-      amount = selected.calculatedPrice;
-      label = selected.name;
-    }
+  const base = Number(design.basePrice ?? design.retailPrice ?? 0) || 0;
+  if (!selectedPriceType || selectedPriceType === 'base' || selectedPriceType === 'none') {
+    return { label: 'Price', amount: base };
   }
-  return { label, amount };
+  const needle = selectedPriceType.trim().toLowerCase();
+  const selected = design.additionalPrices?.find(
+    (ap) => String(ap.name || '').trim().toLowerCase() === needle
+  );
+  if (selected) {
+    return { label: selected.name, amount: additionalPriceAmount(design, selected) };
+  }
+  return { label: 'Price', amount: base };
 }
 
 export function getShareAttachLines(
