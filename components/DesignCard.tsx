@@ -4,6 +4,7 @@ import { Trash2, CheckCircle, IndianRupee, Edit, Link2, Package, Eye } from 'luc
 import { TextileDesign } from '../types';
 import { DesignBarcode } from './DesignBarcode';
 import { designThumbSrc } from '../services/designMedia';
+import { designPriceOf, formatOverlayPrice } from '../utils/catalogueBrowse';
 
 function formatInventory(design: TextileDesign): string {
   const qty = design.stockQuantity ?? 0;
@@ -105,11 +106,14 @@ export const DesignCard: React.FC<Props> = ({
           </div>
         )}
 
-        <span className="absolute top-2 left-2 max-w-[90%] bg-white/95 backdrop-blur shadow-sm text-gray-900 text-[10px] font-bold px-2 py-0.5 rounded-lg truncate pointer-events-none">
+        <span className="absolute top-2 left-2 max-w-[58%] bg-white/95 backdrop-blur shadow-sm text-gray-900 text-[10px] font-bold px-2 py-0.5 rounded-lg truncate pointer-events-none">
           {design.catalogueName?.trim() || design.fabric}
         </span>
+        <span className="absolute top-2 right-2 bg-white/95 backdrop-blur shadow-sm text-gray-900 text-[10px] font-bold px-2 py-0.5 rounded-lg truncate pointer-events-none">
+          {formatOverlayPrice(designPriceOf(design))}
+        </span>
         {(design.stockQuantity ?? 0) <= 0 && (
-          <span className="absolute top-2 right-2 bg-red-500/95 text-white text-[10px] font-bold px-2 py-0.5 rounded-lg uppercase pointer-events-none">
+          <span className="absolute top-8 right-2 bg-red-500/95 text-white text-[10px] font-bold px-2 py-0.5 rounded-lg uppercase pointer-events-none">
             {formatInventory(design)}
           </span>
         )}

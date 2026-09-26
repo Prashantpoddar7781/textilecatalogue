@@ -57,6 +57,14 @@ import { PricingDialog } from './components/PricingDialog';
 import { BillingPage } from './components/BillingPage';
 import { designsApi, authApi, ordersApi, billingApi } from './services/api';
 import {
+  CATALOGUE_SORT_OPTIONS,
+  designPriceOf,
+  formatOverlayPrice,
+  matchesDesignFilter,
+  sortDesigns,
+  uniqueDesignFilterOptions
+} from './utils/catalogueBrowse';
+import {
   clearAuthSession,
   getAuthToken,
   getCachedAuthUser,
@@ -73,6 +81,7 @@ const DEFAULT_FILTERS: CatalogueFilters = {
   search: '',
   fabric: 'All',
   catalogue: 'All',
+  designName: 'All',
   minPrice: 0,
   maxPrice: 100000,
   inventory: 'all',
@@ -98,6 +107,9 @@ const designPriceChanged = (before: TextileDesign, after: TextileDesign) => {
   const newBase = Number(after.basePrice ?? after.retailPrice ?? 0);
   return oldBase !== newBase || serializeAdditionalPrices(before.additionalPrices) !== serializeAdditionalPrices(after.additionalPrices);
 };
+
+const designDescriptionChanged = (before: TextileDesign, after: TextileDesign) =>
+  String(before.description || '').trim() !== String(after.description || '').trim();
 
 const App: React.FC = () => {
   // Check if we're on a share route
@@ -201,8 +213,9 @@ const App: React.FC = () => {
   const [fabrics, setFabrics] = useState<string[]>(['All']);
   const [catalogues, setCatalogues] = useState<{ id: string; name: string }[]>([]);
   const [filters, setFilters] = useState<CatalogueFilters>(DEFAULT_FILTERS);
-  const cataloguePriceConfirmRef = useRef<{ resolve: (applyToAll: boolean) => void } | null>(null);
-  const [cataloguePricePrompt, setCataloguePricePrompt] = useState<{
+  const catalogueApplyConfirmRef = useRef<{ resolve: (applyToAll: boolean) => void } | null>(null);
+  const [catalogueApplyPrompt, setCatalogueApplyPrompt] = useState<{
+    field: 'price' | 'description';
     catalogueName: string;
     count: number;
   } | null>(null);
@@ -460,23 +473,21 @@ const App: React.FC = () => {
         || (d.catalogueName?.toLowerCase() || '').includes(q);
       const matchesFabric = filters.fabric === 'All' || d.fabric === filters.fabric;
       const matchesCatalogue = filters.catalogue === 'All' || d.catalogueId === filters.catalogue;
+      const matchesDesign = matchesDesignFilter(d, filters.designName);
       const matchesPrice = d.retailPrice >= filters.minPrice && d.retailPrice <= filters.maxPrice;
       const matchesInventory = filters.inventory === 'all' || (d.stockQuantity ?? 0) > 0;
-      return matchesSearch && matchesFabric && matchesCatalogue && matchesPrice && matchesInventory;
+      return matchesSearch && matchesFabric && matchesCatalogue && matchesDesign && matchesPrice && matchesInventory;
     });
 
-    if (filters.sortBy === 'price-low') {
-      return [...list].sort((a, b) => a.retailPrice - b.retailPrice);
-    }
-    if (filters.sortBy === 'price-high') {
-      return [...list].sort((a, b) => b.retailPrice - a.retailPrice);
-    }
-    return [...list].sort((a, b) => b.createdAt - a.createdAt);
+    return sortDesigns(list, filters.sortBy);
   }, [designs, filters]);
+
+  const designNameOptions = useMemo(() => uniqueDesignFilterOptions(designs), [designs]);
 
   const hasActiveFilters = useMemo(() => {
     return filters.catalogue !== 'All'
       || filters.fabric !== 'All'
+      || filters.designName !== 'All'
       || filters.inventory !== 'all'
       || filters.sortBy !== 'newest'
       || filters.minPrice > 0
@@ -491,10 +502,10 @@ const App: React.FC = () => {
     });
   };
 
-  const askApplyPriceToCatalogue = (catalogueName: string, count: number) =>
+  const askApplyToCatalogue = (field: 'price' | 'description', catalogueName: string, count: number) =>
     new Promise<boolean>((resolve) => {
-      cataloguePriceConfirmRef.current = { resolve };
-      setCataloguePricePrompt({ catalogueName, count });
+      catalogueApplyConfirmRef.current = { resolve };
+      setCatalogueApplyPrompt({ field, catalogueName, count });
     });
 
   const inStockFilteredDesigns = useMemo(
@@ -653,9 +664,12 @@ const App: React.FC = () => {
 
     const catalogueId = editingDesign.catalogueId;
     const stillSameCatalogue = Boolean(catalogueId) && (design.catalogueId || '') === catalogueId;
+    const priceChanged = stillSameCatalogue && designPriceChanged(editingDesign, design);
+    const descriptionChanged = stillSameCatalogue && designDescriptionChanged(editingDesign, design);
     let siblings: TextileDesign[] = [];
-    let applyToCatalogue = false;
-    if (stillSameCatalogue && designPriceChanged(editingDesign, design)) {
+    let applyPriceToCatalogue = false;
+    let applyDescriptionToCatalogue = false;
+    if (priceChanged || descriptionChanged) {
       siblings = designs.filter(d => d.catalogueId === catalogueId);
       try {
         const { designs: catDesigns } = await designsApi.getAll({
@@ -674,7 +688,12 @@ const App: React.FC = () => {
           || design.catalogueName
           || editingDesign.catalogueName
           || 'this catalogue';
-        applyToCatalogue = await askApplyPriceToCatalogue(catalogueName, siblings.length);
+        if (priceChanged) {
+          applyPriceToCatalogue = await askApplyToCatalogue('price', catalogueName, siblings.length);
+        }
+        if (descriptionChanged) {
+          applyDescriptionToCatalogue = await askApplyToCatalogue('description', catalogueName, siblings.length);
+        }
       }
     }
     
@@ -698,10 +717,14 @@ const App: React.FC = () => {
 
       const updatedById = new Map<string, TextileDesign>([[editingDesign.id, mapDesign(updated)]]);
 
-      if (applyToCatalogue) {
+      if (applyPriceToCatalogue || applyDescriptionToCatalogue) {
+        const siblingPayload = {
+          ...(applyPriceToCatalogue ? pricePayload : {}),
+          ...(applyDescriptionToCatalogue ? { description: design.description } : {})
+        };
         const others = siblings.filter(d => d.id !== editingDesign.id);
         const results = await Promise.allSettled(
-          others.map((sibling) => designsApi.update(sibling.id, pricePayload))
+          others.map((sibling) => designsApi.update(sibling.id, siblingPayload))
         );
         results.forEach((result, index) => {
           if (result.status === 'fulfilled') {
@@ -710,7 +733,11 @@ const App: React.FC = () => {
         });
         const failed = results.filter(r => r.status === 'rejected').length;
         if (failed > 0) {
-          alert(`Saved this design. Could not update price on ${failed} other design${failed === 1 ? '' : 's'} in the catalogue.`);
+          const changed = [
+            applyPriceToCatalogue ? 'price' : null,
+            applyDescriptionToCatalogue ? 'description' : null
+          ].filter(Boolean).join(' and ');
+          alert(`Saved this design. Could not update ${changed} on ${failed} other design${failed === 1 ? '' : 's'} in the catalogue.`);
         }
       }
       
@@ -1757,15 +1784,21 @@ const App: React.FC = () => {
           />
 
           <SearchableFilterSelect
+            value={filters.designName}
+            onChange={(designName) => setFilters(f => ({ ...f, designName }))}
+            searchPlaceholder="Search design name / no.…"
+            options={[
+              { value: 'All', label: 'All Design names' },
+              ...designNameOptions
+            ]}
+          />
+
+          <SearchableFilterSelect
             value={filters.sortBy}
             onChange={(sortBy) => setFilters(f => ({ ...f, sortBy: sortBy as CatalogueFilters['sortBy'] }))}
             searchable
             searchPlaceholder="Search sort…"
-            options={[
-              { value: 'newest', label: 'Latest Uploads' },
-              { value: 'price-low', label: 'Price: Low to High' },
-              { value: 'price-high', label: 'Price: High to Low' }
-            ]}
+            options={CATALOGUE_SORT_OPTIONS}
           />
 
           <SearchableFilterSelect
@@ -1908,10 +1941,13 @@ const App: React.FC = () => {
                       draggable={false}
                     />
                     {(design.catalogueName?.trim() || design.fabric) && (
-                      <span className="absolute top-2 left-2 bg-white/95 backdrop-blur shadow-sm text-gray-900 text-[10px] font-bold px-2 py-0.5 rounded-lg max-w-[90%] truncate">
+                      <span className="absolute top-2 left-2 bg-white/95 backdrop-blur shadow-sm text-gray-900 text-[10px] font-bold px-2 py-0.5 rounded-lg max-w-[58%] truncate">
                         {design.catalogueName?.trim() || design.fabric}
                       </span>
                     )}
+                    <span className="absolute top-2 right-2 bg-white/95 backdrop-blur shadow-sm text-gray-900 text-[10px] font-bold px-2 py-0.5 rounded-lg truncate">
+                      {formatOverlayPrice(designPriceOf(design))}
+                    </span>
                   </div>
                 </button>
               ))
@@ -2101,22 +2137,25 @@ const App: React.FC = () => {
           }} 
         />
       )}
-      {cataloguePricePrompt && (
+      {catalogueApplyPrompt && (
         <div className="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
           <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl p-6">
-            <h3 className="text-lg font-black text-gray-900">Update catalogue prices?</h3>
+            <h3 className="text-lg font-black text-gray-900">
+              {catalogueApplyPrompt.field === 'description' ? 'Update catalogue descriptions?' : 'Update catalogue prices?'}
+            </h3>
             <p className="mt-2 text-sm text-gray-600 leading-relaxed">
-              Apply this price to all <span className="font-black text-gray-900">{cataloguePricePrompt.count}</span> designs
-              in <span className="font-black text-gray-900">{cataloguePricePrompt.catalogueName}</span>?
+              Apply this {catalogueApplyPrompt.field === 'description' ? 'description' : 'price'} to all{' '}
+              <span className="font-black text-gray-900">{catalogueApplyPrompt.count}</span> designs
+              in <span className="font-black text-gray-900">{catalogueApplyPrompt.catalogueName}</span>?
             </p>
             <div className="mt-5 flex flex-col-reverse sm:flex-row gap-2">
               <button
                 type="button"
                 className="flex-1 px-4 py-3 rounded-2xl border-2 border-gray-200 text-sm font-black text-gray-700 hover:bg-gray-50"
                 onClick={() => {
-                  cataloguePriceConfirmRef.current?.resolve(false);
-                  cataloguePriceConfirmRef.current = null;
-                  setCataloguePricePrompt(null);
+                  catalogueApplyConfirmRef.current?.resolve(false);
+                  catalogueApplyConfirmRef.current = null;
+                  setCatalogueApplyPrompt(null);
                 }}
               >
                 Only this design
@@ -2125,12 +2164,12 @@ const App: React.FC = () => {
                 type="button"
                 className="flex-1 px-4 py-3 rounded-2xl bg-indigo-600 text-white text-sm font-black hover:bg-indigo-700"
                 onClick={() => {
-                  cataloguePriceConfirmRef.current?.resolve(true);
-                  cataloguePriceConfirmRef.current = null;
-                  setCataloguePricePrompt(null);
+                  catalogueApplyConfirmRef.current?.resolve(true);
+                  catalogueApplyConfirmRef.current = null;
+                  setCatalogueApplyPrompt(null);
                 }}
               >
-                Yes, update all {cataloguePricePrompt.count}
+                Yes, update all {catalogueApplyPrompt.count}
               </button>
             </div>
           </div>

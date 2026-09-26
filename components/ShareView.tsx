@@ -2,9 +2,17 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertCircle, Loader2, Pencil, ShoppingCart, SlidersHorizontal, X } from 'lucide-react';
 import { shareLinksApi, ordersApi } from '../services/api';
 import { getShareDeviceToken } from '../services/shareDeviceToken';
-import { ShareLink, TextileDesign } from '../types';
+import { CatalogueSortBy, ShareLink, TextileDesign } from '../types';
 import { designThumbSrc } from '../services/designMedia';
 import { getShareAttachLines, resolveAttachedPrice, resolveShareDisplay } from '../utils/shareAttachDetails';
+import {
+  CATALOGUE_SORT_OPTIONS,
+  designPriceOf,
+  formatOverlayPrice,
+  matchesDesignFilter,
+  sortDesigns,
+  uniqueDesignFilterOptions
+} from '../utils/catalogueBrowse';
 import { ViewModeLightbox } from './ViewModeLightbox';
 import { SearchableFilterSelect } from './SearchableFilterSelect';
 
@@ -53,6 +61,8 @@ export const ShareView: React.FC<{ token: string }> = ({ token }) => {
   const [orderedLines, setOrderedLines] = useState<Record<string, { quantity: number; remarks: string }>>({});
   const [catalogue, setCatalogue] = useState('All');
   const [fabric, setFabric] = useState('All');
+  const [designName, setDesignName] = useState('All');
+  const [sortBy, setSortBy] = useState<CatalogueSortBy>('newest');
   const [minPrice, setMinPrice] = useState(0);
   const [maxPrice, setMaxPrice] = useState(100000);
 
@@ -137,11 +147,21 @@ export const ShareView: React.FC<{ token: string }> = ({ token }) => {
     return [...set].sort((a, b) => a.localeCompare(b));
   }, [designs]);
 
+  const designNameOptions = useMemo(() => uniqueDesignFilterOptions(designs), [designs]);
+
   const priceMaxBound = useMemo(() => {
-    if (!display.options.includeRetail || designs.length === 0) return 100000;
-    const amounts = designs.map(d => resolveAttachedPrice(d, display.selectedPriceType).amount);
+    if (designs.length === 0) return 100000;
+    const amounts = designs.map(d => {
+      const attached = resolveAttachedPrice(d, display.selectedPriceType).amount;
+      return attached || designPriceOf(d);
+    });
     return Math.max(...amounts, 1000);
   }, [designs, display]);
+
+  const showPriceFilter = designs.length > 1 && designs.some(d => {
+    const attached = resolveAttachedPrice(d, display.selectedPriceType).amount;
+    return attached > 0 || designPriceOf(d) > 0;
+  });
 
   useEffect(() => {
     setMinPrice(0);
@@ -149,19 +169,21 @@ export const ShareView: React.FC<{ token: string }> = ({ token }) => {
   }, [priceMaxBound]);
 
   const filteredDesigns = useMemo(() => {
-    return designs.filter(design => {
+    const list = designs.filter(design => {
       if (catalogue !== 'All') {
         const { id, name } = catalogueKey(design);
         if (id !== catalogue && name !== catalogue) return false;
       }
       if (fabric !== 'All' && design.fabric !== fabric) return false;
-      if (display.options.includeRetail) {
-        const amount = resolveAttachedPrice(design, display.selectedPriceType).amount;
-        if (amount < minPrice || amount > maxPrice) return false;
-      }
+      if (!matchesDesignFilter(design, designName)) return false;
+      const amount = resolveAttachedPrice(design, display.selectedPriceType).amount || designPriceOf(design);
+      if (amount < minPrice || amount > maxPrice) return false;
       return true;
     });
-  }, [catalogue, designs, display, fabric, maxPrice, minPrice]);
+    return sortDesigns(list, sortBy, (design) =>
+      resolveAttachedPrice(design, display.selectedPriceType).amount || designPriceOf(design)
+    );
+  }, [catalogue, designName, designs, display, fabric, maxPrice, minPrice, sortBy]);
 
   const useViewGrid = designs.length >= VIEW_MODE_THRESHOLD;
 
@@ -338,12 +360,32 @@ export const ShareView: React.FC<{ token: string }> = ({ token }) => {
                 ]}
               />
             )}
-            {(catalogue !== 'All' || fabric !== 'All' || minPrice > 0 || maxPrice < priceMaxBound) && (
+            {designNameOptions.length > 0 && (
+              <SearchableFilterSelect
+                value={designName}
+                onChange={setDesignName}
+                searchPlaceholder="Search design name / no.…"
+                options={[
+                  { value: 'All', label: 'All Design names' },
+                  ...designNameOptions
+                ]}
+              />
+            )}
+            <SearchableFilterSelect
+              value={sortBy}
+              onChange={(value) => setSortBy(value as CatalogueSortBy)}
+              searchable
+              searchPlaceholder="Search sort…"
+              options={CATALOGUE_SORT_OPTIONS}
+            />
+            {(catalogue !== 'All' || fabric !== 'All' || designName !== 'All' || sortBy !== 'newest' || minPrice > 0 || maxPrice < priceMaxBound) && (
               <button
                 type="button"
                 onClick={() => {
                   setCatalogue('All');
                   setFabric('All');
+                  setDesignName('All');
+                  setSortBy('newest');
                   setMinPrice(0);
                   setMaxPrice(priceMaxBound);
                 }}
@@ -353,7 +395,7 @@ export const ShareView: React.FC<{ token: string }> = ({ token }) => {
               </button>
             )}
           </div>
-          {display.options.includeRetail && (
+          {showPriceFilter && (
             <div className="mt-3 px-1">
               <div className="bg-white border-2 border-gray-100 rounded-2xl p-3 shadow-sm">
                 <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest block mb-2">
@@ -413,10 +455,13 @@ export const ShareView: React.FC<{ token: string }> = ({ token }) => {
                       draggable={false}
                     />
                     {catalogueLabel(design) && (
-                      <span className="absolute top-2 left-2 bg-white/95 backdrop-blur shadow-sm text-gray-900 text-[10px] font-bold px-2 py-0.5 rounded-lg max-w-[90%] truncate">
+                      <span className="absolute top-2 left-2 bg-white/95 backdrop-blur shadow-sm text-gray-900 text-[10px] font-bold px-2 py-0.5 rounded-lg max-w-[58%] truncate">
                         {catalogueLabel(design)}
                       </span>
                     )}
+                    <span className="absolute top-2 right-2 bg-white/95 backdrop-blur shadow-sm text-gray-900 text-[10px] font-bold px-2 py-0.5 rounded-lg truncate">
+                      {formatOverlayPrice(resolveAttachedPrice(design, display.selectedPriceType).amount || designPriceOf(design))}
+                    </span>
                   </div>
                 </button>
                 <div className="flex">
@@ -449,13 +494,16 @@ export const ShareView: React.FC<{ token: string }> = ({ token }) => {
           </div>
         ) : (
           <div className="space-y-8 max-w-4xl mx-auto">
-            {Object.keys(groupedOneByOne).sort((a, b) => a.localeCompare(b)).map(group => (
-              <div key={group} className="space-y-4">
-                {Object.keys(groupedOneByOne).length > 1 && (
+            {(sortBy === 'newest'
+              ? Object.keys(groupedOneByOne).sort((a, b) => a.localeCompare(b)).map((group) => [group, groupedOneByOne[group]] as const)
+              : [['', filteredDesigns] as const]
+            ).map(([group, groupDesigns]) => (
+              <div key={group || 'sorted'} className="space-y-4">
+                {sortBy === 'newest' && Object.keys(groupedOneByOne).length > 1 && (
                   <h3 className="text-xl font-black text-gray-900">{group}</h3>
                 )}
                 <div className="grid grid-cols-1 gap-6">
-                  {groupedOneByOne[group].map(design => {
+                  {groupDesigns.map(design => {
                     const index = filteredDesigns.findIndex(item => item.id === design.id);
                     const lines = getShareAttachLines(design, display.options, display.selectedPriceType, firmName);
                     return (
@@ -471,10 +519,13 @@ export const ShareView: React.FC<{ token: string }> = ({ token }) => {
                             className="w-full h-full object-cover"
                           />
                           {catalogueLabel(design) && (
-                            <span className="absolute top-2 left-2 bg-white/95 backdrop-blur shadow-sm text-gray-900 text-[10px] font-bold px-2 py-0.5 rounded-lg max-w-[90%] truncate">
+                            <span className="absolute top-2 left-2 bg-white/95 backdrop-blur shadow-sm text-gray-900 text-[10px] font-bold px-2 py-0.5 rounded-lg max-w-[58%] truncate">
                               {catalogueLabel(design)}
                             </span>
                           )}
+                          <span className="absolute top-2 right-2 bg-white/95 backdrop-blur shadow-sm text-gray-900 text-[10px] font-bold px-2 py-0.5 rounded-lg truncate">
+                            {formatOverlayPrice(resolveAttachedPrice(design, display.selectedPriceType).amount || designPriceOf(design))}
+                          </span>
                         </button>
                         <div className="p-4 space-y-2">
                           {lines.map(line => (

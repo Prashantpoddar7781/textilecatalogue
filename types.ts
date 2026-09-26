@@ -73,14 +73,30 @@ export interface Catalogue {
   createdAt: number;
 }
 
+export type CatalogueSortBy =
+  | 'newest'
+  | 'price-low'
+  | 'price-high'
+  | 'catalogue-az'
+  | 'catalogue-za'
+  | 'fabric-az'
+  | 'fabric-za'
+  | 'design-az'
+  | 'design-za'
+  | 'design-num-asc'
+  | 'design-num-desc'
+  | 'stock-low'
+  | 'stock-high';
+
 export interface CatalogueFilters {
   search: string;
   fabric: string;
   catalogue: string;
+  designName: string;
   minPrice: number;
   maxPrice: number;
   inventory: 'all' | 'available';
-  sortBy: 'newest' | 'price-low' | 'price-high';
+  sortBy: CatalogueSortBy;
 }
 
 export interface ShareOptions {
