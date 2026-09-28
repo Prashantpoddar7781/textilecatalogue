@@ -326,11 +326,40 @@ function apiError(message, status, details) {
   return error;
 }
 
+function parseEncodedJson(value) {
+  if (typeof value !== 'string' || value.length < 8) return null;
+  const direct = asJsonObject(value);
+  if (direct) return direct;
+  if (!/^[A-Za-z0-9+/=\s]+$/.test(value.slice(0, 120))) return null;
+  try {
+    const decoded = Buffer.from(value.replace(/\s/g, ''), 'base64').toString('utf8').trim();
+    if (!decoded.startsWith('{') && !decoded.startsWith('[')) return null;
+    return asJsonObject(decoded);
+  } catch {
+    return null;
+  }
+}
+
+function gspErrorText(data) {
+  const err = data?.error;
+  if (err == null) return '';
+  if (typeof err === 'string' || typeof err === 'number') return text(err);
+  return text(
+    err.error_desc
+    || err.errorDesc
+    || err.errorMsg
+    || err.error_msg
+    || err.message
+    || (err.errorCodes != null ? `Error ${err.errorCodes}` : '')
+    || (err.error_cd != null ? `Error ${err.error_cd}` : '')
+  );
+}
+
 function parseEwayResult(data) {
-  const nested = asJsonObject(data?.data) || data?.data;
+  const nested = parseEncodedJson(data?.data) || asJsonObject(data?.data) || data?.data;
   const candidates = [data?.results, nested, data?.result, data?.header, data];
   for (const candidate of candidates) {
-    const obj = asJsonObject(candidate) || candidate;
+    const obj = parseEncodedJson(candidate) || asJsonObject(candidate) || candidate;
     if (!obj || typeof obj !== 'object') continue;
     const ewayBillNo = text(obj.ewayBillNo || obj.ewbNo || obj.eway_bill_no);
     if (ewayBillNo) return { result: obj, ewayBillNo };
@@ -343,7 +372,7 @@ function parseEwayResult(data) {
 function findJsonField(value, keyPattern, depth = 0) {
   if (depth > 8 || value == null) return '';
   if (typeof value === 'string') {
-    const parsed = asJsonObject(value);
+    const parsed = parseEncodedJson(value) || asJsonObject(value);
     return parsed ? findJsonField(parsed, keyPattern, depth + 1) : '';
   }
   if (Array.isArray(value)) {
@@ -386,16 +415,22 @@ function asJsonObject(value) {
 
 function providerFailureMessage(data, status) {
   const candidates = [
+    gspErrorText(data),
     data?.error_description,
     data?.errorDescription,
     typeof data?.error === 'string' ? data.error : data?.error?.message,
     data?.status_desc,
     data?.statusDesc,
+    data?.info,
     data?.message,
     Array.isArray(data?.errors) ? data.errors.map((item) => item.message || item.error || item).join('; ') : ''
   ];
   const useful = candidates.map(text).find((item) => item && !looksLikeDocsBlurb(item));
-  return useful || `E-way bill API returned ${status} without a bill number.`;
+  if (useful) return useful;
+  const cd = text(data?.status_cd ?? data?.statusCd ?? data?.status);
+  const keys = data && typeof data === 'object' ? Object.keys(data).filter((key) => !/pass|secret|token|sek/i.test(key)).join(', ') : '';
+  if (cd && cd !== '1') return `WhiteBooks returned status ${cd}${keys ? ` (${keys})` : ''}.`;
+  return `E-way bill API returned ${status} without a bill number${keys ? ` (${keys})` : ''}.`;
 }
 
 function isWhiteBooksAuthSuccess(data) {
@@ -608,17 +643,28 @@ async function generateViaWhiteBooks(payload, config) {
   const origin = whitebooksOrigin(config.mode, config.baseUrl);
   const generateUrl = `${origin}/ewaybillapi/v1.03/ewayapi/genewaybill${whitebooksQuery(config)}`;
   const authtoken = await authenticateWhiteBooks(origin, config);
-  const generated = await postJson(generateUrl, {
-    headers: whitebooksHeaders(config, authtoken),
-    body: payload,
-    timeoutMs: 20000
-  });
-  const parsed = parseEwayResult(generated.data);
-  if (parsed.ewayBillNo) {
-    return asGeneratedBill(parsed, generated.data, payload, config);
+  const bodies = [
+    payload,
+    { action: 'GENEWAYBILL', ...payload },
+    { action: 'GENEWAYBILL', data: payload }
+  ];
+  let last = { status: 0, data: null };
+  for (const body of bodies) {
+    const generated = await postJson(generateUrl, {
+      headers: whitebooksHeaders(config, authtoken),
+      body,
+      timeoutMs: 20000
+    });
+    last = generated;
+    const parsed = parseEwayResult(generated.data);
+    if (parsed.ewayBillNo) {
+      return asGeneratedBill(parsed, generated.data, payload, config);
+    }
+    const failed = text(generated.data?.status_cd ?? generated.data?.statusCd ?? generated.data?.status);
+    if (failed && failed !== '1') break;
   }
 
-  throw apiError(providerFailureMessage(generated.data, generated.status), 502, generated.data);
+  throw apiError(providerFailureMessage(last.data, last.status), 502, last.data);
 }
 
 export async function generateEwayBill(payload, config) {
