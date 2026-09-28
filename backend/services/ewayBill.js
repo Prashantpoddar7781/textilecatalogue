@@ -431,6 +431,36 @@ function asJsonObject(value) {
   return typeof value === 'object' ? value : null;
 }
 
+function compactEwayBody(value) {
+  if (Array.isArray(value)) return value.map(compactEwayBody);
+  if (!value || typeof value !== 'object') return value;
+  const out = {};
+  for (const [key, item] of Object.entries(value)) {
+    if (item === '' || item == null) continue;
+    out[key] = typeof item === 'object' ? compactEwayBody(item) : item;
+  }
+  return out;
+}
+
+function publicReply(data) {
+  if (data == null) return '';
+  try {
+    const clone = JSON.parse(JSON.stringify(data));
+    const scrub = (value) => {
+      if (!value || typeof value !== 'object') return;
+      for (const key of Object.keys(value)) {
+        if (/pass|secret|token|sek|client_secret/i.test(key)) value[key] = '***';
+        else scrub(value[key]);
+      }
+    };
+    scrub(clone);
+    const raw = JSON.stringify(clone);
+    return raw.length > 500 ? `${raw.slice(0, 500)}…` : raw;
+  } catch {
+    return '';
+  }
+}
+
 function providerFailureMessage(data, status) {
   const candidates = [
     gspErrorText(data),
@@ -440,15 +470,14 @@ function providerFailureMessage(data, status) {
     data?.status_desc,
     data?.statusDesc,
     data?.info,
-    data?.message,
-    Array.isArray(data?.errors) ? data.errors.map((item) => item.message || item.error || item).join('; ') : ''
+    data?.message
   ];
   const useful = candidates.map(text).find((item) => item && !looksLikeDocsBlurb(item));
+  const raw = publicReply(data);
+  if (useful && raw) return `${useful} — ${raw}`;
   if (useful) return useful;
-  const cd = text(data?.status_cd ?? data?.statusCd ?? data?.status);
-  const keys = data && typeof data === 'object' ? Object.keys(data).filter((key) => !/pass|secret|token|sek/i.test(key)).join(', ') : '';
-  if (cd && cd !== '1') return `WhiteBooks returned status ${cd}${keys ? ` (${keys})` : ''}.`;
-  return `E-way bill API returned ${status} without a bill number${keys ? ` (${keys})` : ''}.`;
+  if (raw) return `WhiteBooks reply: ${raw}`;
+  return `E-way bill API returned ${status} without a bill number.`;
 }
 
 function isWhiteBooksAuthSuccess(data) {
@@ -670,7 +699,7 @@ async function generateViaWhiteBooks(payload, config) {
     const generateUrl = `${origin}/ewaybillapi/v1.03/ewayapi/genewaybill${whitebooksQuery(config, irp)}`;
     const generated = await postJson(generateUrl, {
       headers: whitebooksHeaders(config, authtoken, irp),
-      body: payload,
+      body: compactEwayBody(payload),
       timeoutMs: 20000
     });
     last = generated;
@@ -681,7 +710,7 @@ async function generateViaWhiteBooks(payload, config) {
 
     const wrapped = await postJson(generateUrl, {
       headers: whitebooksHeaders(config, authtoken, irp),
-      body: { action: 'GENEWAYBILL', ...payload },
+      body: { action: 'GENEWAYBILL', ...compactEwayBody(payload) },
       timeoutMs: 20000
     });
     last = wrapped;
