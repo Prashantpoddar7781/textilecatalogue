@@ -672,29 +672,33 @@ async function generateViaMasterGst(payload, config) {
   };
 }
 
-async function authenticateWhiteBooks(origin, config, irp = '', ip = '') {
-  const headers = whitebooksHeaders(config, '', irp, { includeLogin: true, ip });
-  const url = `${origin}/ewaybillapi/v1.03/authenticate${whitebooksQuery(config, irp, { includeLogin: true })}`;
-  let { status, data, headers: responseHeaders } = await requestJson(url, {
-    method: 'GET',
-    headers,
-    timeoutMs: 15000
+function headerSummary(responseHeaders) {
+  const parts = [];
+  responseHeaders?.forEach?.((value, key) => {
+    const hidden = /pass|secret|token|sek|cookie|auth/i.test(String(key));
+    const shown = hidden ? String(text(value).length) : text(value).slice(0, 60);
+    parts.push(`${key}=${shown}`);
   });
-  let token = extractAuthToken(data, responseHeaders);
-  if (!token && !isWhiteBooksAuthSuccess(data) && (status === 404 || status === 405)) {
-    ({ status, data, headers: responseHeaders } = await postJson(url, { headers, body: {}, timeoutMs: 15000 }));
-    token = extractAuthToken(data, responseHeaders);
+  return parts.join(', ') || 'none';
+}
+
+async function authenticateWhiteBooks(origin, config, irp = '', ip = '') {
+  const attempts = irp ? ['', irp] : [''];
+  let last = { status: 0, data: null, headers: null };
+  for (const attemptIrp of attempts) {
+    const headers = whitebooksHeaders(config, '', attemptIrp, { includeLogin: true, ip });
+    const url = `${origin}/ewaybillapi/v1.03/authenticate${whitebooksQuery(config, attemptIrp, { includeLogin: true })}`;
+    const response = await requestJson(url, { method: 'GET', headers, timeoutMs: 15000 });
+    last = response;
+    const token = extractAuthToken(response.data, response.headers);
+    if (token) return token;
+    if (!isWhiteBooksAuthSuccess(response.data) && response.status !== 200) break;
   }
-  if (token) return token;
-  if (isWhiteBooksAuthSuccess(data)) {
-    throw apiError(
-      'WhiteBooks login succeeded but the auth token was missing. '
-        + publicReply(data),
-      502,
-      data
-    );
-  }
-  throw apiError(whitebooksLoginError(data, status), 502, data);
+  throw apiError(
+    `WhiteBooks login did not return an auth token. Body: ${publicReply(last.data)} Headers: ${headerSummary(last.headers)}`,
+    502,
+    last.data
+  );
 }
 
 function asGeneratedBill(parsed, data, payload, config) {
