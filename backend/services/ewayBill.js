@@ -327,25 +327,70 @@ function apiError(message, status, details) {
 }
 
 function parseEwayResult(data) {
-  const result = data?.results?.ewayBillNo || data?.results?.ewbNo
-    ? data.results
-    : (data?.data || data?.results || data?.result || data || {});
-  return {
-    result,
-    ewayBillNo: text(result.ewayBillNo || result.ewbNo || result.eway_bill_no)
-  };
+  const nested = asJsonObject(data?.data) || data?.data;
+  const candidates = [data?.results, nested, data?.result, data?.header, data];
+  for (const candidate of candidates) {
+    const obj = asJsonObject(candidate) || candidate;
+    if (!obj || typeof obj !== 'object') continue;
+    const ewayBillNo = text(obj.ewayBillNo || obj.ewbNo || obj.eway_bill_no);
+    if (ewayBillNo) return { result: obj, ewayBillNo };
+  }
+  return { result: data || {}, ewayBillNo: '' };
+}
+
+function looksLikeDocsBlurb(value) {
+  return /if authentication succeeds|send a live request|playground/i.test(text(value));
+}
+
+function asJsonObject(value) {
+  if (!value) return null;
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return parsed && typeof parsed === 'object' ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+  return typeof value === 'object' ? value : null;
 }
 
 function providerFailureMessage(data, status) {
-  return text(
-    data?.message
-    || data?.error_description
-    || data?.errorDescription
-    || data?.error
-    || data?.status_desc
-    || data?.statusDesc
-    || (Array.isArray(data?.errors) ? data.errors.map((item) => item.message || item.error || item).join('; ') : '')
-  ) || `E-way bill API returned ${status} without a bill number.`;
+  const candidates = [
+    data?.error_description,
+    data?.errorDescription,
+    typeof data?.error === 'string' ? data.error : data?.error?.message,
+    data?.status_desc,
+    data?.statusDesc,
+    data?.message,
+    Array.isArray(data?.errors) ? data.errors.map((item) => item.message || item.error || item).join('; ') : ''
+  ];
+  const useful = candidates.map(text).find((item) => item && !looksLikeDocsBlurb(item));
+  return useful || `E-way bill API returned ${status} without a bill number.`;
+}
+
+function isWhiteBooksAuthSuccess(data) {
+  const cd = text(data?.status_cd ?? data?.statusCd ?? data?.status);
+  return cd === '1' || cd.toLowerCase() === 'success';
+}
+
+function extractAuthToken(data, responseHeaders) {
+  const headerToken = text(
+    responseHeaders?.get?.('authtoken')
+    || responseHeaders?.get?.('auth-token')
+    || responseHeaders?.get?.('AuthToken')
+  );
+  if (headerToken) return headerToken;
+
+  const nestedData = asJsonObject(data?.data) || data?.data;
+  const buckets = [data, nestedData, data?.results, data?.result, data?.header, data?.headers, nestedData?.header];
+  for (const bucket of buckets) {
+    const obj = asJsonObject(bucket) || bucket;
+    if (!obj || typeof obj !== 'object') continue;
+    const token = text(obj.authtoken || obj.authToken || obj.auth_token || obj.access_token || obj.token);
+    if (token && token.length >= 8) return token;
+  }
+  return '';
 }
 
 async function requestJson(url, { method = 'POST', headers, body, timeoutMs = 30000 }) {
@@ -365,7 +410,7 @@ async function requestJson(url, { method = 'POST', headers, body, timeoutMs = 30
     } catch {
       parsed = { raw };
     }
-    return { ok: response.ok, status: response.status, data: parsed };
+    return { ok: response.ok, status: response.status, data: parsed, headers: response.headers };
   } finally {
     clearTimeout(timer);
   }
@@ -399,6 +444,9 @@ function whitebooksQuery(config) {
 }
 
 function whitebooksLoginError(data, status) {
+  if (isWhiteBooksAuthSuccess(data)) {
+    return 'WhiteBooks accepted the sandbox login but did not send a readable auth token. Try Generate again after the latest deploy.';
+  }
   const raw = providerFailureMessage(data, status);
   if (/user does not exist|incorrect user id|invalid username/i.test(raw)) {
     return (
@@ -417,11 +465,6 @@ function whitebooksLoginError(data, status) {
     );
   }
   return `WhiteBooks login failed: ${raw}`;
-}
-
-function extractAuthToken(data) {
-  const result = data?.data || data?.results || data || {};
-  return text(result.authtoken || result.authToken || result.access_token || data?.authtoken);
 }
 
 /**
@@ -470,11 +513,15 @@ async function generateViaMasterGst(payload, config) {
 async function authenticateWhiteBooks(origin, config) {
   const headers = whitebooksHeaders(config);
   const url = `${origin}/ewaybillapi/v1.03/authenticate${whitebooksQuery(config)}`;
-  let { status, data } = await requestJson(url, { method: 'GET', headers, timeoutMs: 15000 });
-  let token = extractAuthToken(data);
-  if (!token && (status === 404 || status === 405)) {
-    ({ status, data } = await postJson(url, { headers, body: {}, timeoutMs: 15000 }));
-    token = extractAuthToken(data);
+  let { status, data, headers: responseHeaders } = await requestJson(url, {
+    method: 'GET',
+    headers,
+    timeoutMs: 15000
+  });
+  let token = extractAuthToken(data, responseHeaders);
+  if (!token && !isWhiteBooksAuthSuccess(data) && (status === 404 || status === 405)) {
+    ({ status, data, headers: responseHeaders } = await postJson(url, { headers, body: {}, timeoutMs: 15000 }));
+    token = extractAuthToken(data, responseHeaders);
   }
   if (!token) {
     throw apiError(whitebooksLoginError(data, status), 502, data);
