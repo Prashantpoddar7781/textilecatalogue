@@ -584,7 +584,7 @@ function whitebooksHeaders(config, authtoken = '', irp = '', { includeLogin = fa
     client_id: text(config.clientId),
     client_secret: text(config.clientSecret),
     gstin: text(config.gstin).toUpperCase(),
-    ip_address: ip || '1.1.1.1',
+    ip_address: '0.0.0.0',
     ...(irp ? { irp } : {}),
     ...(includeLogin ? { username: text(config.username), password: config.password } : {}),
     ...(config.email ? { email: text(config.email) } : {}),
@@ -730,16 +730,15 @@ async function generateViaWhiteBooks(payload, config) {
   }
 
   const origin = whitebooksOrigin(config.mode, config.baseUrl);
-  const ip = await resolveOutboundIp();
   const irpHint = text(config.irp).toUpperCase();
   const irps = irpHint && /^NIC[12]$/.test(irpHint) ? [irpHint] : ['NIC1', 'NIC2'];
   let last = { status: 0, data: null };
 
   for (const irp of irps) {
-    const authtoken = await authenticateWhiteBooks(origin, config, irp, ip);
+    const authtoken = await authenticateWhiteBooks(origin, config, irp, '0.0.0.0');
     const generateUrl = `${origin}/ewaybillapi/v1.03/ewayapi/genewaybill${whitebooksQuery(config, irp)}`;
     const generated = await postJson(generateUrl, {
-      headers: whitebooksHeaders(config, authtoken, irp, { ip }),
+      headers: whitebooksHeaders(config, authtoken, irp),
       body: compactEwayBody(payload),
       timeoutMs: 20000
     });
@@ -750,7 +749,7 @@ async function generateViaWhiteBooks(payload, config) {
     }
 
     const wrapped = await postJson(generateUrl, {
-      headers: whitebooksHeaders(config, authtoken, irp, { ip }),
+      headers: whitebooksHeaders(config, authtoken, irp),
       body: { action: 'GENEWAYBILL', ...compactEwayBody(payload) },
       timeoutMs: 20000
     });
