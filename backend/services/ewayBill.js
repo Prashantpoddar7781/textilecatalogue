@@ -390,6 +390,14 @@ function whitebooksHeaders(config, authtoken = '') {
 
 function whitebooksLoginError(data, status) {
   const raw = providerFailureMessage(data, status);
+  if (/user does not exist|incorrect user id|invalid username/i.test(raw)) {
+    return (
+      'WhiteBooks does not know this API username. '
+      + 'In Company Master the username must be the full NIC For-GSP name, like ThreadX_API_Thr, not only the 3 letters. '
+      + 'Sandbox also does not use the live NIC user until you add that GSTIN and username under WhiteBooks → e-Way Bill API → Credentials. '
+      + 'If WhiteBooks shows a sample sandbox GSTIN and test username, paste those for Sandbox mode.'
+    );
+  }
   if (/not active|invalid credentials/i.test(raw)) {
     return (
       'WhiteBooks did not accept this sandbox login. The sales bill is fine. '

@@ -432,7 +432,13 @@ export const ErpCompanyMasterPage: React.FC<Props> = ({ onBack, erpSession }) =>
                 </label>
                 <label>
                   <span className={labelClass}>API username</span>
-                  <input className={fieldClass} value={form.ewbUsername} onChange={e => update('ewbUsername', e.target.value)} autoComplete="off" />
+                  <input
+                    className={fieldClass}
+                    value={form.ewbUsername}
+                    onChange={e => update('ewbUsername', e.target.value)}
+                    autoComplete="off"
+                    placeholder="ThreadX_API_ plus 3 letters"
+                  />
                 </label>
                 <label>
                   <span className={labelClass}>API password</span>
