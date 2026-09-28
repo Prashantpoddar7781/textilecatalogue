@@ -419,6 +419,7 @@ export const ErpCompanyMasterPage: React.FC<Props> = ({ onBack, erpSession }) =>
               <p className="mb-3 text-xs font-semibold text-gray-500">
                 GSTIN {THREADX_GSTIN} is used as the seller GSTIN. Sandbox and Live both go through WhiteBooks.
                 Paste Client ID and Secret from WhiteBooks → e-Way Bill API → Sandbox, not the general API Keys page.
+                For Sandbox, API username is the playground user (BVMGSP), not the live NIC For-GSP name.
                 Leave a password or key blank to keep the one already saved.
               </p>
               <div className="grid gap-3 md:grid-cols-3">

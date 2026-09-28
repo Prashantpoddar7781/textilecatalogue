@@ -388,14 +388,23 @@ function whitebooksHeaders(config, authtoken = '') {
   };
 }
 
+/** WhiteBooks playground sends email, username, and password as query params. */
+function whitebooksQuery(config) {
+  const params = new URLSearchParams();
+  if (config.email) params.set('email', text(config.email));
+  if (config.username) params.set('username', text(config.username));
+  if (config.password) params.set('password', config.password);
+  const qs = params.toString();
+  return qs ? `?${qs}` : '';
+}
+
 function whitebooksLoginError(data, status) {
   const raw = providerFailureMessage(data, status);
   if (/user does not exist|incorrect user id|invalid username/i.test(raw)) {
     return (
       'WhiteBooks does not know this API username. '
-      + 'In Company Master the username must be the full NIC For-GSP name, like ThreadX_API_Thr, not only the 3 letters. '
-      + 'Sandbox also does not use the live NIC user until you add that GSTIN and username under WhiteBooks → e-Way Bill API → Credentials. '
-      + 'If WhiteBooks shows a sample sandbox GSTIN and test username, paste those for Sandbox mode.'
+      + 'For Sandbox, Company Master API username must be the WhiteBooks playground user (BVMGSP), not the live NIC user ThreadX_API_Thr. '
+      + 'GSTIN is a header on that same playground — scroll below Query to Headers. '
     );
   }
   if (/not active|invalid credentials/i.test(raw)) {
@@ -460,8 +469,7 @@ async function generateViaMasterGst(payload, config) {
 
 async function authenticateWhiteBooks(origin, config) {
   const headers = whitebooksHeaders(config);
-  const emailQuery = config.email ? `?email=${encodeURIComponent(config.email)}` : '';
-  const url = `${origin}/ewaybillapi/v1.03/authenticate${emailQuery}`;
+  const url = `${origin}/ewaybillapi/v1.03/authenticate${whitebooksQuery(config)}`;
   let { status, data } = await requestJson(url, { method: 'GET', headers, timeoutMs: 15000 });
   let token = extractAuthToken(data);
   if (!token && (status === 404 || status === 405)) {
@@ -503,8 +511,7 @@ async function generateViaWhiteBooks(payload, config) {
   }
 
   const origin = whitebooksOrigin(config.mode, config.baseUrl);
-  const emailQuery = config.email ? `?email=${encodeURIComponent(config.email)}` : '';
-  const generateUrl = `${origin}/ewaybillapi/v1.03/ewayapi/genewaybill${emailQuery}`;
+  const generateUrl = `${origin}/ewaybillapi/v1.03/ewayapi/genewaybill${whitebooksQuery(config)}`;
   const authtoken = await authenticateWhiteBooks(origin, config);
   const generated = await postJson(generateUrl, {
     headers: whitebooksHeaders(config, authtoken),
