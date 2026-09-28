@@ -485,16 +485,44 @@ function isWhiteBooksAuthSuccess(data) {
   return cd === '1' || cd.toLowerCase() === 'success';
 }
 
+function looksLikeAuthToken(value) {
+  const token = text(value);
+  return /^[A-Za-z0-9+/_.=-]{16,200}$/.test(token);
+}
+
+let cachedOutboundIp = '';
+
+async function resolveOutboundIp() {
+  if (cachedOutboundIp) return cachedOutboundIp;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 4000);
+  try {
+    const response = await fetch('https://api.ipify.org?format=json', { signal: controller.signal });
+    const ip = text((await response.json())?.ip);
+    if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(ip)) {
+      cachedOutboundIp = ip;
+      return ip;
+    }
+  } catch {
+    // Generate still sends a fallback; NIC will reject the token if the IP is wrong.
+  } finally {
+    clearTimeout(timer);
+  }
+  return '1.1.1.1';
+}
+
 function extractAuthToken(data, responseHeaders) {
+  const fromBody = findJsonToken(data);
+  if (looksLikeAuthToken(fromBody)) return fromBody;
+
   let headerToken = '';
   responseHeaders?.forEach?.((value, key) => {
     if (headerToken) return;
-    if (/auth.?token|access.?token|^token$/i.test(String(key)) && text(value).length >= 8) {
+    if (/auth.?token|access.?token|^token$/i.test(String(key)) && looksLikeAuthToken(value)) {
       headerToken = text(value);
     }
   });
-  if (headerToken) return headerToken;
-  return findJsonToken(data);
+  return headerToken;
 }
 
 function findJsonToken(value, depth = 0) {
@@ -514,7 +542,7 @@ function findJsonToken(value, depth = 0) {
   for (const [key, item] of Object.entries(value)) {
     if (/auth.?token|access.?token|^token$|^authtoken$/i.test(key)) {
       const token = text(item);
-      if (token.length >= 8 && !looksLikeDocsBlurb(token)) return token;
+      if (looksLikeAuthToken(token)) return token;
     }
   }
   for (const item of Object.values(value)) {
@@ -551,12 +579,12 @@ async function postJson(url, options) {
   return requestJson(url, { ...options, method: 'POST' });
 }
 
-function whitebooksHeaders(config, authtoken = '', irp = '', { includeLogin = false } = {}) {
+function whitebooksHeaders(config, authtoken = '', irp = '', { includeLogin = false, ip = '' } = {}) {
   return {
     client_id: text(config.clientId),
     client_secret: text(config.clientSecret),
     gstin: text(config.gstin).toUpperCase(),
-    ip_address: '1.1.1.1',
+    ip_address: ip || '1.1.1.1',
     ...(irp ? { irp } : {}),
     ...(includeLogin ? { username: text(config.username), password: config.password } : {}),
     ...(config.email ? { email: text(config.email) } : {}),
@@ -644,8 +672,8 @@ async function generateViaMasterGst(payload, config) {
   };
 }
 
-async function authenticateWhiteBooks(origin, config, irp = '') {
-  const headers = whitebooksHeaders(config, '', irp, { includeLogin: true });
+async function authenticateWhiteBooks(origin, config, irp = '', ip = '') {
+  const headers = whitebooksHeaders(config, '', irp, { includeLogin: true, ip });
   const url = `${origin}/ewaybillapi/v1.03/authenticate${whitebooksQuery(config, irp, { includeLogin: true })}`;
   let { status, data, headers: responseHeaders } = await requestJson(url, {
     method: 'GET',
@@ -658,7 +686,14 @@ async function authenticateWhiteBooks(origin, config, irp = '') {
     token = extractAuthToken(data, responseHeaders);
   }
   if (token) return token;
-  if (isWhiteBooksAuthSuccess(data)) return '';
+  if (isWhiteBooksAuthSuccess(data)) {
+    throw apiError(
+      'WhiteBooks login succeeded but the auth token was missing. '
+        + publicReply(data),
+      502,
+      data
+    );
+  }
   throw apiError(whitebooksLoginError(data, status), 502, data);
 }
 
@@ -691,15 +726,16 @@ async function generateViaWhiteBooks(payload, config) {
   }
 
   const origin = whitebooksOrigin(config.mode, config.baseUrl);
+  const ip = await resolveOutboundIp();
   const irpHint = text(config.irp).toUpperCase();
   const irps = irpHint && /^NIC[12]$/.test(irpHint) ? [irpHint] : ['NIC1', 'NIC2'];
   let last = { status: 0, data: null };
 
   for (const irp of irps) {
-    const authtoken = await authenticateWhiteBooks(origin, config, irp);
+    const authtoken = await authenticateWhiteBooks(origin, config, irp, ip);
     const generateUrl = `${origin}/ewaybillapi/v1.03/ewayapi/genewaybill${whitebooksQuery(config, irp)}`;
     const generated = await postJson(generateUrl, {
-      headers: whitebooksHeaders(config, authtoken, irp),
+      headers: whitebooksHeaders(config, authtoken, irp, { ip }),
       body: compactEwayBody(payload),
       timeoutMs: 20000
     });
@@ -710,7 +746,7 @@ async function generateViaWhiteBooks(payload, config) {
     }
 
     const wrapped = await postJson(generateUrl, {
-      headers: whitebooksHeaders(config, authtoken, irp),
+      headers: whitebooksHeaders(config, authtoken, irp, { ip }),
       body: { action: 'GENEWAYBILL', ...compactEwayBody(payload) },
       timeoutMs: 20000
     });
