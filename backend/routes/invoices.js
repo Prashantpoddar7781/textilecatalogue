@@ -135,6 +135,8 @@ function getProfilePayload(body, user, existing) {
     defaultGstRate: optionalNumber(body.defaultGstRate) ?? 5,
     terms: optionalString(body.terms),
     ewbMode: EWB_MODES.has(mode) ? mode : 'mock',
+    ewbProvider: 'whitebooks',
+    ewbBaseUrl: mode === 'production' ? 'https://api.whitebooks.in' : 'https://apisandbox.whitebooks.in',
     ewbGstin: gstNumber,
     ewbUsername: keptOrEncrypted(body.ewbUsername, existing?.ewbUsername),
     ewbClientId: keptOrEncrypted(body.ewbClientId, existing?.ewbClientId),

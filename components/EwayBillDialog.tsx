@@ -22,7 +22,7 @@ const TRANSPORT_MODES = [
 
 const MODE_LABELS: Record<string, string> = {
   mock: 'Test mode · not filed with NIC',
-  sandbox: 'GSP sandbox · not filed with NIC',
+  sandbox: 'WhiteBooks sandbox · not filed with NIC',
   production: 'Live · filed with NIC'
 };
 

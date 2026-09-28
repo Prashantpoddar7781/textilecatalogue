@@ -417,7 +417,8 @@ export const ErpCompanyMasterPage: React.FC<Props> = ({ onBack, erpSession }) =>
             <section className="rounded-2xl border border-indigo-100 bg-white p-4 shadow-sm">
               <h2 className="mb-1 text-xs font-black uppercase tracking-wide text-gray-900">E-way bill</h2>
               <p className="mb-3 text-xs font-semibold text-gray-500">
-                GSTIN {THREADX_GSTIN} is used as the seller GSTIN. Leave a password or key blank to keep the one already saved.
+                GSTIN {THREADX_GSTIN} is used as the seller GSTIN. Sandbox and Live both go through WhiteBooks.
+                Leave a password or key blank to keep the one already saved.
               </p>
               <div className="grid gap-3 md:grid-cols-3">
                 <label>
@@ -450,7 +451,7 @@ export const ErpCompanyMasterPage: React.FC<Props> = ({ onBack, erpSession }) =>
                     value={form.ewbClientId}
                     onChange={e => update('ewbClientId', e.target.value)}
                     autoComplete="off"
-                    placeholder={form.ewbClientIdHint || 'MasterGST client id'}
+                    placeholder={form.ewbClientIdHint || 'WhiteBooks client id'}
                   />
                 </label>
                 <label>
@@ -461,7 +462,7 @@ export const ErpCompanyMasterPage: React.FC<Props> = ({ onBack, erpSession }) =>
                     value={form.ewbClientSecret}
                     onChange={e => update('ewbClientSecret', e.target.value)}
                     autoComplete="new-password"
-                    placeholder={form.ewbClientSecretHint || 'MasterGST client secret'}
+                    placeholder={form.ewbClientSecretHint || 'WhiteBooks client secret'}
                   />
                 </label>
                 <label>

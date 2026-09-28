@@ -14,6 +14,18 @@ import { decryptSecret } from '../utils/secretBox.js';
 
 export const EWB_MODES = ['mock', 'sandbox', 'production'];
 
+const WHITEBOOKS_SANDBOX = 'https://apisandbox.whitebooks.in';
+const WHITEBOOKS_PRODUCTION = 'https://api.whitebooks.in';
+
+function whitebooksOrigin(mode, explicitBaseUrl) {
+  const raw = text(explicitBaseUrl) || (mode === 'production' ? WHITEBOOKS_PRODUCTION : WHITEBOOKS_SANDBOX);
+  return raw.replace(/\/$/, '').replace(/\/eway$/i, '');
+}
+
+function whitebooksBaseUrl(mode) {
+  return mode === 'production' ? WHITEBOOKS_PRODUCTION : WHITEBOOKS_SANDBOX;
+}
+
 /** NIC document types. The master gives us the GST document class in words. */
 const NIC_DOC_TYPES = {
   'invoices for outward supply': 'INV',
@@ -148,10 +160,16 @@ export function resolveEwayConfig(profile) {
   const envMode = text(process.env.EWB_MODE).toLowerCase();
   const dbMode = text(profile?.ewbMode).toLowerCase();
   const mode = EWB_MODES.includes(dbMode) ? dbMode : (EWB_MODES.includes(envMode) ? envMode : 'mock');
+  const provider = text(profile?.ewbProvider) || text(process.env.EWB_PROVIDER) || 'whitebooks';
+  const storedBase = text(profile?.ewbBaseUrl) || text(process.env.EWB_BASE_URL);
+  const looksLikeMastergst = /mastergst/i.test(storedBase);
+  const baseUrl = provider === 'whitebooks' && (!storedBase || looksLikeMastergst)
+    ? whitebooksBaseUrl(mode)
+    : (storedBase || whitebooksBaseUrl(mode));
   return {
     mode,
-    provider: text(profile?.ewbProvider) || text(process.env.EWB_PROVIDER) || 'mastergst',
-    baseUrl: text(profile?.ewbBaseUrl) || text(process.env.EWB_BASE_URL) || 'https://api.mastergst.com',
+    provider,
+    baseUrl,
     clientId: decryptSecret(profile?.ewbClientId) || text(process.env.EWB_CLIENT_ID),
     clientSecret: decryptSecret(profile?.ewbClientSecret) || text(process.env.EWB_CLIENT_SECRET),
     username: decryptSecret(profile?.ewbUsername) || text(process.env.EWB_USERNAME),
@@ -301,14 +319,43 @@ function generateMock(payload) {
   };
 }
 
-async function postJson(url, { headers, body, timeoutMs = 30000 }) {
+function apiError(message, status, details) {
+  const error = new Error(message);
+  error.status = status;
+  error.details = details;
+  return error;
+}
+
+function parseEwayResult(data) {
+  const result = data?.results?.ewayBillNo || data?.results?.ewbNo
+    ? data.results
+    : (data?.data || data?.results || data?.result || data || {});
+  return {
+    result,
+    ewayBillNo: text(result.ewayBillNo || result.ewbNo || result.eway_bill_no)
+  };
+}
+
+function providerFailureMessage(data, status) {
+  return text(
+    data?.message
+    || data?.error_description
+    || data?.errorDescription
+    || data?.error
+    || data?.status_desc
+    || data?.statusDesc
+    || (Array.isArray(data?.errors) ? data.errors.map((item) => item.message || item.error || item).join('; ') : '')
+  ) || `E-way bill API returned ${status} without a bill number.`;
+}
+
+async function requestJson(url, { method = 'POST', headers, body, timeoutMs = 30000 }) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(url, {
-      method: 'POST',
+      method,
       headers: { 'Content-Type': 'application/json', ...headers },
-      body: JSON.stringify(body),
+      body: body == null ? undefined : JSON.stringify(body),
       signal: controller.signal
     });
     const raw = await response.text();
@@ -322,6 +369,46 @@ async function postJson(url, { headers, body, timeoutMs = 30000 }) {
   } finally {
     clearTimeout(timer);
   }
+}
+
+async function postJson(url, options) {
+  return requestJson(url, { ...options, method: 'POST' });
+}
+
+async function resolveOutboundIp() {
+  const sources = ['https://api.ipify.org?format=json', 'https://ifconfig.me/ip'];
+  for (const source of sources) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 4000);
+    try {
+      const response = await fetch(source, { signal: controller.signal });
+      const raw = (await response.text()).trim();
+      const ip = /^\d{1,3}(?:\.\d{1,3}){3}$/.test(raw) ? raw : text(JSON.parse(raw)?.ip);
+      if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(ip)) return ip;
+    } catch {
+      // Try the next lookup; generate still sends a fallback header.
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  return '127.0.0.1';
+}
+
+function whitebooksHeaders(config, ip, authtoken = '') {
+  return {
+    client_id: config.clientId,
+    client_secret: config.clientSecret,
+    gstin: config.gstin,
+    username: config.username,
+    password: config.password,
+    ip_address: ip,
+    ...(authtoken ? { authtoken } : {})
+  };
+}
+
+function extractAuthToken(data) {
+  const result = data?.data || data?.results || data || {};
+  return text(result.authtoken || result.authToken || result.access_token || data?.authtoken);
 }
 
 /**
@@ -352,19 +439,9 @@ async function generateViaMasterGst(payload, config) {
     body: payload
   });
 
-  const result = data?.results?.ewayBillNo ? data.results : (data?.data || data?.results || data || {});
-  const ewayBillNo = text(result.ewayBillNo || result.ewbNo);
+  const { result, ewayBillNo } = parseEwayResult(data);
   if (!ok || !ewayBillNo) {
-    const message = text(
-      data?.message
-      || data?.error_description
-      || result?.message
-      || (Array.isArray(data?.errors) ? data.errors.map((e) => e.message || e).join('; ') : '')
-    ) || `E-way bill API returned ${status} without a bill number.`;
-    const error = new Error(message);
-    error.status = 502;
-    error.details = data;
-    throw error;
+    throw apiError(providerFailureMessage(data, status), 502, data);
   }
 
   const generatedAt = parseNicDateTime(result.ewayBillDate) || new Date();
@@ -377,7 +454,90 @@ async function generateViaMasterGst(payload, config) {
   };
 }
 
+async function authenticateWhiteBooks(origin, config, ip) {
+  const headers = whitebooksHeaders(config, ip);
+  const emailQuery = config.email ? `?email=${encodeURIComponent(config.email)}` : '';
+  const url = `${origin}/ewaybillapi/v1.03/authenticate${emailQuery}`;
+  let { status, data } = await requestJson(url, { method: 'GET', headers });
+  let token = extractAuthToken(data);
+  if (!token && (status === 404 || status === 405)) {
+    ({ status, data } = await postJson(url, { headers, body: {} }));
+    token = extractAuthToken(data);
+  }
+  if (!token) {
+    throw apiError(
+      `WhiteBooks login failed: ${providerFailureMessage(data, status)}. `
+        + 'Check the WhiteBooks client id/secret and the NIC For-GSP username/password in Company Master.',
+      502,
+      data
+    );
+  }
+  return token;
+}
+
+function asGeneratedBill(parsed, data, payload, config) {
+  const generatedAt = parseNicDateTime(parsed.result?.ewayBillDate) || new Date();
+  return {
+    ewayBillNo: parsed.ewayBillNo,
+    ewayBillDate: generatedAt,
+    validUpto: parseNicDateTime(parsed.result?.validUpto) || validUptoFor(payload.transDistance, generatedAt),
+    alert: text(parsed.result?.alert) || (config.mode === 'sandbox'
+      ? 'Sandbox number from WhiteBooks. Nothing was filed with NIC.'
+      : ''),
+    raw: data
+  };
+}
+
+/**
+ * WhiteBooks (BVM) GSP. Sandbox is apisandbox.whitebooks.in and never files
+ * with NIC. Production is api.whitebooks.in and uses the same payload.
+ */
+async function generateViaWhiteBooks(payload, config) {
+  const missing = ['clientId', 'clientSecret', 'gstin', 'username', 'password']
+    .filter((key) => !config[key]);
+  if (missing.length) {
+    throw apiError(
+      `E-way bill API is set to ${config.mode} but these WhiteBooks credentials are missing: ${missing.join(', ')}. `
+        + 'Add them in Company Master, or switch the mode back to Test.',
+      400
+    );
+  }
+
+  const origin = whitebooksOrigin(config.mode, config.baseUrl);
+  const ip = await resolveOutboundIp();
+  const emailQuery = config.email ? `?email=${encodeURIComponent(config.email)}` : '';
+  const generateUrl = `${origin}/ewaybillapi/v1.03/ewayapi/genewaybill${emailQuery}`;
+
+  const first = await postJson(generateUrl, {
+    headers: whitebooksHeaders(config, ip),
+    body: payload
+  });
+  const firstParsed = parseEwayResult(first.data);
+  if (firstParsed.ewayBillNo) {
+    return asGeneratedBill(firstParsed, first.data, payload, config);
+  }
+
+  const firstMessage = providerFailureMessage(first.data, first.status);
+  const needsAuth = /auth|token|authenticate|credentials/i.test(firstMessage);
+  if (!needsAuth) {
+    throw apiError(firstMessage, 502, first.data);
+  }
+
+  const authtoken = await authenticateWhiteBooks(origin, config, ip);
+  const second = await postJson(generateUrl, {
+    headers: whitebooksHeaders(config, ip, authtoken),
+    body: payload
+  });
+  const secondParsed = parseEwayResult(second.data);
+  if (secondParsed.ewayBillNo) {
+    return asGeneratedBill(secondParsed, second.data, payload, config);
+  }
+
+  throw apiError(providerFailureMessage(second.data, second.status), 502, second.data);
+}
+
 export async function generateEwayBill(payload, config) {
   if (config.mode === 'mock') return generateMock(payload);
-  return generateViaMasterGst(payload, config);
+  if (text(config.provider).toLowerCase() === 'mastergst') return generateViaMasterGst(payload, config);
+  return generateViaWhiteBooks(payload, config);
 }
