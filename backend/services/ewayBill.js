@@ -335,7 +335,36 @@ function parseEwayResult(data) {
     const ewayBillNo = text(obj.ewayBillNo || obj.ewbNo || obj.eway_bill_no);
     if (ewayBillNo) return { result: obj, ewayBillNo };
   }
+  const walked = findJsonField(data, /ewaybillno|^ewbno$|eway_bill_no/i);
+  if (walked) return { result: data || {}, ewayBillNo: walked };
   return { result: data || {}, ewayBillNo: '' };
+}
+
+function findJsonField(value, keyPattern, depth = 0) {
+  if (depth > 8 || value == null) return '';
+  if (typeof value === 'string') {
+    const parsed = asJsonObject(value);
+    return parsed ? findJsonField(parsed, keyPattern, depth + 1) : '';
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findJsonField(item, keyPattern, depth + 1);
+      if (found) return found;
+    }
+    return '';
+  }
+  if (typeof value !== 'object') return '';
+  for (const [key, item] of Object.entries(value)) {
+    if (keyPattern.test(key)) {
+      const found = text(item);
+      if (found && !looksLikeDocsBlurb(found)) return found;
+    }
+  }
+  for (const item of Object.values(value)) {
+    const found = findJsonField(item, keyPattern, depth + 1);
+    if (found) return found;
+  }
+  return '';
 }
 
 function looksLikeDocsBlurb(value) {
@@ -375,20 +404,40 @@ function isWhiteBooksAuthSuccess(data) {
 }
 
 function extractAuthToken(data, responseHeaders) {
-  const headerToken = text(
-    responseHeaders?.get?.('authtoken')
-    || responseHeaders?.get?.('auth-token')
-    || responseHeaders?.get?.('AuthToken')
-  );
+  let headerToken = '';
+  responseHeaders?.forEach?.((value, key) => {
+    if (headerToken) return;
+    if (/auth.?token|access.?token|^token$/i.test(String(key)) && text(value).length >= 8) {
+      headerToken = text(value);
+    }
+  });
   if (headerToken) return headerToken;
+  return findJsonToken(data);
+}
 
-  const nestedData = asJsonObject(data?.data) || data?.data;
-  const buckets = [data, nestedData, data?.results, data?.result, data?.header, data?.headers, nestedData?.header];
-  for (const bucket of buckets) {
-    const obj = asJsonObject(bucket) || bucket;
-    if (!obj || typeof obj !== 'object') continue;
-    const token = text(obj.authtoken || obj.authToken || obj.auth_token || obj.access_token || obj.token);
-    if (token && token.length >= 8) return token;
+function findJsonToken(value, depth = 0) {
+  if (depth > 8 || value == null) return '';
+  if (typeof value === 'string') {
+    const parsed = asJsonObject(value);
+    return parsed ? findJsonToken(parsed, depth + 1) : '';
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findJsonToken(item, depth + 1);
+      if (found) return found;
+    }
+    return '';
+  }
+  if (typeof value !== 'object') return '';
+  for (const [key, item] of Object.entries(value)) {
+    if (/auth.?token|access.?token|^token$|^authtoken$/i.test(key)) {
+      const token = text(item);
+      if (token.length >= 8 && !looksLikeDocsBlurb(token)) return token;
+    }
+  }
+  for (const item of Object.values(value)) {
+    const found = findJsonToken(item, depth + 1);
+    if (found) return found;
   }
   return '';
 }
@@ -523,10 +572,9 @@ async function authenticateWhiteBooks(origin, config) {
     ({ status, data, headers: responseHeaders } = await postJson(url, { headers, body: {}, timeoutMs: 15000 }));
     token = extractAuthToken(data, responseHeaders);
   }
-  if (!token) {
-    throw apiError(whitebooksLoginError(data, status), 502, data);
-  }
-  return token;
+  if (token) return token;
+  if (isWhiteBooksAuthSuccess(data)) return '';
+  throw apiError(whitebooksLoginError(data, status), 502, data);
 }
 
 function asGeneratedBill(parsed, data, payload, config) {
