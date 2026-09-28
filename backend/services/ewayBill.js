@@ -170,9 +170,9 @@ export function resolveEwayConfig(profile) {
     mode,
     provider,
     baseUrl,
-    clientId: decryptSecret(profile?.ewbClientId) || text(process.env.EWB_CLIENT_ID),
-    clientSecret: decryptSecret(profile?.ewbClientSecret) || text(process.env.EWB_CLIENT_SECRET),
-    username: decryptSecret(profile?.ewbUsername) || text(process.env.EWB_USERNAME),
+    clientId: text(decryptSecret(profile?.ewbClientId) || process.env.EWB_CLIENT_ID),
+    clientSecret: text(decryptSecret(profile?.ewbClientSecret) || process.env.EWB_CLIENT_SECRET),
+    username: text(decryptSecret(profile?.ewbUsername) || process.env.EWB_USERNAME),
     password: decryptSecret(profile?.ewbPassword) || text(process.env.EWB_PASSWORD),
     gstin: text(profile?.ewbGstin) || text(profile?.gstNumber) || text(process.env.EWB_GSTIN),
     email: text(profile?.email) || text(process.env.EWB_ACCOUNT_EMAIL),
@@ -375,35 +375,31 @@ async function postJson(url, options) {
   return requestJson(url, { ...options, method: 'POST' });
 }
 
-async function resolveOutboundIp() {
-  const sources = ['https://api.ipify.org?format=json', 'https://ifconfig.me/ip'];
-  for (const source of sources) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 4000);
-    try {
-      const response = await fetch(source, { signal: controller.signal });
-      const raw = (await response.text()).trim();
-      const ip = /^\d{1,3}(?:\.\d{1,3}){3}$/.test(raw) ? raw : text(JSON.parse(raw)?.ip);
-      if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(ip)) return ip;
-    } catch {
-      // Try the next lookup; generate still sends a fallback header.
-    } finally {
-      clearTimeout(timer);
-    }
-  }
-  return '127.0.0.1';
-}
-
-function whitebooksHeaders(config, ip, authtoken = '') {
+function whitebooksHeaders(config, authtoken = '') {
   return {
-    client_id: config.clientId,
-    client_secret: config.clientSecret,
-    gstin: config.gstin,
-    username: config.username,
+    client_id: text(config.clientId),
+    client_secret: text(config.clientSecret),
+    gstin: text(config.gstin).toUpperCase(),
+    username: text(config.username),
     password: config.password,
-    ip_address: ip,
+    ip_address: '1.1.1.1',
+    ...(config.email ? { email: text(config.email) } : {}),
     ...(authtoken ? { authtoken } : {})
   };
+}
+
+function whitebooksLoginError(data, status) {
+  const raw = providerFailureMessage(data, status);
+  if (/not active|invalid credentials/i.test(raw)) {
+    return (
+      'WhiteBooks did not accept this sandbox login. The sales bill is fine. '
+      + 'In WhiteBooks open e-Way Bill API → Sandbox (not the general API Keys page), copy Client ID and Secret again into Company Master, '
+      + 'and re-save the full NIC For-GSP username (ThreadX_API_ plus 3 letters) and its password. '
+      + 'Company email must be the same email used on WhiteBooks. '
+      + 'If it still says the account is not active, WhiteBooks has to enable e-way sandbox on that login.'
+    );
+  }
+  return `WhiteBooks login failed: ${raw}`;
 }
 
 function extractAuthToken(data) {
@@ -454,23 +450,18 @@ async function generateViaMasterGst(payload, config) {
   };
 }
 
-async function authenticateWhiteBooks(origin, config, ip) {
-  const headers = whitebooksHeaders(config, ip);
+async function authenticateWhiteBooks(origin, config) {
+  const headers = whitebooksHeaders(config);
   const emailQuery = config.email ? `?email=${encodeURIComponent(config.email)}` : '';
   const url = `${origin}/ewaybillapi/v1.03/authenticate${emailQuery}`;
-  let { status, data } = await requestJson(url, { method: 'GET', headers });
+  let { status, data } = await requestJson(url, { method: 'GET', headers, timeoutMs: 15000 });
   let token = extractAuthToken(data);
   if (!token && (status === 404 || status === 405)) {
-    ({ status, data } = await postJson(url, { headers, body: {} }));
+    ({ status, data } = await postJson(url, { headers, body: {}, timeoutMs: 15000 }));
     token = extractAuthToken(data);
   }
   if (!token) {
-    throw apiError(
-      `WhiteBooks login failed: ${providerFailureMessage(data, status)}. `
-        + 'Check the WhiteBooks client id/secret and the NIC For-GSP username/password in Company Master.',
-      502,
-      data
-    );
+    throw apiError(whitebooksLoginError(data, status), 502, data);
   }
   return token;
 }
@@ -504,36 +495,20 @@ async function generateViaWhiteBooks(payload, config) {
   }
 
   const origin = whitebooksOrigin(config.mode, config.baseUrl);
-  const ip = await resolveOutboundIp();
   const emailQuery = config.email ? `?email=${encodeURIComponent(config.email)}` : '';
   const generateUrl = `${origin}/ewaybillapi/v1.03/ewayapi/genewaybill${emailQuery}`;
-
-  const first = await postJson(generateUrl, {
-    headers: whitebooksHeaders(config, ip),
-    body: payload
+  const authtoken = await authenticateWhiteBooks(origin, config);
+  const generated = await postJson(generateUrl, {
+    headers: whitebooksHeaders(config, authtoken),
+    body: payload,
+    timeoutMs: 20000
   });
-  const firstParsed = parseEwayResult(first.data);
-  if (firstParsed.ewayBillNo) {
-    return asGeneratedBill(firstParsed, first.data, payload, config);
+  const parsed = parseEwayResult(generated.data);
+  if (parsed.ewayBillNo) {
+    return asGeneratedBill(parsed, generated.data, payload, config);
   }
 
-  const firstMessage = providerFailureMessage(first.data, first.status);
-  const needsAuth = /auth|token|authenticate|credentials/i.test(firstMessage);
-  if (!needsAuth) {
-    throw apiError(firstMessage, 502, first.data);
-  }
-
-  const authtoken = await authenticateWhiteBooks(origin, config, ip);
-  const second = await postJson(generateUrl, {
-    headers: whitebooksHeaders(config, ip, authtoken),
-    body: payload
-  });
-  const secondParsed = parseEwayResult(second.data);
-  if (secondParsed.ewayBillNo) {
-    return asGeneratedBill(secondParsed, second.data, payload, config);
-  }
-
-  throw apiError(providerFailureMessage(second.data, second.status), 502, second.data);
+  throw apiError(providerFailureMessage(generated.data, generated.status), 502, generated.data);
 }
 
 export async function generateEwayBill(payload, config) {
