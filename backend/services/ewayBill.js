@@ -342,17 +342,35 @@ function parseEncodedJson(value) {
 
 function gspErrorText(data) {
   const err = data?.error;
-  if (err == null) return '';
-  if (typeof err === 'string' || typeof err === 'number') return text(err);
-  return text(
-    err.error_desc
-    || err.errorDesc
-    || err.errorMsg
-    || err.error_msg
-    || err.message
-    || (err.errorCodes != null ? `Error ${err.errorCodes}` : '')
-    || (err.error_cd != null ? `Error ${err.error_cd}` : '')
-  );
+  const parts = [];
+  if (err != null && (typeof err === 'string' || typeof err === 'number')) {
+    parts.push(text(err));
+  } else if (err && typeof err === 'object') {
+    const named = text(
+      err.error_desc
+      || err.errorDesc
+      || err.errorMsg
+      || err.error_msg
+      || err.message
+      || err.msg
+      || err.status_desc
+      || err.description
+      || err.detail
+    );
+    const code = err.errorCodes ?? err.error_cd ?? err.errorCode ?? err.code;
+    if (named) parts.push(named);
+    if (code != null && text(code)) parts.push(`Error ${code}`);
+    if (!parts.length) {
+      const rest = Object.entries(err)
+        .filter(([key]) => !/pass|secret|token|sek/i.test(key))
+        .map(([key, value]) => `${key}: ${typeof value === 'object' ? JSON.stringify(value) : value}`)
+        .join(', ');
+      if (rest) parts.push(rest);
+    }
+  }
+  const irp = text(data?.irp);
+  if (irp) parts.push(`IRP: ${irp}`);
+  return parts.join(' — ');
 }
 
 function parseEwayResult(data) {
@@ -504,7 +522,7 @@ async function postJson(url, options) {
   return requestJson(url, { ...options, method: 'POST' });
 }
 
-function whitebooksHeaders(config, authtoken = '') {
+function whitebooksHeaders(config, authtoken = '', irp = '') {
   return {
     client_id: text(config.clientId),
     client_secret: text(config.clientSecret),
@@ -512,17 +530,19 @@ function whitebooksHeaders(config, authtoken = '') {
     username: text(config.username),
     password: config.password,
     ip_address: '1.1.1.1',
+    ...(irp ? { irp } : {}),
     ...(config.email ? { email: text(config.email) } : {}),
     ...(authtoken ? { authtoken } : {})
   };
 }
 
-/** WhiteBooks playground sends email, username, and password as query params. */
-function whitebooksQuery(config) {
+/** WhiteBooks playground sends email, username, password, and irp (NIC1/NIC2) as query params. */
+function whitebooksQuery(config, irp = '') {
   const params = new URLSearchParams();
   if (config.email) params.set('email', text(config.email));
   if (config.username) params.set('username', text(config.username));
   if (config.password) params.set('password', config.password);
+  if (irp) params.set('irp', irp);
   const qs = params.toString();
   return qs ? `?${qs}` : '';
 }
@@ -594,9 +614,9 @@ async function generateViaMasterGst(payload, config) {
   };
 }
 
-async function authenticateWhiteBooks(origin, config) {
-  const headers = whitebooksHeaders(config);
-  const url = `${origin}/ewaybillapi/v1.03/authenticate${whitebooksQuery(config)}`;
+async function authenticateWhiteBooks(origin, config, irp = '') {
+  const headers = whitebooksHeaders(config, '', irp);
+  const url = `${origin}/ewaybillapi/v1.03/authenticate${whitebooksQuery(config, irp)}`;
   let { status, data, headers: responseHeaders } = await requestJson(url, {
     method: 'GET',
     headers,
@@ -641,18 +661,16 @@ async function generateViaWhiteBooks(payload, config) {
   }
 
   const origin = whitebooksOrigin(config.mode, config.baseUrl);
-  const generateUrl = `${origin}/ewaybillapi/v1.03/ewayapi/genewaybill${whitebooksQuery(config)}`;
-  const authtoken = await authenticateWhiteBooks(origin, config);
-  const bodies = [
-    payload,
-    { action: 'GENEWAYBILL', ...payload },
-    { action: 'GENEWAYBILL', data: payload }
-  ];
+  const irpHint = text(config.irp).toUpperCase();
+  const irps = irpHint && /^NIC[12]$/.test(irpHint) ? [irpHint] : ['NIC1', 'NIC2'];
   let last = { status: 0, data: null };
-  for (const body of bodies) {
+
+  for (const irp of irps) {
+    const authtoken = await authenticateWhiteBooks(origin, config, irp);
+    const generateUrl = `${origin}/ewaybillapi/v1.03/ewayapi/genewaybill${whitebooksQuery(config, irp)}`;
     const generated = await postJson(generateUrl, {
-      headers: whitebooksHeaders(config, authtoken),
-      body,
+      headers: whitebooksHeaders(config, authtoken, irp),
+      body: payload,
       timeoutMs: 20000
     });
     last = generated;
@@ -660,8 +678,20 @@ async function generateViaWhiteBooks(payload, config) {
     if (parsed.ewayBillNo) {
       return asGeneratedBill(parsed, generated.data, payload, config);
     }
-    const failed = text(generated.data?.status_cd ?? generated.data?.statusCd ?? generated.data?.status);
-    if (failed && failed !== '1') break;
+
+    const wrapped = await postJson(generateUrl, {
+      headers: whitebooksHeaders(config, authtoken, irp),
+      body: { action: 'GENEWAYBILL', ...payload },
+      timeoutMs: 20000
+    });
+    last = wrapped;
+    const wrappedParsed = parseEwayResult(wrapped.data);
+    if (wrappedParsed.ewayBillNo) {
+      return asGeneratedBill(wrappedParsed, wrapped.data, payload, config);
+    }
+
+    const suggested = text(wrapped.data?.irp || generated.data?.irp).toUpperCase();
+    if (suggested && /^NIC[12]$/.test(suggested) && suggested !== irp) continue;
   }
 
   throw apiError(providerFailureMessage(last.data, last.status), 502, last.data);
