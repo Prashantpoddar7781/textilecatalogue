@@ -500,7 +500,7 @@ function extractAuthToken(data, responseHeaders) {
 function findJsonToken(value, depth = 0) {
   if (depth > 8 || value == null) return '';
   if (typeof value === 'string') {
-    const parsed = asJsonObject(value);
+    const parsed = parseEncodedJson(value) || asJsonObject(value);
     return parsed ? findJsonToken(parsed, depth + 1) : '';
   }
   if (Array.isArray(value)) {
@@ -551,26 +551,27 @@ async function postJson(url, options) {
   return requestJson(url, { ...options, method: 'POST' });
 }
 
-function whitebooksHeaders(config, authtoken = '', irp = '') {
+function whitebooksHeaders(config, authtoken = '', irp = '', { includeLogin = false } = {}) {
   return {
     client_id: text(config.clientId),
     client_secret: text(config.clientSecret),
     gstin: text(config.gstin).toUpperCase(),
-    username: text(config.username),
-    password: config.password,
     ip_address: '1.1.1.1',
     ...(irp ? { irp } : {}),
+    ...(includeLogin ? { username: text(config.username), password: config.password } : {}),
     ...(config.email ? { email: text(config.email) } : {}),
     ...(authtoken ? { authtoken } : {})
   };
 }
 
-/** WhiteBooks playground sends email, username, password, and irp (NIC1/NIC2) as query params. */
-function whitebooksQuery(config, irp = '') {
+/** Authenticate sends email, username, password, and irp. Generate sends email and irp only. */
+function whitebooksQuery(config, irp = '', { includeLogin = false } = {}) {
   const params = new URLSearchParams();
   if (config.email) params.set('email', text(config.email));
-  if (config.username) params.set('username', text(config.username));
-  if (config.password) params.set('password', config.password);
+  if (includeLogin) {
+    if (config.username) params.set('username', text(config.username));
+    if (config.password) params.set('password', config.password);
+  }
   if (irp) params.set('irp', irp);
   const qs = params.toString();
   return qs ? `?${qs}` : '';
@@ -644,8 +645,8 @@ async function generateViaMasterGst(payload, config) {
 }
 
 async function authenticateWhiteBooks(origin, config, irp = '') {
-  const headers = whitebooksHeaders(config, '', irp);
-  const url = `${origin}/ewaybillapi/v1.03/authenticate${whitebooksQuery(config, irp)}`;
+  const headers = whitebooksHeaders(config, '', irp, { includeLogin: true });
+  const url = `${origin}/ewaybillapi/v1.03/authenticate${whitebooksQuery(config, irp, { includeLogin: true })}`;
   let { status, data, headers: responseHeaders } = await requestJson(url, {
     method: 'GET',
     headers,
