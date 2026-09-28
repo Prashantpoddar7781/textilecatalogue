@@ -13,6 +13,15 @@ interface Props {
   erpSession?: ErpSession | null;
 }
 
+const THREADX_GSTIN = '24DZPPP5817M1ZL';
+const THREADX_PAN = THREADX_GSTIN.slice(2, 12);
+const THREADX_STATE = 'Gujarat';
+const EWB_MODES = [
+  { value: 'mock', label: 'Test (not filed)' },
+  { value: 'sandbox', label: 'Sandbox' },
+  { value: 'production', label: 'Live (filed with NIC)' }
+];
+
 const COMPANY_TYPES = ['PROPRIETORS', 'PARTNERSHIP', 'PRIVATE LIMITED', 'PUBLIC LIMITED', 'LLP', 'HUF', 'OTHER'];
 const MSME_TYPES = ['', 'Micro', 'Small', 'Medium'];
 
@@ -42,6 +51,15 @@ type FormState = {
   gstNumber: string;
   state: string;
   tradeName: string;
+  ewbMode: string;
+  ewbUsername: string;
+  ewbClientId: string;
+  ewbClientSecret: string;
+  ewbPassword: string;
+  ewbDefaultDistance: string;
+  ewbClientIdHint: string;
+  ewbClientSecretHint: string;
+  ewbPasswordHint: string;
 };
 
 const emptyForm = (): FormState => ({
@@ -67,12 +85,22 @@ const emptyForm = (): FormState => ({
   udyamNumber: '',
   tdsAccountNumber: '',
   msmeType: '',
-  gstNumber: '',
-  state: '',
-  tradeName: ''
+  gstNumber: THREADX_GSTIN,
+  state: THREADX_STATE,
+  tradeName: '',
+  ewbMode: 'mock',
+  ewbUsername: '',
+  ewbClientId: '',
+  ewbClientSecret: '',
+  ewbPassword: '',
+  ewbDefaultDistance: '',
+  ewbClientIdHint: '',
+  ewbClientSecretHint: '',
+  ewbPasswordHint: ''
 });
 
 function profileToForm(profile: BusinessProfile): FormState {
+  const gstNumber = profile.gstNumber || THREADX_GSTIN;
   return {
     companyCode: profile.companyCode || '',
     legalName: profile.legalName || '',
@@ -92,13 +120,22 @@ function profileToForm(profile: BusinessProfile): FormState {
     bankIfsc: profile.bankIfsc || '',
     businessDescription: profile.businessDescription || '',
     proprietor: profile.proprietor || '',
-    panNumber: profile.panNumber || '',
+    panNumber: profile.panNumber || gstNumber.slice(2, 12),
     udyamNumber: profile.udyamNumber || '',
     tdsAccountNumber: profile.tdsAccountNumber || '',
     msmeType: profile.msmeType || '',
-    gstNumber: profile.gstNumber || '',
-    state: profile.state || '',
-    tradeName: profile.tradeName || ''
+    gstNumber,
+    state: profile.state || (gstNumber.startsWith('24') ? THREADX_STATE : ''),
+    tradeName: profile.tradeName || '',
+    ewbMode: profile.ewbMode || 'mock',
+    ewbUsername: profile.ewbUsername || '',
+    ewbClientId: '',
+    ewbClientSecret: '',
+    ewbPassword: '',
+    ewbDefaultDistance: profile.ewbDefaultDistance ? String(profile.ewbDefaultDistance) : '',
+    ewbClientIdHint: profile.ewbClientIdHint || '',
+    ewbClientSecretHint: profile.ewbClientSecretHint || '',
+    ewbPasswordHint: profile.ewbPasswordHint || ''
   };
 }
 
@@ -152,7 +189,7 @@ export const ErpCompanyMasterPage: React.FC<Props> = ({ onBack, erpSession }) =>
         setSaving(false);
         return;
       }
-      await invoicesApi.updateProfile({
+      const { profile } = await invoicesApi.updateProfile({
         companyCode: form.companyCode.trim() || null,
         legalName: form.legalName.trim() || null,
         tradeName: form.tradeName.trim() || form.legalName.trim() || null,
@@ -177,9 +214,15 @@ export const ErpCompanyMasterPage: React.FC<Props> = ({ onBack, erpSession }) =>
         udyamNumber: form.udyamNumber.trim() || null,
         tdsAccountNumber: form.tdsAccountNumber.trim() || null,
         msmeType: form.msmeType.trim() || null,
-        gstNumber: gstNumber || null
+        gstNumber: gstNumber || null,
+        ewbMode: form.ewbMode,
+        ewbUsername: form.ewbUsername.trim() || null,
+        ewbClientId: form.ewbClientId.trim() || null,
+        ewbClientSecret: form.ewbClientSecret.trim() || null,
+        ewbPassword: form.ewbPassword || null,
+        ewbDefaultDistance: form.ewbDefaultDistance.trim() ? Number(form.ewbDefaultDistance) : null
       });
-      setForm(prev => ({ ...prev, gstNumber, panNumber }));
+      setForm(profileToForm(profile));
       setSaved(true);
     } catch (err: any) {
       setError(err.message || 'Could not save company details.');
@@ -367,6 +410,68 @@ export const ErpCompanyMasterPage: React.FC<Props> = ({ onBack, erpSession }) =>
                       Wrong GST number
                     </span>
                   )}
+                </label>
+              </div>
+            </section>
+
+            <section className="rounded-2xl border border-indigo-100 bg-white p-4 shadow-sm">
+              <h2 className="mb-1 text-xs font-black uppercase tracking-wide text-gray-900">E-way bill</h2>
+              <p className="mb-3 text-xs font-semibold text-gray-500">
+                GSTIN {THREADX_GSTIN} is used as the seller GSTIN. Leave a password or key blank to keep the one already saved.
+              </p>
+              <div className="grid gap-3 md:grid-cols-3">
+                <label>
+                  <span className={labelClass}>Mode</span>
+                  <select className={fieldClass} value={form.ewbMode} onChange={e => update('ewbMode', e.target.value)}>
+                    {EWB_MODES.map(mode => (
+                      <option key={mode.value} value={mode.value}>{mode.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span className={labelClass}>API username</span>
+                  <input className={fieldClass} value={form.ewbUsername} onChange={e => update('ewbUsername', e.target.value)} autoComplete="off" />
+                </label>
+                <label>
+                  <span className={labelClass}>API password</span>
+                  <input
+                    className={fieldClass}
+                    type="password"
+                    value={form.ewbPassword}
+                    onChange={e => update('ewbPassword', e.target.value)}
+                    autoComplete="new-password"
+                    placeholder={form.ewbPasswordHint || 'NIC API password'}
+                  />
+                </label>
+                <label>
+                  <span className={labelClass}>GSP client id</span>
+                  <input
+                    className={fieldClass}
+                    value={form.ewbClientId}
+                    onChange={e => update('ewbClientId', e.target.value)}
+                    autoComplete="off"
+                    placeholder={form.ewbClientIdHint || 'MasterGST client id'}
+                  />
+                </label>
+                <label>
+                  <span className={labelClass}>GSP client secret</span>
+                  <input
+                    className={fieldClass}
+                    type="password"
+                    value={form.ewbClientSecret}
+                    onChange={e => update('ewbClientSecret', e.target.value)}
+                    autoComplete="new-password"
+                    placeholder={form.ewbClientSecretHint || 'MasterGST client secret'}
+                  />
+                </label>
+                <label>
+                  <span className={labelClass}>Default distance (km)</span>
+                  <input
+                    className={fieldClass}
+                    inputMode="numeric"
+                    value={form.ewbDefaultDistance}
+                    onChange={e => update('ewbDefaultDistance', e.target.value.replace(/[^\d]/g, ''))}
+                  />
                 </label>
               </div>
             </section>

@@ -4,6 +4,7 @@ import { body, validationResult } from 'express-validator';
 import { authenticateToken } from '../middleware/auth.js';
 import { requireActiveSubscription } from '../middleware/subscription.js';
 import { publicImageRef } from '../utils/designImages.js';
+import { encryptSecret, secretHint, decryptSecret } from '../utils/secretBox.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -74,7 +75,35 @@ const invoiceInclude = {
   customer: true
 };
 
-function getProfilePayload(body, user) {
+const EWB_MODES = new Set(['mock', 'sandbox', 'production']);
+
+function keptOrEncrypted(incoming, existingStored) {
+  const next = optionalString(incoming);
+  if (!next) return existingStored || null;
+  return encryptSecret(next);
+}
+
+function presentBusinessProfile(profile) {
+  if (!profile) return profile;
+  const {
+    ewbClientId,
+    ewbClientSecret,
+    ewbUsername,
+    ewbPassword,
+    ...rest
+  } = profile;
+  return {
+    ...rest,
+    ewbUsername: decryptSecret(ewbUsername) || '',
+    ewbClientIdHint: secretHint(ewbClientId),
+    ewbClientSecretHint: secretHint(ewbClientSecret),
+    ewbPasswordHint: secretHint(ewbPassword)
+  };
+}
+
+function getProfilePayload(body, user, existing) {
+  const gstNumber = optionalString(body.gstNumber);
+  const mode = String(body.ewbMode || existing?.ewbMode || 'mock').trim().toLowerCase();
   return {
     legalName: optionalString(body.legalName) || optionalString(user.firmName) || optionalString(user.name),
     tradeName: optionalString(body.tradeName) || optionalString(user.firmName),
@@ -104,7 +133,14 @@ function getProfilePayload(body, user) {
     invoicePrefix: optionalString(body.invoicePrefix) || 'TX',
     defaultHsnCode: optionalString(body.defaultHsnCode),
     defaultGstRate: optionalNumber(body.defaultGstRate) ?? 5,
-    terms: optionalString(body.terms)
+    terms: optionalString(body.terms),
+    ewbMode: EWB_MODES.has(mode) ? mode : 'mock',
+    ewbGstin: gstNumber,
+    ewbUsername: keptOrEncrypted(body.ewbUsername, existing?.ewbUsername),
+    ewbClientId: keptOrEncrypted(body.ewbClientId, existing?.ewbClientId),
+    ewbClientSecret: keptOrEncrypted(body.ewbClientSecret, existing?.ewbClientSecret),
+    ewbPassword: keptOrEncrypted(body.ewbPassword, existing?.ewbPassword),
+    ewbDefaultDistance: optionalNumber(body.ewbDefaultDistance)
   };
 }
 
@@ -301,7 +337,7 @@ function buildInvoicePayload({ order, profile, invoiceDate, hsnCode, gstRate, pl
 router.get('/profile', authenticateToken, requireActiveSubscription, async (req, res, next) => {
   try {
     const { profile } = await getOrCreateBusinessProfile(req.user.userId);
-    res.json({ profile });
+    res.json({ profile: presentBusinessProfile(profile) });
   } catch (error) {
     next(error);
   }
@@ -317,12 +353,12 @@ router.put('/profile', authenticateToken, requireActiveSubscription, [
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { user } = await getOrCreateBusinessProfile(req.user.userId);
+    const { user, profile: existing } = await getOrCreateBusinessProfile(req.user.userId);
     const taxError = getCompanyTaxSaveError(req.body.gstNumber, req.body.panNumber);
     if (taxError) {
       return res.status(400).json({ error: taxError });
     }
-    const payload = getProfilePayload(req.body, user);
+    const payload = getProfilePayload(req.body, user, existing);
     const profile = await prisma.businessProfile.upsert({
       where: { userId: req.user.userId },
       update: payload,
@@ -332,7 +368,7 @@ router.put('/profile', authenticateToken, requireActiveSubscription, [
       }
     });
 
-    res.json({ profile });
+    res.json({ profile: presentBusinessProfile(profile) });
   } catch (error) {
     next(error);
   }

@@ -375,6 +375,15 @@ export interface BusinessProfile {
   defaultHsnCode?: string | null;
   defaultGstRate: number;
   terms?: string | null;
+  ewbMode?: string | null;
+  ewbUsername?: string | null;
+  ewbClientId?: string | null;
+  ewbClientSecret?: string | null;
+  ewbPassword?: string | null;
+  ewbDefaultDistance?: number | null;
+  ewbClientIdHint?: string | null;
+  ewbClientSecretHint?: string | null;
+  ewbPasswordHint?: string | null;
   createdAt: string;
   updatedAt: string;
 }
