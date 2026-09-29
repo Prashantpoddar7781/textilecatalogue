@@ -417,7 +417,7 @@ export const ErpCompanyMasterPage: React.FC<Props> = ({ onBack, erpSession }) =>
             <section className="rounded-2xl border border-indigo-100 bg-white p-4 shadow-sm">
               <h2 className="mb-1 text-xs font-black uppercase tracking-wide text-gray-900">E-way bill</h2>
               <p className="mb-3 text-xs font-semibold text-gray-500">
-                GSTIN {THREADX_GSTIN} is used as the seller GSTIN. Sandbox and Live both go through WhiteBooks.
+                Company GSTIN {THREADX_GSTIN} stays on invoices. Sandbox e-way calls use WhiteBooks GSTIN 29AAGCB1286Q000. Live uses the company GSTIN. Both go through WhiteBooks.
                 Paste Client ID and Secret from WhiteBooks → e-Way Bill API → Sandbox, not the general API Keys page.
                 For Sandbox, API username is the playground user (BVMGSP), not the live NIC For-GSP name.
                 Leave a password or key blank to keep the one already saved.

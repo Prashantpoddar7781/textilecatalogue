@@ -16,6 +16,19 @@ export const EWB_MODES = ['mock', 'sandbox', 'production'];
 
 const WHITEBOOKS_SANDBOX = 'https://apisandbox.whitebooks.in';
 const WHITEBOOKS_PRODUCTION = 'https://api.whitebooks.in';
+/** WhiteBooks sandbox user BVMGSP is linked to this GSTIN, not the company GSTIN. */
+const SANDBOX_EWAY_GSTIN = '29AAGCB1286Q000';
+
+function sandboxSellerPayload(payload) {
+  return {
+    ...payload,
+    fromGstin: SANDBOX_EWAY_GSTIN,
+    fromStateCode: 29,
+    actFromStateCode: 29,
+    fromPincode: 560001,
+    fromPlace: 'BENGALURU'
+  };
+}
 
 function whitebooksOrigin(mode, explicitBaseUrl) {
   const raw = text(explicitBaseUrl) || (mode === 'production' ? WHITEBOOKS_PRODUCTION : WHITEBOOKS_SANDBOX);
@@ -730,16 +743,18 @@ async function generateViaWhiteBooks(payload, config) {
   }
 
   const origin = whitebooksOrigin(config.mode, config.baseUrl);
+  const apiConfig = config.mode === 'sandbox' ? { ...config, gstin: SANDBOX_EWAY_GSTIN } : config;
+  const requestPayload = config.mode === 'sandbox' ? sandboxSellerPayload(payload) : payload;
   const irpHint = text(config.irp).toUpperCase();
   const irps = irpHint && /^NIC[12]$/.test(irpHint) ? [irpHint] : ['NIC1', 'NIC2'];
   let last = { status: 0, data: null };
 
   for (const irp of irps) {
-    const authtoken = await authenticateWhiteBooks(origin, config, irp, '0.0.0.0');
-    const generateUrl = `${origin}/ewaybillapi/v1.03/ewayapi/genewaybill${whitebooksQuery(config, irp)}`;
+    const authtoken = await authenticateWhiteBooks(origin, apiConfig, irp, '0.0.0.0');
+    const generateUrl = `${origin}/ewaybillapi/v1.03/ewayapi/genewaybill${whitebooksQuery(apiConfig, irp)}`;
     const generated = await postJson(generateUrl, {
-      headers: whitebooksHeaders(config, authtoken, irp),
-      body: compactEwayBody(payload),
+      headers: whitebooksHeaders(apiConfig, authtoken, irp),
+      body: compactEwayBody(requestPayload),
       timeoutMs: 20000
     });
     last = generated;
@@ -749,8 +764,8 @@ async function generateViaWhiteBooks(payload, config) {
     }
 
     const wrapped = await postJson(generateUrl, {
-      headers: whitebooksHeaders(config, authtoken, irp),
-      body: { action: 'GENEWAYBILL', ...compactEwayBody(payload) },
+      headers: whitebooksHeaders(apiConfig, authtoken, irp),
+      body: { action: 'GENEWAYBILL', ...compactEwayBody(requestPayload) },
       timeoutMs: 20000
     });
     last = wrapped;
