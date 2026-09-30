@@ -848,6 +848,9 @@ export const ewayBillsApi = {
       docDate: string | null;
       partyName: string;
       totals: { taxableAmount: number; cgstAmount: number; sgstAmount: number; igstAmount: number; netAmount: number };
+      distanceKm?: number;
+      fromPincode?: string;
+      toPincode?: string;
       prefill: Required<EwayBillTransportInput>;
       blockers: string[];
       errors: string[];

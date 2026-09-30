@@ -6,6 +6,7 @@ import { roundMoney } from '../utils/orderBilling.js';
 import { formatSeriesBillNumber, getGstDocumentType } from '../constants/erpTransactionPostingRules.js';
 import {
   buildEwayBillPayload,
+  finalizeEwayPayload,
   generateEwayBill,
   resolveEwayConfig,
   validateEwayBillPayload
@@ -127,8 +128,12 @@ router.get('/sales/:billId', authenticateToken, requireActiveSubscription, async
 
     const config = resolveEwayConfig(loaded.profile);
     const transport = resolveTransport(loaded.bill, req.query, config);
-    const payload = buildEwayBillPayload({ ...loaded, transport });
-    const { errors, warnings } = validateEwayBillPayload(payload);
+    const built = buildEwayBillPayload({ ...loaded, transport });
+    const prepared = await finalizeEwayPayload(built, config);
+    const { errors, warnings } = validateEwayBillPayload(prepared.payload);
+    if (text(transport.vehicleNo) && !prepared.payload.vehicleNo) {
+      errors.unshift('Vehicle number is not a valid registration. Use a state code, for example GJ05JX2427.');
+    }
 
     res.json({
       mode: config.mode,
@@ -137,7 +142,10 @@ router.get('/sales/:billId', authenticateToken, requireActiveSubscription, async
       docDate: loaded.doc.docDate,
       partyName: loaded.party.tradeName,
       totals: loaded.doc.totals,
-      prefill: transport,
+      distanceKm: prepared.distanceKm,
+      fromPincode: prepared.fromPincode,
+      toPincode: prepared.toPincode,
+      prefill: { ...transport, distance: prepared.distanceKm || '' },
       // Distance / vehicle are user inputs, so do not fail the dialog on them.
       blockers: errors.filter(message => !/distance|vehicle number, or a|transporter id must be/i.test(message)),
       errors,
@@ -163,13 +171,17 @@ router.post('/sales/:billId', authenticateToken, requireActiveSubscription, asyn
 
     const config = resolveEwayConfig(loaded.profile);
     const transport = resolveTransport(loaded.bill, req.body, config);
-    const payload = buildEwayBillPayload({ ...loaded, transport });
-    const { errors, warnings } = validateEwayBillPayload(payload);
+    const built = buildEwayBillPayload({ ...loaded, transport });
+    const prepared = await finalizeEwayPayload(built, config);
+    const { errors, warnings } = validateEwayBillPayload(prepared.payload);
+    if (text(transport.vehicleNo) && !prepared.payload.vehicleNo) {
+      errors.unshift('Vehicle number is not a valid registration. Use a state code, for example GJ05JX2427.');
+    }
     if (errors.length) {
       return res.status(400).json({ error: errors[0], errors, warnings });
     }
 
-    const result = await generateEwayBill(payload, config);
+    const result = await generateEwayBill(prepared.payload, { ...config, finalized: true });
     const saved = await prisma.order.update({
       where: { id: loaded.bill.id },
       data: {
@@ -178,7 +190,7 @@ router.post('/sales/:billId', authenticateToken, requireActiveSubscription, asyn
         ewayBillValidUpto: result.validUpto,
         ewayBillStatus: 'generated',
         ewayBillMode: config.mode,
-        ewayBillDistance: Math.round(Number(transport.distance) || 0),
+        ewayBillDistance: prepared.distanceKm || Math.round(Number(prepared.payload.transDistance) || 0),
         ewayBillTransporterId: transport.transporterId || null,
         ewayBillRaw: result.raw ?? undefined,
         vehicleNo: transport.vehicleNo || loaded.bill.vehicleNo

@@ -34,8 +34,7 @@ function sandboxSellerPayload(payload) {
     fromPincode: 560001,
     fromStateCode: 29,
     actFromStateCode: 29,
-    toTrdName: toName.length >= 5 ? toName : `${toName} CUSTOMER`.trim() || 'CONSIGNEE',
-    transDistance: '0'
+    toTrdName: toName.length >= 5 ? toName : `${toName} CUSTOMER`.trim() || 'CONSIGNEE'
   };
   if (interState && (cgst || sgst)) {
     next.cgstValue = 0;
@@ -102,6 +101,32 @@ export const TRANSPORT_MODES = [
 const round2 = (value) => Math.round((Number(value) || 0) * 100) / 100;
 const text = (value) => String(value == null ? '' : value).trim();
 const digits = (value) => text(value).replace(/\D/g, '');
+
+/** NIC rejects a 4-digit heading for this seller. 5407 files as 540752. */
+function ewayHsn(code) {
+  const value = digits(code);
+  if (value.startsWith('5407')) return value.length >= 6 ? value.slice(0, 8) : '540752';
+  if (value.length >= 6) return value.slice(0, 8);
+  if (value.length === 4 || value.length === 5) return `${value}00`.slice(0, 6);
+  return '540752';
+}
+
+const RTO_STATES = new Set([
+  'AN', 'AP', 'AR', 'AS', 'BR', 'CG', 'CH', 'DD', 'DL', 'DN', 'GA', 'GJ', 'HP', 'HR',
+  'JH', 'JK', 'KA', 'KL', 'LA', 'LD', 'MH', 'ML', 'MN', 'MP', 'MZ', 'NL', 'OD', 'OR',
+  'PB', 'PY', 'RJ', 'SK', 'TN', 'TR', 'TS', 'UK', 'UA', 'UP', 'WB'
+]);
+
+/** NIC vehicle format. GH is not a state code; GJ is. */
+function nicVehicleNo(value) {
+  const raw = text(value).toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (!raw) return '';
+  if (/^[0-9]{2}BH[0-9]{4}[A-Z]{1,2}$/.test(raw)) return raw;
+  const match = raw.match(/^([A-Z]{2})(\d{1,2})([A-Z]{1,3})(\d{3,4})$/);
+  if (!match || !RTO_STATES.has(match[1])) return '';
+  const vehicle = `${match[1]}${match[2].padStart(2, '0')}${match[3]}${match[4].padStart(4, '0')}`;
+  return /^[A-Z]{2}\d{2}[A-Z]{1,3}\d{4}$/.test(vehicle) ? vehicle : '';
+}
 
 /** NIC wants dd/mm/yyyy. */
 export function nicDate(value) {
@@ -225,7 +250,7 @@ export function buildEwayBillPayload({ doc, company, party, transport }) {
   const itemList = (doc.lines || []).map((line) => ({
     productName: text(line.itemName).slice(0, 100) || 'GOODS',
     productDesc: text(line.description || line.itemName).slice(0, 100) || 'TEXTILE GOODS',
-    hsnCode: digits(line.hsnCode) || digits(doc.hsnCode),
+    hsnCode: ewayHsn(digits(line.hsnCode) || digits(doc.hsnCode)),
     quantity: round2(line.quantity),
     qtyUnit: nicUnit(line.unit),
     cgstRate: round2(line.cgstRate),
@@ -273,7 +298,7 @@ export function buildEwayBillPayload({ doc, company, party, transport }) {
     transDocDate: transport.transDocDate ? nicDate(transport.transDocDate) : '',
     transMode: text(transport.transMode) || '1',
     transDistance: String(Math.max(0, Math.round(Number(transport.distance) || 0))),
-    vehicleNo: text(transport.vehicleNo).toUpperCase().replace(/[^A-Z0-9]/g, ''),
+    vehicleNo: nicVehicleNo(transport.vehicleNo),
     vehicleType: text(transport.vehicleType) || 'R',
     itemList
   };
@@ -316,14 +341,13 @@ export function validateEwayBillPayload(payload) {
   });
 
   const distance = Number(payload.transDistance) || 0;
-  if (distance <= 0) errors.push('Enter the approximate distance in km (NIC needs it to set the validity).');
   if (distance > 4000) errors.push('Distance cannot be more than 4000 km.');
 
   if (!payload.vehicleNo && !payload.transporterId) {
     errors.push('Enter a vehicle number, or a 15-character transporter GSTIN/ID so the transporter can fill Part-B.');
   }
-  if (payload.vehicleNo && !/^[A-Z]{2}[A-Z0-9]{4,13}$/.test(payload.vehicleNo)) {
-    warnings.push(`Vehicle number ${payload.vehicleNo} does not look like a standard registration number.`);
+  if (payload.vehicleNo && !/^(?:[A-Z]{2}\d{2}[A-Z]{1,3}\d{4}|\d{2}BH\d{4}[A-Z]{1,2})$/.test(payload.vehicleNo)) {
+    errors.push(`Vehicle number ${payload.vehicleNo} is not a valid registration. Example: GJ05JX2427.`);
   }
   if (payload.transporterId && payload.transporterId.length !== 15) {
     errors.push('Transporter ID must be exactly 15 characters (their GSTIN or NIC transporter ID).');
@@ -376,24 +400,15 @@ function parseEncodedJson(value) {
 
 /** NIC e-way API 1.03 codes. WhiteBooks often repeats the code as errorMessage. */
 const NIC_ERROR_TEXT = {
-  207: 'Invalid From GSTIN',
-  208: 'Invalid From trade name',
-  211: 'Invalid From place',
-  212: 'Invalid From PIN code',
-  215: 'Invalid To GSTIN',
-  216: 'Invalid To trade name',
-  217: 'Invalid To address',
-  219: 'Invalid To place',
-  220: 'Invalid To PIN code',
-  224: 'Invalid CGST amount',
-  225: 'Invalid SGST amount',
-  226: 'Invalid IGST amount',
-  237: 'Invalid vehicle number',
+  216: 'Invalid HSN code',
+  221: 'Invalid approximate distance',
+  225: 'Invalid vehicle number format',
   238: 'Invalid auth token',
-  239: 'Invalid HSN code',
-  283: 'Invalid From place',
-  302: 'Header GSTIN must match From GSTIN on an outward bill',
-  702: 'Distance does not match the From and To PIN codes'
+  282: 'HSN must be at least 4 digits',
+  283: 'HSN must be at least 6 digits for this GSTIN',
+  702: 'Distance does not match the two PIN codes',
+  709: 'PIN-to-PIN distance is not available',
+  721: 'PIN-to-PIN distance is not available. A distance is required'
 };
 
 function nicErrorLabel(code, message) {
@@ -674,6 +689,63 @@ function whitebooksQuery(config, irp = '', { includeLogin = false } = {}) {
   return qs ? `?${qs}` : '';
 }
 
+function pin6(value) {
+  const pin = digits(value).slice(0, 6);
+  return pin.length === 6 ? pin : '';
+}
+
+/** WhiteBooks returns the NIC kilometres between two PIN codes. 0 means NIC should calculate it. */
+async function lookupPinDistance(origin, config, fromPin, toPin) {
+  const from = pin6(fromPin);
+  const to = pin6(toPin);
+  if (!from || !to) return 0;
+  if (from === to) return 10;
+  try {
+    const params = new URLSearchParams({
+      email: text(config.email),
+      fromPincode: from,
+      toPincode: to
+    });
+    const response = await requestJson(`${origin}/ewaybillapi/v1.03/distance?${params}`, {
+      method: 'GET',
+      headers: whitebooksHeaders(config, '', '', { includeLogin: true }),
+      timeoutMs: 12000
+    });
+    const raw = response.data?.data ?? response.data?.distance;
+    const value = Number(raw && typeof raw === 'object' ? (raw.distance ?? raw.actualDist) : raw);
+    if (Number.isFinite(value) && value > 0 && value <= 4000) return Math.round(value);
+  } catch {
+    // Generate still sends 0 so NIC fills the PIN-to-PIN distance.
+  }
+  return 0;
+}
+
+/**
+ * Sandbox seller, 6-digit HSN, a real vehicle number, and kilometres from the two PINs.
+ * The dialog does not ask the user for distance.
+ */
+export async function finalizeEwayPayload(payload, config) {
+  const next = config.mode === 'sandbox' ? sandboxSellerPayload(payload) : {
+    ...payload,
+    itemList: payload.itemList
+  };
+  next.itemList = (next.itemList || []).map((item) => ({ ...item, hsnCode: ewayHsn(item.hsnCode) }));
+  next.vehicleNo = nicVehicleNo(next.vehicleNo);
+  let distanceKm = Number(next.transDistance) || 0;
+  if (config.mode !== 'mock') {
+    const apiConfig = config.mode === 'sandbox' ? { ...config, gstin: SANDBOX_EWAY_GSTIN } : config;
+    const origin = whitebooksOrigin(config.mode, config.baseUrl);
+    distanceKm = await lookupPinDistance(origin, apiConfig, next.fromPincode, next.toPincode);
+    next.transDistance = distanceKm > 0 ? String(distanceKm) : '0';
+  }
+  return {
+    payload: next,
+    distanceKm,
+    fromPincode: pin6(next.fromPincode),
+    toPincode: pin6(next.toPincode)
+  };
+}
+
 function whitebooksLoginError(data, status) {
   if (isWhiteBooksAuthSuccess(data)) {
     return 'WhiteBooks accepted the sandbox login but did not send a readable auth token. Try Generate again after the latest deploy.';
@@ -788,7 +860,9 @@ async function generateViaWhiteBooks(payload, config) {
 
   const origin = whitebooksOrigin(config.mode, config.baseUrl);
   const apiConfig = config.mode === 'sandbox' ? { ...config, gstin: SANDBOX_EWAY_GSTIN } : config;
-  const requestPayload = config.mode === 'sandbox' ? sandboxSellerPayload(payload) : payload;
+  const requestPayload = config.finalized
+    ? payload
+    : (await finalizeEwayPayload(payload, config)).payload;
   const irpHint = text(config.irp).toUpperCase();
   const irps = irpHint && /^NIC[12]$/.test(irpHint) ? [irpHint] : ['NIC1', 'NIC2'];
   let last = { status: 0, data: null };

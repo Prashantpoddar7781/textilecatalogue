@@ -45,6 +45,9 @@ export const EwayBillDialog: React.FC<Props> = ({ billId, docNo, existing, onClo
   const [result, setResult] = useState<EwayBillInfo | null>(existing || null);
   const [alert, setAlert] = useState('');
   const [copied, setCopied] = useState(false);
+  const [distanceKm, setDistanceKm] = useState(0);
+  const [fromPincode, setFromPincode] = useState('');
+  const [toPincode, setToPincode] = useState('');
   const [form, setForm] = useState<EwayBillTransportInput>({
     distance: '',
     transMode: '1',
@@ -66,6 +69,9 @@ export const EwayBillDialog: React.FC<Props> = ({ billId, docNo, existing, onClo
         setNetAmount(preview.totals?.netAmount || 0);
         setBlockers(preview.blockers || []);
         setWarnings(preview.warnings || []);
+        setDistanceKm(Number(preview.distanceKm) || 0);
+        setFromPincode(preview.fromPincode || '');
+        setToPincode(preview.toPincode || '');
         if (preview.ewayBill) setResult(preview.ewayBill);
         setForm({
           distance: preview.prefill?.distance ? String(preview.prefill.distance) : '',
@@ -97,7 +103,7 @@ export const EwayBillDialog: React.FC<Props> = ({ billId, docNo, existing, onClo
     try {
       const response = await ewayBillsApi.generateForSales(billId, {
         ...form,
-        distance: Number(form.distance) || 0
+        distance: distanceKm || 0
       });
       setResult(response.ewayBill);
       setAlert(response.alert || '');
@@ -194,17 +200,17 @@ export const EwayBillDialog: React.FC<Props> = ({ billId, docNo, existing, onClo
                 </div>
               ) : (
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <label>
-                    <span className={labelClass}>Distance (km) *</span>
-                    <input
-                      className={inputClass}
-                      type="number"
-                      min={1}
-                      value={form.distance as string}
-                      onChange={e => setForm(prev => ({ ...prev, distance: e.target.value }))}
-                      placeholder="Approx. km to the party"
-                    />
-                  </label>
+                  <div className="sm:col-span-2 rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-2">
+                    <p className={labelClass}>Distance</p>
+                    <p className="text-sm font-black text-indigo-950">
+                      {distanceKm > 0 ? `${distanceKm} km` : 'Taken from the two PIN codes'}
+                    </p>
+                    <p className="text-[11px] font-semibold text-indigo-800">
+                      {fromPincode && toPincode
+                        ? `PIN ${fromPincode} to PIN ${toPincode}`
+                        : 'Filled from the company PIN and the party PIN.'}
+                    </p>
+                  </div>
                   <label>
                     <span className={labelClass}>Transport mode</span>
                     <select
