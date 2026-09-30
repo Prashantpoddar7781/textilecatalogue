@@ -863,8 +863,41 @@ export const ewayBillsApi = {
       `/eway-bills/sales/${billId}`,
       { method: 'POST', body: JSON.stringify(transport) }
     );
+  },
+  listSales: async (params: { fromDate: string; toDate: string; transactionType?: string }) => {
+    const query = new URLSearchParams();
+    query.set('fromDate', params.fromDate);
+    query.set('toDate', params.toDate);
+    if (params.transactionType) query.set('transactionType', params.transactionType);
+    return request<{ rows: BulkEwayRow[] }>(`/eway-bills/sales?${query.toString()}`);
+  },
+  generateBulk: async (billIds: string[]) => {
+    return request<{
+      generated: Array<{ id: string; billNo: string; ewayBillNo: string; ewayBillDate?: string | null; already?: boolean }>;
+      missing: Array<{ id: string; billNo: string; details: string[] }>;
+    }>(`/eway-bills/sales/bulk`, { method: 'POST', body: JSON.stringify({ billIds }) });
   }
 };
+
+export interface BulkEwayRow {
+  id: string;
+  partyName: string;
+  billNo: string;
+  date?: string | null;
+  lrNo: string;
+  transporter: string;
+  vehicleNo: string;
+  ewayBillNo: string;
+  ewayBillDate?: string | null;
+  deliveryAt: string;
+  gstRate: number | string;
+  hsn: string;
+  totalMeters: number;
+  totalAmount: number;
+  totalTax: number;
+  editPath: string;
+  missing: string[];
+}
 
 export const vouchersApi = {
   lookup: async (params: { module: string; voucher: string; transactionType?: string }) => {
