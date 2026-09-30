@@ -605,7 +605,7 @@ function whitebooksHeaders(config, authtoken = '', irp = '', { includeLogin = fa
   };
 }
 
-/** Authenticate sends email, username, password, and irp. Generate sends email and irp only. */
+/** Authenticate always sends the login. Generate sends it only when WhiteBooks did not return an auth token. */
 function whitebooksQuery(config, irp = '', { includeLogin = false } = {}) {
   const params = new URLSearchParams();
   if (config.email) params.set('email', text(config.email));
@@ -685,16 +685,6 @@ async function generateViaMasterGst(payload, config) {
   };
 }
 
-function headerSummary(responseHeaders) {
-  const parts = [];
-  responseHeaders?.forEach?.((value, key) => {
-    const hidden = /pass|secret|token|sek|cookie|auth/i.test(String(key));
-    const shown = hidden ? String(text(value).length) : text(value).slice(0, 60);
-    parts.push(`${key}=${shown}`);
-  });
-  return parts.join(', ') || 'none';
-}
-
 async function authenticateWhiteBooks(origin, config, irp = '', ip = '') {
   const attempts = irp ? ['', irp] : [''];
   let last = { status: 0, data: null, headers: null };
@@ -705,13 +695,11 @@ async function authenticateWhiteBooks(origin, config, irp = '', ip = '') {
     last = response;
     const token = extractAuthToken(response.data, response.headers);
     if (token) return token;
-    if (!isWhiteBooksAuthSuccess(response.data) && response.status !== 200) break;
+    // WhiteBooks e-way login returns status 1 and "If authentication succeeds" with no AuthToken.
+    if (isWhiteBooksAuthSuccess(response.data)) return '';
+    if (response.status !== 200) break;
   }
-  throw apiError(
-    `WhiteBooks login did not return an auth token. Body: ${publicReply(last.data)} Headers: ${headerSummary(last.headers)}`,
-    502,
-    last.data
-  );
+  throw apiError(whitebooksLoginError(last.data, last.status), 502, last.data);
 }
 
 function asGeneratedBill(parsed, data, payload, config) {
@@ -751,9 +739,10 @@ async function generateViaWhiteBooks(payload, config) {
 
   for (const irp of irps) {
     const authtoken = await authenticateWhiteBooks(origin, apiConfig, irp, '0.0.0.0');
-    const generateUrl = `${origin}/ewaybillapi/v1.03/ewayapi/genewaybill${whitebooksQuery(apiConfig, irp)}`;
+    const sendLogin = !authtoken;
+    const generateUrl = `${origin}/ewaybillapi/v1.03/ewayapi/genewaybill${whitebooksQuery(apiConfig, irp, { includeLogin: sendLogin })}`;
     const generated = await postJson(generateUrl, {
-      headers: whitebooksHeaders(apiConfig, authtoken, irp),
+      headers: whitebooksHeaders(apiConfig, authtoken, irp, { includeLogin: sendLogin }),
       body: compactEwayBody(requestPayload),
       timeoutMs: 20000
     });
@@ -764,7 +753,7 @@ async function generateViaWhiteBooks(payload, config) {
     }
 
     const wrapped = await postJson(generateUrl, {
-      headers: whitebooksHeaders(apiConfig, authtoken, irp),
+      headers: whitebooksHeaders(apiConfig, authtoken, irp, { includeLogin: sendLogin }),
       body: { action: 'GENEWAYBILL', ...compactEwayBody(requestPayload) },
       timeoutMs: 20000
     });
