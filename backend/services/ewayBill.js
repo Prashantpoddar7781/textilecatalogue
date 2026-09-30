@@ -102,13 +102,9 @@ const round2 = (value) => Math.round((Number(value) || 0) * 100) / 100;
 const text = (value) => String(value == null ? '' : value).trim();
 const digits = (value) => text(value).replace(/\D/g, '');
 
-/** NIC rejects a 4-digit heading for this seller. 5407 files as 540752. */
+/** Send the HSN saved on the bill. A 4-digit heading such as 5407 is rejected before the call. */
 function ewayHsn(code) {
-  const value = digits(code);
-  if (value.startsWith('5407')) return value.length >= 6 ? value.slice(0, 8) : '540752';
-  if (value.length >= 6) return value.slice(0, 8);
-  if (value.length === 4 || value.length === 5) return `${value}00`.slice(0, 6);
-  return '540752';
+  return digits(code).slice(0, 8);
 }
 
 const RTO_STATES = new Set([
@@ -336,8 +332,13 @@ export function validateEwayBillPayload(payload) {
   if (!(Number(payload.totInvValue) > 0)) errors.push('Bill value must be greater than zero.');
 
   payload.itemList?.forEach((item, index) => {
-    if (!item.hsnCode) errors.push(`Line ${index + 1} (${item.productName}) has no HSN code.`);
-    if (!(Number(item.quantity) > 0)) warnings.push(`Line ${index + 1} (${item.productName}) has zero quantity.`);
+    const hsn = digits(item.hsnCode);
+    const name = item.productName || `line ${index + 1}`;
+    if (!hsn) errors.push(`Line ${index + 1} (${name}) has no HSN.`);
+    else if (hsn.length < 6) {
+      errors.push(`Line ${index + 1} (${name}) HSN is ${hsn}. E-way needs at least 6 digits. For this fabric enter 540752.`);
+    }
+    if (!(Number(item.quantity) > 0)) errors.push(`Line ${index + 1} (${name}) needs a quantity.`);
   });
 
   const distance = Number(payload.transDistance) || 0;

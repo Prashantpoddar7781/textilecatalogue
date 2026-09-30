@@ -314,7 +314,7 @@ router.get('/sales', authenticateToken, requireActiveSubscription, async (req, r
         totalMeters: summary.totalMeters,
         totalAmount: summary.totalAmount,
         totalTax: summary.totalTax,
-        editPath: `/erp/sales?edit=${bill.id}`,
+        editPath: `/erp/sales?edit=${bill.id}&kind=bill`,
         missing: hasEway ? [] : localMissing(loaded, config)
       };
     });

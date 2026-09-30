@@ -188,7 +188,7 @@ export const BulkEwayPage: React.FC<Props> = ({ onBack, erpSession }) => {
                     <button
                       type="button"
                       className="font-black text-indigo-700 underline"
-                      onClick={() => { window.location.href = row.editPath; }}
+                      onClick={() => { window.location.href = `/erp/sales?edit=${row.id}&kind=bill`; }}
                     >
                       {row.billNo}
                     </button>
