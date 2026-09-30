@@ -20,14 +20,35 @@ const WHITEBOOKS_PRODUCTION = 'https://api.whitebooks.in';
 const SANDBOX_EWAY_GSTIN = '29AAGCB1286Q000';
 
 function sandboxSellerPayload(payload) {
-  return {
+  const toState = Number(payload.toStateCode) || 0;
+  const interState = toState && toState !== 29;
+  const cgst = Number(payload.cgstValue) || 0;
+  const sgst = Number(payload.sgstValue) || 0;
+  const igst = Number(payload.igstValue) || 0;
+  const toName = text(payload.toTrdName);
+  const next = {
     ...payload,
     fromGstin: SANDBOX_EWAY_GSTIN,
+    fromAddr1: text(payload.fromAddr1) || 'ELECTRONIC CITY',
+    fromPlace: 'BANGALORE',
+    fromPincode: 560001,
     fromStateCode: 29,
     actFromStateCode: 29,
-    fromPincode: 560001,
-    fromPlace: 'BENGALURU'
+    toTrdName: toName.length >= 5 ? toName : `${toName} CUSTOMER`.trim() || 'CONSIGNEE',
+    transDistance: '0'
   };
+  if (interState && (cgst || sgst)) {
+    next.cgstValue = 0;
+    next.sgstValue = 0;
+    next.igstValue = round2(igst + cgst + sgst);
+    next.itemList = (payload.itemList || []).map((item) => ({
+      ...item,
+      igstRate: round2((Number(item.igstRate) || 0) + (Number(item.cgstRate) || 0) + (Number(item.sgstRate) || 0)),
+      cgstRate: 0,
+      sgstRate: 0
+    }));
+  }
+  return next;
 }
 
 function whitebooksOrigin(mode, explicitBaseUrl) {
@@ -353,11 +374,50 @@ function parseEncodedJson(value) {
   }
 }
 
+/** NIC e-way API 1.03 codes. WhiteBooks often repeats the code as errorMessage. */
+const NIC_ERROR_TEXT = {
+  207: 'Invalid From GSTIN',
+  208: 'Invalid From trade name',
+  211: 'Invalid From place',
+  212: 'Invalid From PIN code',
+  215: 'Invalid To GSTIN',
+  216: 'Invalid To trade name',
+  217: 'Invalid To address',
+  219: 'Invalid To place',
+  220: 'Invalid To PIN code',
+  224: 'Invalid CGST amount',
+  225: 'Invalid SGST amount',
+  226: 'Invalid IGST amount',
+  237: 'Invalid vehicle number',
+  238: 'Invalid auth token',
+  239: 'Invalid HSN code',
+  283: 'Invalid From place',
+  302: 'Header GSTIN must match From GSTIN on an outward bill',
+  702: 'Distance does not match the From and To PIN codes'
+};
+
+function nicErrorLabel(code, message) {
+  const key = text(code);
+  const mapped = NIC_ERROR_TEXT[key];
+  const raw = text(message);
+  if (mapped) return `${key}: ${mapped}`;
+  if (raw && raw !== key) return key ? `${key}: ${raw}` : raw;
+  return key ? `Error ${key}` : raw;
+}
+
 function gspErrorText(data) {
   const err = data?.error;
   const parts = [];
-  if (err != null && (typeof err === 'string' || typeof err === 'number')) {
-    parts.push(text(err));
+  const list = Array.isArray(err)
+    ? err
+    : (Array.isArray(data?.errors) ? data.errors : null);
+  if (list) {
+    parts.push(...list.map((item) => nicErrorLabel(
+      item?.errorCode ?? item?.error_cd ?? item?.code,
+      item?.errorMessage ?? item?.error_msg ?? item?.message
+    )));
+  } else if (err != null && (typeof err === 'string' || typeof err === 'number')) {
+    parts.push(nicErrorLabel(err, err));
   } else if (err && typeof err === 'object') {
     const named = text(
       err.error_desc
@@ -371,19 +431,15 @@ function gspErrorText(data) {
       || err.detail
     );
     const code = err.errorCodes ?? err.error_cd ?? err.errorCode ?? err.code;
-    if (named) parts.push(named);
-    if (code != null && text(code)) parts.push(`Error ${code}`);
-    if (!parts.length) {
-      const rest = Object.entries(err)
-        .filter(([key]) => !/pass|secret|token|sek/i.test(key))
-        .map(([key, value]) => `${key}: ${typeof value === 'object' ? JSON.stringify(value) : value}`)
-        .join(', ');
-      if (rest) parts.push(rest);
-    }
+    parts.push(nicErrorLabel(code, named));
+  }
+  const info = text(data?.info).replace(/^,\s*/, '');
+  if (info && !parts.some((part) => part.toLowerCase().includes(info.toLowerCase().slice(0, 24)))) {
+    parts.push(info);
   }
   const irp = text(data?.irp);
   if (irp) parts.push(`IRP: ${irp}`);
-  return parts.join(' — ');
+  return parts.filter(Boolean).join(' — ');
 }
 
 function parseEwayResult(data) {
