@@ -132,7 +132,7 @@ router.get('/sales/:billId', authenticateToken, requireActiveSubscription, async
     const prepared = await finalizeEwayPayload(built, config);
     const { errors, warnings } = validateEwayBillPayload(prepared.payload);
     if (text(transport.vehicleNo) && !prepared.payload.vehicleNo) {
-      errors.unshift('Vehicle number is not a valid registration. Use a state code, for example GJ05JX2427.');
+      errors.unshift(`Vehicle number ${text(transport.vehicleNo)} is not accepted. Use a real registration such as GJ05JX2427. The first two letters are the state code.`);
     }
 
     res.json({
@@ -175,10 +175,10 @@ router.post('/sales/:billId', authenticateToken, requireActiveSubscription, asyn
     const prepared = await finalizeEwayPayload(built, config);
     const { errors, warnings } = validateEwayBillPayload(prepared.payload);
     if (text(transport.vehicleNo) && !prepared.payload.vehicleNo) {
-      errors.unshift('Vehicle number is not a valid registration. Use a state code, for example GJ05JX2427.');
+      errors.unshift(`Vehicle number ${text(transport.vehicleNo)} is not accepted. Use a real registration such as GJ05JX2427. The first two letters are the state code.`);
     }
     if (errors.length) {
-      return res.status(400).json({ error: errors[0], errors, warnings });
+      return res.status(400).json({ error: errors.join('\n'), errors, warnings });
     }
 
     const result = await generateEwayBill(prepared.payload, { ...config, finalized: true });

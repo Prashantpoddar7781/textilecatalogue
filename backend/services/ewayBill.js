@@ -398,63 +398,90 @@ function parseEncodedJson(value) {
   }
 }
 
-/** NIC e-way API 1.03 codes. WhiteBooks often repeats the code as errorMessage. */
-const NIC_ERROR_TEXT = {
-  216: 'Invalid HSN code',
-  221: 'Invalid approximate distance',
-  225: 'Invalid vehicle number format',
-  238: 'Invalid auth token',
-  282: 'HSN must be at least 4 digits',
-  283: 'HSN must be at least 6 digits for this GSTIN',
-  702: 'Distance does not match the two PIN codes',
-  709: 'PIN-to-PIN distance is not available',
-  721: 'PIN-to-PIN distance is not available. A distance is required'
+/** What the user must fix. Codes stay out of the sentence. */
+const NIC_REQUIREMENTS = {
+  206: 'Save the bill first so it has a bill number.',
+  207: 'The bill date is missing or is not accepted. Use a date in the current financial year.',
+  208: 'The seller GSTIN is not valid. Check Company Master.',
+  209: 'Add the company address in Company Master.',
+  210: 'The company PIN code must be 6 digits. Add it in Company Master.',
+  211: 'The company state does not match its GSTIN. Check Company Master.',
+  212: 'The party GSTIN is not valid. Correct it in the party master, or clear it for an unregistered party.',
+  213: 'Add the party address in the party master.',
+  214: 'The party PIN code must be 6 digits. Add it in the party master.',
+  215: 'The party state does not match the party GSTIN. Fill the state or GSTIN in the party master.',
+  216: 'Each item needs a valid HSN of at least 6 digits. For this fabric use 540752.',
+  217: 'Each item needs a valid unit, such as PCS or MTR.',
+  218: 'This is a sale inside the same state, so the bill needs CGST and SGST, and IGST must be zero.',
+  219: 'This is a sale to another state, so the bill needs IGST only. CGST and SGST must be zero.',
+  220: 'Choose a transport mode: Road, Rail, Air, or Ship.',
+  221: 'The kilometres must be the distance between the company PIN and the party PIN. It is filled from those PINs.',
+  222: 'The transporter ID must be that transporter’s 15-character GSTIN.',
+  225: 'The vehicle number must be a real registration, such as GJ05JX2427. The first two letters are the state code. GH is not a state code.',
+  226: 'Enter a vehicle number, or the transporter’s 15-character GSTIN.',
+  229: 'Add the company trade name in Company Master.',
+  230: 'Add the company city in Company Master.',
+  231: 'The party name is missing or too short. Use the full name in the party master.',
+  232: 'Add the party city in the party master.',
+  235: 'A sale inside the same state needs CGST and SGST on each item.',
+  236: 'A sale to another state needs IGST on each item.',
+  251: 'CGST and SGST rates must be equal.',
+  252: 'CGST rate is not valid for this bill.',
+  253: 'SGST rate is not valid for this bill.',
+  254: 'IGST rate is not valid for this bill.',
+  282: 'Each item needs an HSN of at least 4 digits.',
+  283: 'This seller needs an HSN of at least 6 digits on every line. For this fabric use 540752.',
+  358: 'The GSTIN on the login does not match the seller GSTIN on the bill.',
+  359: 'For an outward bill, the seller GSTIN on the bill must be the GSTIN used to log in.',
+  361: 'Choose Regular or Over dimensional cargo as the vehicle type.',
+  702: 'The kilometres do not match the two PIN codes. Distance is filled from the company PIN and the party PIN.',
+  709: 'These two PIN codes have no distance on the e-way portal. Check the company PIN and the party PIN.',
+  721: 'These two PIN codes have no distance on the e-way portal. Check the company PIN and the party PIN.'
 };
 
-function nicErrorLabel(code, message) {
+function requirementForCode(code) {
   const key = text(code);
-  const mapped = NIC_ERROR_TEXT[key];
-  const raw = text(message);
-  if (mapped) return `${key}: ${mapped}`;
-  if (raw && raw !== key) return key ? `${key}: ${raw}` : raw;
-  return key ? `Error ${key}` : raw;
+  return NIC_REQUIREMENTS[key] || '';
 }
 
-function gspErrorText(data) {
+function requirementFromInfo(info) {
+  const raw = text(info).replace(/^,\s*/, '');
+  if (!raw || looksLikeDocsBlurb(raw)) return '';
+  if (/distance|pincode/i.test(raw)) {
+    return 'The kilometres must match the distance between the company PIN and the party PIN. It is filled from those PINs.';
+  }
+  if (/^\d+$/.test(raw)) return requirementForCode(raw);
+  return raw;
+}
+
+function gspRequirements(data) {
   const err = data?.error;
-  const parts = [];
   const list = Array.isArray(err)
     ? err
     : (Array.isArray(data?.errors) ? data.errors : null);
+  const parts = [];
   if (list) {
-    parts.push(...list.map((item) => nicErrorLabel(
-      item?.errorCode ?? item?.error_cd ?? item?.code,
-      item?.errorMessage ?? item?.error_msg ?? item?.message
-    )));
+    for (const item of list) {
+      const code = item?.errorCode ?? item?.error_cd ?? item?.code;
+      const sentence = requirementForCode(code) || requirementFromInfo(item?.errorMessage ?? item?.message);
+      if (sentence) parts.push(sentence);
+    }
   } else if (err != null && (typeof err === 'string' || typeof err === 'number')) {
-    parts.push(nicErrorLabel(err, err));
+    const sentence = requirementForCode(err) || requirementFromInfo(err);
+    if (sentence) parts.push(sentence);
   } else if (err && typeof err === 'object') {
-    const named = text(
-      err.error_desc
-      || err.errorDesc
-      || err.errorMsg
-      || err.error_msg
-      || err.message
-      || err.msg
-      || err.status_desc
-      || err.description
-      || err.detail
-    );
     const code = err.errorCodes ?? err.error_cd ?? err.errorCode ?? err.code;
-    parts.push(nicErrorLabel(code, named));
+    const named = err.error_desc || err.errorDesc || err.errorMsg || err.message || err.status_desc;
+    const sentence = requirementForCode(code) || requirementFromInfo(named);
+    if (sentence) parts.push(sentence);
   }
-  const info = text(data?.info).replace(/^,\s*/, '');
-  if (info && !parts.some((part) => part.toLowerCase().includes(info.toLowerCase().slice(0, 24)))) {
-    parts.push(info);
-  }
-  const irp = text(data?.irp);
-  if (irp) parts.push(`IRP: ${irp}`);
-  return parts.filter(Boolean).join(' — ');
+  const info = requirementFromInfo(data?.info);
+  if (info && !parts.includes(info)) parts.push(info);
+  return [...new Set(parts)];
+}
+
+function gspErrorText(data) {
+  return gspRequirements(data).join('\n');
 }
 
 function parseEwayResult(data) {
@@ -526,25 +553,6 @@ function compactEwayBody(value) {
   return out;
 }
 
-function publicReply(data) {
-  if (data == null) return '';
-  try {
-    const clone = JSON.parse(JSON.stringify(data));
-    const scrub = (value) => {
-      if (!value || typeof value !== 'object') return;
-      for (const key of Object.keys(value)) {
-        if (/pass|secret|token|sek|client_secret/i.test(key)) value[key] = '***';
-        else scrub(value[key]);
-      }
-    };
-    scrub(clone);
-    const raw = JSON.stringify(clone);
-    return raw.length > 500 ? `${raw.slice(0, 500)}…` : raw;
-  } catch {
-    return '';
-  }
-}
-
 function providerFailureMessage(data, status) {
   const candidates = [
     gspErrorText(data),
@@ -556,12 +564,11 @@ function providerFailureMessage(data, status) {
     data?.info,
     data?.message
   ];
-  const useful = candidates.map(text).find((item) => item && !looksLikeDocsBlurb(item));
-  const raw = publicReply(data);
-  if (useful && raw) return `${useful} — ${raw}`;
+  const requirements = gspRequirements(data);
+  if (requirements.length) return requirements.join('\n');
+  const useful = candidates.map(text).find((item) => item && !looksLikeDocsBlurb(item) && !/^\d+$/.test(item));
   if (useful) return useful;
-  if (raw) return `WhiteBooks reply: ${raw}`;
-  return `E-way bill API returned ${status} without a bill number.`;
+  return 'The e-way bill was not generated. Check the company GSTIN, party GSTIN, both PIN codes, a 6-digit HSN, and a vehicle number such as GJ05JX2427.';
 }
 
 function isWhiteBooksAuthSuccess(data) {

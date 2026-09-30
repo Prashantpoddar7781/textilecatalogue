@@ -159,7 +159,12 @@ export const EwayBillDialog: React.FC<Props> = ({ billId, docNo, existing, onClo
 
               {error && (
                 <div className="mb-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">
-                  {error}
+                  <p className="font-black text-rose-900">E-way bill was not generated. Fix this:</p>
+                  <ul className="mt-2 list-disc space-y-1 pl-5">
+                    {error.split('\n').map(line => line.trim()).filter(Boolean).map(line => (
+                      <li key={line}>{line}</li>
+                    ))}
+                  </ul>
                 </div>
               )}
 
