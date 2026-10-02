@@ -94,6 +94,23 @@ const LOCAL_EXTENSIONS = [
     sgstPercent: 2.5,
     gstAccount: 'GST PAYABLE A/C',
     warnOnManualEntry: true
+  },
+  {
+    series: 'PURCHASE (COMM)',
+    seriesCode: 'PC1',
+    billingAllowed: true,
+    gstDocumentType: 'Inward Invoices (All Purchases)',
+    billingForm: 'PURCHASE',
+    saleOrPurchaseAccount: 'COMMISSION PAYABLE A/C',
+    partyAccountType: 'BROKER/AGENT',
+    tdsPercent: 5,
+    tdsAccount: 'TDS PAYABLE A/C',
+    warnOnManualEntry: true,
+    defaultHsnCode: '9966',
+    itcEligibility: 'Input Services',
+    cgstPercent: 2.5,
+    sgstPercent: 2.5,
+    gstAccount: 'GST PAYABLE A/C'
   }
 ];
 

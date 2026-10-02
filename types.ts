@@ -512,6 +512,7 @@ export interface AccountParty {
   graceDays?: number | null;
   dhara?: number | null;
   interestRate?: number | null;
+  brokerPercent?: number | null;
   discountRate?: number | null;
   remark?: string | null;
   msmeType?: string | null;
@@ -983,6 +984,8 @@ export interface BankBillAllocation {
   entryKind?: string;
   noteKind?: string;
   noteSide?: string;
+  brokerName?: string | null;
+  commissionPercent?: number | null;
 }
 
 export interface BankEntry {
@@ -1059,6 +1062,8 @@ export interface BankPendingBill {
   netPendingAmount?: number;
   oppositeAccount?: string | null;
   partyName?: string | null;
+  brokerName?: string | null;
+  commissionPercent?: number | null;
   partySide?: string | null;
   editPath?: string | null;
 }

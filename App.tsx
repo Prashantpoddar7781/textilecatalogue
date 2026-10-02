@@ -42,6 +42,8 @@ import { SalesOrderPage } from './components/SalesOrderPage';
 import { SalesOrderReportPage } from './components/SalesOrderReportPage';
 import { FinishSalesReportPage } from './components/FinishSalesReportPage';
 import { BulkEwayPage } from './components/BulkEwayPage';
+import { CommissionPage } from './components/CommissionPage';
+import { CommissionReportPage } from './components/CommissionReportPage';
 import { FinishPurchaseReportPage } from './components/FinishPurchaseReportPage';
 import { ExpensesReportPage } from './components/ExpensesReportPage';
 import { FinalAccountsReportPage } from './components/FinalAccountsReportPage';
@@ -164,6 +166,8 @@ const App: React.FC = () => {
   const erpNotesMatch = pathname.match(/^\/erp\/notes\/([^/]+)\/?$/);
   const erpJournalMatch = pathname.match(/^\/erp\/journal\/?$/);
   const erpEwayMatch = pathname.match(/^\/erp\/eway\/?$/);
+  const erpCommissionMatch = pathname.match(/^\/erp\/commission\/?$/);
+  const erpCommissionReportMatch = pathname.match(/^\/erp\/reports\/commission\/?$/);
   const isErpRoute = Boolean(
     erpMatch || erpBankMatch || erpSalesMatch || erpSalesOrderMatch || erpPurchaseMatch || erpPurchaseScanMatch || erpExpensesMatch || erpLedgerMatch
     || erpUtilitiesMatch || erpUsersMatch || erpCompanyMatch || erpGreyPurchaseMatch || erpGreyDispatchMatch || erpGreyPurchaseReturnMatch
@@ -173,7 +177,7 @@ const App: React.FC = () => {
     || erpFinishPurchaseReportMatch || erpExpensesReportMatch || erpFinalAccountsReportMatch
     || erpAccountsMasterMatch
     || erpOutstandingReportMatch
-    || erpNotesHubMatch || erpNotesMatch || erpJournalMatch || erpEwayMatch || supplierLedgerMatch
+    || erpNotesHubMatch || erpNotesMatch || erpJournalMatch || erpEwayMatch || erpCommissionMatch || erpCommissionReportMatch || supplierLedgerMatch
   );
   const shareStatsMatch = pathname.match(/^\/share-stats\/?$/);
   const reportsMatch = pathname.match(/^\/reports\/?$/);
@@ -1248,6 +1252,24 @@ const App: React.FC = () => {
         user={user}
         erpSession={erpSession}
         onBack={() => { window.location.href = '/'; }}
+      />
+    );
+  }
+
+  if (erpCommissionMatch) {
+    return (
+      <CommissionPage
+        erpSession={erpSession}
+        onBack={() => { window.location.href = '/erp'; }}
+      />
+    );
+  }
+
+  if (erpCommissionReportMatch) {
+    return (
+      <CommissionReportPage
+        erpSession={erpSession}
+        onBack={() => { window.location.href = '/erp'; }}
       />
     );
   }

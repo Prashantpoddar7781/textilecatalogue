@@ -22,6 +22,14 @@ import {
 } from '../constants/bankCashSeries.js';
 import { matchesNoteParty } from './creditDebitNotes.js';
 import { JOURNAL_TRANSACTION_TYPE } from './journalVouchers.js';
+import {
+  COMMISSION_ACCOUNT,
+  COMMISSION_TDS_ACCOUNT,
+  commissionEditPath,
+  commissionFigures,
+  isCommissionPurchase,
+  sameName
+} from './commission.js';
 
 function paidInfoByBillId(bankEntries) {
   const map = new Map();
@@ -476,6 +484,32 @@ export async function getAllLedgerParties(prisma, userId) {
       runningBalance: info.balance
     });
   }
+  const commissionBills = await prisma.purchaseBill.findMany({
+    where: { userId, transactionType: 'PURCHASE (COMM)', status: { not: 'cancelled' } },
+    select: { purchaseAccount: true, igstAmount: true, cgstAmount: true, sgstAmount: true }
+  });
+  if (commissionBills.length) {
+    const nominalNames = new Set([COMMISSION_ACCOUNT, COMMISSION_TDS_ACCOUNT, 'GST PAYABLE A/C']);
+    for (const bill of commissionBills) {
+      if (bill.purchaseAccount) nominalNames.add(bill.purchaseAccount);
+      if ((bill.igstAmount || 0) > 0) nominalNames.add('IGST');
+      if ((bill.cgstAmount || 0) > 0 || (bill.sgstAmount || 0) > 0) nominalNames.add('CGST/SGST');
+    }
+    for (const accountName of nominalNames) {
+      const key = accountName.trim().toLowerCase();
+      if (!key || map.has(key)) continue;
+      map.set(key, {
+        partyType: 'customer',
+        partyName: accountName,
+        customerId: null,
+        supplierId: null,
+        gstNumber: null,
+        mobileNumber: null,
+        entryCount: commissionBills.length,
+        runningBalance: 0
+      });
+    }
+  }
   const journals = await prisma.journalVoucher.findMany({
     where: { userId, status: { not: 'cancelled' } },
     select: { partyName: true, partyType: true, oppositeAccount: true, customerId: true, supplierId: true }
@@ -618,6 +652,78 @@ export async function buildBankAccountLedger(prisma, userId, bankName) {
 }
 
 /** Unified single-account ledger (customer and/or supplier activity for one A/C name). */
+async function buildCommissionNominalLedger(prisma, userId, accountName) {
+  const name = String(accountName || '').trim();
+  if (!name) return { ledger: [] };
+  const bills = await prisma.purchaseBill.findMany({
+    where: { userId, transactionType: 'PURCHASE (COMM)', status: { not: 'cancelled' } },
+    include: { supplier: true },
+    orderBy: [{ billDate: 'asc' }, { createdAt: 'asc' }]
+  });
+  const rows = [];
+  for (const bill of bills) {
+    const comm = commissionFigures(bill);
+    if (!comm) continue;
+    const billNo = bill.billNumber || String(bill.typeBillNumber || '-');
+    const broker = bill.supplier?.name || '';
+    const base = {
+      sourceId: bill.id,
+      date: bill.billDate || bill.createdAt,
+      voucherNumber: bill.voucherNumber || '-',
+      billNumber: billNo
+    };
+    if (sameName(name, comm.purchaseAccount) || sameName(name, COMMISSION_ACCOUNT)) {
+      rows.push({
+        ...base,
+        id: `comm-payable-${bill.id}`,
+        sourceType: 'purchase_bill',
+        account: broker,
+        particulars: `Commission #${billNo}`,
+        remarks: '',
+        debitAmount: comm.invoiceValue,
+        creditAmount: 0
+      });
+      if (comm.gst > 0) {
+        rows.push({
+          ...base,
+          id: `comm-gst-${bill.id}`,
+          sourceType: 'purchase_bill',
+          account: comm.gstLabel || 'IGST',
+          particulars: `GST on commission #${billNo}`,
+          remarks: '',
+          debitAmount: 0,
+          creditAmount: comm.gst
+        });
+      }
+    }
+    if (comm.tdsAmount > 0 && (sameName(name, comm.tdsAccount) || sameName(name, COMMISSION_TDS_ACCOUNT))) {
+      rows.push({
+        ...base,
+        id: `comm-tds-ac-${bill.id}`,
+        sourceType: 'purchase_bill_tds',
+        account: broker,
+        particulars: `TDS on commission #${billNo}`,
+        remarks: '',
+        debitAmount: 0,
+        creditAmount: comm.tdsAmount
+      });
+    }
+    if (comm.gst > 0 && (sameName(name, comm.gstLabel) || sameName(name, 'GST PAYABLE A/C') || sameName(name, 'IGST'))) {
+      rows.push({
+        ...base,
+        id: `comm-gst-ac-${bill.id}`,
+        sourceType: 'purchase_bill',
+        account: comm.purchaseAccount,
+        particulars: `GST on commission #${billNo}`,
+        remarks: '',
+        debitAmount: comm.gst,
+        creditAmount: 0
+      });
+    }
+  }
+  return { partyType: 'customer', partyName: name, ledger: rows };
+}
+
 export async function buildUnifiedPartyLedger(prisma, userId, { partyName, supplierId, customerId, fromDate, toDate }) {
   const name = String(partyName || '').trim();
   if (!name) return null;
@@ -660,6 +766,9 @@ export async function buildUnifiedPartyLedger(prisma, userId, { partyName, suppl
     const customerLedger = await buildCustomerLedger(prisma, userId, name);
     if (customerLedger?.ledger?.length) chunks.push(customerLedger);
   }
+
+  const nominal = await buildCommissionNominalLedger(prisma, userId, name);
+  if (nominal?.ledger?.length) chunks.push(nominal);
 
   const emptyResult = {
     partyType: bankBook ? 'bank' : (resolvedSupplierId ? 'supplier' : 'customer'),
@@ -747,6 +856,48 @@ function companyRow(row, partyName) {
   const name = String(partyName || '').trim();
   if (!name) return row;
   return { ...row, account: name };
+}
+
+function pushCommissionBillRows(rawEntries, bill, paidByBill, partyName, { asCompany = false } = {}) {
+  const comm = commissionFigures(bill);
+  if (!comm) return false;
+  const billNo = bill.billNumber || String(bill.typeBillNumber || '-');
+  const paidInfo = paidByBill.get(bill.id);
+  const paidOn = paidInfo && paidInfo.amount + 0.001 >= comm.netPayable
+    ? formatPaidOnRemark(paidInfo.date)
+    : '';
+  const creditRow = {
+    id: `bill-${bill.id}`,
+    sourceType: 'purchase_bill',
+    sourceId: bill.id,
+    date: bill.billDate || bill.createdAt,
+    voucherNumber: bill.voucherNumber || '-',
+    billNumber: billNo,
+    account: comm.purchaseAccount,
+    particulars: paidOn || `Commission #${billNo}`,
+    remarks: paidOn,
+    debitAmount: 0,
+    creditAmount: comm.invoiceValue,
+    lineCount: 1
+  };
+  rawEntries.push(asCompany ? companyRow(creditRow, partyName) : creditRow);
+  if (comm.tdsAmount > 0) {
+    const tdsRow = {
+      id: `bill-tds-${bill.id}`,
+      sourceType: 'purchase_bill_tds',
+      sourceId: bill.id,
+      date: bill.billDate || bill.createdAt,
+      voucherNumber: bill.voucherNumber || '-',
+      billNumber: billNo,
+      account: comm.tdsAccount || COMMISSION_TDS_ACCOUNT,
+      particulars: 'TDS',
+      remarks: '',
+      debitAmount: comm.tdsAmount,
+      creditAmount: 0
+    };
+    rawEntries.push(asCompany ? companyRow(tdsRow, partyName) : tdsRow);
+  }
+  return true;
 }
 
 /** Full books of our company — every party voucher in one ledger. */
@@ -868,6 +1019,7 @@ export async function buildCompanySelfLedger(prisma, userId, { fromDate, toDate 
   }
 
   for (const bill of purchaseBills) {
+    if (pushCommissionBillRows(rawEntries, bill, paidByBill, bill.supplier?.name || '', { asCompany: true })) continue;
     const amount = roundMoney(bill.grandTotal);
     if (amount <= 0) continue;
     const purchaseReturn = isPurchaseReturn(bill.transactionType);
@@ -1309,6 +1461,7 @@ export async function buildSupplierLedger(prisma, userId, supplierId) {
   const rawEntries = [];
 
   for (const bill of supplier.purchaseBills) {
+    if (pushCommissionBillRows(rawEntries, bill, paidByBill, supplier.name)) continue;
     const amount = roundMoney(bill.grandTotal);
     if (amount <= 0) continue;
     const purchaseReturn = isPurchaseReturn(bill.transactionType);
@@ -1877,7 +2030,7 @@ export async function getLedgerEntryDetail(prisma, userId, sourceType, sourceId)
     };
   }
 
-  if (sourceType === 'purchase_bill' || sourceType === 'purchase_bill_discount') {
+  if (sourceType === 'purchase_bill' || sourceType === 'purchase_bill_discount' || sourceType === 'purchase_bill_tds') {
     const bill = await prisma.purchaseBill.findFirst({
       where: { id: sourceId, userId },
       include: { supplier: true }
@@ -1893,18 +2046,22 @@ export async function getLedgerEntryDetail(prisma, userId, sourceType, sourceId)
     return {
       title: isDiscountLine
         ? `Discount on ${isPurchaseReturn(bill.transactionType) ? 'Purchase Return' : isExpensePurchaseType(bill.transactionType) ? 'Expense' : 'Purchase Bill'} #${billNo}`
-        : isPurchaseReturn(bill.transactionType)
-          ? `Purchase Return #${billNo}`
-          : isExpensePurchaseType(bill.transactionType)
-            ? `Expense #${billNo}`
-            : `Purchase Bill #${billNo}`,
+        : isCommissionPurchase(bill.transactionType)
+          ? `Commission #${billNo}`
+          : isPurchaseReturn(bill.transactionType)
+            ? `Purchase Return #${billNo}`
+            : isExpensePurchaseType(bill.transactionType)
+              ? `Expense #${billNo}`
+              : `Purchase Bill #${billNo}`,
       subtitle: bill.supplier?.name || '',
       sourceType,
       sourceId,
       canEdit: true,
-      editPath: isExpensePurchaseType(bill.transactionType)
-        ? `/erp/expenses?edit=${bill.id}`
-        : `/erp/purchase?edit=${bill.id}`,
+      editPath: isCommissionPurchase(bill.transactionType)
+        ? commissionEditPath(bill.id)
+        : isExpensePurchaseType(bill.transactionType)
+          ? `/erp/expenses?edit=${bill.id}`
+          : `/erp/purchase?edit=${bill.id}`,
       fields: buildDetailFields([
         { label: 'Date', value: toIsoDate(bill.billDate || bill.createdAt) },
         { label: 'Voucher', value: bill.voucherNumber },

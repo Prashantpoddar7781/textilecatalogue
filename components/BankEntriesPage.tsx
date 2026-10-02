@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Edit3, Loader2, Plus, RefreshCw, Search, Trash2 } from 'lucide-react';
-import { bankEntriesApi, invoicesApi } from '../services/api';
+import { bankEntriesApi, commissionsApi, invoicesApi, partiesApi } from '../services/api';
 import { useVoucherJump } from '../hooks/useVoucherJump';
 import { AccountParty, BankEntry, BankPendingBill, CompletedOrderParty, PurchaseBillParty } from '../types';
 import { postingSaleOrPurchaseAccount, warnsOnManualEntry } from '../constants/erpTransactionPostingRules';
@@ -116,6 +116,9 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
   const [pendingBills, setPendingBills] = useState<BankPendingBill[]>([]);
   const [completedParties, setCompletedParties] = useState<CompletedOrderParty[]>([]);
   const [purchaseParties, setPurchaseParties] = useState<PurchaseBillParty[]>([]);
+  const [accountParties, setAccountParties] = useState<AccountParty[]>([]);
+  const [commissionPercent, setCommissionPercent] = useState('');
+  const [commissionTouched, setCommissionTouched] = useState(false);
   const [bankAccounts, setBankAccounts] = useState<Array<{ name: string; balance: number; accountType?: string }>>([]);
   const [bankBalance, setBankBalance] = useState(0);
   const [partyBalance, setPartyBalance] = useState(0);
@@ -184,15 +187,17 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
 
   const loadMasterData = async () => {
     try {
-      const [voucherResult, accountsResult, partiesResult, purchasePartiesResult, profileResult] = await Promise.all([
+      const [voucherResult, accountsResult, partiesResult, purchasePartiesResult, profileResult, accountResult] = await Promise.all([
         bankEntriesApi.getNextVoucher(),
         bankEntriesApi.getBankAccounts(),
         bankEntriesApi.getCompletedOrderParties(),
         bankEntriesApi.getPurchaseBillParties(),
-        invoicesApi.getProfile().catch(() => null)
+        invoicesApi.getProfile().catch(() => null),
+        partiesApi.list().catch(() => ({ parties: [] as AccountParty[] }))
       ]);
       setCompletedParties(partiesResult.parties || []);
       setPurchaseParties(purchasePartiesResult.parties || []);
+      setAccountParties(accountResult.parties || []);
       const accounts = accountsResult.accounts || [];
       setBankAccounts(accounts);
       const preferredBank = accounts.find(account =>
@@ -372,15 +377,30 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
   }, [form.entryDate]);
 
   const partyOptions = useMemo(() => {
-    if (form.partyType === 'supplier') return purchaseParties.map(p => p.name);
+    const brokerNames = accountParties.filter(party => /broker|brok/i.test(party.accountType || '')).map(party => party.name);
+    if (form.partyType === 'supplier') {
+      return Array.from(new Set([...purchaseParties.map(p => p.name), ...brokerNames, ...accountParties.filter(p => p.role === 'supplier').map(p => p.name)]));
+    }
     if (form.partyType === 'customer') return completedParties.map(p => p.name);
-    return [];
-  }, [completedParties, purchaseParties, form.partyType]);
+    return brokerNames;
+  }, [accountParties, completedParties, purchaseParties, form.partyType]);
 
   const adjustedBills = useMemo(
     () => pendingBills.filter(bill => (bill.adjustAmount || 0) > 0),
     [pendingBills]
   );
+
+  useEffect(() => {
+    if (form.entryType !== 'receipt' || commissionTouched || !form.partyName.trim()) return;
+    const broker = pendingBills.find(bill => String(bill.brokerName || '').trim())?.brokerName || '';
+    if (!broker) return;
+    let cancelled = false;
+    commissionsApi.defaultPercent({ party: form.partyName, broker }).then(result => {
+      if (cancelled || commissionTouched) return;
+      if (result.commissionPercent != null) setCommissionPercent(String(result.commissionPercent));
+    }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [commissionTouched, form.entryType, form.partyName, pendingBills]);
 
   const isUnadjRow = (bill: BankPendingBill) => isUnadjAllocation(bill);
   const isDeductRow = (bill: BankPendingBill) => isDeductAllocation(bill);
@@ -691,6 +711,11 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
           ? JOURNAL_TYPE
           : (firstAlloc?.transactionType || defaultBillTypeForEntry(bankCashEntryType(series)))
     );
+    const storedPercent = Array.isArray(entry.billAllocations)
+      ? entry.billAllocations.find(item => Number(item.commissionPercent) > 0)?.commissionPercent
+      : null;
+    setCommissionPercent(storedPercent != null ? String(storedPercent) : '');
+    setCommissionTouched(storedPercent != null);
     setForm({
       series,
       entryType: bankCashEntryType(series),
@@ -773,6 +798,8 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
     setAmountTouched(false);
     setAllowOverAllocation(false);
     setBillType(defaultBillTypeForEntry(bankCashEntryType(DEFAULT_BANK_CASH_SERIES)));
+    setCommissionPercent('');
+    setCommissionTouched(false);
     setBillPickerOpen(false);
     setBillTypePickerOpen(false);
     setForm(emptyForm());
@@ -798,7 +825,8 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
       ...bill,
       billType: isUnadjRow(bill) ? UNADJ_BILL_TYPE : bill.billType,
       entryKind: isUnadjRow(bill) ? UNADJ_BILL_TYPE : bill.entryKind,
-      adjustDirection: isDeductRow(bill) ? 'deduct' : (bill.adjustDirection || 'add')
+      adjustDirection: isDeductRow(bill) ? 'deduct' : (bill.adjustDirection || 'add'),
+      commissionPercent: form.entryType === 'receipt' ? (Number(commissionPercent) || 0) : (bill.commissionPercent || 0)
     }));
 
     // Part payment path: no bill picks → entire amount becomes Unadjusted Payment (Empire).
@@ -974,6 +1002,22 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                       setForm(f => ({ ...f, amount: e.target.value }));
                     }}
                   />
+                  {form.entryType === 'receipt' && (
+                    <label className="mt-2 block">
+                      <span className={labelClass}>Comm %</span>
+                      <input
+                        className={inputClass}
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={commissionPercent}
+                        onChange={e => {
+                          setCommissionTouched(true);
+                          setCommissionPercent(e.target.value);
+                        }}
+                      />
+                    </label>
+                  )}
                   {summary.adjustLess > 0.05 && (
                     <p className="mt-1 text-[11px] font-semibold text-rose-700">
                       Bills exceed {form.entryType === 'receipt' ? 'Rec' : 'Paid'} by {formatMoney(summary.adjustLess)} — Type U, J, C or D to pick Unadj / Journal / note, or lower Adjust.
@@ -1048,8 +1092,16 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                       placeholder="Type party name"
                       value={form.partyName}
                       onChange={e => {
+                        const value = e.target.value;
                         setAllowOverAllocation(false);
-                        setForm(f => ({ ...f, partyName: e.target.value }));
+                        const match = accountParties.find(party => party.name.trim().toLowerCase() === value.trim().toLowerCase());
+                        const broker = Boolean(match && /broker|brok/i.test(match.accountType || ''));
+                        if (broker && form.entryType === 'payment') {
+                          setBillType('PURCHASE (COMM)');
+                          setForm(f => ({ ...f, partyName: match?.name || value, partyType: 'supplier' }));
+                          return;
+                        }
+                        setForm(f => ({ ...f, partyName: value }));
                       }}
                       onKeyDown={e => {
                         if (e.key !== 'Enter' || !form.partyName.trim()) return;

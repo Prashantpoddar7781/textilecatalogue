@@ -35,6 +35,7 @@ export type ErpBillingForm =
   | 'CHALLAN'
   | 'JOBBILL'
   | 'PURBILL'
+  | 'PURCHASE'
   | 'STOCKTFR';
 
 export type ErpItcEligibility =
@@ -2764,6 +2765,47 @@ export const ERP_POSTING_RULES: ErpPostingRule[] = [
     warnOnManualEntry: true,
     singleGstRateForBill: false,
     defaultHsnCode: '9988',
+    itcEligibility: 'Input Services',
+    cgstPercent: 2.5,
+    sgstPercent: 2.5,
+    gstAccount: 'GST PAYABLE A/C',
+    oldVatAccount: null,
+    stageGroup: null,
+    mainStageLink: null,
+    finalStageOfJobCard: false,
+    includeCostingOfStage: false,
+    scanPath: null,
+    tcsAccount: null,
+    companySpecific: false
+  },
+  {
+    series: 'PURCHASE (COMM)',
+    seriesCode: 'PC1',
+    billingAllowed: true,
+    singleRef: false,
+    gstDocumentType: 'Inward Invoices (All Purchases)',
+    billSuffix: null,
+    billingForm: 'PURCHASE',
+    saleOrPurchaseAccount: 'COMMISSION PAYABLE A/C',
+    partyAccountType: 'BROKER/AGENT',
+    stockType: null,
+    numberSeries: null,
+    previousLink: null,
+    nextLink: null,
+    discountJvs: false,
+    zeroGraceForInterest: false,
+    discountAccount: null,
+    designNosEntry: false,
+    tdsPercent: 5,
+    tdsAccount: 'TDS PAYABLE A/C',
+    stockEffect: null,
+    compulsoryLink: false,
+    showAllEntriesInPick: false,
+    allCompaniesDataInPick: false,
+    copyItemDetailsAfterRef: false,
+    warnOnManualEntry: true,
+    singleGstRateForBill: false,
+    defaultHsnCode: '9966',
     itcEligibility: 'Input Services',
     cgstPercent: 2.5,
     sgstPercent: 2.5,

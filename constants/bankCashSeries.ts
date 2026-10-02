@@ -122,7 +122,8 @@ export const BANK_SETTLEMENT_COMMON_TYPES = [
   'FINISH SALES (GST)',
   'CASH SALES',
   'GREY PURCHASE RETURN',
-  'SALARY EXP A/C'
+  'SALARY EXP A/C',
+  'PURCHASE (COMM)'
 ];
 
 export function getBankSettlementTypeOptions(): string[] {

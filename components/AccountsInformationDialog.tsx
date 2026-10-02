@@ -59,6 +59,8 @@ export const AccountsInformationDialog: React.FC<Props> = ({
   const [panNumber, setPanNumber] = useState('');
   const [gstNumber, setGstNumber] = useState('');
   const [remark, setRemark] = useState('');
+  const [brokerPercent, setBrokerPercent] = useState('');
+  const [groupParties, setGroupParties] = useState<AccountParty[]>([]);
   const [msmeType, setMsmeType] = useState('');
   const [udyamNumber, setUdyamNumber] = useState('');
 
@@ -82,9 +84,31 @@ export const AccountsInformationDialog: React.FC<Props> = ({
     setPanNumber(editParty?.panNumber || '');
     setGstNumber(editParty?.gstNumber || '');
     setRemark(editParty?.remark || '');
+    setBrokerPercent(editParty?.brokerPercent != null ? String(editParty.brokerPercent) : '');
     setMsmeType(editParty?.msmeType || '');
     setUdyamNumber(editParty?.udyamNumber || '');
+    partiesApi.list().then(result => setGroupParties(result.parties || [])).catch(() => setGroupParties([]));
   }, [open, initialName, context, suggestedAccountType, editParty]);
+
+  const applyAccountGroup = (groupName: string) => {
+    setAccountGroup(groupName);
+    const source = groupParties.find(party => party.name.trim().toLowerCase() === groupName.trim().toLowerCase());
+    if (!source || (editParty && source.id === editParty.id)) return;
+    if (source.accountType) setAccountType(source.accountType);
+    setAddress(source.address || '');
+    setAddressLine2(source.addressLine2 || '');
+    setCity(source.city || '');
+    setPincode(source.pincode || '');
+    setState(source.state || '');
+    setMobileNumber(source.mobileNumber || '');
+    setGraceDays(String(source.graceDays ?? 0));
+    setDhara(String(source.dhara ?? source.discountRate ?? 0));
+    setInterestRate(String(source.interestRate ?? 0));
+    setBrokerPercent(source.brokerPercent != null ? String(source.brokerPercent) : '');
+    setPanNumber(source.panNumber || '');
+    setGstNumber(source.gstNumber || '');
+    setContactPersonName(source.contactPersonName || '');
+  };
 
   const effectOn = useMemo(() => getAccountType(accountType)?.effectOn || 'BALANCE SHEET', [accountType]);
   const role = partyRoleForAccountType(accountType);
@@ -107,6 +131,7 @@ export const AccountsInformationDialog: React.FC<Props> = ({
         graceDays: Number(graceDays) || 0,
         dhara: Number(dhara) || 0,
         interestRate: Number(interestRate) || 0,
+        brokerPercent: brokerPercent === '' ? null : Number(brokerPercent),
         discountRate: Number(dhara) || 0,
         address: address.trim() || null,
         addressLine2: addressLine2.trim() || null,
@@ -184,7 +209,23 @@ export const AccountsInformationDialog: React.FC<Props> = ({
             </label>
             <label>
               <span className={labelClass}>A/C Group</span>
-              <input className={inputClass} value={accountGroup} onChange={e => setAccountGroup(e.target.value)} />
+              <input
+                className={inputClass}
+                list="account-group-options"
+                value={accountGroup}
+                onChange={e => applyAccountGroup(e.target.value)}
+              />
+              <datalist id="account-group-options">
+                {groupParties
+                  .filter(party => !editParty || party.id !== editParty.id)
+                  .map(party => (
+                    <option key={party.id} value={party.name} />
+                  ))}
+              </datalist>
+            </label>
+            <label>
+              <span className={labelClass}>Brok %</span>
+              <input className={inputClass} type="number" min="0" step="0.01" value={brokerPercent} onChange={e => setBrokerPercent(e.target.value)} />
             </label>
             <label>
               <span className={labelClass}>Grace Days</span>

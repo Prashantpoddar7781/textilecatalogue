@@ -178,6 +178,7 @@ model Customer {
   discountRate      Float?
   dhara             Float?
   interestRate      Float?
+  brokerPercent     Float?
   orders            Order[]
   salesInvoices     SalesInvoice[]
   salesOrders       SalesOrder[]
@@ -523,6 +524,7 @@ model Supplier {
   graceDays         Int?
   dhara             Float?
   interestRate      Float?
+  brokerPercent     Float?
   brokerName        String?
   contactPersonName String?
   remark            String?

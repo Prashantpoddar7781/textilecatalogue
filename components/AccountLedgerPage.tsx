@@ -30,6 +30,7 @@ const sourceLabel: Record<string, string> = {
   order: 'Sales Bill',
   sales_invoice: 'Sales Invoice',
   purchase_bill: 'Purchase Bill',
+  purchase_bill_tds: 'TDS Payable',
   bank_entry: 'Bank Entry',
   credit_debit_note: 'Cr/Dr Note',
   grey_purchase: 'Grey Purchase',

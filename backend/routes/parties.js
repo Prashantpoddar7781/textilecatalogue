@@ -38,6 +38,7 @@ function mapParty(row, role) {
     graceDays: row.graceDays ?? null,
     dhara: row.dhara ?? (role === 'customer' ? row.discountRate : null) ?? null,
     interestRate: row.interestRate ?? null,
+    brokerPercent: row.brokerPercent ?? null,
     discountRate: role === 'customer' ? (row.discountRate ?? row.dhara ?? null) : (row.dhara ?? null),
     remark: row.remark || null,
     msmeType: row.msmeType || null,
@@ -134,6 +135,7 @@ router.post('/', authenticateToken, requireActiveSubscription, [
       graceDays: req.body.graceDays,
       dhara: req.body.dhara,
       interestRate: req.body.interestRate,
+      brokerPercent: req.body.brokerPercent,
       discountRate: req.body.dhara ?? req.body.discountRate,
       remark: req.body.remark,
       msmeType: req.body.msmeType,
@@ -179,6 +181,7 @@ router.put('/:id', authenticateToken, requireActiveSubscription, async (req, res
         graceDays: req.body.graceDays,
         dhara: req.body.dhara,
         interestRate: req.body.interestRate,
+        brokerPercent: req.body.brokerPercent,
         discountRate: req.body.dhara ?? req.body.discountRate,
         remark: req.body.remark
       });
@@ -204,6 +207,7 @@ router.put('/:id', authenticateToken, requireActiveSubscription, async (req, res
       graceDays: req.body.graceDays,
       dhara: req.body.dhara,
       interestRate: req.body.interestRate,
+      brokerPercent: req.body.brokerPercent,
       remark: req.body.remark,
       msmeType: req.body.msmeType,
       udyamNumber: req.body.udyamNumber

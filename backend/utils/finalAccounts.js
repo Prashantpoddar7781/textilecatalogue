@@ -18,6 +18,7 @@ import {
   postingSaleOrPurchaseAccount,
   resolveDiscountJournal
 } from '../constants/erpTransactionPostingRules.js';
+import { commissionEditPath, commissionFigures, isCommissionPurchase, purchaseExpenseAmount, purchasePartyAmount } from './commission.js';
 
 /** Generic role defaults: a party sitting on one of these was never classified deliberately. */
 const UNCLASSIFIED_ACCOUNT_TYPES = new Set([
@@ -44,7 +45,7 @@ function buildPostedAccountTypeMap({ purchaseBills = [], greyPurchases = [], gre
   };
 
   for (const bill of purchaseBills) {
-    add(bill.supplier?.name, postingPartyAccountType(bill.transactionType), bill.grandTotal);
+    add(bill.supplier?.name, postingPartyAccountType(bill.transactionType), purchasePartyAmount(bill));
   }
   for (const grey of greyPurchases) {
     add(grey.partyName, postingPartyAccountType('GREY PURCHASE'), grey.netAmount);
@@ -114,7 +115,9 @@ export function isCapitalGoodsPurchase(transactionType) {
 /** GST General Goods / Input Services → P&L expenses */
 export function isPlExpensePurchase(transactionType) {
   const value = typeOf(transactionType);
-  return value.includes('GST GENERAL GOODS') || value.includes('GST INPUT SERVICES');
+  return value.includes('GST GENERAL GOODS')
+    || value.includes('GST INPUT SERVICES')
+    || value === 'PURCHASE (COMM)';
 }
 
 const mapToRows = (map, field = 'debit') => Array.from(map.values())
@@ -222,6 +225,8 @@ export async function buildFinalAccounts(prisma, userId, {
   let greyPurchaseAmt = 0;
   let greyReturnAmt = 0;
   let expenses = 0;
+  let commissionInputGst = 0;
+  let commissionTds = 0;
   let capitalGoodsPeriod = 0;
   let bankReceipts = 0;
   let bankPayments = 0;
@@ -279,8 +284,9 @@ export async function buildFinalAccounts(prisma, userId, {
 
   for (const bill of purchaseBills) {
     const date = bill.billDate || bill.createdAt;
-    const amount = roundMoney(bill.grandTotal);
-    if (amount <= 0) continue;
+    const comm = commissionFigures(bill);
+    const amount = purchasePartyAmount(bill);
+    if (amount <= 0 && !comm) continue;
     const party = bill.supplier?.name || 'Supplier';
     const account = bill.purchaseAccount
       || postingSaleOrPurchaseAccount(bill.transactionType)
@@ -295,6 +301,10 @@ export async function buildFinalAccounts(prisma, userId, {
       }
       if (isCapitalGoodsPurchase(bill.transactionType) && !isPurchaseReturn(bill.transactionType)) {
         bump(fixedAssetsAsOn, account, 'debit', amount);
+      }
+      if (comm) {
+        commissionInputGst = roundMoney(commissionInputGst + comm.gst);
+        commissionTds = roundMoney(commissionTds + comm.tdsAmount);
       }
     }
 
@@ -317,9 +327,12 @@ export async function buildFinalAccounts(prisma, userId, {
       bump(trial, `Fixed Asset · ${account}`, 'debit', trialAmt);
       if (disc) bump(trial, disc.account, 'credit', disc.amount);
     } else if (isPlExpensePurchase(bill.transactionType)) {
-      expenses = roundMoney(expenses + amount);
-      bump(expenseByAccount, account, 'debit', amount);
-      bump(trial, `Expense · ${account}`, 'debit', trialAmt);
+      const plAmount = comm ? comm.expenseAmount : amount;
+      expenses = roundMoney(expenses + plAmount);
+      bump(expenseByAccount, account, 'debit', plAmount);
+      bump(trial, `Expense · ${account}`, 'debit', plAmount);
+      if (comm && comm.gst > 0) bump(trial, 'GST Input · Commission', 'debit', comm.gst);
+      if (comm && comm.tdsAmount > 0) bump(trial, comm.tdsAccount || 'TDS PAYABLE A/C', 'credit', comm.tdsAmount);
       if (disc) bump(trial, disc.account, 'credit', disc.amount);
     } else {
       // Finish purchase / other trading purchases
@@ -632,10 +645,16 @@ export async function buildFinalAccounts(prisma, userId, {
         clickable: true
       })),
       ...debtorRows,
+      ...(commissionInputGst > 0.001
+        ? [{ side: 'asset', particular: 'GST Input on Commission', amount: commissionInputGst, clickable: false }]
+        : []),
       { side: 'asset', particular: 'Cash / Bank', amount: Math.max(bankBalance, 0), clickable: false }
     ];
     const liabilityRows = [
       ...creditorRows,
+      ...(commissionTds > 0.001
+        ? [{ side: 'liability', particular: 'TDS Payable', amount: commissionTds, clickable: false }]
+        : []),
       ...(bankBalance < 0
         ? [{ side: 'liability', particular: 'Bank Overdraft', amount: Math.abs(bankBalance), clickable: false }]
         : []),
@@ -709,6 +728,7 @@ const partyMatch = (left, right) => {
 };
 
 const purchaseEditPath = (bill) => {
+  if (isCommissionPurchase(bill.transactionType)) return commissionEditPath(bill.id);
   if (isCapitalGoodsPurchase(bill.transactionType) || isPlExpensePurchase(bill.transactionType)) {
     return `/erp/expenses?edit=${bill.id}`;
   }
@@ -835,7 +855,7 @@ export async function buildFinalAccountsDrill(prisma, userId, {
   for (const bill of purchaseBills) {
     const date = bill.billDate || bill.createdAt;
     if (!inRange(date, null, asOn)) continue;
-    const amount = roundMoney(bill.grandTotal);
+    const amount = purchasePartyAmount(bill);
     if (amount <= 0) continue;
     const signed = isPurchaseReturn(bill.transactionType) ? -amount : amount;
     bumpParty(creditorBalances, bill.supplier?.name || 'Supplier', signed);
@@ -913,7 +933,7 @@ export async function buildFinalAccountsDrill(prisma, userId, {
       const date = bill.billDate || bill.createdAt;
       if (!inRange(date, null, asOn)) continue;
       if (!partyMatch(bill.supplier?.name, partyName)) continue;
-      const amount = roundMoney(bill.grandTotal);
+      const amount = purchasePartyAmount(bill);
       if (amount <= 0) continue;
       rows.push({
         id: bill.id,
@@ -1022,7 +1042,7 @@ export async function buildFinalAccountsDrill(prisma, userId, {
         ? inRange(date, null, asOn)
         : inRange(date, fromDate, toDate);
       if (!inWindow) continue;
-      const amount = roundMoney(bill.grandTotal);
+      const amount = key === 'pl_expense' ? purchaseExpenseAmount(bill) : purchasePartyAmount(bill);
       if (amount <= 0) continue;
       const billAccount = bill.purchaseAccount
         || postingSaleOrPurchaseAccount(bill.transactionType)

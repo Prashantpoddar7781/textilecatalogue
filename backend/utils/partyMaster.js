@@ -82,6 +82,7 @@ export async function findOrCreateSupplier(prisma, userId, payload = {}) {
     graceDays: optionalInt(payload.graceDays),
     dhara: optionalFloat(payload.dhara ?? payload.discountRate),
     interestRate: optionalFloat(payload.interestRate),
+    brokerPercent: optionalFloat(payload.brokerPercent),
     brokerName: optionalString(payload.brokerName),
     contactPersonName: optionalString(payload.contactPersonName),
     remark: optionalString(payload.remark)
@@ -107,6 +108,7 @@ export async function findOrCreateSupplier(prisma, userId, payload = {}) {
         graceDays: data.graceDays ?? existing.graceDays,
         dhara: data.dhara ?? existing.dhara,
         interestRate: data.interestRate ?? existing.interestRate,
+        brokerPercent: data.brokerPercent ?? existing.brokerPercent,
         brokerName: data.brokerName || existing.brokerName,
         contactPersonName: data.contactPersonName || existing.contactPersonName,
         remark: data.remark || existing.remark
@@ -157,6 +159,7 @@ export async function findOrCreateCustomer(prisma, userId, payload = {}) {
     pincode: optionalString(payload.pincode),
     dhara: optionalFloat(payload.dhara ?? payload.discountRate),
     interestRate: optionalFloat(payload.interestRate),
+    brokerPercent: optionalFloat(payload.brokerPercent),
     discountRate: optionalFloat(payload.dhara ?? payload.discountRate)
   };
 
@@ -182,6 +185,7 @@ export async function findOrCreateCustomer(prisma, userId, payload = {}) {
         pincode: data.pincode || existing.pincode,
         dhara: data.dhara ?? existing.dhara,
         interestRate: data.interestRate ?? existing.interestRate,
+        brokerPercent: data.brokerPercent ?? existing.brokerPercent,
         discountRate: data.discountRate ?? existing.discountRate ?? existing.dhara
       }
     });

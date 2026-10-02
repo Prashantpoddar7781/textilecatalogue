@@ -2003,6 +2003,76 @@ export const billingApi = {
   }
 };
 
+export const commissionsApi = {
+  defaultPercent: async (params: { party?: string; broker?: string }) => {
+    const query = new URLSearchParams();
+    if (params.party) query.set('party', params.party);
+    if (params.broker) query.set('broker', params.broker);
+    const qs = query.toString();
+    return request<{ commissionPercent: number | null; source: string | null }>(`/commissions/default-percent${qs ? `?${qs}` : ''}`);
+  },
+  sources: async (broker: string, excludeBillId?: string) => {
+    const query = new URLSearchParams();
+    query.set('broker', broker);
+    if (excludeBillId) query.set('excludeBillId', excludeBillId);
+    return request<{ rows: CommissionSourceRow[] }>(`/commissions/sources?${query.toString()}`);
+  },
+  get: async (id: string) => request<{ bill: CommissionBill }>(`/commissions/${id}`),
+  create: async (body: Record<string, unknown>) => request<{ bill: CommissionBill }>('/commissions', { method: 'POST', body: JSON.stringify(body) }),
+  update: async (id: string, body: Record<string, unknown>) => request<{ bill: CommissionBill }>(`/commissions/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+  report: async (params?: { fromDate?: string; toDate?: string; broker?: string }) => {
+    const query = new URLSearchParams();
+    if (params?.fromDate) query.set('fromDate', params.fromDate);
+    if (params?.toDate) query.set('toDate', params.toDate);
+    if (params?.broker) query.set('broker', params.broker);
+    const qs = query.toString();
+    return request<{ rows: CommissionBill[]; totals: Record<string, number> }>(`/commissions/report${qs ? `?${qs}` : ''}`);
+  }
+};
+
+export interface CommissionSourceRow {
+  key: string;
+  bankEntryId: string;
+  billId: string;
+  billNumber: string;
+  billDate?: string | null;
+  partyName: string;
+  brokerName: string;
+  taxableAmount: number;
+  receivedAmount: number;
+  commissionPercent: number;
+  commissionAmount: number;
+  voucherNumber?: string;
+}
+
+export interface CommissionBill {
+  id: string;
+  transactionType?: string;
+  typeBillNumber?: number | null;
+  billNumber?: string | null;
+  billDate?: string | null;
+  partyName: string;
+  purchaseAccount?: string | null;
+  taxableAmount: number;
+  cgstAmount: number;
+  sgstAmount: number;
+  igstAmount: number;
+  totalTaxAmount: number;
+  grandTotal: number;
+  invoiceValue?: number | null;
+  tdsPercent?: number | null;
+  tdsAmount?: number | null;
+  netPayable?: number | null;
+  interstate?: boolean;
+  remarks?: string | null;
+  sources: CommissionSourceRow[];
+  editPath?: string;
+  billNos?: string;
+  receivedAmount?: number;
+  commissionPercent?: number | null;
+  commissionAmount?: number;
+}
+
 export interface SubscriptionInvoice {
   id: string;
   invoiceNumber: string;

@@ -94,6 +94,23 @@ export function agingBucket(days) {
   return 'Above 60';
 }
 
+/** Taxable value of a sale (before GST). Commission is calculated on this, not on the grand total. */
+export function orderTaxableAmount(order) {
+  const lines = normalizeOrderLines(order?.orderLines);
+  const taxable = lines.reduce((sum, line) => {
+    const explicit = Number(line.taxableAmount);
+    if (Number.isFinite(explicit) && explicit > 0) return sum + explicit;
+    const amount = Number(line.amount);
+    if (Number.isFinite(amount) && amount > 0) return sum + amount;
+    const rate = Number(line.retailPrice ?? line.basePrice ?? 0);
+    const qty = Number(line.quantity) || 0;
+    if (rate > 0 && qty > 0) return sum + rate * qty;
+    return sum;
+  }, 0);
+  if (taxable > 0) return roundMoney(taxable);
+  return resolveBillAmount(order);
+}
+
 /** Prefer ERP line totals when present; fall back to catalogue order formula. */
 export function resolveBillAmount(order) {
   const lines = normalizeOrderLines(order.orderLines);
@@ -228,7 +245,7 @@ export function mapOrderToPendingBill(order, paidByOrderId, asOfValue = Date.now
     billAmount,
     paidAmount: roundMoney(paidAmount),
     pendingAmount,
-    taxableAmount: billAmount,
+    taxableAmount: orderTaxableAmount(order),
     adjustAmount: 0,
     partyName: getOrderPartyName(order),
     brokerName: order.agentName || '',
