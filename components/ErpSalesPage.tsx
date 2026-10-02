@@ -1,6 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Loader2, Plus, Trash2, X } from 'lucide-react';
-import { EwayBillInfo, bankEntriesApi, salesOrdersApi } from '../services/api';
+import { EwayBillInfo, bankEntriesApi, partiesApi, salesOrdersApi } from '../services/api';
 import { AccountParty, Customer, ErpSession, Order, SalesItemMaster, SalesLineItem, SalesOrder } from '../types';
 import {
   DEFAULT_SALES_TRANSACTION_TYPE,
@@ -35,6 +35,9 @@ const round2 = (v: number) => Math.round((Number(v) || 0) * 100) / 100;
 const inputClass = 'w-full rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-sm font-semibold outline-none focus:border-indigo-400';
 const readonlyClass = 'w-full rounded-lg border border-gray-200 bg-gray-100 px-2.5 py-2 text-sm font-semibold';
 const labelClass = 'mb-1 block text-[10px] font-black uppercase tracking-wide text-gray-500';
+
+/** Broker accounts use the commission series row: party A/C type BROKER/AGENT. */
+const BROKER_ACCOUNT_TYPE = postingPartyAccountType('PURCHASE (COMM)') || 'BROKER/AGENT';
 
 const blankLine = (lineNo = 1, gstRate = 5, hsnCode = '5407', discountPercent = 0): SalesLineItem => ({
   lineNo,
@@ -281,6 +284,11 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [pendingNewParty, setPendingNewParty] = useState('');
   const [showAddConfirm, setShowAddConfirm] = useState(false);
   const [showAccountsDialog, setShowAccountsDialog] = useState(false);
+  const [accountParties, setAccountParties] = useState<AccountParty[]>([]);
+  const [pendingBroker, setPendingBroker] = useState('');
+  const [showBrokerConfirm, setShowBrokerConfirm] = useState(false);
+  const [showBrokerDialog, setShowBrokerDialog] = useState(false);
+  const brokerPromptName = useRef('');
   const [savedBillId, setSavedBillId] = useState(editKind === 'bill' ? (editId || '') : '');
   const [savedBillLabel, setSavedBillLabel] = useState('');
   const [ewayBill, setEwayBill] = useState<EwayBillInfo | null>(null);
@@ -344,6 +352,9 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
         setCompanyHsnCode(companyHsn);
         setNextOrderNo(meta.nextOrderNo || 1);
         setCustomers(meta.customers || []);
+        partiesApi.list().then(result => {
+          if (!cancelled) setAccountParties(result.parties || []);
+        }).catch(() => undefined);
         setItems(meta.items || []);
         if (!editId) {
           const d = getGstDefaultsForTransactionType(transactionType, companyGst, companyHsn);
@@ -625,6 +636,37 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
     }
     setPendingNewParty(trimmed);
     setShowAddConfirm(true);
+  };
+
+  const brokerOptions = useMemo(() => {
+    const names = new Set<string>();
+    for (const party of accountParties) {
+      if (/broker|brok/i.test(party.accountType || '')) names.add(party.name);
+      if (party.accountGroup) names.add(party.accountGroup);
+    }
+    return Array.from(names).sort((a, b) => a.localeCompare(b));
+  }, [accountParties]);
+
+  const applyBrokerByName = (name: string) => {
+    const trimmed = name.trim();
+    setBrokerName(trimmed);
+    if (!trimmed) return;
+    const known = accountParties.some(party => party.name.trim().toLowerCase() === trimmed.toLowerCase());
+    if (known) {
+      brokerPromptName.current = '';
+      return;
+    }
+    if (brokerPromptName.current === trimmed.toLowerCase()) return;
+    brokerPromptName.current = trimmed.toLowerCase();
+    setPendingBroker(trimmed);
+    setShowBrokerConfirm(true);
+  };
+
+  const onBrokerSaved = (party: AccountParty) => {
+    setAccountParties(prev => (prev.some(row => row.id === party.id) ? prev : [...prev, party]));
+    setBrokerName(party.name);
+    brokerPromptName.current = '';
+    setShowBrokerDialog(false);
   };
 
   const onPartySaved = (party: AccountParty) => {
@@ -1017,7 +1059,24 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
               )}
               <label><span className={labelClass}>State</span><input className={inputClass} value={state} onChange={e => setState(e.target.value)} /></label>
               <label><span className={labelClass}>Haste</span><input className={inputClass} value={haste} onChange={e => setHaste(e.target.value)} /></label>
-              <label><span className={labelClass}>Broker</span><input className={inputClass} value={brokerName} onChange={e => setBrokerName(e.target.value)} /></label>
+              <label>
+                <span className={labelClass}>Broker</span>
+                <input
+                  className={inputClass}
+                  list="erp-sales-brokers"
+                  value={brokerName}
+                  onChange={e => setBrokerName(e.target.value)}
+                  onBlur={e => applyBrokerByName(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key !== 'Enter') return;
+                    e.preventDefault();
+                    applyBrokerByName((e.target as HTMLInputElement).value);
+                  }}
+                />
+                <datalist id="erp-sales-brokers">
+                  {brokerOptions.map(name => <option key={name} value={name} />)}
+                </datalist>
+              </label>
               <label><span className={labelClass}>Haste GSTIN</span><input className={inputClass} value={hasteGstin} onChange={e => setHasteGstin(e.target.value)} /></label>
               <label>
                 <span className={labelClass}>Dhara</span>
@@ -1427,6 +1486,29 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
         suggestedAccountType={postingPartyAccountType(transactionType) || undefined}
         onClose={() => setShowAccountsDialog(false)}
         onSaved={onPartySaved}
+      />
+      <AddPartyConfirmDialog
+        open={showBrokerConfirm}
+        partyName={pendingBroker}
+        onNo={() => {
+          setShowBrokerConfirm(false);
+          brokerPromptName.current = '';
+        }}
+        onYes={() => {
+          setShowBrokerConfirm(false);
+          setShowBrokerDialog(true);
+        }}
+      />
+      <AccountsInformationDialog
+        open={showBrokerDialog}
+        initialName={pendingBroker}
+        initialAccountGroup={pendingBroker}
+        suggestedAccountType={BROKER_ACCOUNT_TYPE}
+        onClose={() => {
+          setShowBrokerDialog(false);
+          brokerPromptName.current = '';
+        }}
+        onSaved={onBrokerSaved}
       />
     </div>
   );

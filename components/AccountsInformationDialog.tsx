@@ -19,6 +19,7 @@ interface Props {
   initialName?: string;
   context?: PartyEntryContext;
   suggestedAccountType?: string;
+  initialAccountGroup?: string;
   editParty?: AccountParty | null;
   onClose: () => void;
   onSaved: (party: AccountParty) => void;
@@ -32,6 +33,7 @@ export const AccountsInformationDialog: React.FC<Props> = ({
   initialName = '',
   context = 'purchase',
   suggestedAccountType,
+  initialAccountGroup = '',
   editParty = null,
   onClose,
   onSaved
@@ -69,7 +71,7 @@ export const AccountsInformationDialog: React.FC<Props> = ({
     setError('');
     setName(editParty?.name || initialName || '');
     setAccountType(editParty?.accountType || suggestedAccountType || suggestedAccountTypeForContext(context));
-    setAccountGroup(editParty?.accountGroup || '');
+    setAccountGroup(editParty?.accountGroup || initialAccountGroup || '');
     setGraceDays(String(editParty?.graceDays ?? 0));
     setDhara(String(editParty?.dhara ?? editParty?.discountRate ?? 0));
     setInterestRate(String(editParty?.interestRate ?? 0));
@@ -88,7 +90,7 @@ export const AccountsInformationDialog: React.FC<Props> = ({
     setMsmeType(editParty?.msmeType || '');
     setUdyamNumber(editParty?.udyamNumber || '');
     partiesApi.list().then(result => setGroupParties(result.parties || [])).catch(() => setGroupParties([]));
-  }, [open, initialName, context, suggestedAccountType, editParty]);
+  }, [open, initialName, initialAccountGroup, context, suggestedAccountType, editParty]);
 
   const applyAccountGroup = (groupName: string) => {
     setAccountGroup(groupName);
