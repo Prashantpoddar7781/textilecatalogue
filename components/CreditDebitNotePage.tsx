@@ -290,13 +290,15 @@ export const CreditDebitNotePage: React.FC<Props> = ({ noteType: initialNoteType
 
   const billMatches = useMemo(() => {
     const q = refBillQuery.trim().toLowerCase();
-    const pool = pendingBills;
-    if (!q) return pool.slice(0, 20);
-    return pool.filter(bill =>
-      String(bill.billNumber || '').toLowerCase().includes(q)
-      || String(bill.transactionType || '').toLowerCase().includes(q)
-      || String(bill.voucherNumber || '').toLowerCase().includes(q)
-    ).slice(0, 20);
+    const rank = (bill: BankPendingBill) => {
+      if (!q) return 1;
+      const number = String(bill.billNumber || '').toLowerCase();
+      const voucher = String(bill.voucherNumber || '').toLowerCase();
+      if (number === q || number.startsWith(q) || voucher === q || voucher.startsWith(q)) return 0;
+      if (number.includes(q) || voucher.includes(q)) return 1;
+      return 2;
+    };
+    return [...pendingBills].sort((a, b) => rank(a) - rank(b)).slice(0, 40);
   }, [pendingBills, refBillQuery]);
 
   const pickBill = (bill: BankPendingBill) => {

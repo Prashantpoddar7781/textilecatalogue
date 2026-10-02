@@ -2068,9 +2068,12 @@ export interface CommissionBill {
   sources: CommissionSourceRow[];
   editPath?: string;
   billNos?: string;
+  accountGroup?: string | null;
   receivedAmount?: number;
   commissionPercent?: number | null;
   commissionAmount?: number;
+  paidAmount?: number;
+  paymentStatus?: string;
 }
 
 export interface SubscriptionInvoice {

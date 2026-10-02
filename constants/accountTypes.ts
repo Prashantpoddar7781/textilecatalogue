@@ -93,6 +93,7 @@ export const ERP_ACCOUNT_TYPES: ErpAccountType[] = [
   metaForType(10, 'TRADING EXPENSES', 'DEBIT', 12, false, false, true),
   metaForType(11, 'FIXED ASSETS', 'DEBIT', 20, true, false, false),
   metaForType(12, 'BROKER/AGENT', 'CREDIT', 19, true, false, false),
+  metaForType(16, 'CREDITORS FOR BROKERAGE', 'CREDIT', 18, true, false, false),
   metaForType(13, 'CAPITAL A/C', 'CREDIT', 1, true, false, false),
   metaForType(14, 'CREDITORS FOR DYEING JOB CHARG', 'CREDIT', 12, true, false, false),
   metaForType(15, 'MILL-EXCISE', 'CREDIT', 13, true, false, false),

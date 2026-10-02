@@ -36,8 +36,8 @@ const inputClass = 'w-full rounded-lg border border-gray-200 bg-white px-2.5 py-
 const readonlyClass = 'w-full rounded-lg border border-gray-200 bg-gray-100 px-2.5 py-2 text-sm font-semibold';
 const labelClass = 'mb-1 block text-[10px] font-black uppercase tracking-wide text-gray-500';
 
-/** Broker accounts use the commission series row: party A/C type BROKER/AGENT. */
-const BROKER_ACCOUNT_TYPE = postingPartyAccountType('PURCHASE (COMM)') || 'BROKER/AGENT';
+/** Broker accounts use the commission series row: CREDITORS FOR BROKERAGE. */
+const BROKER_ACCOUNT_TYPE = postingPartyAccountType('PURCHASE (COMM)') || 'CREDITORS FOR BROKERAGE';
 
 const blankLine = (lineNo = 1, gstRate = 5, hsnCode = '5407', discountPercent = 0): SalesLineItem => ({
   lineNo,

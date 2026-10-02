@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, X } from 'lucide-react';
 import {
   DEFAULT_CREDITOR_ACCOUNT_TYPE,
@@ -324,6 +324,12 @@ interface PromptProps {
 }
 
 export const AddPartyConfirmDialog: React.FC<PromptProps> = ({ open, partyName, onYes, onNo }) => {
+  const yesRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const timer = window.setTimeout(() => yesRef.current?.focus(), 0);
+    return () => window.clearTimeout(timer);
+  }, [open]);
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-4">
@@ -342,7 +348,7 @@ export const AddPartyConfirmDialog: React.FC<PromptProps> = ({ open, partyName, 
           <button type="button" onClick={onNo} className="rounded-xl border bg-white px-4 py-2 text-xs font-black uppercase text-slate-700">
             No
           </button>
-          <button type="button" onClick={onYes} className="rounded-xl bg-indigo-700 px-4 py-2 text-xs font-black uppercase text-white">
+          <button ref={yesRef} type="button" onClick={onYes} className="rounded-xl bg-indigo-700 px-4 py-2 text-xs font-black uppercase text-white">
             Yes
           </button>
         </div>

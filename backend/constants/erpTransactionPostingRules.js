@@ -2685,7 +2685,7 @@ export const ERP_POSTING_RULES = [
     billSuffix: null,
     billingForm: 'PURCHASE',
     saleOrPurchaseAccount: 'COMMISSION PAYABLE A/C',
-    partyAccountType: 'BROKER/AGENT',
+    partyAccountType: 'CREDITORS FOR BROKERAGE',
     stockType: null,
     numberSeries: null,
     previousLink: null,

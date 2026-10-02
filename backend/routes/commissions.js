@@ -84,6 +84,9 @@ function mapCommissionBill(bill) {
     voucherNumber: bill.voucherNumber,
     billDate: bill.billDate,
     partyName: bill.supplier?.name || '',
+    accountGroup: bill.supplier?.accountGroup && !sameName(bill.supplier.accountGroup, bill.supplier.name)
+      ? bill.supplier.accountGroup
+      : '',
     supplierId: bill.supplierId,
     purchaseAccount: bill.purchaseAccount || COMMISSION_ACCOUNT,
     taxableAmount: bill.taxableAmount,
@@ -246,12 +249,29 @@ router.get('/report', authenticateToken, requireActiveSubscription, async (req, 
       include: { supplier: true },
       orderBy: [{ billDate: 'asc' }, { typeBillNumber: 'asc' }]
     });
+    const payments = await prisma.bankEntry.findMany({
+      where: { userId, entryType: 'payment' },
+      select: { billAllocations: true }
+    });
+    const paidByBillId = new Map();
+    for (const entry of payments) {
+      const allocations = Array.isArray(entry.billAllocations) ? entry.billAllocations : [];
+      for (const allocation of allocations) {
+        if (!allocation?.billId) continue;
+        const amount = Number(allocation.adjustAmount) || 0;
+        if (amount <= 0) continue;
+        paidByBillId.set(allocation.billId, roundMoney((paidByBillId.get(allocation.billId) || 0) + amount));
+      }
+    }
     const filtered = broker
       ? bills.filter(bill => sameName(bill.supplier?.name, broker) || sameName(bill.supplier?.accountGroup, broker))
       : bills;
     const rows = filtered.map(bill => {
       const mapped = mapCommissionBill(bill);
       const sources = mapped.sources;
+      const net = Number(mapped.netPayable) || 0;
+      const paidAmount = roundMoney(paidByBillId.get(bill.id) || 0);
+      const paymentStatus = paidAmount + 0.05 >= net && net > 0 ? 'Paid' : (paidAmount > 0 ? 'Part' : 'Unpaid');
       return {
         ...mapped,
         billNos: sources.map(source => source.billNumber).filter(Boolean).join(', '),
@@ -259,7 +279,9 @@ router.get('/report', authenticateToken, requireActiveSubscription, async (req, 
         commissionPercent: sources.length === 1
           ? sources[0].commissionPercent
           : (sources.length ? null : null),
-        commissionAmount: mapped.taxableAmount
+        commissionAmount: mapped.taxableAmount,
+        paidAmount,
+        paymentStatus
       };
     });
     const totals = {
@@ -326,7 +348,7 @@ async function buildBillData(userId, body, existingId = null) {
 
   const supplier = await findOrCreateSupplier(prisma, userId, {
     name: partyName,
-    accountType: rule?.partyAccountType || 'BROKER/AGENT'
+    accountType: rule?.partyAccountType || 'CREDITORS FOR BROKERAGE'
   });
   const company = await prisma.businessProfile.findUnique({ where: { userId } });
   const interstate = isInterstate(supplier, company);

@@ -102,7 +102,7 @@ const LOCAL_EXTENSIONS = [
     gstDocumentType: 'Inward Invoices (All Purchases)',
     billingForm: 'PURCHASE',
     saleOrPurchaseAccount: 'COMMISSION PAYABLE A/C',
-    partyAccountType: 'BROKER/AGENT',
+    partyAccountType: 'CREDITORS FOR BROKERAGE',
     tdsPercent: 5,
     tdsAccount: 'TDS PAYABLE A/C',
     warnOnManualEntry: true,

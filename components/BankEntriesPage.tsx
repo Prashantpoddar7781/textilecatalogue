@@ -488,12 +488,15 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
   const quickBillMatches = useMemo(() => {
     const pool = pendingBills.filter(bill => matchesSelectedBillType(bill, billType));
     const q = quickBillNo.trim().toLowerCase();
-    if (!q) return pool;
-    return pool.filter(bill =>
-      String(bill.billNumber).toLowerCase().includes(q)
-      || String(bill.voucherNumber || '').toLowerCase().includes(q)
-      || String(bill.transactionType || '').toLowerCase().includes(q)
-    );
+    const rank = (bill: BankPendingBill) => {
+      if (!q) return 1;
+      const number = String(bill.billNumber || '').toLowerCase();
+      const voucher = String(bill.voucherNumber || '').toLowerCase();
+      if (number === q || number.startsWith(q) || voucher === q || voucher.startsWith(q)) return 0;
+      if (number.includes(q) || voucher.includes(q)) return 1;
+      return 2;
+    };
+    return [...pool].sort((a, b) => rank(a) - rank(b));
   }, [pendingBills, quickBillNo, billType]);
 
   useEffect(() => {
@@ -1300,7 +1303,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                             {unadjMode ? 'No unadjusted payments.' : (noteMode ? 'No matching pending notes.' : 'No matching pending bills.')}
                           </div>
                         ) : (
-                          quickBillMatches.slice(0, 15).map((bill, index) => (
+                          quickBillMatches.slice(0, 40).map((bill, index) => (
                             <button
                               key={bill.billId}
                               type="button"

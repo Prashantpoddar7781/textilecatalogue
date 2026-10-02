@@ -77,7 +77,7 @@ export const CommissionReportPage: React.FC<Props> = ({ onBack, erpSession }) =>
             <table className="w-full border-collapse">
               <thead>
                 <tr>
-                  {['Date', 'V. No.', 'Party', 'Bill nos', 'Rec amt', 'Taxable', 'Comm %', 'Comm amt', 'TDS', 'Net', 'Remark'].map(label => (
+                  {['Date', 'V. No.', 'Party', 'Group', 'Sale bill', 'Status', 'Rec amt', 'Taxable', 'Comm %', 'Comm amt', 'TDS', 'Net', 'Remark'].map(label => (
                     <th key={label} className={thClass}>{label}</th>
                   ))}
                 </tr>
@@ -92,7 +92,9 @@ export const CommissionReportPage: React.FC<Props> = ({ onBack, erpSession }) =>
                     <td className={tdClass}>{formatDate(row.billDate)}</td>
                     <td className={`${tdClass} text-center font-black text-indigo-700`}>{row.billNumber || '-'}</td>
                     <td className={tdClass}>{row.partyName}</td>
-                    <td className={tdClass}>{row.billNos || '-'}</td>
+                    <td className={tdClass}>{row.accountGroup || '—'}</td>
+                    <td className={tdClass}>{row.billNos || '—'}</td>
+                    <td className={`${tdClass} text-center ${row.paymentStatus === 'Paid' ? 'text-emerald-700' : 'text-amber-800'}`}>{row.paymentStatus || 'Unpaid'}</td>
                     <td className={`${tdClass} text-right`}>{money(row.receivedAmount || 0)}</td>
                     <td className={`${tdClass} text-right`}>{money(row.taxableAmount)}</td>
                     <td className={`${tdClass} text-center`}>{row.commissionPercent != null ? row.commissionPercent : '-'}</td>
@@ -103,12 +105,12 @@ export const CommissionReportPage: React.FC<Props> = ({ onBack, erpSession }) =>
                   </tr>
                 ))}
                 {rows.length === 0 && (
-                  <tr><td className={tdClass} colSpan={11}>No commission bills in this period.</td></tr>
+                  <tr><td className={tdClass} colSpan={13}>No commission bills in this period.</td></tr>
                 )}
               </tbody>
               <tfoot>
                 <tr className="bg-slate-50 font-black">
-                  <td className={tdClass} colSpan={4}>Total</td>
+                  <td className={tdClass} colSpan={6}>Total</td>
                   <td className={`${tdClass} text-right`}>{money(totals.receivedAmount || 0)}</td>
                   <td className={`${tdClass} text-right`}>{money(totals.taxableAmount || 0)}</td>
                   <td className={tdClass} />
