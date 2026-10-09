@@ -1,5 +1,5 @@
 import React from 'react';
-import { Banknote, BookOpen, Boxes, FileText, NotebookPen, Package, PackageCheck, ReceiptText, Truck } from 'lucide-react';
+import { Banknote, BookOpen, Boxes, Calculator, FileText, NotebookPen, Package, PackageCheck, ReceiptText, Truck } from 'lucide-react';
 import { accessLevelLabel } from '../services/erpSession';
 import { ErpSession } from '../types';
 import { ErpTopMenu } from './ErpTopMenu';
@@ -79,6 +79,13 @@ const sections = [
     description: 'Receive processed fabric from mill — lot no, despatch pick, taka details, job work bill.',
     icon: PackageCheck,
     href: '/erp/mill-receipt',
+    status: 'Ready'
+  },
+  {
+    title: 'Cutting Costing',
+    description: 'Type the dispatch challan. Grey cost, mill printing, interest per saree, and average cut.',
+    icon: Calculator,
+    href: '/erp/cutting-cost',
     status: 'Ready'
   },
   {

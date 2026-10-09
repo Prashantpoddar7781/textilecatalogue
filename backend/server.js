@@ -30,6 +30,7 @@ import workReceiptRoutes from './routes/workReceipts.js';
 import salesOrderRoutes from './routes/salesOrders.js';
 import ewayBillRoutes from './routes/ewayBills.js';
 import commissionRoutes from './routes/commissions.js';
+import cuttingCostRoutes from './routes/cuttingCosts.js';
 import voucherLookupRoutes from './routes/voucherLookup.js';
 import stockRoutes from './routes/stock.js';
 import gstRoutes from './routes/gst.js';
@@ -159,6 +160,7 @@ try {
   app.use('/api/sales-orders', salesOrderRoutes);
   app.use('/api/eway-bills', ewayBillRoutes);
   app.use('/api/commissions', commissionRoutes);
+  app.use('/api/cutting-costs', cuttingCostRoutes);
   app.use('/api/vouchers', voucherLookupRoutes);
   app.use('/api/stock', stockRoutes);
   app.use('/api/gst', gstRoutes);

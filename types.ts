@@ -783,6 +783,71 @@ export interface MillReceipt {
   updatedAt: string;
 }
 
+export interface CuttingTakaRow {
+  srNo: number;
+  greyMts: number;
+  finMts: number;
+  shortPct: number;
+}
+
+export interface CuttingCostSource {
+  greyDispatchId: string;
+  millReceiptId?: string | null;
+  cutCardNo: string;
+  recCardNo?: string | null;
+  companyName?: string | null;
+  millName?: string | null;
+  lotNo?: string | null;
+  weaverName?: string | null;
+  quality?: string | null;
+  voucherNo?: number | null;
+  billNo?: string | null;
+  greyDate?: string | null;
+  dispatchDate?: string | null;
+  receiptDate?: string | null;
+  greyMts: number;
+  greyRate: number;
+  finMts: number;
+  jobRate: number;
+  discountPercent: number;
+  interestRate: number;
+  interestDays: number;
+  hasMillReceipt: boolean;
+  takaDetails: CuttingTakaRow[];
+}
+
+export interface CuttingCard {
+  id: string;
+  cutCardNo: string;
+  recCardNo?: string | null;
+  entryDate: string;
+  millName?: string | null;
+  lotNo?: string | null;
+  weaverName?: string | null;
+  quality?: string | null;
+  greyMts: number;
+  greyRate: number;
+  greyAmount: number;
+  finMts: number;
+  jobRate: number;
+  jobAmount: number;
+  discountPercent: number;
+  discountAmount: number;
+  freshSarees: number;
+  secondSarees: number;
+  actCut: number;
+  shortPct: number;
+  interestRate: number;
+  interestDays: number;
+  interestAmount: number;
+  interestPerPc: number;
+  costWithoutInterest: number;
+  costWithDiscount: number;
+  basicCost: number;
+  takaDetails?: CuttingTakaRow[] | null;
+  status: string;
+}
+
 export interface GreyPurchaseReturn {
   id: string;
   userId: string;

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, BookOpen, Building2, ChevronDown, FileBarChart, FileText, LogOut, Package, PackageCheck, RotateCcw } from 'lucide-react';
+import { ArrowLeft, BookOpen, Building2, Calculator, ChevronDown, FileBarChart, FileText, LogOut, Package, PackageCheck, RotateCcw } from 'lucide-react';
 import { clearErpSession, hasCompleteErpAccess } from '../services/erpSession';
 import { ErpSession } from '../types';
 
@@ -11,7 +11,7 @@ interface Props {
   children?: React.ReactNode;
 }
 
-type MenuKey = 'masters' | 'reports' | 'greySales' | 'accounts' | 'utilities' | null;
+type MenuKey = 'masters' | 'inventory' | 'reports' | 'greySales' | 'accounts' | 'utilities' | null;
 
 /** Keep dropdowns inside the viewport so long menus (Reports) can scroll. */
 const menuPanelClass =
@@ -113,6 +113,31 @@ export const ErpTopMenu: React.FC<Props> = ({
                 >
                   <BookOpen className="h-4 w-4" />
                   Accounts Info Manager
+                </button>
+              </div>
+            )}
+          </div>
+
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => toggle('inventory')}
+              className={`flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-black uppercase tracking-wide ${
+                openMenu === 'inventory' ? 'bg-teal-700 text-white' : 'text-gray-700 hover:bg-gray-100'
+              }`}
+            >
+              Inventory
+              <ChevronDown className={`h-3.5 w-3.5 transition ${openMenu === 'inventory' ? 'rotate-180' : ''}`} />
+            </button>
+            {openMenu === 'inventory' && (
+              <div className={`${menuPanelClass} min-w-[240px]`}>
+                <button
+                  type="button"
+                  onClick={() => { window.location.href = '/erp/cutting-cost'; }}
+                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-gray-800 hover:bg-teal-50 hover:text-teal-800"
+                >
+                  <Calculator className="h-4 w-4" />
+                  Cutting Costing Calculator
                 </button>
               </div>
             )}

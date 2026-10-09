@@ -50,6 +50,7 @@ model User {
   greyDispatches          GreyDispatch[]
   greyPurchaseReturns     GreyPurchaseReturn[]
   millReceipts            MillReceipt[]
+  cuttingCards            CuttingCard[]
   workDespatches          WorkDespatch[]
   workReceipts            WorkReceipt[]
   salesOrders             SalesOrder[]
@@ -783,6 +784,51 @@ model MillReceipt {
   @@index([lotNo])
   @@index([voucherNo])
   @@index([processType])
+  @@index([status])
+}
+
+model CuttingCard {
+  id                  String   @id @default(cuid())
+  userId              String
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  companyName         String?
+  greyDispatchId      String?
+  millReceiptId       String?
+  cutCardNo           String
+  recCardNo           String?
+  entryDate           DateTime @default(now())
+  millName            String?
+  lotNo               String?
+  weaverName          String?
+  quality             String?
+  greyMts             Float    @default(0)
+  greyRate            Float    @default(0)
+  greyAmount          Float    @default(0)
+  finMts              Float    @default(0)
+  jobRate             Float    @default(0)
+  jobAmount           Float    @default(0)
+  discountPercent     Float    @default(0)
+  discountAmount      Float    @default(0)
+  freshSarees         Float    @default(0)
+  secondSarees        Float    @default(0)
+  actCut              Float    @default(0)
+  shortPct            Float    @default(0)
+  interestRate        Float    @default(0)
+  interestDays        Int      @default(0)
+  interestAmount      Float    @default(0)
+  interestPerPc       Float    @default(0)
+  costWithoutInterest Float    @default(0)
+  costWithDiscount    Float    @default(0)
+  basicCost           Float    @default(0)
+  takaDetails         Json?
+  status              String   @default("posted")
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([userId])
+  @@index([cutCardNo])
+  @@index([greyDispatchId])
+  @@index([entryDate])
   @@index([status])
 }
 

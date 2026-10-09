@@ -121,6 +121,19 @@ async function getReceivedSrNos(greyDispatchId, excludeReceiptId = null) {
   return { srNos, receivedMts: roundMoney(receivedMts) };
 }
 
+async function getNextRecCard(db, userId) {
+  const rows = await db.millReceipt.findMany({
+    where: { userId, status: { not: 'cancelled' } },
+    select: { recChallan: true }
+  });
+  let max = 0;
+  for (const row of rows) {
+    const num = Number(String(row.recChallan || '').trim());
+    if (Number.isFinite(num) && num > max) max = num;
+  }
+  return max + 1;
+}
+
 function resolvePlaceOfSupply({ millGstin, placeOfSupply, stateCode }) {
   if (optionalString(placeOfSupply)) return optionalString(placeOfSupply);
   const fromGst = getStateFromGstin(millGstin);
@@ -435,7 +448,7 @@ router.get('/report', authenticateToken, requireActiveSubscription, async (req, 
       const shortPct = despMts > 0 ? roundMoney((shortMts / despMts) * 100) : roundMoney(r.shortPct);
       return {
         id: r.id,
-        despNo: r.despNo || String(r.greyDispatch?.srNo || r.greyDispatch?.challanNo || '-'),
+        despNo: r.despNo || String(r.greyDispatch?.challanNo || r.greyDispatch?.srNo || '-'),
         lotNo: r.lotNo,
         billNo: r.billNo || '-',
         receiptDate: r.receiptDate,
@@ -522,6 +535,15 @@ router.get('/report', authenticateToken, requireActiveSubscription, async (req, 
       groups,
       totals
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/next-rec-card', authenticateToken, requireActiveSubscription, async (req, res, next) => {
+  try {
+    const nextRecCard = await getNextRecCard(prisma, req.user.userId);
+    res.json({ nextRecCard });
   } catch (error) {
     next(error);
   }
@@ -737,8 +759,8 @@ router.post('/', authenticateToken, requireActiveSubscription, [
           gstType: totals.gstTypeLabel || totals.gstType,
           lotNo: optionalString(req.body.lotNo),
           despNo: optionalString(req.body.despNo)
-            || String(dispatch.srNo || dispatch.challanNo || ''),
-          recChallan: optionalString(req.body.recChallan),
+            || String(dispatch.challanNo || dispatch.srNo || ''),
+          recChallan: optionalString(req.body.recChallan) || String(await getNextRecCard(tx, userId)),
           marka: optionalString(req.body.marka) || dispatch.ourMarka,
           quality: optionalString(req.body.quality) || dispatch.quality,
           printStyle: optionalString(req.body.printStyle),
@@ -963,7 +985,7 @@ router.put('/:id', authenticateToken, requireActiveSubscription, [
           lotNo: optionalString(req.body.lotNo) || existing.lotNo,
           despNo: optionalString(req.body.despNo)
             || existing.despNo
-            || String(dispatch.srNo || dispatch.challanNo || ''),
+            || String(dispatch.challanNo || dispatch.srNo || ''),
           recChallan: optionalString(req.body.recChallan) ?? existing.recChallan,
           marka: optionalString(req.body.marka) ?? existing.marka,
           quality: optionalString(req.body.quality) ?? existing.quality,

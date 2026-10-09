@@ -29,6 +29,7 @@ import { GreyPurchasePage } from './components/GreyPurchasePage';
 import { GreyDispatchPage } from './components/GreyDispatchPage';
 import { GreyPurchaseReturnPage } from './components/GreyPurchaseReturnPage';
 import { MillReceiptPage } from './components/MillReceiptPage';
+import { CuttingCostPage } from './components/CuttingCostPage';
 import { GodownInventoryReportPage } from './components/GodownInventoryReportPage';
 import { StockBalanceReportPage } from './components/StockBalanceReportPage';
 import { Gstr3bReportPage } from './components/Gstr3bReportPage';
@@ -146,6 +147,7 @@ const App: React.FC = () => {
   const erpGreyDispatchMatch = pathname.match(/^\/erp\/grey-dispatch\/?$/);
   const erpGreyPurchaseReturnMatch = pathname.match(/^\/erp\/grey-purchase-return\/?$/);
   const erpMillReceiptMatch = pathname.match(/^\/erp\/mill-receipt\/?$/);
+  const erpCuttingCostMatch = pathname.match(/^\/erp\/cutting-cost\/?$/);
   const erpWorkDespatchMatch = pathname.match(/^\/erp\/work-despatch\/?$/);
   const erpWorkReceiptMatch = pathname.match(/^\/erp\/work-receipt\/?$/);
   const erpGodownReportMatch = pathname.match(/^\/erp\/reports\/godown-inventory\/?$/);
@@ -171,7 +173,7 @@ const App: React.FC = () => {
   const isErpRoute = Boolean(
     erpMatch || erpBankMatch || erpSalesMatch || erpSalesOrderMatch || erpPurchaseMatch || erpPurchaseScanMatch || erpExpensesMatch || erpLedgerMatch
     || erpUtilitiesMatch || erpUsersMatch || erpCompanyMatch || erpGreyPurchaseMatch || erpGreyDispatchMatch || erpGreyPurchaseReturnMatch
-    || erpMillReceiptMatch || erpWorkDespatchMatch || erpWorkReceiptMatch
+    || erpMillReceiptMatch || erpCuttingCostMatch || erpWorkDespatchMatch || erpWorkReceiptMatch
     || erpGodownReportMatch || erpStockReportMatch || erpGstr3bReportMatch || erpMillDispatchReportMatch || erpMillReceiptReportMatch
     || erpWorkDespatchReportMatch || erpWorkReceiptReportMatch || erpSalesOrderReportMatch || erpFinishSalesReportMatch
     || erpFinishPurchaseReportMatch || erpExpensesReportMatch || erpFinalAccountsReportMatch
@@ -1097,6 +1099,15 @@ const App: React.FC = () => {
   if (erpMillReceiptMatch) {
     return (
       <MillReceiptPage
+        erpSession={erpSession}
+        onBack={() => { window.location.href = '/erp'; }}
+      />
+    );
+  }
+
+  if (erpCuttingCostMatch) {
+    return (
+      <CuttingCostPage
         erpSession={erpSession}
         onBack={() => { window.location.href = '/erp'; }}
       />

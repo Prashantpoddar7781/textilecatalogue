@@ -1,4 +1,4 @@
-import { AccountLedgerEntry, AccountLedgerParty, BankEntry, BankPendingBill, BusinessProfile, CompletedOrderParty, Contact, Customer, CreditDebitNote, ErpAccessLevel, ErpSession, ErpUserAccount, GreyDispatch, GreyPurchase, GreyPurchaseReturn, GreyReceiptSummary, GreyTakaDetailRow, JournalVoucher, LedgerEntryDetail, MillPendingDispatch, MillReceipt, MillReceiptTakaRow, Order, PurchaseBill, PurchaseBillExtraction, PurchaseBillParty, SalesInvoice, Supplier, SupplierLedgerEntry } from '../types';
+import { AccountLedgerEntry, AccountLedgerParty, BankEntry, BankPendingBill, BusinessProfile, CompletedOrderParty, Contact, Customer, CreditDebitNote, CuttingCard, CuttingCostSource, ErpAccessLevel, ErpSession, ErpUserAccount, GreyDispatch, GreyPurchase, GreyPurchaseReturn, GreyReceiptSummary, GreyTakaDetailRow, JournalVoucher, LedgerEntryDetail, MillPendingDispatch, MillReceipt, MillReceiptTakaRow, Order, PurchaseBill, PurchaseBillExtraction, PurchaseBillParty, SalesInvoice, Supplier, SupplierLedgerEntry } from '../types';
 
 const RAILWAY_API_URL = 'https://textilecatalogue-production.up.railway.app/api';
 const VERCEL_API_URL = 'https://textilecatalogue.vercel.app/api';
@@ -1734,6 +1734,9 @@ export const millReceiptsApi = {
       `/mill-receipts/pending-dispatches?millName=${encodeURIComponent(millName)}`
     );
   },
+  getNextRecCard: async () => {
+    return request<{ nextRecCard: number }>('/mill-receipts/next-rec-card');
+  },
   getAvailableTakas: async (dispatchId: string) => {
     return request<{
       dispatch: MillPendingDispatch;
@@ -1786,6 +1789,35 @@ export const millReceiptsApi = {
   update: async (id: string, body: Record<string, unknown>) => {
     return request<{ entry: MillReceipt }>(`/mill-receipts/${id}`, {
       method: 'PUT',
+      body: JSON.stringify(body)
+    });
+  }
+};
+
+export const cuttingCostsApi = {
+  lookup: async (cutCard: string, asOf?: string) => {
+    const query = new URLSearchParams({ cutCard });
+    if (asOf) query.set('asOf', asOf);
+    return request<{ source: CuttingCostSource; saved: CuttingCard | null }>(
+      `/cutting-costs/lookup?${query.toString()}`
+    );
+  },
+  list: async () => {
+    return request<{ entries: CuttingCard[] }>('/cutting-costs');
+  },
+  getById: async (id: string) => {
+    return request<{ entry: CuttingCard }>(`/cutting-costs/${id}`);
+  },
+  save: async (body: {
+    id?: string;
+    cutCardNo: string;
+    entryDate: string;
+    freshSarees: number;
+    secondSarees?: number;
+    interestRate?: number;
+  }) => {
+    return request<{ entry: CuttingCard }>('/cutting-costs', {
+      method: 'POST',
       body: JSON.stringify(body)
     });
   }

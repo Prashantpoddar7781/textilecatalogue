@@ -78,6 +78,9 @@ export const MillReceiptTakaModal: React.FC<Props> = ({ open, rows, onClose, onA
               {isReturn ? 'Select Returned Takas' : 'Taka Details'}
             </h3>
             <p className="text-xs text-gray-500">
+              Type the finish metres from the mill bill. Grey metres stay as dispatched. Shortage is grey minus finish.
+            </p>
+            <p className="text-xs text-gray-500">
               Grey Mts: {totals.greyMts.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
               {' · '}
               {isReturn ? 'Return Mts' : 'Fin Mts'}: {totals.recMts.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
@@ -102,7 +105,7 @@ export const MillReceiptTakaModal: React.FC<Props> = ({ open, rows, onClose, onA
                   </th>
                   <th className="p-2">Taka Sr.</th>
                   <th className="p-2 text-right">Grey M</th>
-                  <th className="p-2 text-right">{isReturn ? 'Return Mts' : 'Rec Mts'}</th>
+                  <th className="p-2 text-right">{isReturn ? 'Return Mts' : 'Fin Mts'}</th>
                   <th className="p-2 text-right">Short %</th>
                 </tr>
               </thead>

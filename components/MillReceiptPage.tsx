@@ -402,9 +402,17 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
     setError('');
     try {
       const { entries } = await millReceiptsApi.getPendingDispatches(millName.trim());
-      setPendingDispatches(entries || []);
+      const typedLot = effectiveLot.trim().toLowerCase();
+      const all = entries || [];
+      const matched = typedLot
+        ? all.filter(row => String(row.millLotNo || '').trim().toLowerCase() === typedLot)
+        : all;
+      setPendingDispatches(matched.length ? matched : all);
       setDespPickerOpen(true);
-      if (!entries?.length) setError('No pending grey dispatches for this mill.');
+      if (!all.length) setError('No pending grey dispatches for this mill.');
+      else if (typedLot && !matched.length) {
+        setError(`No pending dispatch for lot ${effectiveLot}. Showing the mill's other challans.`);
+      }
     } catch (err: any) {
       setError(err.message || 'Could not load pending dispatches.');
     } finally {
@@ -414,13 +422,21 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
 
   const applyDispatch = async (dispatch: MillPendingDispatch) => {
     setGreyDispatchId(dispatch.id);
-    setDespNo(String(dispatch.srNo ?? dispatch.challanNo ?? ''));
+    setDespNo(String(dispatch.challanNo || dispatch.srNo || ''));
     setQuality(dispatch.quality || '');
     setMarka(dispatch.ourMarka || '');
     setGreyMts(String(dispatch.pendingMts || dispatch.despMts || ''));
     if (dispatch.millLotNo && !lotNo) setLotNo(dispatch.millLotNo);
     setDespPickerOpen(false);
     setError('');
+    if (!recChallan.trim()) {
+      try {
+        const { nextRecCard } = await millReceiptsApi.getNextRecCard();
+        setRecChallan(String(nextRecCard));
+      } catch {
+        // Save still assigns the next rec card if this preview fails.
+      }
+    }
     try {
       const { availableRows } = await millReceiptsApi.getAvailableTakas(dispatch.id);
       setAvailableTakas(availableRows || []);
@@ -743,7 +759,7 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
                   <tr>
                     <th className="px-2 py-2">Lot No</th>
                     <th className="px-2 py-2">Desp. N</th>
-                    <th className="px-2 py-2">Rec Cal</th>
+                    <th className="px-2 py-2">Rec Card</th>
                     <th className="px-2 py-2">Marka</th>
                     <th className="px-2 py-2">Grey Qual</th>
                     <th className="px-2 py-2">Print Style</th>
@@ -761,7 +777,7 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
                     <td className="px-2 py-2 font-semibold">{linePreview.lotNo}</td>
                     <td className="px-2 py-2 font-bold text-teal-800">{linePreview.despNo}</td>
                     <td className="px-2 py-2">
-                      <input className={inputClass} value={recChallan} onChange={e => setRecChallan(e.target.value)} />
+                      <input className={inputClass} value={recChallan} onChange={e => setRecChallan(e.target.value)} placeholder="Auto" title="Next rec card in sequence" />
                     </td>
                     <td className="px-2 py-2">
                       <input className={inputClass} value={marka} onChange={e => setMarka(e.target.value)} />
@@ -1004,8 +1020,8 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
               <table className="min-w-full text-left text-xs">
                 <thead className="sticky top-0 border-b bg-gray-50 text-[10px] uppercase text-gray-500">
                   <tr>
-                    <th className="px-3 py-2">Desp</th>
-                    <th className="px-3 py-2">Challan</th>
+                    <th className="px-3 py-2">Desp No</th>
+                    <th className="px-3 py-2">Lot</th>
                     <th className="px-3 py-2">Date</th>
                     <th className="px-3 py-2">Quality</th>
                     <th className="px-3 py-2 text-right">Desp Mts</th>
@@ -1020,8 +1036,8 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
                       className="cursor-pointer border-b hover:bg-teal-50"
                       onClick={() => void applyDispatch(d)}
                     >
-                      <td className="px-3 py-2 font-bold">{d.srNo ?? '-'}</td>
-                      <td className="px-3 py-2">{d.challanNo || '-'}</td>
+                      <td className="px-3 py-2 font-black text-teal-800">{d.challanNo || d.srNo || '-'}</td>
+                      <td className="px-3 py-2 font-semibold">{d.millLotNo || '-'}</td>
                       <td className="px-3 py-2">{formatDate(d.dispatchDate)}</td>
                       <td className="px-3 py-2">{d.quality || '-'}</td>
                       <td className="px-3 py-2 text-right">{d.despMts.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
