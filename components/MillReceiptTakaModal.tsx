@@ -8,24 +8,27 @@ interface Props {
   onClose: () => void;
   onApply: (rows: MillReceiptTakaRow[]) => void;
   mode?: 'FINISH' | 'RETURN';
+  /** Sr numbers to tick when the modal opens. Omit to tick every taka on the challan. */
+  presetSrNos?: number[] | null;
 }
 
 const round2 = (v: number) => Math.round((Number(v) || 0) * 100) / 100;
 
-export const MillReceiptTakaModal: React.FC<Props> = ({ open, rows, onClose, onApply, mode = 'FINISH' }) => {
+export const MillReceiptTakaModal: React.FC<Props> = ({ open, rows, onClose, onApply, mode = 'FINISH', presetSrNos = null }) => {
   const isReturn = mode === 'RETURN';
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [recMtsBySr, setRecMtsBySr] = useState<Record<number, string>>({});
 
   useEffect(() => {
     if (!open) return;
-    setSelected(new Set());
+    const preset = presetSrNos?.length ? presetSrNos : rows.map(row => row.srNo);
+    setSelected(new Set(preset));
     const initial: Record<number, string> = {};
     for (const row of rows) {
       initial[row.srNo] = String(row.recMts ?? row.greyMts ?? '');
     }
     setRecMtsBySr(initial);
-  }, [open, rows]);
+  }, [open, rows, presetSrNos]);
 
   const selectedRows = useMemo(() => {
     return rows

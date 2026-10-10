@@ -134,6 +134,31 @@ async function getNextRecCard(db, userId) {
   return max + 1;
 }
 
+async function allocateNextVoucherNo(db, userId) {
+  const maxVoucher = await db.millReceipt.aggregate({
+    where: { userId },
+    _max: { voucherNo: true }
+  });
+  return (maxVoucher._max.voucherNo ?? 0) + 1;
+}
+
+/** Last share absorbs rounding so the lines add back to the voucher total. */
+function splitMoney(total, weights) {
+  const amount = roundMoney(total);
+  if (!weights.length) return [];
+  const sum = weights.reduce((s, w) => s + (Number(w) || 0), 0);
+  if (!(sum > 0)) {
+    return weights.map((_, index) => (index === weights.length - 1 ? amount : 0));
+  }
+  let allocated = 0;
+  return weights.map((weight, index) => {
+    if (index === weights.length - 1) return roundMoney(amount - allocated);
+    const share = roundMoney(amount * (Number(weight) || 0) / sum);
+    allocated = roundMoney(allocated + share);
+    return share;
+  });
+}
+
 function resolvePlaceOfSupply({ millGstin, placeOfSupply, stateCode }) {
   if (optionalString(placeOfSupply)) return optionalString(placeOfSupply);
   const fromGst = getStateFromGstin(millGstin);
@@ -188,7 +213,6 @@ router.get('/meta', authenticateToken, requireActiveSubscription, async (req, re
   try {
     const userId = req.user.userId;
     const ctx = await getCompanyContext(userId);
-    const count = await prisma.millReceipt.count({ where: { userId } });
     const [customers, suppliers] = await Promise.all([
       prisma.customer.findMany({
         where: { userId },
@@ -243,7 +267,7 @@ router.get('/meta', authenticateToken, requireActiveSubscription, async (req, re
 
     res.json({
       ...ctx,
-      nextVoucherNo: count + 1,
+      nextVoucherNo: await allocateNextVoucherNo(prisma, userId),
       entryTypes: [DEFAULT_ENTRY_TYPE],
       processTypes: PROCESS_TYPES,
       defaultProcessType: DEFAULT_PROCESS_TYPE,
@@ -366,7 +390,8 @@ router.get('/pending-dispatches/:dispatchId/available-takas', authenticateToken,
     });
     if (!dispatch) return res.status(404).json({ error: 'Grey dispatch not found' });
 
-    const { srNos, receivedMts } = await getReceivedSrNos(dispatch.id);
+    const excludeReceiptId = optionalString(req.query.excludeReceiptId);
+    const { srNos, receivedMts } = await getReceivedSrNos(dispatch.id, excludeReceiptId);
     const summary = buildDispatchPendingSummary(dispatch, srNos, receivedMts);
     const availableRows = summary.takaDetails.filter(row => !srNos.has(row.srNo));
 
@@ -560,6 +585,18 @@ router.get('/:id', authenticateToken, requireActiveSubscription, async (req, res
     });
     if (!entry) return res.status(404).json({ error: 'Mill receipt not found' });
 
+    const siblings = entry.voucherNo == null
+      ? [entry]
+      : await prisma.millReceipt.findMany({
+        where: {
+          userId: req.user.userId,
+          voucherNo: entry.voucherNo,
+          millName: entry.millName,
+          status: { not: 'cancelled' }
+        },
+        orderBy: [{ recChallan: 'asc' }, { createdAt: 'asc' }]
+      });
+
     // Repair display when older rows saved TDS % with On Amt / Amt stuck at 0
     const tdsPercent = Number(entry.tdsPercent) || 0;
     let tdsOnAmt = roundMoney(entry.tdsOnAmt || 0);
@@ -584,8 +621,349 @@ router.get('/:id', authenticateToken, requireActiveSubscription, async (req, res
         tdsPercent,
         tdsAmount,
         netAfterTds
+      },
+      lines: siblings
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/batch', authenticateToken, requireActiveSubscription, async (req, res, next) => {
+  try {
+    const userId = req.user.userId;
+    const rawLines = Array.isArray(req.body.lines) ? req.body.lines : [];
+    if (!rawLines.length) {
+      return res.status(400).json({ error: 'Add at least one dispatch challan.' });
+    }
+
+    const millName = optionalString(req.body.millName);
+    if (!millName) return res.status(400).json({ error: 'Mill is required.' });
+
+    const seenDispatch = new Set();
+    for (const line of rawLines) {
+      const dispatchId = optionalString(line?.greyDispatchId);
+      const lotNo = optionalString(line?.lotNo);
+      if (!dispatchId) return res.status(400).json({ error: 'Each line needs a grey dispatch.' });
+      if (!lotNo) return res.status(400).json({ error: 'Each line needs a lot number.' });
+      if (seenDispatch.has(dispatchId)) {
+        return res.status(400).json({ error: 'Each dispatch challan can be added once on a voucher.' });
+      }
+      seenDispatch.add(dispatchId);
+    }
+
+    const ctx = await getCompanyContext(userId);
+    const processType = normalizeProcessType(req.body.processType);
+    const isReturn = isReturnProcess(processType);
+    const millGstin = optionalString(req.body.millGstin);
+    const placeOfSupply = resolvePlaceOfSupply({
+      millGstin,
+      placeOfSupply: req.body.placeOfSupply,
+      stateCode: req.body.stateCode
+    });
+
+    const keptIds = rawLines.map(line => optionalString(line.id)).filter(Boolean);
+    const existingRows = keptIds.length
+      ? await prisma.millReceipt.findMany({
+        where: { userId, id: { in: keptIds }, status: { not: 'cancelled' } }
+      })
+      : [];
+    if (keptIds.length !== existingRows.length) {
+      return res.status(404).json({ error: 'Mill receipt not found' });
+    }
+    const existingById = new Map(existingRows.map(row => [row.id, row]));
+
+    const prepared = [];
+    for (const line of rawLines) {
+      const lineId = optionalString(line.id);
+      const existing = lineId ? existingById.get(lineId) : null;
+      const dispatch = await prisma.greyDispatch.findFirst({
+        where: {
+          id: String(line.greyDispatchId),
+          userId,
+          status: { not: 'cancelled' },
+          transactionType: { not: 'RETURN' }
+        }
+      });
+      if (!dispatch) return res.status(404).json({ error: 'Grey dispatch not found' });
+      if (!matchesSupplierName(dispatch.millName, millName)) {
+        return res.status(400).json({
+          error: `Dispatch ${dispatch.challanNo || dispatch.srNo || ''} does not belong to this mill.`
+        });
+      }
+
+      const takaDetails = normalizeTakaDetails(line.takaDetails);
+      const { srNos: alreadyReceived } = await getReceivedSrNos(dispatch.id, lineId);
+      for (const row of takaDetails) {
+        if (alreadyReceived.has(row.srNo)) {
+          return res.status(400).json({
+            error: `Taka ${row.srNo} is already received from dispatch ${dispatch.challanNo || dispatch.srNo || ''}.`
+          });
+        }
+      }
+
+      const takaGreyMts = roundMoney(takaDetails.reduce((s, r) => s + r.greyMts, 0));
+      const takaRecMts = roundMoney(takaDetails.reduce((s, r) => s + r.recMts, 0));
+      const greyMts = optionalNumber(line.greyMts)
+        ?? (takaGreyMts > 0 ? takaGreyMts : roundMoney(existing?.greyMts || dispatch.despMts));
+      const recMts = optionalNumber(line.recMts) ?? takaRecMts;
+      const recTaka = optionalNumber(line.recTaka) ?? takaDetails.length;
+      const qtyCheck = isReturn ? greyMts : recMts;
+      if (!(qtyCheck > 0)) {
+        return res.status(400).json({
+          error: isReturn
+            ? 'Returned grey meters must be greater than zero.'
+            : `Received meters must be greater than zero for challan ${dispatch.challanNo || dispatch.srNo || ''}.`
+        });
+      }
+
+      const shortMts = isReturn ? 0 : roundMoney(Math.max(0, greyMts - recMts));
+      const shortPct = !isReturn && greyMts > 0 ? roundMoney((shortMts / greyMts) * 100) : 0;
+      const jobRate = isReturn ? 0 : (optionalNumber(line.jobRate) || 0);
+      const jobAmount = isReturn ? 0 : roundMoney(recMts * jobRate);
+
+      prepared.push({
+        id: lineId,
+        existing,
+        dispatch,
+        takaDetails,
+        greyMts,
+        recMts: isReturn ? greyMts : recMts,
+        recTaka,
+        shortMts,
+        shortPct,
+        jobRate,
+        jobAmount,
+        lotNo: optionalString(line.lotNo),
+        despNo: optionalString(line.despNo) || String(dispatch.challanNo || dispatch.srNo || ''),
+        recChallan: optionalString(line.recChallan),
+        marka: optionalString(line.marka) || dispatch.ourMarka,
+        quality: optionalString(line.quality) || dispatch.quality,
+        printStyle: optionalString(line.printStyle)
+      });
+    }
+
+    const rdLessAddAmt = isReturn ? 0 : (optionalNumber(req.body.rdLessAddAmt) || 0);
+    const rdPerMtr = isReturn ? 0 : (optionalNumber(req.body.rdPerMtr) || 0);
+    const weights = prepared.map((line, index) => roundMoney(line.jobAmount + (index === 0 ? rdLessAddAmt : 0)));
+    const voucherJob = roundMoney(prepared.reduce((sum, line) => sum + line.jobAmount, 0));
+    const voucherGross = roundMoney(voucherJob + rdLessAddAmt);
+
+    let totals = {
+      discountPercent: 0,
+      discountAmount: 0,
+      otherLessBefore: 0,
+      otherAddBefore: 0,
+      taxableAmount: 0,
+      gstRate: optionalNumber(req.body.gstRate) ?? ctx.defaultGstRate,
+      cgstRate: 0,
+      cgstAmount: 0,
+      sgstRate: 0,
+      sgstAmount: 0,
+      igstRate: 0,
+      igstAmount: 0,
+      grossAmount: voucherGross,
+      netAmount: 0,
+      placeOfSupply: null,
+      stateCode: null,
+      gstTypeLabel: null,
+      gstType: null
+    };
+    let tds = { tdsOnAmt: 0, tdsPercent: 0, tdsAmount: 0, netAfterTds: 0 };
+
+    if (!isReturn) {
+      totals = calculateGreyPurchaseTotals({
+        grossAmount: voucherGross,
+        discountPercent: req.body.discountPercent,
+        otherAddBefore: req.body.otherAdd,
+        otherLessBefore: req.body.otherLess,
+        otherAddAfter: 0,
+        otherLessAfter: 0,
+        gstRate: req.body.gstRate ?? ctx.defaultGstRate,
+        placeOfSupply,
+        businessState: ctx.businessState,
+        partyGstin: millGstin,
+        stateCode: req.body.stateCode
+      });
+      tds = resolveTdsFields({
+        tdsOnAmtInput: req.body.tdsOnAmt,
+        tdsPercentInput: req.body.tdsPercent,
+        taxableAmount: totals.taxableAmount,
+        invoiceValue: totals.netAmount,
+        jobAmount: voucherJob
+      });
+    }
+
+    const shares = {
+      grossAmount: splitMoney(totals.grossAmount || voucherGross, weights),
+      discountAmount: splitMoney(totals.discountAmount, weights),
+      otherLess: splitMoney(totals.otherLessBefore, weights),
+      otherAdd: splitMoney(totals.otherAddBefore, weights),
+      taxableAmount: splitMoney(totals.taxableAmount, weights),
+      cgstAmount: splitMoney(totals.cgstAmount, weights),
+      sgstAmount: splitMoney(totals.sgstAmount, weights),
+      igstAmount: splitMoney(totals.igstAmount, weights),
+      invoiceValue: splitMoney(totals.netAmount, weights),
+      tdsOnAmt: splitMoney(tds.tdsOnAmt, weights),
+      tdsAmount: splitMoney(tds.tdsAmount, weights),
+      netAfterTds: splitMoney(tds.netAfterTds, weights)
+    };
+
+    const anchor = existingRows[0] || null;
+    const requestedVoucher = optionalNumber(req.body.voucherNo);
+    const voucherNo = requestedVoucher ?? anchor?.voucherNo ?? await allocateNextVoucherNo(prisma, userId);
+    const stayingOnVoucher = Boolean(
+      anchor && (requestedVoucher == null || requestedVoucher === anchor.voucherNo)
+    );
+    const clash = await prisma.millReceipt.findFirst({
+      where: {
+        userId,
+        voucherNo,
+        status: { not: 'cancelled' },
+        ...(keptIds.length ? { id: { notIn: keptIds } } : {}),
+        ...(stayingOnVoucher ? { NOT: { millName: anchor.millName } } : {})
       }
     });
+    if (clash) {
+      return res.status(409).json({
+        error: `Voucher ${voucherNo} is already saved. Open that voucher to edit it.`
+      });
+    }
+
+    await ensureMillParty(prisma, userId, millName);
+    await resolveSupplierForEntry(prisma, userId, {
+      partyName: millName,
+      partyGstin: millGstin,
+      placeOfSupply: totals.placeOfSupply || placeOfSupply,
+      partyMsme: optionalString(req.body.partyMsme),
+      transactionType: 'MILL REC.CHALLAN'
+    });
+
+    const receiptInclude = {
+      greyDispatch: true,
+      greyPurchase: { select: { id: true, srNo: true, billNo: true, partyName: true } }
+    };
+
+    const entries = await prisma.$transaction(async (tx) => {
+      if (anchor) {
+        const dropped = await tx.millReceipt.findMany({
+          where: {
+            userId,
+            voucherNo: anchor.voucherNo,
+            millName: anchor.millName,
+            status: { not: 'cancelled' },
+            id: { notIn: keptIds }
+          }
+        });
+        for (const row of dropped) {
+          if (isReturnProcess(row.processType) && row.greyPurchaseId) {
+            await adjustPurchaseStockForReturn(tx, row.greyPurchaseId, roundMoney(row.greyMts || 0));
+          }
+          await tx.millReceipt.update({
+            where: { id: row.id },
+            data: { status: 'cancelled' }
+          });
+        }
+      }
+
+      let nextCard = await getNextRecCard(tx, userId);
+      const usedCards = new Set(
+        prepared.map(line => Number(line.recChallan) || 0).filter(num => num > 0)
+      );
+      const takeCard = () => {
+        while (usedCards.has(nextCard)) nextCard += 1;
+        const card = String(nextCard);
+        usedCards.add(nextCard);
+        nextCard += 1;
+        return card;
+      };
+
+      const saved = [];
+      for (let index = 0; index < prepared.length; index += 1) {
+        const line = prepared[index];
+        const data = {
+          greyDispatchId: line.dispatch.id,
+          greyPurchaseId: line.dispatch.greyPurchaseId,
+          companyName: optionalString(req.body.companyName) || line.existing?.companyName || line.dispatch.companyName || ctx.companyName,
+          millName,
+          millGstin,
+          partyMsme: optionalString(req.body.partyMsme) ?? line.existing?.partyMsme ?? null,
+          entryType: optionalString(req.body.entryType) || line.existing?.entryType || DEFAULT_ENTRY_TYPE,
+          processType,
+          hsnCode: optionalString(req.body.hsnCode) || line.existing?.hsnCode || DEFAULT_HSN,
+          voucherNo,
+          receiptDate: req.body.receiptDate ? new Date(req.body.receiptDate) : (line.existing?.receiptDate || new Date()),
+          billNo: optionalString(req.body.billNo),
+          placeOfSupply: totals.placeOfSupply || placeOfSupply,
+          stateCode: totals.stateCode || getStateCodeFromName(placeOfSupply),
+          gstType: totals.gstTypeLabel || totals.gstType,
+          lotNo: line.lotNo,
+          despNo: line.despNo,
+          recChallan: line.recChallan || line.existing?.recChallan || takeCard(),
+          marka: line.marka,
+          quality: line.quality,
+          printStyle: line.printStyle,
+          recTaka: line.recTaka,
+          recMts: line.recMts,
+          greyMts: line.greyMts,
+          shortMts: line.shortMts,
+          shortPct: line.shortPct,
+          jobRate: line.jobRate,
+          jobAmount: line.jobAmount,
+          rdPerMtr: index === 0 ? rdPerMtr : 0,
+          rdLessAddAmt: index === 0 ? rdLessAddAmt : 0,
+          discountPercent: totals.discountPercent,
+          discountAmount: shares.discountAmount[index],
+          otherLess: shares.otherLess[index],
+          otherAdd: shares.otherAdd[index],
+          taxableAmount: shares.taxableAmount[index],
+          gstRate: totals.gstRate,
+          cgstRate: totals.cgstRate,
+          cgstAmount: shares.cgstAmount[index],
+          sgstRate: totals.sgstRate,
+          sgstAmount: shares.sgstAmount[index],
+          igstRate: totals.igstRate,
+          igstAmount: shares.igstAmount[index],
+          grossAmount: shares.grossAmount[index],
+          invoiceValue: shares.invoiceValue[index],
+          tdsOnAmt: shares.tdsOnAmt[index],
+          tdsPercent: tds.tdsPercent,
+          tdsAmount: shares.tdsAmount[index],
+          netAfterTds: shares.netAfterTds[index],
+          remarks: optionalString(req.body.remarks),
+          takaDetails: line.takaDetails.length ? line.takaDetails : null
+        };
+
+        if (line.id) {
+          const wasReturn = isReturnProcess(line.existing?.processType);
+          const prevRestored = wasReturn ? roundMoney(line.existing?.greyMts || 0) : 0;
+          const nextRestored = isReturn ? line.greyMts : 0;
+          const stockDelta = roundMoney(prevRestored - nextRestored);
+          const updated = await tx.millReceipt.update({
+            where: { id: line.id },
+            data,
+            include: receiptInclude
+          });
+          const purchaseId = line.dispatch.greyPurchaseId || line.existing?.greyPurchaseId;
+          if (purchaseId && stockDelta !== 0) {
+            await adjustPurchaseStockForReturn(tx, purchaseId, stockDelta);
+          }
+          saved.push(updated);
+        } else {
+          const created = await tx.millReceipt.create({
+            data: { userId, ...data },
+            include: receiptInclude
+          });
+          if (isReturn && line.dispatch.greyPurchaseId) {
+            await adjustPurchaseStockForReturn(tx, line.dispatch.greyPurchaseId, -line.greyMts);
+          }
+          saved.push(created);
+        }
+      }
+      return saved;
+    });
+
+    res.status(keptIds.length ? 200 : 201).json({ entries, voucherNo });
   } catch (error) {
     next(error);
   }
@@ -726,7 +1104,6 @@ router.post('/', authenticateToken, requireActiveSubscription, [
       netAfterTds = 0;
     }
 
-    const count = await prisma.millReceipt.count({ where: { userId } });
     await ensureMillParty(prisma, userId, millName);
     await resolveSupplierForEntry(prisma, userId, {
       partyName: millName,
@@ -751,7 +1128,7 @@ router.post('/', authenticateToken, requireActiveSubscription, [
           entryType: optionalString(req.body.entryType) || DEFAULT_ENTRY_TYPE,
           processType,
           hsnCode: optionalString(req.body.hsnCode) || DEFAULT_HSN,
-          voucherNo: optionalNumber(req.body.voucherNo) ?? (count + 1),
+          voucherNo: optionalNumber(req.body.voucherNo) ?? (await allocateNextVoucherNo(tx, userId)),
           receiptDate: req.body.receiptDate ? new Date(req.body.receiptDate) : new Date(),
           billNo: optionalString(req.body.billNo),
           placeOfSupply: totals.placeOfSupply || placeOfSupply,

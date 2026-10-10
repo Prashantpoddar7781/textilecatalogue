@@ -3,7 +3,7 @@ import { ArrowLeft, ListOrdered, Loader2 } from 'lucide-react';
 import { millReceiptsApi } from '../services/api';
 import { getGstDocumentType, getItcEligibility, gstReturnSection, postingDiscountAccount, postingTdsAccount, postingTdsPercent, resolveDefaultTdsPercent } from '../constants/erpTransactionPostingRules';
 import { getGstDefaultsForTransactionType } from '../constants/erpTransactionTypes';
-import { AccountParty, ErpSession, MillPendingDispatch, MillReceiptTakaRow } from '../types';
+import { AccountParty, ErpSession, MillPendingDispatch, MillReceipt, MillReceiptTakaRow } from '../types';
 import { AccountsInformationDialog, AddPartyConfirmDialog } from './AccountsInformationDialog';
 import { ErpFormShell } from './ErpFormShell';
 import { ErpSaveButton } from './ErpSaveButton';
@@ -26,6 +26,43 @@ const labelClass = 'mb-1 block text-[10px] font-black uppercase tracking-wide te
 
 const formatDate = (value?: string | null) =>
   value ? new Date(value).toLocaleDateString('en-IN') : '-';
+
+interface ReceiptLine {
+  key: string;
+  id?: string;
+  greyDispatchId: string;
+  lotNo: string;
+  despNo: string;
+  recChallan: string;
+  marka: string;
+  quality: string;
+  printStyle: string;
+  recTaka: string;
+  recMts: string;
+  greyMts: string;
+  jobRate: string;
+  takaDetails: MillReceiptTakaRow[];
+}
+
+const lineFromReceipt = (entry: MillReceipt): ReceiptLine => ({
+  key: entry.id,
+  id: entry.id,
+  greyDispatchId: entry.greyDispatchId,
+  lotNo: entry.lotNo || '',
+  despNo: entry.despNo || '',
+  recChallan: entry.recChallan || '',
+  marka: entry.marka || '',
+  quality: entry.quality || '',
+  printStyle: entry.printStyle || '',
+  recTaka: String(entry.recTaka ?? ''),
+  recMts: String(entry.recMts ?? ''),
+  greyMts: String(entry.greyMts ?? ''),
+  jobRate: entry.jobRate ? String(entry.jobRate) : '',
+  takaDetails: Array.isArray(entry.takaDetails) ? entry.takaDetails : []
+});
+
+const lineShort = (line: ReceiptLine) => round2(Math.max(0, toNum(line.greyMts) - toNum(line.recMts)));
+const lineJobAmount = (line: ReceiptLine) => round2(toNum(line.recMts) * toNum(line.jobRate));
 
 export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const editId = useMemo(() => new URLSearchParams(window.location.search).get('edit'), []);
@@ -105,6 +142,11 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [pendingDispatches, setPendingDispatches] = useState<MillPendingDispatch[]>([]);
   const [availableTakas, setAvailableTakas] = useState<MillReceiptTakaRow[]>([]);
   const [selectedTakaDetails, setSelectedTakaDetails] = useState<MillReceiptTakaRow[]>([]);
+  const [lines, setLines] = useState<ReceiptLine[]>([]);
+  const [activeLineKey, setActiveLineKey] = useState<string | null>(null);
+  const [pickedDispatchIds, setPickedDispatchIds] = useState<string[]>([]);
+  const [takaPreset, setTakaPreset] = useState<number[] | null>(null);
+  const [linesMill, setLinesMill] = useState('');
   const [despPickerOpen, setDespPickerOpen] = useState(false);
   const [lotPromptOpen, setLotPromptOpen] = useState(false);
   const [lotDraft, setLotDraft] = useState('');
@@ -121,16 +163,24 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
     onError: setError
   });
 
+  const lineTotals = useMemo(() => {
+    const recTakaSum = lines.reduce((sum, line) => sum + toNum(line.recTaka), 0);
+    const grey = round2(lines.reduce((sum, line) => sum + toNum(line.greyMts), 0));
+    const rec = round2(lines.reduce((sum, line) => sum + toNum(line.recMts), 0));
+    const job = isReturn ? 0 : round2(lines.reduce((sum, line) => sum + lineJobAmount(line), 0));
+    return { recTaka: recTakaSum, grey, rec, short: round2(Math.max(0, grey - rec)), job };
+  }, [lines, isReturn]);
+
   useEffect(() => {
     if (isReturn) {
       setJobAmount(0);
       setGrossAmount(0);
       return;
     }
-    const amt = round2(toNum(recMts) * toNum(jobRate));
+    const amt = lines.length ? lineTotals.job : round2(toNum(recMts) * toNum(jobRate));
     setJobAmount(amt);
     setGrossAmount(round2(amt + toNum(rdLessAddAmt)));
-  }, [recMts, jobRate, rdLessAddAmt, isReturn]);
+  }, [lines.length, lineTotals.job, recMts, jobRate, rdLessAddAmt, isReturn]);
 
   useEffect(() => {
     const grey = toNum(greyMts);
@@ -261,8 +311,11 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
         if (meta.entryTypes?.[0]) setEntryType(meta.entryTypes[0]);
 
         if (isEditMode && editId) {
-          const { entry } = await millReceiptsApi.getById(editId);
+          const { entry, lines: savedLines } = await millReceiptsApi.getById(editId);
           if (cancelled) return;
+          const voucherRows = savedLines?.length ? savedLines : [entry];
+          const sumField = (key: keyof MillReceipt) =>
+            round2(voucherRows.reduce((sum, row) => sum + (Number(row[key]) || 0), 0));
           setCompanyName(entry.companyName || meta.companyName || '');
           setMillName(entry.millName || '');
           setMillGstin(entry.millGstin || '');
@@ -292,14 +345,14 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
           setGreyMts(String(entry.greyMts || ''));
           setShortMts(String(entry.shortMts || '0'));
           setShortPct(String(entry.shortPct || '0'));
-          setJobRate(String(entry.jobRate || ''));
-          setJobAmount(Number(entry.jobAmount) || 0);
-          setRdPerMtr(String(entry.rdPerMtr || ''));
-          setRdLessAddAmt(String(entry.rdLessAddAmt || ''));
+          setJobRate(String(voucherRows.find(row => row.jobRate)?.jobRate || entry.jobRate || ''));
+          setJobAmount(sumField('jobAmount'));
+          setRdPerMtr(String(voucherRows.find(row => Number(row.rdPerMtr))?.rdPerMtr || entry.rdPerMtr || ''));
+          setRdLessAddAmt(sumField('rdLessAddAmt') ? String(sumField('rdLessAddAmt')) : '');
           setDiscountPercent(String(entry.discountPercent || ''));
-          setDiscountAmount(Number(entry.discountAmount) || 0);
-          setOtherLess(String(entry.otherLess || ''));
-          setOtherAdd(String(entry.otherAdd || ''));
+          setDiscountAmount(sumField('discountAmount'));
+          setOtherLess(sumField('otherLess') ? String(sumField('otherLess')) : '');
+          setOtherAdd(sumField('otherAdd') ? String(sumField('otherAdd')) : '');
           setGstRate(String(entry.gstRate ?? 5));
           setCgstRate(String(entry.cgstRate ?? 0));
           setCgstAmount(String(entry.cgstAmount ?? 0));
@@ -307,24 +360,30 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
           setSgstAmount(String(entry.sgstAmount ?? 0));
           setIgstRate(String(entry.igstRate ?? 0));
           setIgstAmount(String(entry.igstAmount ?? 0));
-          setGrossAmount(Number(entry.grossAmount) || 0);
-          setTaxableAmount(Number(entry.taxableAmount) || 0);
-          setInvoiceValue(Number(entry.invoiceValue) || 0);
-          const taxable = Number(entry.taxableAmount) || Number(entry.jobAmount) || 0;
+          setGrossAmount(sumField('grossAmount'));
+          setTaxableAmount(sumField('taxableAmount'));
+          setInvoiceValue(sumField('invoiceValue'));
+          const taxable = sumField('taxableAmount') || sumField('jobAmount');
           const pct = Number(entry.tdsPercent) || 0;
-          let onAmt = Number(entry.tdsOnAmt) || 0;
+          let onAmt = sumField('tdsOnAmt');
           if (pct > 0 && onAmt <= 0) onAmt = taxable;
-          const tdsAmt = Number(entry.tdsAmount) > 0
-            ? Number(entry.tdsAmount)
+          const tdsAmt = sumField('tdsAmount') > 0
+            ? sumField('tdsAmount')
             : round2(onAmt * pct / 100);
           setTdsOnAmt(onAmt > 0 ? String(onAmt) : (taxable ? String(taxable) : ''));
           setTdsPercent(pct ? String(pct) : '');
           setTdsAmount(String(tdsAmt));
-          setNetAfterTds(Number(entry.netAfterTds) || round2((Number(entry.invoiceValue) || 0) - tdsAmt));
+          setNetAfterTds(sumField('netAfterTds') || round2(sumField('invoiceValue') - tdsAmt));
+          setCgstAmount(String(sumField('cgstAmount')));
+          setSgstAmount(String(sumField('sgstAmount')));
+          setIgstAmount(String(sumField('igstAmount')));
           setTdsOnAmtTouched(onAmt > 0);
           setTdsPercentTouched(pct > 0);
           setRemarks(entry.remarks || '');
-          setSelectedTakaDetails(Array.isArray(entry.takaDetails) ? entry.takaDetails : []);
+          setLines(voucherRows.map(lineFromReceipt));
+          setActiveLineKey(voucherRows[0]?.id || null);
+          setLinesMill(entry.millName || '');
+          setSelectedTakaDetails(Array.isArray(voucherRows[0]?.takaDetails) ? voucherRows[0].takaDetails : []);
         }
       } catch (err: any) {
         if (!cancelled) setError(err.message || 'Could not load mill receipt.');
@@ -407,11 +466,12 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
       const matched = typedLot
         ? all.filter(row => String(row.millLotNo || '').trim().toLowerCase() === typedLot)
         : all;
-      setPendingDispatches(matched.length ? matched : all);
+      setPendingDispatches(all);
+      setPickedDispatchIds([]);
       setDespPickerOpen(true);
       if (!all.length) setError('No pending grey dispatches for this mill.');
       else if (typedLot && !matched.length) {
-        setError(`No pending dispatch for lot ${effectiveLot}. Showing the mill's other challans.`);
+        setError(`No pending dispatch for lot ${effectiveLot}. Tick the challans on this mill bill.`);
       }
     } catch (err: any) {
       setError(err.message || 'Could not load pending dispatches.');
@@ -420,50 +480,19 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
     }
   };
 
-  const applyDispatch = async (dispatch: MillPendingDispatch) => {
-    setGreyDispatchId(dispatch.id);
-    setDespNo(String(dispatch.challanNo || dispatch.srNo || ''));
-    setQuality(dispatch.quality || '');
-    setMarka(dispatch.ourMarka || '');
-    setGreyMts(String(dispatch.pendingMts || dispatch.despMts || ''));
-    if (dispatch.millLotNo && !lotNo) setLotNo(dispatch.millLotNo);
-    setDespPickerOpen(false);
+  const openLineTakas = async (line: ReceiptLine) => {
+    setActiveLineKey(line.key);
     setError('');
-    if (!recChallan.trim()) {
-      try {
-        const { nextRecCard } = await millReceiptsApi.getNextRecCard();
-        setRecChallan(String(nextRecCard));
-      } catch {
-        // Save still assigns the next rec card if this preview fails.
-      }
-    }
     try {
-      const { availableRows } = await millReceiptsApi.getAvailableTakas(dispatch.id);
-      setAvailableTakas(availableRows || []);
-      if (availableRows?.length) setTakaModalOpen(true);
-      else setError('No taka left to receive on this dispatch.');
-    } catch (err: any) {
-      setError(err.message || 'Could not load taka details.');
-    }
-  };
-
-  const applyTakas = (rows: MillReceiptTakaRow[]) => {
-    setSelectedTakaDetails(rows);
-    setRecTaka(String(rows.length));
-    setGreyMts(String(round2(rows.reduce((s, r) => s + r.greyMts, 0))));
-    setRecMts(String(round2(rows.reduce((s, r) => s + r.recMts, 0))));
-  };
-
-  const openTakaSelector = async () => {
-    if (!greyDispatchId) {
-      setError('Select a grey dispatch first.');
-      return;
-    }
-    try {
-      const { availableRows } = await millReceiptsApi.getAvailableTakas(greyDispatchId);
-      setAvailableTakas(availableRows || []);
-      if (!availableRows?.length) {
-        setError('No taka left to receive for this dispatch.');
+      const { availableRows } = await millReceiptsApi.getAvailableTakas(line.greyDispatchId, line.id);
+      const saved = new Map(line.takaDetails.map(row => [row.srNo, row.recMts]));
+      const merged = (availableRows || []).map(row => (
+        saved.has(row.srNo) ? { ...row, recMts: saved.get(row.srNo) ?? row.recMts } : row
+      ));
+      setAvailableTakas(merged);
+      setTakaPreset(line.takaDetails.length ? line.takaDetails.map(row => row.srNo) : null);
+      if (!merged.length) {
+        setError('No taka left to receive on this dispatch.');
         return;
       }
       setTakaModalOpen(true);
@@ -472,26 +501,97 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
     }
   };
 
+  const addDispatches = async (dispatches: MillPendingDispatch[]) => {
+    const fresh = dispatches.filter(dispatch => !lines.some(line => line.greyDispatchId === dispatch.id));
+    if (!fresh.length) {
+      setError('Those challans are already on this voucher.');
+      return;
+    }
+    let start = 1;
+    try {
+      const { nextRecCard } = await millReceiptsApi.getNextRecCard();
+      start = nextRecCard || 1;
+    } catch {
+      // Save still assigns the next rec card if this preview fails.
+    }
+    const used = lines.map(line => Number(line.recChallan) || 0);
+    const next = Math.max(start, ...used.map(num => num + 1), 1);
+    const sharedRate = lines.find(line => toNum(line.jobRate) > 0)?.jobRate || jobRate || '';
+    const added: ReceiptLine[] = fresh.map((dispatch, index) => ({
+      key: `${dispatch.id}-${Date.now()}-${index}`,
+      greyDispatchId: dispatch.id,
+      lotNo: dispatch.millLotNo || lotNo.trim(),
+      despNo: String(dispatch.challanNo || dispatch.srNo || ''),
+      recChallan: String(next + index),
+      marka: dispatch.ourMarka || '',
+      quality: dispatch.quality || '',
+      printStyle: '',
+      recTaka: String(dispatch.pendingTaka || dispatch.despTaka || ''),
+      greyMts: String(dispatch.pendingMts || dispatch.despMts || ''),
+      recMts: String(dispatch.pendingMts || dispatch.despMts || ''),
+      jobRate: sharedRate,
+      takaDetails: []
+    }));
+    setLines(prev => [...prev, ...added]);
+    setLinesMill(millName.trim());
+    setActiveLineKey(added[0].key);
+    setGreyDispatchId(added[0].greyDispatchId);
+    setDespNo(added[0].despNo);
+    setRecChallan(added[0].recChallan);
+    setLotNo(added[0].lotNo || lotNo);
+    setPickedDispatchIds([]);
+    setDespPickerOpen(false);
+    setError('');
+    await openLineTakas(added[0]);
+  };
+
+  const applyTakas = (rows: MillReceiptTakaRow[]) => {
+    setSelectedTakaDetails(rows);
+    const recTakaValue = String(rows.length);
+    const greyValue = String(round2(rows.reduce((sum, row) => sum + row.greyMts, 0)));
+    const recValue = String(round2(rows.reduce((sum, row) => sum + row.recMts, 0)));
+    setRecTaka(recTakaValue);
+    setGreyMts(greyValue);
+    setRecMts(recValue);
+    if (!activeLineKey) return;
+    setLines(prev => prev.map(line => line.key === activeLineKey ? {
+      ...line,
+      takaDetails: rows,
+      recTaka: recTakaValue,
+      greyMts: greyValue,
+      recMts: recValue
+    } : line));
+  };
+
+  const openTakaSelector = async () => {
+    const line = lines.find(row => row.key === activeLineKey) || lines[0];
+    if (!line) {
+      setError('Add a dispatch challan first.');
+      return;
+    }
+    await openLineTakas(line);
+  };
+
   const handleSave = async () => {
     setSaving(true);
     setError('');
     setSuccess('');
     try {
       if (!millName.trim()) throw new Error('Mill A/C is required.');
-      if (!lotNo.trim()) throw new Error('Lot number is required.');
-      if (!greyDispatchId) throw new Error('Select a grey dispatch.');
-      if (!selectedTakaDetails.length && !toNum(recMts) && !toNum(greyMts)) {
-        throw new Error(isReturn ? 'Select returned takas.' : 'Select received takas or enter Rec. Mts.');
+      if (!lines.length) throw new Error('Select at least one dispatch challan.');
+      if (lines.some(line => !line.lotNo.trim())) throw new Error('Each challan needs a lot number.');
+      if (!isReturn && lines.some(line => !toNum(line.recMts))) {
+        throw new Error('Enter finish metres for every challan.');
       }
-      if (!isReturn && !toNum(recMts)) throw new Error('Select received takas or enter Rec. Mts.');
-      if (isReturn && !toNum(greyMts)) throw new Error('Select returned takas.');
+      if (isReturn && lines.some(line => !toNum(line.greyMts))) {
+        throw new Error('Select returned takas for every challan.');
+      }
 
       const effectiveTdsOn = isReturn ? 0 : (toNum(tdsOnAmt) > 0 ? toNum(tdsOnAmt) : (taxableAmount || jobAmount));
       const effectiveTdsPct = isReturn ? 0 : toNum(tdsPercent);
       const effectiveTdsAmt = isReturn ? 0 : round2(effectiveTdsOn * effectiveTdsPct / 100);
 
       const payload = {
-        greyDispatchId,
         companyName,
         millName: millName.trim(),
         millGstin: millGstin || undefined,
@@ -504,19 +604,6 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
         billNo: billNo || undefined,
         placeOfSupply: placeOfSupply || undefined,
         stateCode: stateCode || undefined,
-        lotNo: lotNo.trim(),
-        despNo: despNo || undefined,
-        recChallan: recChallan || undefined,
-        marka: marka || undefined,
-        quality: quality || undefined,
-        printStyle: printStyle || undefined,
-        recTaka: toNum(recTaka),
-        recMts: isReturn ? toNum(greyMts) : toNum(recMts),
-        greyMts: toNum(greyMts),
-        shortMts: isReturn ? 0 : toNum(shortMts),
-        shortPct: isReturn ? 0 : toNum(shortPct),
-        jobRate: isReturn ? 0 : toNum(jobRate),
-        jobAmount: isReturn ? 0 : jobAmount,
         rdPerMtr: isReturn ? 0 : toNum(rdPerMtr),
         rdLessAddAmt: isReturn ? 0 : toNum(rdLessAddAmt),
         discountPercent: isReturn ? 0 : toNum(discountPercent),
@@ -527,22 +614,38 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
         tdsPercent: effectiveTdsPct,
         tdsAmount: effectiveTdsAmt,
         remarks: remarks || undefined,
-        takaDetails: selectedTakaDetails
+        lines: lines.map(line => ({
+          id: line.id,
+          greyDispatchId: line.greyDispatchId,
+          lotNo: line.lotNo.trim(),
+          despNo: line.despNo || undefined,
+          recChallan: line.recChallan || undefined,
+          marka: line.marka || undefined,
+          quality: line.quality || undefined,
+          printStyle: line.printStyle || undefined,
+          recTaka: toNum(line.recTaka),
+          recMts: isReturn ? toNum(line.greyMts) : toNum(line.recMts),
+          greyMts: toNum(line.greyMts),
+          jobRate: isReturn ? 0 : toNum(line.jobRate),
+          takaDetails: line.takaDetails
+        }))
       };
 
+      const saved = await millReceiptsApi.saveBatch(payload);
+      const savedLines = (saved.entries || []).map(lineFromReceipt);
+      const challanCount = savedLines.length || lines.length;
       if (isEditMode && editId) {
-        await millReceiptsApi.update(editId, payload);
+        setLines(savedLines);
         setSuccess(
           isReturn
-            ? `Mill return (reprocess) updated for lot ${lotNo}. Not posted to ledger.`
-            : `Mill receipt updated for lot ${lotNo}.`
+            ? `Mill return updated with ${challanCount} challan${challanCount === 1 ? '' : 's'}. Not posted to ledger.`
+            : `Mill receipt ${voucherNo} updated with ${challanCount} challan${challanCount === 1 ? '' : 's'}.`
         );
       } else {
-        await millReceiptsApi.create(payload);
         setSuccess(
           isReturn
-            ? `Mill return (reprocess) saved for lot ${lotNo}. Grey restored to godown; not posted to ledger.`
-            : `Mill receipt saved for lot ${lotNo}.`
+            ? `Mill return saved with ${challanCount} challan${challanCount === 1 ? '' : 's'}. Grey restored to godown; not posted to ledger.`
+            : `Mill receipt ${voucherNo} saved with ${challanCount} challan${challanCount === 1 ? '' : 's'}.`
         );
         const meta = await millReceiptsApi.getMeta();
         setVoucherNo(String(meta.nextVoucherNo || 1));
@@ -554,6 +657,9 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
         setTdsOnAmtTouched(false);
         setTdsPercentTouched(false);
         setProcessType('FINISH');
+        setLines([]);
+        setActiveLineKey(null);
+        setLinesMill('');
         resetLine();
         setSelectedTakaDetails([]);
       }
@@ -564,20 +670,16 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
     }
   };
 
-  const linePreview = useMemo(() => ({
-    lotNo: lotNo || '-',
-    despNo: despNo || '-',
-    recChallan: recChallan || '-',
-    marka: marka || '-',
-    quality: quality || '-',
-    printStyle: printStyle || '-',
-    recTaka: recTaka || '0',
-    recMts: recMts || '0',
-    greyMts: greyMts || '0',
-    shortMts,
-    jobRate: jobRate || '0',
-    jobAmount
-  }), [lotNo, despNo, recChallan, marka, quality, printStyle, recTaka, recMts, greyMts, shortMts, jobRate, jobAmount]);
+  const orderedPending = useMemo(() => {
+    const typed = lotNo.trim().toLowerCase();
+    return [...pendingDispatches].sort((a, b) => {
+      const aMatch = typed && String(a.millLotNo || '').trim().toLowerCase() === typed ? 0 : 1;
+      const bMatch = typed && String(b.millLotNo || '').trim().toLowerCase() === typed ? 0 : 1;
+      if (aMatch !== bMatch) return aMatch - bMatch;
+      return (Number(a.challanNo) || 0) - (Number(b.challanNo) || 0);
+    });
+  }, [pendingDispatches, lotNo]);
+  const selectablePending = orderedPending.filter(row => !lines.some(line => line.greyDispatchId === row.id));
 
   const millPartyMatch = millParties.find(m => m.name.toLowerCase() === millName.trim().toLowerCase());
   const panTdsPercent = millPartyMatch?.suggestedTdsPercent;
@@ -651,11 +753,16 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
                   list="mill-receipt-mills"
                   className={inputClass}
                   value={millName}
-                  onChange={e => {
-                    setMillName(e.target.value);
-                    resetLine();
+                  onChange={e => setMillName(e.target.value)}
+                  onBlur={() => {
+                    applyMillPartyDefaults(millName);
+                    if (linesMill && millName.trim().toLowerCase() !== linesMill.toLowerCase()) {
+                      setLines([]);
+                      setActiveLineKey(null);
+                      setLinesMill('');
+                      resetLine();
+                    }
                   }}
-                  onBlur={() => applyMillPartyDefaults(millName)}
                   placeholder="Select mill"
                 />
                 <datalist id="mill-receipt-mills">
@@ -716,6 +823,9 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
 
           <section className="mt-4 overflow-hidden rounded-2xl border bg-white shadow-sm">
             <div className="border-b bg-teal-50 px-4 py-3">
+              <p className="mb-2 text-xs font-semibold text-teal-900">
+                One voucher can hold every dispatch on the mill bill. Tick the challans, then type finish metres from the bill. Rec cards continue in the order you add them.
+              </p>
               <div className="flex flex-wrap items-end gap-3">
                 <div className="min-w-[140px]">
                   <label className={labelClass}>Lot No. (manual)</label>
@@ -724,7 +834,7 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
                     value={lotNo}
                     onChange={e => setLotNo(e.target.value)}
                     onBlur={() => {
-                      if (lotNo.trim() && millName.trim() && !greyDispatchId) void loadPendingDispatches();
+                      if (lotNo.trim() && millName.trim() && !lines.length) void loadPendingDispatches();
                     }}
                     onKeyDown={e => {
                       if (e.key === 'Enter') {
@@ -750,6 +860,17 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
                 >
                   Taka Details
                 </button>
+                <div className="min-w-[120px]">
+                  <label className={labelClass}>Process</label>
+                  <select
+                    className={`${inputClass} font-black ${isReturn ? 'border-amber-300 bg-amber-50 text-amber-900' : 'text-teal-900'}`}
+                    value={processType}
+                    onChange={e => setProcessType(e.target.value === 'RETURN' ? 'RETURN' : 'FINISH')}
+                  >
+                    <option value="FINISH">FINISH</option>
+                    <option value="RETURN">RETURN</option>
+                  </select>
+                </div>
               </div>
             </div>
 
@@ -769,55 +890,107 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
                     <th className="px-2 py-2 text-right">Short</th>
                     <th className="px-2 py-2 text-right">Job Ra</th>
                     <th className="px-2 py-2 text-right">Job Amt</th>
-                    <th className="px-2 py-2">Process</th>
+                    <th className="px-2 py-2">Taka</th>
+                    <th className="px-2 py-2" />
                   </tr>
                 </thead>
                 <tbody>
-                  <tr className="border-b">
-                    <td className="px-2 py-2 font-semibold">{linePreview.lotNo}</td>
-                    <td className="px-2 py-2 font-bold text-teal-800">{linePreview.despNo}</td>
-                    <td className="px-2 py-2">
-                      <input className={inputClass} value={recChallan} onChange={e => setRecChallan(e.target.value)} placeholder="Auto" title="Next rec card in sequence" />
-                    </td>
-                    <td className="px-2 py-2">
-                      <input className={inputClass} value={marka} onChange={e => setMarka(e.target.value)} />
-                    </td>
-                    <td className="px-2 py-2">
-                      <input className={inputClass} value={quality} onChange={e => setQuality(e.target.value)} />
-                    </td>
-                    <td className="px-2 py-2">
-                      <input className={inputClass} value={printStyle} onChange={e => setPrintStyle(e.target.value)} />
-                    </td>
-                    <td className="px-2 py-2 text-right font-bold">{linePreview.recTaka}</td>
-                    <td className="px-2 py-2 text-right font-bold">{toNum(linePreview.recMts).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                    <td className="px-2 py-2 text-right">{toNum(linePreview.greyMts).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                    <td className="px-2 py-2 text-right text-rose-700">{toNum(linePreview.shortMts).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                    <td className="px-2 py-2">
-                      <input
-                        className={calcInputClass}
-                        type="number"
-                        step="0.01"
-                        value={jobRate}
-                        onChange={e => setJobRate(e.target.value)}
-                        disabled={isReturn}
-                        readOnly={isReturn}
-                      />
-                    </td>
-                    <td className="px-2 py-2 text-right font-black">{jobAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                    <td className="px-2 py-2">
-                      <select
-                        className={`${inputClass} min-w-[110px] font-black ${isReturn ? 'border-amber-300 bg-amber-50 text-amber-900' : 'text-teal-900'}`}
-                        value={processType}
-                        onChange={e => setProcessType(e.target.value === 'RETURN' ? 'RETURN' : 'FINISH')}
-                      >
-                        <option value="FINISH">FINISH</option>
-                        <option value="RETURN">RETURN</option>
-                      </select>
-                    </td>
-                  </tr>
+                  {lines.map(line => (
+                    <tr key={line.key} className={`border-b ${line.key === activeLineKey ? 'bg-teal-50/60' : ''}`}>
+                      <td className="px-2 py-2 font-semibold">{line.lotNo || '-'}</td>
+                      <td className="px-2 py-2 font-bold text-teal-800">{line.despNo || '-'}</td>
+                      <td className="px-2 py-2">
+                        <input
+                          className={inputClass}
+                          value={line.recChallan}
+                          onChange={e => setLines(prev => prev.map(row => row.key === line.key ? { ...row, recChallan: e.target.value } : row))}
+                          placeholder="Auto"
+                          title="Next rec card in sequence"
+                        />
+                      </td>
+                      <td className="px-2 py-2">
+                        <input
+                          className={inputClass}
+                          value={line.marka}
+                          onChange={e => setLines(prev => prev.map(row => row.key === line.key ? { ...row, marka: e.target.value } : row))}
+                        />
+                      </td>
+                      <td className="px-2 py-2">
+                        <input
+                          className={inputClass}
+                          value={line.quality}
+                          onChange={e => setLines(prev => prev.map(row => row.key === line.key ? { ...row, quality: e.target.value } : row))}
+                        />
+                      </td>
+                      <td className="px-2 py-2">
+                        <input
+                          className={inputClass}
+                          value={line.printStyle}
+                          onChange={e => setLines(prev => prev.map(row => row.key === line.key ? { ...row, printStyle: e.target.value } : row))}
+                        />
+                      </td>
+                      <td className="px-2 py-2 text-right font-bold">{line.recTaka || '0'}</td>
+                      <td className="px-2 py-2 text-right font-bold">{toNum(line.recMts).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                      <td className="px-2 py-2 text-right">{toNum(line.greyMts).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                      <td className="px-2 py-2 text-right text-rose-700">{lineShort(line).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                      <td className="px-2 py-2">
+                        <input
+                          className={calcInputClass}
+                          type="number"
+                          step="0.01"
+                          value={line.jobRate}
+                          disabled={isReturn}
+                          readOnly={isReturn}
+                          onChange={e => {
+                            const value = e.target.value;
+                            setJobRate(value);
+                            setLines(prev => prev.map(row => {
+                              if (row.key === line.key) return { ...row, jobRate: value };
+                              if (!toNum(row.jobRate)) return { ...row, jobRate: value };
+                              return row;
+                            }));
+                          }}
+                        />
+                      </td>
+                      <td className="px-2 py-2 text-right font-black">{(isReturn ? 0 : lineJobAmount(line)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                      <td className="px-2 py-2">
+                        <button
+                          type="button"
+                          onClick={() => void openLineTakas(line)}
+                          className="rounded-lg border border-teal-300 px-2 py-1 text-[10px] font-black uppercase text-teal-800"
+                        >
+                          Taka
+                        </button>
+                      </td>
+                      <td className="px-2 py-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setLines(prev => prev.filter(row => row.key !== line.key));
+                            if (activeLineKey === line.key) setActiveLineKey(null);
+                          }}
+                          className="rounded-lg px-2 py-1 text-[10px] font-black uppercase text-rose-700 hover:bg-rose-50"
+                        >
+                          Remove
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {!lines.length && (
+                    <tr>
+                      <td colSpan={14} className="px-3 py-6 text-center text-sm text-gray-500">
+                        No challans yet. Type a lot from the mill bill and choose the dispatch challans.
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
+            {lines.some(line => !line.takaDetails.length) && !isReturn && (
+              <div className="border-t bg-amber-50 px-4 py-2 text-xs font-semibold text-amber-900">
+                Open Taka on each challan and type the finish metres from the mill bill. Rec cards stay in the order you added the challans.
+              </div>
+            )}
             {isReturn && (
               <div className="border-t bg-amber-50 px-4 py-2 text-xs font-semibold text-amber-900">
                 RETURN / reprocess: mill sent grey back without dyeing. Select returned takas — no job charges, not posted to mill ledger, grey restored to godown.
@@ -828,15 +1001,15 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
           <section className="mt-4 grid gap-3 rounded-2xl border bg-white p-4 shadow-sm md:grid-cols-4 lg:grid-cols-6">
             <div>
               <label className={labelClass}>Rec. Taka</label>
-              <input className={readonlyClass} value={recTaka || '0'} readOnly />
+              <input className={readonlyClass} value={lines.length ? String(lineTotals.recTaka) : (recTaka || '0')} readOnly />
             </div>
             <div>
               <label className={labelClass}>Rec. Grey</label>
-              <input className={readonlyClass} value={toNum(greyMts).toFixed(2)} readOnly />
+              <input className={readonlyClass} value={(lines.length ? lineTotals.grey : toNum(greyMts)).toFixed(2)} readOnly />
             </div>
             <div>
               <label className={labelClass}>Rec. Mts</label>
-              <input className={readonlyClass} value={toNum(recMts).toFixed(2)} readOnly />
+              <input className={readonlyClass} value={(lines.length ? lineTotals.rec : toNum(recMts)).toFixed(2)} readOnly />
             </div>
             <div>
               <label className={labelClass}>RD Per Mtr</label>
@@ -1012,7 +1185,7 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
             <div className="flex items-center justify-between border-b px-4 py-3">
               <div>
                 <h3 className="text-sm font-black uppercase">Pending Grey Dispatches</h3>
-                <p className="text-xs text-gray-500">{millName} · Lot {lotNo || '-'}</p>
+                <p className="text-xs text-gray-500">{millName} · tick every challan on this mill bill{lotNo ? ` · lot ${lotNo} first` : ''}</p>
               </div>
               <button type="button" onClick={() => setDespPickerOpen(false)} className="rounded-lg px-3 py-1.5 text-sm font-bold hover:bg-gray-100">Close</button>
             </div>
@@ -1020,6 +1193,17 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
               <table className="min-w-full text-left text-xs">
                 <thead className="sticky top-0 border-b bg-gray-50 text-[10px] uppercase text-gray-500">
                   <tr>
+                    <th className="px-3 py-2">
+                      <input
+                        type="checkbox"
+                        aria-label="Select all challans"
+                        checked={selectablePending.length > 0 && selectablePending.every(row => pickedDispatchIds.includes(row.id))}
+                        onChange={() => {
+                          const allPicked = selectablePending.every(row => pickedDispatchIds.includes(row.id));
+                          setPickedDispatchIds(allPicked ? [] : selectablePending.map(row => row.id));
+                        }}
+                      />
+                    </th>
                     <th className="px-3 py-2">Desp No</th>
                     <th className="px-3 py-2">Lot</th>
                     <th className="px-3 py-2">Date</th>
@@ -1030,28 +1214,65 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
                   </tr>
                 </thead>
                 <tbody>
-                  {pendingDispatches.map(d => (
-                    <tr
-                      key={d.id}
-                      className="cursor-pointer border-b hover:bg-teal-50"
-                      onClick={() => void applyDispatch(d)}
-                    >
-                      <td className="px-3 py-2 font-black text-teal-800">{d.challanNo || d.srNo || '-'}</td>
-                      <td className="px-3 py-2 font-semibold">{d.millLotNo || '-'}</td>
-                      <td className="px-3 py-2">{formatDate(d.dispatchDate)}</td>
-                      <td className="px-3 py-2">{d.quality || '-'}</td>
-                      <td className="px-3 py-2 text-right">{d.despMts.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                      <td className="px-3 py-2 text-right font-bold text-teal-800">{d.pendingMts.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                      <td className="px-3 py-2">{d.purSr ?? '-'}</td>
-                    </tr>
-                  ))}
-                  {!pendingDispatches.length && (
+                  {orderedPending.map(d => {
+                    const already = lines.some(line => line.greyDispatchId === d.id);
+                    const picked = pickedDispatchIds.includes(d.id);
+                    const lotMatch = lotNo.trim() && String(d.millLotNo || '').trim().toLowerCase() === lotNo.trim().toLowerCase();
+                    return (
+                      <tr
+                        key={d.id}
+                        className={`border-b ${already ? 'bg-gray-50 text-gray-400' : 'cursor-pointer hover:bg-teal-50'} ${lotMatch && !already ? 'bg-teal-50/40' : ''}`}
+                        onClick={() => {
+                          if (already) return;
+                          setPickedDispatchIds(prev => prev.includes(d.id) ? prev.filter(id => id !== d.id) : [...prev, d.id]);
+                        }}
+                      >
+                        <td className="px-3 py-2">
+                          {already ? (
+                            <span className="text-[10px] font-black uppercase">Added</span>
+                          ) : (
+                            <input
+                              type="checkbox"
+                              checked={picked}
+                              onChange={() => {
+                                setPickedDispatchIds(prev => prev.includes(d.id) ? prev.filter(id => id !== d.id) : [...prev, d.id]);
+                              }}
+                              onClick={e => e.stopPropagation()}
+                              aria-label={`Select challan ${d.challanNo || d.srNo || ''}`}
+                            />
+                          )}
+                        </td>
+                        <td className="px-3 py-2 font-black text-teal-800">{d.challanNo || d.srNo || '-'}</td>
+                        <td className="px-3 py-2 font-semibold">{d.millLotNo || '-'}</td>
+                        <td className="px-3 py-2">{formatDate(d.dispatchDate)}</td>
+                        <td className="px-3 py-2">{d.quality || '-'}</td>
+                        <td className="px-3 py-2 text-right">{d.despMts.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                        <td className="px-3 py-2 text-right font-bold text-teal-800">{d.pendingMts.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                        <td className="px-3 py-2">{d.purSr ?? '-'}</td>
+                      </tr>
+                    );
+                  })}
+                  {!orderedPending.length && (
                     <tr>
-                      <td colSpan={7} className="px-3 py-8 text-center text-sm text-gray-500">No pending dispatches for this mill.</td>
+                      <td colSpan={8} className="px-3 py-8 text-center text-sm text-gray-500">No pending dispatches for this mill.</td>
                     </tr>
                   )}
                 </tbody>
               </table>
+            </div>
+            <div className="flex items-center justify-between border-t px-4 py-3">
+              <p className="text-xs font-semibold text-gray-500">{pickedDispatchIds.length} challan{pickedDispatchIds.length === 1 ? '' : 's'} selected</p>
+              <button
+                type="button"
+                disabled={!pickedDispatchIds.length}
+                onClick={() => {
+                  const chosen = orderedPending.filter(row => pickedDispatchIds.includes(row.id));
+                  void addDispatches(chosen);
+                }}
+                className="rounded-xl bg-teal-700 px-4 py-2 text-sm font-black text-white disabled:opacity-50"
+              >
+                Add selected challans
+              </button>
             </div>
           </div>
         </div>
@@ -1061,6 +1282,7 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
         open={takaModalOpen}
         rows={availableTakas}
         mode={processType}
+        presetSrNos={takaPreset}
         onClose={() => setTakaModalOpen(false)}
         onApply={applyTakas}
       />

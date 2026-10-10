@@ -1737,19 +1737,20 @@ export const millReceiptsApi = {
   getNextRecCard: async () => {
     return request<{ nextRecCard: number }>('/mill-receipts/next-rec-card');
   },
-  getAvailableTakas: async (dispatchId: string) => {
+  getAvailableTakas: async (dispatchId: string, excludeReceiptId?: string) => {
+    const query = excludeReceiptId ? `?excludeReceiptId=${encodeURIComponent(excludeReceiptId)}` : '';
     return request<{
       dispatch: MillPendingDispatch;
       availableRows: MillReceiptTakaRow[];
       receivedSrNos: number[];
       receivedMts: number;
-    }>(`/mill-receipts/pending-dispatches/${dispatchId}/available-takas`);
+    }>(`/mill-receipts/pending-dispatches/${dispatchId}/available-takas${query}`);
   },
   getAll: async () => {
     return request<{ entries: MillReceipt[] }>('/mill-receipts');
   },
   getById: async (id: string) => {
-    return request<{ entry: MillReceipt }>(`/mill-receipts/${id}`);
+    return request<{ entry: MillReceipt; lines?: MillReceipt[] }>(`/mill-receipts/${id}`);
   },
   getReport: async (params?: {
     filter?: string;
@@ -1789,6 +1790,12 @@ export const millReceiptsApi = {
   update: async (id: string, body: Record<string, unknown>) => {
     return request<{ entry: MillReceipt }>(`/mill-receipts/${id}`, {
       method: 'PUT',
+      body: JSON.stringify(body)
+    });
+  },
+  saveBatch: async (body: Record<string, unknown>) => {
+    return request<{ entries: MillReceipt[]; voucherNo: number }>('/mill-receipts/batch', {
+      method: 'POST',
       body: JSON.stringify(body)
     });
   }
