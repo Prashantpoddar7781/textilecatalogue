@@ -326,6 +326,28 @@ function buildMillQualitySegments(rows) {
     .sort((a, b) => a.millName.localeCompare(b.millName));
 }
 
+function sameChallan(stored, wanted) {
+  const text = String(stored || '').trim();
+  const query = String(wanted || '').trim();
+  if (!text || !query) return false;
+  if (text.toUpperCase() === query.toUpperCase()) return true;
+  const left = Number(text);
+  const right = Number(query);
+  return Number.isFinite(left) && Number.isFinite(right) && left === right;
+}
+
+async function findDispatchByChallan(userId, challanNo, excludeId = null) {
+  const rows = await prisma.greyDispatch.findMany({
+    where: {
+      userId,
+      status: { not: 'cancelled' },
+      ...(excludeId ? { id: { not: excludeId } } : {})
+    },
+    select: { id: true, challanNo: true }
+  });
+  return rows.find(row => sameChallan(row.challanNo, challanNo)) || null;
+}
+
 async function getNextChallanNo(userId) {
   const dispatches = await prisma.greyDispatch.findMany({
     where: { userId },
@@ -574,6 +596,15 @@ router.post('/', authenticateToken, requireActiveSubscription, [
 
     const count = await prisma.greyDispatch.count({ where: { userId } });
     const nextChallanNo = await getNextChallanNo(userId);
+    const requestedChallan = optionalString(req.body.challanNo);
+    if (requestedChallan) {
+      const clash = await findDispatchByChallan(userId, requestedChallan);
+      if (clash) {
+        return res.status(409).json({
+          error: `Challan ${requestedChallan} is already saved. Open that challan to edit it.`
+        });
+      }
+    }
     const millName = optionalString(req.body.millName);
     if (!millName) {
       return res.status(400).json({ error: 'Mill is required.' });
@@ -704,6 +735,15 @@ router.put('/:id', authenticateToken, requireActiveSubscription, [
     const millName = optionalString(req.body.millName);
     if (!millName) {
       return res.status(400).json({ error: 'Mill is required.' });
+    }
+    const editedChallan = optionalString(req.body.challanNo);
+    if (editedChallan) {
+      const clash = await findDispatchByChallan(userId, editedChallan, existing.id);
+      if (clash) {
+        return res.status(409).json({
+          error: `Challan ${editedChallan} is already saved. Open that challan to edit it.`
+        });
+      }
     }
 
     if (transactionType === 'REPROCESS') {

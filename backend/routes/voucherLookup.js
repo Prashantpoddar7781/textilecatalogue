@@ -82,7 +82,8 @@ router.get('/lookup', authenticateToken, requireActiveSubscription, async (req, 
       const entry = await prisma.greyPurchase.findFirst({
         where: {
           userId,
-          OR: [{ typeBillNumber: numeric }, { srNo: numeric }]
+          typeBillNumber: numeric,
+          status: { not: 'cancelled' }
         },
         select: { id: true },
         orderBy: { createdAt: 'desc' }
@@ -97,16 +98,16 @@ router.get('/lookup', authenticateToken, requireActiveSubscription, async (req, 
       });
       if (entry) found = hit(entry.id, `/erp/grey-purchase-return?edit=${entry.id}`);
     } else if (module === 'grey-dispatch') {
-      const entry = await prisma.greyDispatch.findFirst({
-        where: {
-          userId,
-          OR: [
-            ...(numeric ? [{ srNo: numeric }] : []),
-            ...(asText ? [{ challanNo: asText }, { challanNo: String(numeric || '') }] : [])
-          ]
-        },
-        select: { id: true },
+      const dispatches = await prisma.greyDispatch.findMany({
+        where: { userId, status: { not: 'cancelled' } },
+        select: { id: true, challanNo: true },
         orderBy: { createdAt: 'desc' }
+      });
+      const entry = dispatches.find((row) => {
+        const challan = text(row.challanNo);
+        if (!challan) return false;
+        if (asText && challan.toUpperCase() === asText.toUpperCase()) return true;
+        return numeric != null && Number(challan) === numeric;
       });
       if (entry) found = hit(entry.id, `/erp/grey-dispatch?edit=${entry.id}`);
     } else if (module === 'mill-receipt') {

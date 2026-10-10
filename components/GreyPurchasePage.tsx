@@ -13,6 +13,7 @@ import { ErpSaveButton } from './ErpSaveButton';
 import { TakaDetailsModal } from './TakaDetailsModal';
 import { partyDhara } from '../utils/partyBillingTerms';
 import { useVoucherJump } from '../hooks/useVoucherJump';
+import { parseVoucherNumber } from '../utils/parseVoucherNumber';
 
 interface Props {
   onBack: () => void;
@@ -30,6 +31,10 @@ const readonlyClass = 'w-full rounded-lg border border-gray-200 bg-gray-100 px-2
 
 export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
   const editId = useMemo(() => new URLSearchParams(window.location.search).get('edit'), []);
+  const requestedVoucher = useMemo(
+    () => parseVoucherNumber(new URLSearchParams(window.location.search).get('voucher')),
+    []
+  );
   const isEditMode = Boolean(editId);
   const GREY_TYPE = 'GREY PURCHASE';
   const gstDocumentType = getGstDocumentType(GREY_TYPE);
@@ -152,7 +157,7 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
         setStates(meta.states || []);
         setStateCodes(meta.stateCodes || []);
         if (!isEditMode) setSrNo(String(meta.nextSrNo || 1));
-        if (!isEditMode) setTypeBillNumber(meta.nextTypeBillNumber ?? null);
+        if (!isEditMode) setTypeBillNumber(requestedVoucher || meta.nextTypeBillNumber || null);
         if (!isEditMode) {
           const d = getGstDefaultsForTransactionType(
             'GREY PURCHASE',
@@ -359,6 +364,7 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
         partyMsme: partyMsme || undefined,
         quality,
         srNo: toNum(srNo),
+        typeBillNumber: parseVoucherNumber(voucherInput) || typeBillNumber || undefined,
         orderNo,
         hsnCode,
         billNo,

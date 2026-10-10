@@ -7,6 +7,7 @@ import { ErpFormShell } from './ErpFormShell';
 import { ErpSaveButton } from './ErpSaveButton';
 import { ErpTopMenu } from './ErpTopMenu';
 import { useVoucherJump } from '../hooks/useVoucherJump';
+import { parseVoucherNumber } from '../utils/parseVoucherNumber';
 
 interface Props {
   onBack: () => void;
@@ -25,10 +26,16 @@ const formatDateInput = (value?: string | null) =>
 
 export const GreyDispatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const editId = useMemo(() => new URLSearchParams(window.location.search).get('edit'), []);
+  const requestedVoucher = useMemo(() => {
+    const raw = new URLSearchParams(window.location.search).get('voucher');
+    const parsed = parseVoucherNumber(raw);
+    return parsed ? String(parsed) : '';
+  }, []);
   const isEditMode = Boolean(editId);
   const [companyName, setCompanyName] = useState('');
   const [transactionType, setTransactionType] = useState('PROCESS');
   const [challanNo, setChallanNo] = useState('');
+  const [loadedChallan, setLoadedChallan] = useState('');
   const [dispatchDate, setDispatchDate] = useState(today());
   const [millLotNo, setMillLotNo] = useState('');
   const [purSr, setPurSr] = useState('');
@@ -65,7 +72,7 @@ export const GreyDispatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
     module: 'grey-dispatch',
     transactionType,
     currentId: isEditMode ? editId : null,
-    shownNumber: challanNo,
+    shownNumber: loadedChallan,
     onError: setError
   });
   const [success, setSuccess] = useState('');
@@ -83,16 +90,21 @@ export const GreyDispatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
         const meta = await greyDispatchesApi.getMeta();
         if (cancelled) return;
         setCompanyName(meta.companyName || '');
-        setSrNo(String(meta.nextSrNo || 1));
-        setChallanNo(String(meta.nextChallanNo || 1));
         setMills(meta.mills || []);
         if (meta.transactionTypes?.[0] && !isEditMode) setTransactionType(meta.transactionTypes[0]);
+        if (!isEditMode) {
+          const nextNo = requestedVoucher || String(meta.nextChallanNo || 1);
+          setSrNo(String(meta.nextSrNo || 1));
+          setChallanNo(nextNo);
+          setLoadedChallan(nextNo);
+        }
         if (isEditMode && editId) {
           const { entry } = await greyDispatchesApi.getById(editId);
           if (cancelled) return;
           setCompanyName(entry.companyName || meta.companyName || '');
           setTransactionType(entry.transactionType === 'REPROCESS' ? 'REPROCESS' : 'PROCESS');
           setChallanNo(entry.challanNo || '');
+          setLoadedChallan(entry.challanNo || '');
           setDispatchDate(formatDateInput(entry.dispatchDate) || today());
           setMillLotNo(entry.millLotNo || '');
           setPurSr(String(entry.purSr ?? ''));
@@ -321,8 +333,10 @@ export const GreyDispatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
         setSelectedTakaDetails([]);
         setAvailableTakas([]);
         const meta = await greyDispatchesApi.getMeta();
+        const nextNo = String(meta.nextChallanNo || 1);
         setSrNo(String(meta.nextSrNo || 1));
-        setChallanNo(String(meta.nextChallanNo || 1));
+        setChallanNo(nextNo);
+        setLoadedChallan(nextNo);
       }
     } catch (err: any) {
       setError(err.message || 'Could not save grey dispatch.');

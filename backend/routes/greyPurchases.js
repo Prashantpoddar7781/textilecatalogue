@@ -527,12 +527,31 @@ router.post('/', authenticateToken, requireActiveSubscription, [
     const userId = req.user.userId;
     const built = await buildGreyPurchaseData(req, userId, false);
     const payload = greyPurchaseDataPayload(req, built, userId);
-    payload.typeBillNumber = await allocateNextTypeBillNumber(
-      prisma,
-      userId,
-      'GREY PURCHASE',
-      'grey_purchase'
-    );
+    const requestedVoucher = optionalNumber(req.body.typeBillNumber);
+    if (requestedVoucher) {
+      const clash = await prisma.greyPurchase.findFirst({
+        where: {
+          userId,
+          transactionType: 'GREY PURCHASE',
+          typeBillNumber: requestedVoucher,
+          status: { not: 'cancelled' }
+        },
+        select: { id: true }
+      });
+      if (clash) {
+        return res.status(409).json({
+          error: `Voucher ${requestedVoucher} is already saved. Open that voucher to edit it.`
+        });
+      }
+      payload.typeBillNumber = requestedVoucher;
+    } else {
+      payload.typeBillNumber = await allocateNextTypeBillNumber(
+        prisma,
+        userId,
+        'GREY PURCHASE',
+        'grey_purchase'
+      );
+    }
     const entry = await prisma.greyPurchase.create({
       data: payload,
       include: { supplier: true }

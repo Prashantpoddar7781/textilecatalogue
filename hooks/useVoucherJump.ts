@@ -18,6 +18,12 @@ export type VoucherModule =
   | 'note'
   | 'journal';
 
+function blankEntryPath(module: VoucherModule, voucher: number) {
+  if (module === 'grey-purchase') return `/erp/grey-purchase?voucher=${voucher}`;
+  if (module === 'grey-dispatch') return `/erp/grey-dispatch?voucher=${voucher}`;
+  return null;
+}
+
 interface Options {
   module: VoucherModule;
   transactionType?: string;
@@ -63,6 +69,12 @@ export function useVoucherJump({
       return 'next' as const;
     } catch (err: any) {
       if (!currentId && shown && typed === shown) return 'next' as const;
+      const blank = err?.status === 404 ? blankEntryPath(module, typed) : null;
+      if (blank) {
+        const here = `${window.location.pathname}${window.location.search}`;
+        if (here !== blank) window.location.href = blank;
+        return here === blank ? 'next' as const : 'navigated' as const;
+      }
       onError?.(err.message || `No voucher ${raw} found.`);
       return 'error' as const;
     } finally {
