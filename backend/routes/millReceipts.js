@@ -43,15 +43,35 @@ function isReturnProcess(processType) {
   return normalizeProcessType(processType) === 'RETURN';
 }
 
-/** TDS on taxable/job when On Amt is blank or 0; always derive Amt from % × base. */
+/** Nearest rupee. 22222.65 → 22223, 5411.29 → 5411. */
+function roundRupee(value) {
+  const n = roundMoney(value);
+  return Math.round(n + Math.sign(n) * Number.EPSILON);
+}
+
+/** Empire rounds mill-receipt TDS up to the next rupee. 423.29 → 424, 102.56 → 103. */
+function roundTdsRupee(value) {
+  const n = roundMoney(value);
+  if (n <= 0) return 0;
+  return Math.ceil(n - 1e-9);
+}
+
+function manualTdsOnAmt(body) {
+  const manual = body?.tdsOnAmtManual === true || body?.tdsOnAmtTouched === true;
+  if (!manual) return null;
+  const amount = optionalNumber(body?.tdsOnAmt);
+  return amount != null && amount > 0 ? amount : null;
+}
+
+/** TDS On Amt follows taxable (after discount, before GST) unless the user typed a different base. */
 function resolveTdsFields({ tdsOnAmtInput, tdsPercentInput, taxableAmount, invoiceValue, jobAmount }) {
   const tdsPercent = optionalNumber(tdsPercentInput) || 0;
   const rawOnAmt = optionalNumber(tdsOnAmtInput);
   const tdsOnAmt = (rawOnAmt != null && rawOnAmt > 0)
     ? rawOnAmt
     : roundMoney(taxableAmount || jobAmount || 0);
-  const tdsAmount = roundMoney(tdsOnAmt * tdsPercent / 100);
-  const netAfterTds = roundMoney((optionalNumber(invoiceValue) || 0) - tdsAmount);
+  const tdsAmount = roundTdsRupee(tdsOnAmt * tdsPercent / 100);
+  const netAfterTds = roundMoney(roundRupee(invoiceValue) - tdsAmount);
   return { tdsOnAmt, tdsPercent, tdsAmount, netAfterTds };
 }
 
@@ -309,9 +329,9 @@ router.post('/calculate', authenticateToken, requireActiveSubscription, async (r
       stateCode: req.body.stateCode
     });
 
-    const invoiceValue = totals.netAmount;
+    const invoiceValue = roundRupee(totals.netAmount);
     const { tdsOnAmt, tdsPercent, tdsAmount, netAfterTds } = resolveTdsFields({
-      tdsOnAmtInput: req.body.tdsOnAmt,
+      tdsOnAmtInput: manualTdsOnAmt(req.body),
       tdsPercentInput: req.body.tdsPercent,
       taxableAmount: totals.taxableAmount,
       invoiceValue,
@@ -785,13 +805,15 @@ router.post('/batch', authenticateToken, requireActiveSubscription, async (req, 
         partyGstin: millGstin,
         stateCode: req.body.stateCode
       });
+      const voucherInvoice = roundRupee(totals.netAmount);
       tds = resolveTdsFields({
-        tdsOnAmtInput: req.body.tdsOnAmt,
+        tdsOnAmtInput: manualTdsOnAmt(req.body),
         tdsPercentInput: req.body.tdsPercent,
         taxableAmount: totals.taxableAmount,
-        invoiceValue: totals.netAmount,
+        invoiceValue: voucherInvoice,
         jobAmount: voucherJob
       });
+      totals.netAmount = voucherInvoice;
     }
 
     const shares = {
@@ -1091,9 +1113,9 @@ router.post('/', authenticateToken, requireActiveSubscription, [
         stateCode: req.body.stateCode
       });
 
-      invoiceValue = totals.netAmount;
+      invoiceValue = roundRupee(totals.netAmount);
       ({ tdsOnAmt, tdsPercent, tdsAmount, netAfterTds } = resolveTdsFields({
-        tdsOnAmtInput: req.body.tdsOnAmt,
+        tdsOnAmtInput: manualTdsOnAmt(req.body),
         tdsPercentInput: req.body.tdsPercent,
         taxableAmount: totals.taxableAmount,
         invoiceValue,
@@ -1314,9 +1336,9 @@ router.put('/:id', authenticateToken, requireActiveSubscription, [
         stateCode: req.body.stateCode || existing.stateCode
       });
 
-      invoiceValue = totals.netAmount;
+      invoiceValue = roundRupee(totals.netAmount);
       ({ tdsOnAmt, tdsPercent, tdsAmount, netAfterTds } = resolveTdsFields({
-        tdsOnAmtInput: req.body.tdsOnAmt,
+        tdsOnAmtInput: manualTdsOnAmt(req.body),
         tdsPercentInput: req.body.tdsPercent,
         taxableAmount: totals.taxableAmount,
         invoiceValue,

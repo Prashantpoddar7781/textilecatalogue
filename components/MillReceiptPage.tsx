@@ -19,6 +19,15 @@ interface Props {
 const today = () => new Date().toISOString().slice(0, 10);
 const toNum = (v: string | number) => Number(v) || 0;
 const round2 = (v: number) => Math.round((Number(v) || 0) * 100) / 100;
+const roundRupee = (v: number) => {
+  const n = round2(v);
+  return Math.round(n + Math.sign(n) * Number.EPSILON);
+};
+const roundTdsRupee = (v: number) => {
+  const n = round2(v);
+  if (n <= 0) return 0;
+  return Math.ceil(n - 1e-9);
+};
 const inputClass = 'w-full rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-sm font-semibold outline-none focus:border-teal-400';
 const readonlyClass = 'w-full rounded-lg border border-gray-200 bg-gray-100 px-2.5 py-2 text-sm font-semibold';
 const calcInputClass = 'w-full rounded-lg border border-teal-200 bg-white px-2.5 py-2 text-sm font-bold outline-none focus:border-teal-500';
@@ -190,22 +199,24 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
     setShortPct(String(grey > 0 ? round2((short / grey) * 100) : 0));
   }, [greyMts, recMts]);
 
-  // TDS Amt = (TDS On Amt || taxable || job amt) × TDS % — instant (skip for RETURN)
+  // TDS On Amt follows taxable (after discount). TDS and the invoice round to the rupee, as on Empire.
   useEffect(() => {
     if (isReturn) {
       setTdsAmount('0');
       setNetAfterTds(0);
       return;
     }
-    const base = toNum(tdsOnAmt) > 0 ? toNum(tdsOnAmt) : (taxableAmount || jobAmount);
-    const pct = toNum(tdsPercent);
-    const amt = round2(base * pct / 100);
-    setTdsAmount(String(amt));
-    setNetAfterTds(round2(invoiceValue - amt));
-    if (pct > 0 && !toNum(tdsOnAmt) && (taxableAmount || jobAmount) && !tdsOnAmtTouched) {
-      setTdsOnAmt(String(taxableAmount || jobAmount));
+    if (!tdsOnAmtTouched) {
+      const nextBase = taxableAmount > 0 ? String(round2(taxableAmount)) : '';
+      if (nextBase !== tdsOnAmt) setTdsOnAmt(nextBase);
     }
-  }, [tdsOnAmt, tdsPercent, taxableAmount, jobAmount, invoiceValue, tdsOnAmtTouched, isReturn]);
+    const base = tdsOnAmtTouched && toNum(tdsOnAmt) > 0 ? toNum(tdsOnAmt) : taxableAmount;
+    const amt = roundTdsRupee(base * toNum(tdsPercent) / 100);
+    const invoice = roundRupee(invoiceValue);
+    if (invoiceValue > 0 && invoice !== invoiceValue) setInvoiceValue(invoice);
+    setTdsAmount(String(amt));
+    setNetAfterTds(round2(invoice - amt));
+  }, [tdsOnAmt, tdsPercent, taxableAmount, invoiceValue, tdsOnAmtTouched, isReturn]);
 
   const recalcGst = useCallback(async () => {
     if (isReturn) {
@@ -236,7 +247,8 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
         millGstin,
         placeOfSupply,
         stateCode,
-        tdsOnAmt: toNum(tdsOnAmt) > 0 ? toNum(tdsOnAmt) : undefined,
+        tdsOnAmt: tdsOnAmtTouched && toNum(tdsOnAmt) > 0 ? toNum(tdsOnAmt) : undefined,
+        tdsOnAmtManual: tdsOnAmtTouched,
         tdsPercent: tdsPercent || undefined
       });
       setDiscountAmount(Number(totals.discountAmount) || 0);
@@ -250,7 +262,7 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
       setInvoiceValue(Number(totals.invoiceValue) || 0);
       setTaxableAmount(Number(totals.taxableAmount) || 0);
       if (!tdsOnAmtTouched && Number(totals.taxableAmount) > 0) {
-        setTdsOnAmt(String(totals.tdsOnAmt ?? totals.taxableAmount ?? ''));
+        setTdsOnAmt(String(round2(Number(totals.taxableAmount))));
       }
       if (totals.placeOfSupply) setPlaceOfSupply(String(totals.placeOfSupply));
       if (totals.stateCode) setStateCode(String(totals.stateCode));
@@ -377,7 +389,7 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
           setCgstAmount(String(sumField('cgstAmount')));
           setSgstAmount(String(sumField('sgstAmount')));
           setIgstAmount(String(sumField('igstAmount')));
-          setTdsOnAmtTouched(onAmt > 0);
+          setTdsOnAmtTouched(false);
           setTdsPercentTouched(pct > 0);
           setRemarks(entry.remarks || '');
           setLines(voucherRows.map(lineFromReceipt));
@@ -587,7 +599,9 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
         throw new Error('Select returned takas for every challan.');
       }
 
-      const effectiveTdsOn = isReturn ? 0 : (toNum(tdsOnAmt) > 0 ? toNum(tdsOnAmt) : (taxableAmount || jobAmount));
+      const effectiveTdsOn = isReturn
+        ? 0
+        : (tdsOnAmtTouched && toNum(tdsOnAmt) > 0 ? toNum(tdsOnAmt) : taxableAmount);
       const effectiveTdsPct = isReturn ? 0 : toNum(tdsPercent);
       const effectiveTdsAmt = isReturn ? 0 : round2(effectiveTdsOn * effectiveTdsPct / 100);
 
@@ -611,6 +625,7 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
         otherAdd: isReturn ? 0 : toNum(otherAdd),
         gstRate: toNum(gstRate),
         tdsOnAmt: effectiveTdsOn,
+        tdsOnAmtManual: tdsOnAmtTouched,
         tdsPercent: effectiveTdsPct,
         tdsAmount: effectiveTdsAmt,
         remarks: remarks || undefined,
