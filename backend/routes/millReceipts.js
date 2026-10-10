@@ -43,6 +43,28 @@ function isReturnProcess(processType) {
   return normalizeProcessType(processType) === 'RETURN';
 }
 
+/** CGST/SGST are each taxable × half rate, so 2.5% of 5128.15 is 128.20, not half of a rounded 5%. */
+function applyMillReceiptGst(totals) {
+  if (!totals || totals.gstType === 'IGST' || !(Number(totals.gstRate) > 0) || !(Number(totals.taxableAmount) > 0)) {
+    return totals;
+  }
+  const halfRate = Number(totals.gstRate) / 2;
+  const half = roundMoney(Number(totals.taxableAmount) * halfRate / 100);
+  const tax = roundMoney(half + half);
+  return {
+    ...totals,
+    cgstRate: halfRate,
+    sgstRate: halfRate,
+    cgstAmount: half,
+    sgstAmount: half,
+    igstRate: 0,
+    igstAmount: 0,
+    totalTaxAmount: tax,
+    payableAmount: roundMoney(Number(totals.taxableAmount) + tax),
+    netAmount: roundMoney(Number(totals.taxableAmount) + tax)
+  };
+}
+
 /** Nearest rupee. 22222.65 → 22223, 5411.29 → 5411. */
 function roundRupee(value) {
   const n = roundMoney(value);
@@ -314,7 +336,7 @@ router.post('/calculate', authenticateToken, requireActiveSubscription, async (r
     const rdLessAddAmt = optionalNumber(req.body.rdLessAddAmt) || 0;
     const grossAmount = optionalNumber(req.body.grossAmount) ?? roundMoney(jobAmount + rdLessAddAmt);
 
-    const totals = calculateGreyPurchaseTotals({
+    const totals = applyMillReceiptGst(calculateGreyPurchaseTotals({
       grossAmount,
       discountPercent: req.body.discountPercent,
       discountAmount: req.body.discountAmount,
@@ -327,7 +349,7 @@ router.post('/calculate', authenticateToken, requireActiveSubscription, async (r
       businessState: ctx.businessState,
       partyGstin: millGstin,
       stateCode: req.body.stateCode
-    });
+    }));
 
     const invoiceValue = roundRupee(totals.netAmount);
     const { tdsOnAmt, tdsPercent, tdsAmount, netAfterTds } = resolveTdsFields({
@@ -792,7 +814,7 @@ router.post('/batch', authenticateToken, requireActiveSubscription, async (req, 
     let tds = { tdsOnAmt: 0, tdsPercent: 0, tdsAmount: 0, netAfterTds: 0 };
 
     if (!isReturn) {
-      totals = calculateGreyPurchaseTotals({
+      totals = applyMillReceiptGst(calculateGreyPurchaseTotals({
         grossAmount: voucherGross,
         discountPercent: req.body.discountPercent,
         otherAddBefore: req.body.otherAdd,
@@ -804,7 +826,7 @@ router.post('/batch', authenticateToken, requireActiveSubscription, async (req, 
         businessState: ctx.businessState,
         partyGstin: millGstin,
         stateCode: req.body.stateCode
-      });
+      }));
       const voucherInvoice = roundRupee(totals.netAmount);
       tds = resolveTdsFields({
         tdsOnAmtInput: manualTdsOnAmt(req.body),
@@ -1098,7 +1120,7 @@ router.post('/', authenticateToken, requireActiveSubscription, [
       rdPerMtr = optionalNumber(req.body.rdPerMtr) || 0;
       const grossAmount = optionalNumber(req.body.grossAmount) ?? roundMoney(jobAmount + rdLessAddAmt);
 
-      totals = calculateGreyPurchaseTotals({
+      totals = applyMillReceiptGst(calculateGreyPurchaseTotals({
         grossAmount,
         discountPercent: req.body.discountPercent,
         discountAmount: req.body.discountAmount,
@@ -1111,7 +1133,7 @@ router.post('/', authenticateToken, requireActiveSubscription, [
         businessState: ctx.businessState,
         partyGstin: millGstin,
         stateCode: req.body.stateCode
-      });
+      }));
 
       invoiceValue = roundRupee(totals.netAmount);
       ({ tdsOnAmt, tdsPercent, tdsAmount, netAfterTds } = resolveTdsFields({
@@ -1321,7 +1343,7 @@ router.put('/:id', authenticateToken, requireActiveSubscription, [
       rdPerMtr = optionalNumber(req.body.rdPerMtr) ?? existing.rdPerMtr;
       const grossAmount = optionalNumber(req.body.grossAmount) ?? roundMoney(jobAmount + rdLessAddAmt);
 
-      totals = calculateGreyPurchaseTotals({
+      totals = applyMillReceiptGst(calculateGreyPurchaseTotals({
         grossAmount,
         discountPercent: req.body.discountPercent ?? existing.discountPercent,
         discountAmount: req.body.discountAmount,
@@ -1334,7 +1356,7 @@ router.put('/:id', authenticateToken, requireActiveSubscription, [
         businessState: ctx.businessState,
         partyGstin: millGstin,
         stateCode: req.body.stateCode || existing.stateCode
-      });
+      }));
 
       invoiceValue = roundRupee(totals.netAmount);
       ({ tdsOnAmt, tdsPercent, tdsAmount, netAfterTds } = resolveTdsFields({

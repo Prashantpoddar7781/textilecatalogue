@@ -191,6 +191,47 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
     setGrossAmount(round2(amt + toNum(rdLessAddAmt)));
   }, [lines.length, lineTotals.job, recMts, jobRate, rdLessAddAmt, isReturn]);
 
+  const billTotals = useMemo(() => {
+    const gross = isReturn
+      ? 0
+      : (lines.length
+        ? round2(lineTotals.job + toNum(rdLessAddAmt))
+        : round2(toNum(recMts) * toNum(jobRate) + toNum(rdLessAddAmt)));
+    const discountAmt = round2(gross * toNum(discountPercent) / 100);
+    const taxable = round2(Math.max(0, gross - discountAmt + toNum(otherAdd) - toNum(otherLess)));
+    const gstPct = toNum(gstRate);
+    const interstate = toNum(igstRate) > 0 && toNum(cgstRate) === 0 && toNum(sgstRate) === 0;
+    const halfRate = gstPct / 2;
+    const cgstPct = interstate ? 0 : halfRate;
+    const sgstPct = interstate ? 0 : halfRate;
+    const igstPct = interstate ? gstPct : 0;
+    const cgstAmt = interstate ? 0 : round2(taxable * halfRate / 100);
+    const sgstAmt = interstate ? 0 : round2(taxable * halfRate / 100);
+    const igstAmt = interstate ? round2(taxable * gstPct / 100) : 0;
+    const invoice = roundRupee(taxable + cgstAmt + sgstAmt + igstAmt);
+    const tdsBase = tdsOnAmtTouched && toNum(tdsOnAmt) > 0 ? toNum(tdsOnAmt) : taxable;
+    const tdsAmt = roundTdsRupee(tdsBase * toNum(tdsPercent) / 100);
+    return {
+      gross,
+      discountAmt,
+      taxable,
+      cgstPct,
+      sgstPct,
+      igstPct,
+      cgstAmt,
+      sgstAmt,
+      igstAmt,
+      invoice,
+      tdsBase,
+      tdsAmt,
+      net: round2(invoice - tdsAmt)
+    };
+  }, [
+    isReturn, lines.length, lineTotals.job, rdLessAddAmt, recMts, jobRate,
+    discountPercent, otherAdd, otherLess, gstRate, igstRate, cgstRate, sgstRate,
+    tdsOnAmtTouched, tdsOnAmt, tdsPercent
+  ]);
+
   useEffect(() => {
     const grey = toNum(greyMts);
     const rec = toNum(recMts);
@@ -232,14 +273,16 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
       setNetAfterTds(0);
       return;
     }
-    if (!toNum(recMts) && !jobAmount) return;
+    const liveJob = lines.length ? lineTotals.job : jobAmount;
+    const liveGross = lines.length ? round2(lineTotals.job + toNum(rdLessAddAmt)) : grossAmount;
+    if (!(liveGross > 0) && !toNum(recMts)) return;
     try {
       const { totals } = await millReceiptsApi.calculate({
-        recMts: toNum(recMts),
+        recMts: lines.length ? lineTotals.rec : toNum(recMts),
         jobRate: toNum(jobRate),
-        jobAmount,
+        jobAmount: liveJob,
         rdLessAddAmt: toNum(rdLessAddAmt),
-        grossAmount,
+        grossAmount: liveGross,
         discountPercent: discountPercent || undefined,
         otherLess: toNum(otherLess),
         otherAdd: toNum(otherAdd),
@@ -269,7 +312,7 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
     } catch {
       // keep local values
     }
-  }, [recMts, jobRate, jobAmount, rdLessAddAmt, grossAmount, discountPercent, otherLess, otherAdd, gstRate, millGstin, placeOfSupply, stateCode, tdsOnAmt, tdsPercent, tdsOnAmtTouched, isReturn]);
+  }, [lines.length, lineTotals.job, lineTotals.rec, recMts, jobRate, jobAmount, rdLessAddAmt, grossAmount, discountPercent, otherLess, otherAdd, gstRate, millGstin, placeOfSupply, stateCode, tdsOnAmt, tdsPercent, tdsOnAmtTouched, isReturn]);
 
   useEffect(() => {
     const timer = setTimeout(() => { void recalcGst(); }, 300);
@@ -1036,7 +1079,7 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
             </div>
             <div>
               <label className={labelClass}>Gross Amt</label>
-              <input className={readonlyClass} value={grossAmount.toFixed(2)} readOnly />
+              <input className={readonlyClass} value={billTotals.gross.toFixed(2)} readOnly />
             </div>
             <div>
               <label className={labelClass}>Disc %</label>
@@ -1044,7 +1087,7 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
             </div>
             <div>
               <label className={labelClass}>Disc Amt</label>
-              <input className={readonlyClass} value={discountAmount.toFixed(2)} readOnly />
+              <input className={readonlyClass} value={billTotals.discountAmt.toFixed(2)} readOnly />
             </div>
             {discountAccount && (
               <div>
@@ -1062,27 +1105,27 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
             </div>
             <div>
               <label className={labelClass}>CGST %</label>
-              <input className={readonlyClass} value={cgstRate} readOnly />
+              <input className={readonlyClass} value={billTotals.cgstPct || 0} readOnly />
             </div>
             <div>
               <label className={labelClass}>CGST Amt</label>
-              <input className={readonlyClass} value={cgstAmount} readOnly />
+              <input className={readonlyClass} value={billTotals.cgstAmt.toFixed(2)} readOnly />
             </div>
             <div>
               <label className={labelClass}>SGST %</label>
-              <input className={readonlyClass} value={sgstRate} readOnly />
+              <input className={readonlyClass} value={billTotals.sgstPct || 0} readOnly />
             </div>
             <div>
               <label className={labelClass}>SGST Amt</label>
-              <input className={readonlyClass} value={sgstAmount} readOnly />
+              <input className={readonlyClass} value={billTotals.sgstAmt.toFixed(2)} readOnly />
             </div>
             <div>
               <label className={labelClass}>IGST %</label>
-              <input className={readonlyClass} value={igstRate} readOnly />
+              <input className={readonlyClass} value={billTotals.igstPct || 0} readOnly />
             </div>
             <div>
               <label className={labelClass}>IGST Amt</label>
-              <input className={readonlyClass} value={igstAmount} readOnly />
+              <input className={readonlyClass} value={billTotals.igstAmt.toFixed(2)} readOnly />
             </div>
             <div>
               <label className={labelClass}>GST Rate</label>
@@ -1090,7 +1133,7 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
             </div>
             <div>
               <label className={labelClass}>Invoice Value</label>
-              <input className={readonlyClass} value={invoiceValue.toFixed(2)} readOnly />
+              <input className={readonlyClass} value={billTotals.invoice.toFixed(2)} readOnly />
             </div>
             <div>
               <label className={labelClass}>TDS A/C</label>
@@ -1102,7 +1145,7 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
                 className={inputClass}
                 type="number"
                 step="0.01"
-                value={tdsOnAmt}
+                value={tdsOnAmtTouched ? tdsOnAmt : (billTotals.taxable > 0 ? String(billTotals.taxable) : '')}
                 onChange={e => {
                   setTdsOnAmtTouched(true);
                   setTdsOnAmt(e.target.value);
@@ -1138,11 +1181,11 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
             </div>
             <div>
               <label className={labelClass}>TDS Amt</label>
-              <input className={readonlyClass} value={toNum(tdsAmount).toFixed(2)} readOnly />
+              <input className={readonlyClass} value={billTotals.tdsAmt.toFixed(2)} readOnly />
             </div>
             <div>
               <label className={labelClass}>Net After TDS</label>
-              <input className={readonlyClass} value={netAfterTds.toFixed(2)} readOnly />
+              <input className={readonlyClass} value={billTotals.net.toFixed(2)} readOnly />
             </div>
           </section>
 
