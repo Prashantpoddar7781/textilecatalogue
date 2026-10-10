@@ -180,7 +180,7 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
           setPartyMsme(entry.partyMsme || '');
           setQuality(entry.quality || '');
           setSrNo(String(entry.srNo ?? ''));
-          setTypeBillNumber(entry.typeBillNumber ?? null);
+          setTypeBillNumber(entry.typeBillNumber ?? entry.srNo ?? null);
           setOrderNo(entry.orderNo || '0');
           setHsnCode(entry.hsnCode || meta.defaultHsnCode || '');
           setBillNo(entry.billNo || '');

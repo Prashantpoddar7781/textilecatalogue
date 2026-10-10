@@ -293,12 +293,28 @@ router.get('/meta', authenticateToken, requireActiveSubscription, async (req, re
   try {
     const ctx = await getCompanyContext(req.user.userId);
     const count = await prisma.greyPurchase.count({ where: { userId: req.user.userId } });
-    const nextTypeBillNumber = await allocateNextTypeBillNumber(
-      prisma,
-      req.user.userId,
-      'GREY PURCHASE',
-      'grey_purchase'
-    );
+    const [typed, untyped] = await Promise.all([
+      prisma.greyPurchase.aggregate({
+        where: {
+          userId: req.user.userId,
+          transactionType: 'GREY PURCHASE',
+          status: { not: 'cancelled' }
+        },
+        _max: { typeBillNumber: true }
+      }),
+      prisma.greyPurchase.aggregate({
+        where: {
+          userId: req.user.userId,
+          typeBillNumber: null,
+          status: { not: 'cancelled' }
+        },
+        _max: { srNo: true }
+      })
+    ]);
+    const nextTypeBillNumber = Math.max(
+      typed._max.typeBillNumber ?? 0,
+      untyped._max.srNo ?? 0
+    ) + 1;
     res.json({
       ...ctx,
       nextSrNo: count + 1,
@@ -383,10 +399,7 @@ router.get('/godown-inventory', authenticateToken, requireActiveSubscription, as
       orderBy: [{ billDate: 'desc' }, { createdAt: 'desc' }]
     });
 
-    const rows = entries
-      .map(buildGodownRow)
-      // Fully dispatched bills leave godown — they belong on mill dispatch report only
-      .filter(row => Number(row.stockMts) > 0.01 || Number(row.stockTaka) > 0);
+    const rows = entries.map(buildGodownRow);
 
     const byQuality = new Map();
     for (const row of rows) {

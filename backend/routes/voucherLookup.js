@@ -79,7 +79,7 @@ router.get('/lookup', authenticateToken, requireActiveSubscription, async (req, 
       }
     } else if (module === 'grey-purchase') {
       if (!numeric) return res.status(404).json({ error: 'No grey purchase with that voucher number.' });
-      const entry = await prisma.greyPurchase.findFirst({
+      let entry = await prisma.greyPurchase.findFirst({
         where: {
           userId,
           typeBillNumber: numeric,
@@ -88,6 +88,18 @@ router.get('/lookup', authenticateToken, requireActiveSubscription, async (req, 
         select: { id: true },
         orderBy: { createdAt: 'desc' }
       });
+      if (!entry) {
+        entry = await prisma.greyPurchase.findFirst({
+          where: {
+            userId,
+            srNo: numeric,
+            typeBillNumber: null,
+            status: { not: 'cancelled' }
+          },
+          select: { id: true },
+          orderBy: { createdAt: 'desc' }
+        });
+      }
       if (entry) found = hit(entry.id, `/erp/grey-purchase?edit=${entry.id}`);
     } else if (module === 'grey-purchase-return') {
       if (!numeric) return res.status(404).json({ error: 'No grey purchase return with that voucher number.' });
