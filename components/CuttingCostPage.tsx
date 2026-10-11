@@ -302,10 +302,10 @@ export const CuttingCostPage: React.FC<Props> = ({ onBack, erpSession }) => {
                     </div>
                   </div>
                   <p className="mt-3 text-xs leading-5 text-gray-600">
-                    INT is interest on the grey, per fresh saree. Grey amount × interest % × days from the grey bill
-                    ({source.greyDate || '—'}) to this date, divided by 360, then divided by the fresh sarees.
-                    It is shown as a minus because it is extra cost. On the reference challan of 1,213 grey metres at ₹23.50,
-                    held 38 days at 24%, cut into 168 sarees, INT is −4.30.
+                    Cost without interest is grey plus mill printing, per fresh saree. Basic cost is that figure plus
+                    interest on the grey. Interest is grey amount × interest % × days from the grey bill
+                    ({source.greyDate || '—'}) to this date, divided by 360. On lot 25301 that is 194.12 without
+                    interest and 198.23 basic cost, because interest adds 4.11 a saree.
                   </p>
                 </div>
 
@@ -319,17 +319,22 @@ export const CuttingCostPage: React.FC<Props> = ({ onBack, erpSession }) => {
                     <dd className="text-right font-bold">{money(costs.jobAmount)}</dd>
                     <dt className="text-gray-500">Mill discount {source.discountPercent || 0}%</dt>
                     <dd className="text-right font-bold">{money(costs.discountAmount)}</dd>
-                    <dt className="text-gray-500">Cost without interest</dt>
-                    <dd className="text-right font-bold">{toNum(freshSarees) > 0 ? money(costs.costWithoutInterest) : '—'}</dd>
-                    <dt className="text-gray-500">Cost after discount</dt>
-                    <dd className="text-right font-bold">{toNum(freshSarees) > 0 ? money(costs.costWithDiscount) : '—'}</dd>
+                    <dt className="font-black text-gray-800">Cost w/o int.</dt>
+                    <dd className="text-right text-lg font-black">{toNum(freshSarees) > 0 ? money(costs.costWithoutInterest) : '—'}</dd>
                     <dt className="font-black text-gray-800">INT / saree</dt>
                     <dd className="text-right font-black text-rose-700">
                       {toNum(freshSarees) > 0 ? `−${money(costs.interestPerPc)}` : '—'}
                     </dd>
-                    <dt className="font-black text-gray-800">Basic cost / saree</dt>
+                    <dt className="font-black text-gray-800">Basic cost</dt>
                     <dd className="text-right text-lg font-black">{toNum(freshSarees) > 0 ? money(costs.basicCost) : '—'}</dd>
+                    <dt className="text-gray-500">After mill discount</dt>
+                    <dd className="text-right font-bold">{toNum(freshSarees) > 0 ? money(costs.costWithDiscount) : '—'}</dd>
                   </dl>
+                  {toNum(freshSarees) > 0 && toNum(interestRate) <= 0 && (
+                    <p className="mt-3 text-xs leading-5 text-amber-800">
+                      Basic cost includes interest. This weaver is saved at 0%, so basic cost matches cost without interest until an interest % is entered.
+                    </p>
+                  )}
                 </div>
               </section>
 
@@ -354,6 +359,7 @@ export const CuttingCostPage: React.FC<Props> = ({ onBack, erpSession }) => {
                     <th className="px-3 py-2">Lot</th>
                     <th className="px-3 py-2 text-right">Fresh</th>
                     <th className="px-3 py-2 text-right">Avg cut</th>
+                    <th className="px-3 py-2 text-right">Cost w/o int.</th>
                     <th className="px-3 py-2 text-right">INT</th>
                     <th className="px-3 py-2 text-right">Basic cost</th>
                   </tr>
@@ -371,13 +377,14 @@ export const CuttingCostPage: React.FC<Props> = ({ onBack, erpSession }) => {
                       <td className="px-3 py-2">{row.lotNo || '—'}</td>
                       <td className="px-3 py-2 text-right">{row.freshSarees}</td>
                       <td className="px-3 py-2 text-right">{money(row.actCut)}</td>
+                      <td className="px-3 py-2 text-right">{money(row.costWithoutInterest)}</td>
                       <td className="px-3 py-2 text-right text-rose-700">−{money(row.interestPerPc)}</td>
                       <td className="px-3 py-2 text-right font-bold">{money(row.basicCost)}</td>
                     </tr>
                   ))}
                   {!entries.length && (
                     <tr>
-                      <td colSpan={8} className="px-3 py-8 text-center text-sm text-gray-500">
+                      <td colSpan={9} className="px-3 py-8 text-center text-sm text-gray-500">
                         {loading ? <Loader2 className="mx-auto h-5 w-5 animate-spin" /> : 'No cutting cards saved yet.'}
                       </td>
                     </tr>

@@ -26,10 +26,11 @@ export function interestDaySpan(fromValue, toValue) {
 
 /**
  * Cutting cost for one dispatch challan (cut card).
- * INT is interest on the grey, per fresh saree:
- * grey amount × interest % × days ÷ 360, then ÷ fresh sarees.
- * A 360-day year is what makes challan 43 show 4.30
- * (1,213 m × ₹23.50 × 24% × 38 days ÷ 360 ÷ 168).
+ * INT is interest on the grey, per fresh saree.
+ * Basic cost is (grey + printing + interest) ÷ fresh sarees.
+ * Cost without interest is (grey + printing) ÷ fresh sarees.
+ * INT is basic cost minus cost without interest.
+ * Challan 43 at 24% for 38 days is basic 206.13, cost without interest 201.83, INT 4.30.
  */
 export function buildCuttingCost(input) {
   const greyMts = Number(input.greyMts) || 0;
@@ -48,12 +49,16 @@ export function buildCuttingCost(input) {
   const shortPct = greyMts > 0 ? round2((shortMts / greyMts) * 100) : 0;
   const actCut = freshSarees > 0 ? round2(finMts / freshSarees) : 0;
   const interestAmount = round2((greyAmount * interestRate * interestDays) / 36000);
-  const interestPerPc = freshSarees > 0 ? round2(interestAmount / freshSarees) : 0;
   const costWithoutInterest = freshSarees > 0 ? round2((greyAmount + jobAmount) / freshSarees) : 0;
   const costWithDiscount = freshSarees > 0
     ? round2((greyAmount + jobAmount - discountAmount) / freshSarees)
     : 0;
-  const basicCost = freshSarees > 0 ? round2(costWithoutInterest + interestPerPc) : 0;
+  // Basic cost is grey + printing + interest, per saree. Lot 25301 is 198.23,
+  // which is 194.12 without interest. INT is the gap between those two figures.
+  const basicCost = freshSarees > 0
+    ? round2((greyAmount + jobAmount + interestAmount) / freshSarees)
+    : 0;
+  const interestPerPc = freshSarees > 0 ? round2(basicCost - costWithoutInterest) : 0;
 
   return {
     greyAmount,
