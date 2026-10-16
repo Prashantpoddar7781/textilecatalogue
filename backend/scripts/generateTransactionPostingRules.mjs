@@ -111,6 +111,16 @@ const LOCAL_EXTENSIONS = [
     cgstPercent: 2.5,
     sgstPercent: 2.5,
     gstAccount: 'GST PAYABLE A/C'
+  },
+  {
+    // Grey sent to the mill for printing/processing. Empire's GSTR-1 docs sheet
+    // reports these as "Delivery Challan for job work" numbered 47/M … 52/M.
+    series: 'MILL DESP. CHALLAN',
+    gstDocumentType: 'Delivery Challan for job work',
+    billSuffix: 'M',
+    billingForm: 'CHALLAN',
+    stockType: 'GREY',
+    stockEffect: -1
   }
 ];
 
@@ -628,12 +638,14 @@ export function getItcEligibility(transactionType${optStr})${typed ? ': ErpItcEl
 /**
  * Sign of the GST amounts on this document for GSTR-1 / GSTR-3B.
  * Credit notes and purchase / sales returns reverse tax or ITC.
+ * On the inward side both note types reduce ITC: a debit note we raise on a
+ * supplier and a credit note the supplier gives us.
  */
 export function gstDocumentSign(transactionType${optStr})${typed ? ': number' : ''} {
   const u = String(transactionType || '').trim().toUpperCase();
   if (u.includes('RETURN') || u.includes('CREDIT NOTE')) return -1;
   const doc = getGstDocumentType(transactionType);
-  if (doc === 'Credit Note' || doc === 'Credit Note (inward)') return -1;
+  if (doc === 'Credit Note' || doc === 'Credit Note (inward)' || doc === 'Debit Note (inward)') return -1;
   return 1;
 }
 

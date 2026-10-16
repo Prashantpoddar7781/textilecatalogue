@@ -55,6 +55,24 @@ model User {
   workReceipts            WorkReceipt[]
   salesOrders             SalesOrder[]
   salesItemMasters        SalesItemMaster[]
+  gstPortalStatements     GstPortalStatement[]
+}
+
+/// GSTR-2B / 2A downloaded from the portal (sent by the CA), one per return month and source.
+model GstPortalStatement {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  period    String // YYYY-MM
+  source    String // 2B | 2A
+  fileName  String?
+  rows      Json
+  rowCount  Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, period, source])
+  @@index([userId])
 }
 
 model ErpUser {

@@ -1660,46 +1660,157 @@ export const stockApi = {
   }
 };
 
-export const gstApi = {
-  getGstr3b: async (params?: { bucket?: string; fromDate?: string; toDate?: string }) => {
-    const query = new URLSearchParams();
-    if (params?.bucket) query.set('bucket', params.bucket);
-    if (params?.fromDate) query.set('fromDate', params.fromDate);
-    if (params?.toDate) query.set('toDate', params.toDate);
-    const qs = query.toString();
-    return request<{
-      bucket: string;
-      fromDate?: string | null;
-      toDate?: string | null;
-      outward: { taxable: number; igst: number; cgst: number; sgst: number; tax: number; entries: number };
-      itc: {
-        'Input Goods': { taxable: number; igst: number; cgst: number; sgst: number; tax: number; entries: number };
-        'Input Services': { taxable: number; igst: number; cgst: number; sgst: number; tax: number; entries: number };
-        'Capital Goods': { taxable: number; igst: number; cgst: number; sgst: number; tax: number; entries: number };
-        total: { taxable: number; igst: number; cgst: number; sgst: number; tax: number; entries: number };
-      };
-      netPayable: { igst: number; cgst: number; sgst: number; tax: number };
-      rows: Array<{
-        id: string;
-        source: string;
-        date: string;
+export type GstTotals = { taxable: number; igst: number; cgst: number; sgst: number; cess: number };
+
+export type GstDocRef = {
+  id: string;
+  source: string;
+  editPath: string;
+  docNo: string;
+  date: string;
+  partyName: string;
+  transactionType: string;
+  taxable: number;
+  tax: number;
+  invoiceValue: number;
+};
+
+export type GstProblem = {
+  severity: 'error' | 'warning';
+  issue: string;
+  id: string;
+  source: string;
+  editPath: string;
+  docNo: string;
+  date: string;
+  partyName: string;
+  partyGstin: string;
+  transactionType: string;
+  direction: string;
+};
+
+export type Gstr1Report = {
+  period: string;
+  fromDate: string;
+  toDate: string;
+  company: { name: string; gstin: string; stateCode: string; state: string };
+  b2clLimit: number;
+  summary: Array<GstTotals & { section: string; label: string; documents: number; value: number; recipients?: number; cancelled?: number }>;
+  liability: GstTotals & { tax: number };
+  b2b: Array<GstDocRef & GstTotals & { gstin: string; receiverName: string; invoiceNo: string; invoiceDate: string; pos: string; reverseCharge: string; invoiceType: string; rate: number }>;
+  b2cl: Array<GstDocRef & GstTotals & { invoiceNo: string; invoiceDate: string; pos: string; rate: number }>;
+  b2cs: Array<GstTotals & { type: string; pos: string; rate: number; docs: GstDocRef[] }>;
+  cdnr: Array<GstDocRef & GstTotals & { gstin: string; receiverName: string; noteNo: string; noteDate: string; noteType: string; pos: string; noteValue: number; rate: number }>;
+  cdnur: Array<GstDocRef & GstTotals & { urType: string; noteNo: string; noteDate: string; noteType: string; pos: string; noteValue: number; rate: number }>;
+  exemp: Array<{ description: string; nilRated: number; exempted: number; nonGst: number; docs: GstDocRef[] }>;
+  hsnB2b: Array<GstTotals & { hsn: string; description: string; uqc: string; qty: number; totalValue: number; rate: number; docs: GstDocRef[] }>;
+  hsnB2c: Array<GstTotals & { hsn: string; description: string; uqc: string; qty: number; totalValue: number; rate: number; docs: GstDocRef[] }>;
+  docs: Array<{ nature: string; transactionType: string; fromNo: string; toNo: string; totalNumber: number; cancelled: number; docs: GstDocRef[] }>;
+  problems: GstProblem[];
+};
+
+export type Gstr3bAmounts = GstTotals & { billAmount: number; ledgerAmount: number; count: number };
+
+export type Gstr3bRegisterReport = {
+  period: string;
+  company: { name: string; gstin: string; stateCode: string };
+  hasStatement: boolean;
+  statementSource: string | null;
+  register: Array<{
+    type3b: string;
+    totals: Gstr3bAmounts;
+    subTypes: Array<{
+      subType: string;
+      table: string;
+      totals: Gstr3bAmounts;
+      tranTypes: Array<{
         transactionType: string;
-        voucherNo: string;
-        billNo: string;
-        partyName: string;
-        section: string;
-        itcEligibility: string | null;
-        bucket: string;
-        sign: number;
-        taxable: number;
-        igst: number;
-        cgst: number;
-        sgst: number;
-        tax: number;
-        editPath: string;
+        totals: Gstr3bAmounts;
+        docs: Array<GstTotals & {
+          id: string; source: string; editPath: string; date: string; docNo: string; partyBillNo: string;
+          partyName: string; partyGstin: string; pos: string; billAmount: number; ledgerAmount: number;
+        }>;
       }>;
-    }>(`/gst/gstr-3b${qs ? `?${qs}` : ''}`);
+    }>;
+  }>;
+  forms: {
+    table31: Array<Gstr3bAmounts & { code: string; label: string }>;
+    table32: Array<Gstr3bAmounts & { pos: string }>;
+    table4: Array<Gstr3bAmounts & { code: string; label: string }>;
+    itcCheck: { reconciled: Gstr3bAmounts; unreconciled: Gstr3bAmounts } | null;
+    table5: Array<Gstr3bAmounts & { code: string; label: string }>;
+    table61: Array<{ head: string; liability: number; paidByIgst: number; paidByCgst: number; paidBySgst: number; cash: number; creditCarriedForward: number }>;
+  };
+};
+
+export type GstPortalStatementInfo = {
+  id: string;
+  period: string;
+  source: '2B' | '2A';
+  fileName: string | null;
+  rowCount: number;
+  createdAt: string;
+  updatedAt?: string;
+};
+
+type GstMatchSide = {
+  taxable: number; igst: number; cgst: number; sgst: number; tax: number; value: number; date: string;
+};
+
+export type Gstr2bMatchReport = {
+  period: string;
+  statement: GstPortalStatementInfo | null;
+  portalTotal: GstTotals & { tax: number };
+  summary: Array<{ status: string; help: string; count: number; bookTax: number; portalTax: number }>;
+  rows: Array<{
+    status: string;
+    remark: string;
+    gstin: string;
+    partyName: string;
+    editPath: string;
+    book: (GstMatchSide & { voucherNo: string; billNo: string; transactionType: string; refs: Array<{ id: string; editPath: string; docNo: string; date: string }> }) | null;
+    portal: (GstMatchSide & { docNo: string; kind: string; pos: string; period: string; itcAvailable: string; reason: string }) | null;
+    taxableDiff: number;
+    taxDiff: number;
+  }>;
+};
+
+async function downloadFile(endpoint: string, fallbackName: string) {
+  const token = localStorage.getItem('auth_token');
+  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {}
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: response.statusText }));
+    throw new ApiError(response.status, error.error || error.message || 'Download failed');
   }
+  const disposition = response.headers.get('Content-Disposition') || '';
+  const fileName = disposition.match(/filename="?([^";]+)"?/)?.[1] || fallbackName;
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+export const gstApi = {
+  getGstr1: (period: string) => request<Gstr1Report>(`/gst/gstr-1?period=${encodeURIComponent(period)}`),
+  downloadGstr1Excel: (period: string) => downloadFile(`/gst/gstr-1/excel?period=${encodeURIComponent(period)}`, `GSTR1_${period}.xlsx`),
+  getGstr3bRegister: (period: string) => request<Gstr3bRegisterReport>(`/gst/gstr-3b-register?period=${encodeURIComponent(period)}`),
+  downloadGstr3bRegisterExcel: (period: string) => downloadFile(`/gst/gstr-3b-register/excel?period=${encodeURIComponent(period)}`, `GSTR3B_Register_${period}.xlsx`),
+  getProblems: (period: string) => request<{ period: string; invalidGstins: GstProblem[]; problems: GstProblem[] }>(`/gst/problems?period=${encodeURIComponent(period)}`),
+  listStatements: () => request<{ statements: GstPortalStatementInfo[] }>('/gst/portal-statements'),
+  uploadStatement: (payload: { period: string; source: '2B' | '2A'; fileName: string; contentBase64: string }) => request<{ statement: GstPortalStatementInfo }>('/gst/portal-statements', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  }),
+  deleteStatement: (id: string) => request<{ ok: boolean }>(`/gst/portal-statements/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  getGstr2bMatch: (period: string, source?: '2B' | '2A') => request<Gstr2bMatchReport>(`/gst/gstr-2b-match?period=${encodeURIComponent(period)}${source ? `&source=${source}` : ''}`),
+  downloadGstr2bMatchExcel: (period: string, source?: '2B' | '2A') => downloadFile(`/gst/gstr-2b-match/excel?period=${encodeURIComponent(period)}${source ? `&source=${source}` : ''}`, `GSTR2B_Matching_${period}.xlsx`)
 };
 
 export const millReceiptsApi = {

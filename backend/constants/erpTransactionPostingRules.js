@@ -2716,6 +2716,47 @@ export const ERP_POSTING_RULES = [
     scanPath: null,
     tcsAccount: null,
     companySpecific: false
+  },
+  {
+    series: 'MILL DESP. CHALLAN',
+    seriesCode: null,
+    billingAllowed: false,
+    singleRef: false,
+    gstDocumentType: 'Delivery Challan for job work',
+    billSuffix: 'M',
+    billingForm: 'CHALLAN',
+    saleOrPurchaseAccount: null,
+    partyAccountType: null,
+    stockType: 'GREY',
+    numberSeries: null,
+    previousLink: null,
+    nextLink: null,
+    discountJvs: false,
+    zeroGraceForInterest: false,
+    discountAccount: null,
+    designNosEntry: false,
+    tdsPercent: 0,
+    tdsAccount: null,
+    stockEffect: -1,
+    compulsoryLink: false,
+    showAllEntriesInPick: false,
+    allCompaniesDataInPick: false,
+    copyItemDetailsAfterRef: false,
+    warnOnManualEntry: false,
+    singleGstRateForBill: false,
+    defaultHsnCode: null,
+    itcEligibility: null,
+    cgstPercent: 0,
+    sgstPercent: 0,
+    gstAccount: null,
+    oldVatAccount: null,
+    stageGroup: null,
+    mainStageLink: null,
+    finalStageOfJobCard: false,
+    includeCostingOfStage: false,
+    scanPath: null,
+    tcsAccount: null,
+    companySpecific: false
   }
 ];
 
@@ -3006,12 +3047,14 @@ export function getItcEligibility(transactionType) {
 /**
  * Sign of the GST amounts on this document for GSTR-1 / GSTR-3B.
  * Credit notes and purchase / sales returns reverse tax or ITC.
+ * On the inward side both note types reduce ITC: a debit note we raise on a
+ * supplier and a credit note the supplier gives us.
  */
 export function gstDocumentSign(transactionType) {
   const u = String(transactionType || '').trim().toUpperCase();
   if (u.includes('RETURN') || u.includes('CREDIT NOTE')) return -1;
   const doc = getGstDocumentType(transactionType);
-  if (doc === 'Credit Note' || doc === 'Credit Note (inward)') return -1;
+  if (doc === 'Credit Note' || doc === 'Credit Note (inward)' || doc === 'Debit Note (inward)') return -1;
   return 1;
 }
 

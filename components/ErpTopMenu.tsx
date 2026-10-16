@@ -11,7 +11,17 @@ interface Props {
   children?: React.ReactNode;
 }
 
-type MenuKey = 'masters' | 'inventory' | 'reports' | 'greySales' | 'accounts' | 'utilities' | null;
+type MenuKey = 'masters' | 'inventory' | 'reports' | 'gst' | 'greySales' | 'accounts' | 'utilities' | null;
+
+const GST_MENU = [
+  { label: 'GSTR-1 Summary of outward supplies', report: 'gstr1' },
+  { label: 'GSTR-1 B2B / B2CL / B2CS / CDNR / HSN', report: 'b2b' },
+  { label: 'Outward documents summary (13)', report: 'docs' },
+  { label: 'GSTR-3B Register', report: 'gstr3b' },
+  { label: 'GSTR-3B Form (3.1 to 6.1)', report: 'gstr3bForm' },
+  { label: 'GSTR-2A / 2B Matching', report: 'match' },
+  { label: 'Invalid GSTINs / Data entry problems', report: 'problems' }
+];
 
 /** Keep dropdowns inside the viewport so long menus (Reports) can scroll. */
 const menuPanelClass =
@@ -247,11 +257,11 @@ export const ErpTopMenu: React.FC<Props> = ({
                 </button>
                 <button
                   type="button"
-                  onClick={() => { window.location.href = '/erp/reports/gstr-3b'; }}
+                  onClick={() => { window.location.href = '/erp/gst?report=gstr3b'; }}
                   className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-gray-800 hover:bg-indigo-50 hover:text-indigo-700"
                 >
                   <FileBarChart className="h-4 w-4" />
-                  GSTR-3B / ITC Split
+                  GST Reports (GSTR-1 / 3B / 2B)
                 </button>
                 <button
                   type="button"
@@ -341,6 +351,34 @@ export const ErpTopMenu: React.FC<Props> = ({
                   <FileBarChart className="h-4 w-4" />
                   Outstanding / Payment
                 </button>
+              </div>
+            )}
+          </div>
+
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => toggle('gst')}
+              className={`flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-black uppercase tracking-wide ${
+                openMenu === 'gst' ? 'bg-emerald-700 text-white' : 'text-gray-700 hover:bg-gray-100'
+              }`}
+            >
+              GST
+              <ChevronDown className={`h-3.5 w-3.5 transition ${openMenu === 'gst' ? 'rotate-180' : ''}`} />
+            </button>
+            {openMenu === 'gst' && (
+              <div className={`${menuPanelClass} min-w-[280px]`}>
+                {GST_MENU.map(item => (
+                  <button
+                    key={item.report}
+                    type="button"
+                    onClick={() => { window.location.href = `/erp/gst?report=${item.report}`; }}
+                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-gray-800 hover:bg-emerald-50 hover:text-emerald-800"
+                  >
+                    <FileBarChart className="h-4 w-4" />
+                    {item.label}
+                  </button>
+                ))}
               </div>
             )}
           </div>

@@ -32,7 +32,7 @@ import { MillReceiptPage } from './components/MillReceiptPage';
 import { CuttingCostPage } from './components/CuttingCostPage';
 import { GodownInventoryReportPage } from './components/GodownInventoryReportPage';
 import { StockBalanceReportPage } from './components/StockBalanceReportPage';
-import { Gstr3bReportPage } from './components/Gstr3bReportPage';
+import { GstReportsPage } from './components/GstReportsPage';
 import { MillDispatchReportPage } from './components/MillDispatchReportPage';
 import { MillReceiptReportPage } from './components/MillReceiptReportPage';
 import { WorkDespatchPage } from './components/WorkDespatchPage';
@@ -152,7 +152,7 @@ const App: React.FC = () => {
   const erpWorkReceiptMatch = pathname.match(/^\/erp\/work-receipt\/?$/);
   const erpGodownReportMatch = pathname.match(/^\/erp\/reports\/godown-inventory\/?$/);
   const erpStockReportMatch = pathname.match(/^\/erp\/reports\/stock\/?$/);
-  const erpGstr3bReportMatch = pathname.match(/^\/erp\/reports\/gstr-3b\/?$/);
+  const erpGstr3bReportMatch = pathname.match(/^\/erp\/(?:gst|reports\/gstr-3b)\/?$/);
   const erpMillDispatchReportMatch = pathname.match(/^\/erp\/reports\/mill-dispatch\/?$/);
   const erpMillReceiptReportMatch = pathname.match(/^\/erp\/reports\/mill-receipt\/?$/);
   const erpWorkDespatchReportMatch = pathname.match(/^\/erp\/reports\/work-despatch\/?$/);
@@ -1152,7 +1152,7 @@ const App: React.FC = () => {
 
   if (erpGstr3bReportMatch) {
     return (
-      <Gstr3bReportPage
+      <GstReportsPage
         erpSession={erpSession}
         onBack={() => { window.location.href = '/erp'; }}
       />
