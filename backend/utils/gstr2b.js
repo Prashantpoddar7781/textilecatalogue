@@ -226,6 +226,12 @@ function mapColumns(labels) {
   const map = {};
   labels.forEach((label, index) => {
     if (!label) return;
+    // Amendment sheets carry "Original Details" and "Revised Details"; the revised side is what 2B counts.
+    if (/^original details/i.test(label)) {
+      if (map.originalDocNo == null && /number|no\b/i.test(label)) map.originalDocNo = index;
+      if (map.originalDate == null && /date/i.test(label)) map.originalDate = index;
+      return;
+    }
     for (const [field, pattern] of COLUMN_RULES) {
       if (map[field] != null) continue;
       if (field === 'sgst' && /place of supply/i.test(label)) continue;
@@ -254,8 +260,13 @@ function rowsFromGrid(grid, sheetKind) {
     && cells.some(cell => /taxable|invoice|note|bill/i.test(text(cell))));
   if (headerIndex < 0) return [];
 
-  const width = Math.max(...grid.slice(headerIndex, headerIndex + 3).map(cells => cells.length));
-  const labels = Array.from({ length: width }, (_, col) => text(grid[headerIndex][col]));
+  const width = Math.max(...grid.slice(Math.max(0, headerIndex - 1), headerIndex + 3).map(cells => cells.length));
+  const above = headerIndex > 0 ? grid[headerIndex - 1] : [];
+  const amendment = above.some(cell => /original details/i.test(text(cell)));
+  const labels = Array.from({ length: width }, (_, col) => {
+    const head = text(grid[headerIndex][col]);
+    return amendment ? `${text(above[col])} ${head}`.trim() : head;
+  });
   let dataStart = headerIndex + 1;
   const gstinCol = labels.findIndex(label => /gstin/i.test(label) && !/e-?commerce/i.test(label));
   while (dataStart < grid.length && dataStart < headerIndex + 3 && !looksLikeGstin(grid[dataStart][gstinCol])) {
@@ -293,6 +304,11 @@ function rowsFromGrid(grid, sheetKind) {
       itcAvailable: get(cells, 'itcAvailable'),
       reason: get(cells, 'reason')
     });
+    if (amendment) {
+      row.amended = true;
+      row.originalDocNo = text(get(cells, 'originalDocNo'));
+      row.originalDate = parsePortalDate(get(cells, 'originalDate'));
+    }
     addPortalAmounts(row, {
       taxable: get(cells, 'taxable'),
       igst: get(cells, 'igst'),
@@ -320,7 +336,8 @@ function cellValue(cell) {
 
 function sheetKindOf(name) {
   const lower = name.toLowerCase().replace(/\s+/g, '');
-  if (/b2ba|cdnra|isd|impg|imps|summary|readme|read me|help|ecoa/.test(lower)) return null;
+  // Rejected / ITC-reversal sheets are not ITC available; ISD, imports and ECO are not supplier B2B bills.
+  if (/rejected|reversal|b2b-dnr|isd|impg|imps|summary|readme|help|eco|itcavailable|itcnotavailable/.test(lower)) return null;
   if (/cdn/.test(lower)) return 'note';
   if (/b2b/.test(lower)) return 'invoice';
   return 'any';
@@ -443,9 +460,10 @@ function pairUp(books, portals) {
   const pairs = [];
   const freeBooks = new Set(books);
   const freePortals = new Set(portals);
+  const portalNos = (p) => [p.docNo, p.originalDocNo].filter(Boolean);
   const passes = [
-    (b, p) => normalizeBillNo(b.billNo) && normalizeBillNo(b.billNo) === normalizeBillNo(p.docNo),
-    (b, p) => digitCore(b.billNo) && digitCore(b.billNo) === digitCore(p.docNo),
+    (b, p) => normalizeBillNo(b.billNo) && portalNos(p).some(no => normalizeBillNo(no) === normalizeBillNo(b.billNo)),
+    (b, p) => digitCore(b.billNo) && portalNos(p).some(no => digitCore(no) === digitCore(b.billNo)),
     (b, p) => amountsAgree(b, p)
   ];
   passes.forEach((test, pass) => {
@@ -495,7 +513,9 @@ function portalSide(row) {
     pos: row.pos ? (posLabel(row.pos) || row.pos) : '',
     period: row.period,
     itcAvailable: row.itcAvailable,
-    reason: row.reason
+    reason: row.reason,
+    amended: Boolean(row.amended),
+    originalDocNo: row.originalDocNo || ''
   };
 }
 
@@ -503,6 +523,9 @@ function resultRow(status, remark, { book = null, portal = null, partyName = '',
   const taxableDiff = book && portal ? roundMoney(book.taxable - portal.taxable) : 0;
   const taxDiff = book && portal ? roundMoney(book.tax - portal.tax) : 0;
   const notes = [remark];
+  if (portal?.amended) {
+    notes.push(`Amended on portal${portal.originalDocNo ? ` (original bill ${portal.originalDocNo}${portal.originalDate ? ` of ${portal.originalDate}` : ''})` : ''}.`);
+  }
   if (portal && /^n/i.test(portal.itcAvailable || '')) {
     notes.push(`Portal says ITC not available${portal.reason ? ` (${portal.reason})` : ''}.`);
   }
@@ -519,18 +542,42 @@ function resultRow(status, remark, { book = null, portal = null, partyName = '',
   };
 }
 
+/** 1 April of the financial year that contains the date. */
+export function financialYearStart(dateKeyValue) {
+  const [year, month] = String(dateKeyValue).split('-').map(Number);
+  return `${month >= 4 ? year : year - 1}-04-01`;
+}
+
+/** Book entries that an earlier month's 2B/2A already reconciled. */
+function reconciledEarlier(books, earlierStatements) {
+  const done = new Set();
+  const earlierRows = earlierStatements.flatMap(s => (Array.isArray(s.rows) ? s.rows : []));
+  const gstins = new Set(earlierRows.map(row => row.gstin));
+  for (const gstin of gstins) {
+    const result = pairUp(books.filter(b => b.gstin === gstin), earlierRows.filter(row => row.gstin === gstin));
+    for (const { book } of result.pairs) done.add(book.key);
+  }
+  return done;
+}
+
 /**
- * Match the books for the return month against the uploaded 2B/2A rows.
- * A portal bill booked in another month is reported as MATCHED with the book date
- * (normal when the supplier files late or the bill reaches us late).
+ * Match the books against the uploaded 2B/2A rows, like Empire's reconciliation
+ * (bill date from 1 April to the month end): bills of the month plus older bills of
+ * the financial year that no earlier month's statement reconciled. A portal bill
+ * booked outside that window (late filing, previous year) is MATCHED with the book date.
  */
-export async function buildGstr2bMatch(prisma, userId, range, statement) {
+export async function buildGstr2bMatch(prisma, userId, range, statement, earlierStatements = []) {
   const all = await loadGstDocuments(prisma, userId, {});
   const entries = bookEntries(all.docs);
-  const inRange = (entry) => (!range.fromDate || entry.date >= range.fromDate) && (!range.toDate || entry.date <= range.toDate);
-  const monthBooks = entries.filter(inRange);
-  const otherBooks = entries.filter(entry => !inRange(entry));
+  const fyStart = financialYearStart(range.fromDate);
+  const inMonth = (entry) => entry.date >= range.fromDate && entry.date <= range.toDate;
+  const earlierInYear = entries.filter(entry => entry.date >= fyStart && entry.date < range.fromDate);
+  const alreadyDone = reconciledEarlier(earlierInYear, earlierStatements);
+  const carried = new Set(earlierInYear.filter(entry => !alreadyDone.has(entry.key)).map(entry => entry.key));
+  const monthBooks = entries.filter(entry => inMonth(entry) || carried.has(entry.key));
+  const otherBooks = entries.filter(entry => !inMonth(entry) && !carried.has(entry.key));
   const portalRows = Array.isArray(statement?.rows) ? statement.rows : [];
+  const carriedNote = (book) => (carried.has(book.key) ? ` Bill of ${book.date.slice(0, 7)} carried forward (not reconciled earlier).` : '');
 
   const masterGstins = new Set([
     ...all.parties.suppliers.map(row => normalizeGstin(row.gstNumber)),
@@ -541,7 +588,8 @@ export async function buildGstr2bMatch(prisma, userId, range, statement) {
   const rows = [];
   const reconciledIds = [];
 
-  for (const book of monthBooks.filter(entry => !entry.gstin)) {
+  // Older GST-blank bills were already listed in their own month; repeat only this month's.
+  for (const book of monthBooks.filter(entry => !entry.gstin && inMonth(entry))) {
     rows.push(resultRow(MATCH_STATUS.GST_BLANK, 'Add the GSTIN in the party master, then match again.', { book }));
   }
 
@@ -558,21 +606,21 @@ export async function buildGstr2bMatch(prisma, userId, range, statement) {
     for (const { book, portal, byBillNo } of result.pairs) {
       const amountOk = amountsAgree(book, portal);
       if (byBillNo && amountOk) {
-        rows.push(resultRow(MATCH_STATUS.MATCHED, '', { book, portal }));
+        rows.push(resultRow(MATCH_STATUS.MATCHED, carriedNote(book).trim(), { book, portal }));
         reconciledIds.push(...book.ids);
       } else if (byBillNo) {
         rows.push(resultRow(MATCH_STATUS.MISMATCH,
-          `Amount differs: taxable ${roundMoney(book.taxable - portal.taxable).toFixed(2)}, tax ${roundMoney(book.tax - portal.tax).toFixed(2)} (books − portal).`,
+          `Amount differs: taxable ${roundMoney(book.taxable - portal.taxable).toFixed(2)}, tax ${roundMoney(book.tax - portal.tax).toFixed(2)} (books − portal).${carriedNote(book)}`,
           { book, portal }));
       } else {
         rows.push(resultRow(MATCH_STATUS.MISMATCH,
-          `Bill no. differs: books "${book.billNo}", portal "${portal.docNo}". Amounts agree.`,
+          `Bill no. differs: books "${book.billNo}", portal "${portal.docNo}". Amounts agree.${carriedNote(book)}`,
           { book, portal }));
       }
     }
 
     for (const book of result.books) {
-      rows.push(resultRow(MATCH_STATUS.ABSENT_IN_2A, 'Supplier has not uploaded this bill. Follow up before claiming ITC.', { book }));
+      rows.push(resultRow(MATCH_STATUS.ABSENT_IN_2A, `Supplier has not uploaded this bill. Follow up before claiming ITC.${carriedNote(book)}`, { book }));
     }
 
     const elsewhere = otherBooks.filter(entry => entry.gstin === gstin);

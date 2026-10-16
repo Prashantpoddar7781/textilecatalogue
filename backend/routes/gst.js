@@ -6,7 +6,7 @@ import { loadGstDocuments, monthRange } from '../utils/gstDocuments.js';
 import { buildGstr1, gstDataProblems } from '../utils/gstr1.js';
 import { buildGstr1Workbook, buildTableWorkbook } from '../utils/gstr1Excel.js';
 import { buildGstr3bRegister } from '../utils/gstr3bRegister.js';
-import { buildGstr2bMatch, parsePortalStatement } from '../utils/gstr2b.js';
+import { buildGstr2bMatch, financialYearStart, parsePortalStatement } from '../utils/gstr2b.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -86,11 +86,20 @@ router.get('/problems', ...guard, async (req, res, next) => {
   }
 });
 
+/** Statements of earlier months in the same financial year (they decide what is already reconciled). */
+async function earlierStatements(userId, range) {
+  const fyPeriod = financialYearStart(range.fromDate).slice(0, 7);
+  return prisma.gstPortalStatement.findMany({
+    where: { userId, period: { gte: fyPeriod, lt: range.period } },
+    select: { period: true, source: true, rows: true }
+  });
+}
+
 async function registerFor(userId, range) {
   const statement = await findStatement(userId, range.period);
   let reconciledIds = [];
   if (statement) {
-    const match = await buildGstr2bMatch(prisma, userId, range, statement);
+    const match = await buildGstr2bMatch(prisma, userId, range, statement, await earlierStatements(userId, range));
     reconciledIds = match.reconciledIds;
   }
   const result = await buildGstr3bRegister(prisma, userId, range, { reconciledIds, hasStatement: Boolean(statement) });
@@ -196,7 +205,7 @@ async function matchFor(req, res) {
   const range = periodFrom(req, res);
   if (!range) return null;
   const statement = await findStatement(req.user.userId, range.period, req.query.source);
-  const result = await buildGstr2bMatch(prisma, req.user.userId, range, statement);
+  const result = await buildGstr2bMatch(prisma, req.user.userId, range, statement, await earlierStatements(req.user.userId, range));
   return { range, result };
 }
 

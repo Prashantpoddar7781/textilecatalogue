@@ -829,7 +829,7 @@ export const GstReportsPage: React.FC<Props> = ({ onBack, erpSession }) => {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[260px_1fr]">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
           <aside className="h-fit rounded-2xl border bg-white p-2 shadow-sm">
             {REPORT_GROUPS.map(group => (
               <div key={group.title} className="mb-2">
