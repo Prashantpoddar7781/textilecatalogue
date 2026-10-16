@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Loader2, Plus, Trash2 } from 'lucide-react';
+import { Loader2, Plus, Trash2 } from 'lucide-react';
 import { postingPartyAccountType } from '../constants/erpTransactionPostingRules';
 import { getGstDefaultsForTransactionType } from '../constants/erpTransactionTypes';
 import { workDespatchesApi } from '../services/api';
@@ -7,6 +7,7 @@ import { AccountParty, ErpSession, WorkLineItem } from '../types';
 import { AccountsInformationDialog, AddPartyConfirmDialog } from './AccountsInformationDialog';
 import { ErpFormShell } from './ErpFormShell';
 import { ErpSaveButton } from './ErpSaveButton';
+import { ErpPageBack } from './ErpPageBack';
 import { ErpTopMenu } from './ErpTopMenu';
 import { useVoucherJump } from '../hooks/useVoucherJump';
 
@@ -273,9 +274,7 @@ export const WorkDespatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
       <ErpTopMenu title="Work Despatch" erpSession={erpSession} showSessionActions onBackToCatalogue={onBack} />
       <main className="mx-auto max-w-7xl px-4 py-6">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <button type="button" onClick={onBack} className="inline-flex items-center gap-2 text-sm font-bold text-gray-600 hover:text-gray-900">
-            <ArrowLeft className="h-4 w-4" /> Back to ERP
-          </button>
+          <ErpPageBack onBack={onBack} />
           <button
             type="button"
             onClick={() => { window.location.href = '/erp/reports/work-despatch'; }}

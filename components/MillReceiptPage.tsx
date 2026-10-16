@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, ListOrdered, Loader2 } from 'lucide-react';
+import { ListOrdered, Loader2 } from 'lucide-react';
 import { millReceiptsApi } from '../services/api';
 import { getGstDocumentType, getItcEligibility, gstReturnSection, postingDiscountAccount, postingTdsAccount, postingTdsPercent, resolveDefaultTdsPercent } from '../constants/erpTransactionPostingRules';
 import { getGstDefaultsForTransactionType } from '../constants/erpTransactionTypes';
@@ -7,6 +7,7 @@ import { AccountParty, ErpSession, MillPendingDispatch, MillReceipt, MillReceipt
 import { AccountsInformationDialog, AddPartyConfirmDialog } from './AccountsInformationDialog';
 import { ErpFormShell } from './ErpFormShell';
 import { ErpSaveButton } from './ErpSaveButton';
+import { ErpPageBack } from './ErpPageBack';
 import { ErpTopMenu } from './ErpTopMenu';
 import { MillReceiptTakaModal } from './MillReceiptTakaModal';
 import { useVoucherJump } from '../hooks/useVoucherJump';
@@ -762,9 +763,7 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
 
       <main className="mx-auto max-w-7xl px-4 py-6">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <button type="button" onClick={onBack} className="inline-flex items-center gap-2 text-sm font-bold text-gray-600 hover:text-gray-900">
-            <ArrowLeft className="h-4 w-4" /> Back to ERP
-          </button>
+          <ErpPageBack onBack={onBack} />
           <div className="flex flex-wrap gap-2">
             <button
               type="button"

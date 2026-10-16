@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, BookOpen, Building2, Calculator, ChevronDown, FileBarChart, FileText, LogOut, Package, PackageCheck, RotateCcw } from 'lucide-react';
 import { clearErpSession, hasCompleteErpAccess } from '../services/erpSession';
 import { ErpSession } from '../types';
+import { resolveErpBack } from '../utils/erpBack';
 
 interface Props {
   title: string;
@@ -37,6 +38,8 @@ export const ErpTopMenu: React.FC<Props> = ({
   const [openMenu, setOpenMenu] = useState<MenuKey>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const canOpenUtilities = hasCompleteErpAccess(erpSession || null);
+  const reportBack = resolveErpBack();
+  const backToReport = reportBack?.label === 'Back to report' ? reportBack : null;
 
   useEffect(() => {
     const onDocClick = (event: MouseEvent) => {
@@ -57,6 +60,16 @@ export const ErpTopMenu: React.FC<Props> = ({
       <div className="mx-auto max-w-7xl px-4 py-2.5">
         <div className="flex items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-3">
+            {backToReport && (
+              <button
+                type="button"
+                onClick={() => { window.location.href = backToReport.href; }}
+                className="flex items-center gap-1.5 text-xs font-bold text-indigo-700 hover:text-indigo-900"
+              >
+                <ArrowLeft className="h-3.5 w-3.5" />
+                {backToReport.label}
+              </button>
+            )}
             {onBackToCatalogue && (
               <button
                 type="button"

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Loader2, Plus, Trash2 } from 'lucide-react';
+import { Loader2, Plus, Trash2 } from 'lucide-react';
 import { bankEntriesApi, purchasesApi } from '../services/api';
 import { AccountParty, ErpSession, PurchaseBill, SalesItemMaster, SalesLineItem, Supplier } from '../types';
 import {
@@ -23,6 +23,7 @@ import {
 import { AccountsInformationDialog, AddPartyConfirmDialog } from './AccountsInformationDialog';
 import { ErpFormShell } from './ErpFormShell';
 import { ErpSaveButton } from './ErpSaveButton';
+import { ErpPageBack } from './ErpPageBack';
 import { ErpTopMenu } from './ErpTopMenu';
 import { gstTypeLabel, isInterStateSupply } from '../utils/gstState';
 import { partyDhara, partyGraceDays } from '../utils/partyBillingTerms';
@@ -492,9 +493,7 @@ export const ErpExpensesPage: React.FC<Props> = ({ onBack, erpSession }) => {
       <ErpTopMenu title="Expenses" erpSession={erpSession} showSessionActions onBackToCatalogue={onBack} />
       <main className="mx-auto max-w-[1400px] px-4 py-6">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <button type="button" onClick={onBack} className="inline-flex items-center gap-2 text-sm font-bold text-gray-600 hover:text-gray-900">
-            <ArrowLeft className="h-4 w-4" /> Back to ERP
-          </button>
+          <ErpPageBack onBack={onBack} />
           <div className="flex flex-wrap gap-2">
             <button type="button" onClick={() => { window.location.href = '/erp/reports/expenses'; }} className="rounded-xl border bg-white px-3 py-2 text-xs font-black uppercase text-emerald-800">
               Expenses Report

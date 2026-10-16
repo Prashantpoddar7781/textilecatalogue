@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, Edit3, Loader2, Plus, RefreshCw, Search, Trash2 } from 'lucide-react';
+import { Edit3, Loader2, Plus, RefreshCw, Search, Trash2 } from 'lucide-react';
 import { bankEntriesApi, commissionsApi, invoicesApi, partiesApi } from '../services/api';
 import { useVoucherJump } from '../hooks/useVoucherJump';
 import { AccountParty, BankEntry, BankPendingBill, CompletedOrderParty, PurchaseBillParty } from '../types';
@@ -27,6 +27,7 @@ import {
 import { parseNoteType } from '../constants/creditDebitNoteTypes';
 import { AccountsInformationDialog } from './AccountsInformationDialog';
 import { ErpFormShell } from './ErpFormShell';
+import { ErpPageBack } from './ErpPageBack';
 import { ErpSaveButton } from './ErpSaveButton';
 
 const isUnadjBillTypeQuery = (value?: string | null) => {
@@ -923,10 +924,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
     <div className="min-h-screen bg-[#F6F7FB]">
       <header className="sticky top-0 z-30 border-b bg-white/95 px-4 py-3 shadow-sm backdrop-blur-xl">
         <div className="mx-auto flex max-w-[1400px] items-center justify-between gap-4">
-          <button onClick={onBack} className="flex items-center gap-2 text-sm font-bold text-gray-600 hover:text-gray-900">
-            <ArrowLeft className="h-4 w-4" />
-            ERP
-          </button>
+          <ErpPageBack onBack={onBack} className="flex items-center gap-2 text-sm font-bold text-gray-600 hover:text-gray-900" />
           <div className="text-center">
             <h1 className="text-lg font-black text-gray-900">Bill-wise Receipts / Payments</h1>
             <p className="text-[11px] font-semibold uppercase tracking-wide text-indigo-600">

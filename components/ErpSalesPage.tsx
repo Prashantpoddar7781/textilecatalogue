@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, Loader2, Plus, Trash2, X } from 'lucide-react';
+import { Loader2, Plus, Trash2, X } from 'lucide-react';
 import { EwayBillInfo, bankEntriesApi, partiesApi, salesOrdersApi } from '../services/api';
 import { AccountParty, Customer, ErpSession, Order, SalesItemMaster, SalesLineItem, SalesOrder } from '../types';
 import {
@@ -19,6 +19,7 @@ import { AccountsInformationDialog, AddPartyConfirmDialog } from './AccountsInfo
 import { ErpFormShell } from './ErpFormShell';
 import { EwayBillDialog } from './EwayBillDialog';
 import { ErpSaveButton } from './ErpSaveButton';
+import { ErpPageBack } from './ErpPageBack';
 import { ErpTopMenu } from './ErpTopMenu';
 import { gstTypeLabel, isInterStateSupply } from '../utils/gstState';
 import { partyDhara, partyGraceDays } from '../utils/partyBillingTerms';
@@ -914,9 +915,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
       <ErpTopMenu title="Sales Entry" erpSession={erpSession} showSessionActions onBackToCatalogue={onBack} />
       <main className="mx-auto max-w-[1400px] px-4 py-6">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <button type="button" onClick={onBack} className="inline-flex items-center gap-2 text-sm font-bold text-gray-600 hover:text-gray-900">
-            <ArrowLeft className="h-4 w-4" /> Back to ERP
-          </button>
+          <ErpPageBack onBack={onBack} />
           <div className="flex flex-wrap gap-2">
             <button type="button" onClick={() => { window.location.href = '/erp/reports/sales-order'; }} className="rounded-xl border bg-white px-3 py-2 text-xs font-black uppercase text-indigo-800">
               Sales Order Report

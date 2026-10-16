@@ -3,6 +3,7 @@ import { Loader2 } from 'lucide-react';
 import { CommissionBill, CommissionSourceRow, commissionsApi, invoicesApi, partiesApi } from '../services/api';
 import { AccountParty, ErpSession } from '../types';
 import { postingSaleOrPurchaseAccount } from '../constants/erpTransactionPostingRules';
+import { ErpPageBack } from './ErpPageBack';
 import { ErpTopMenu } from './ErpTopMenu';
 
 interface Props {
@@ -151,7 +152,7 @@ export const CommissionPage: React.FC<Props> = ({ onBack, erpSession }) => {
       <ErpTopMenu title="Commission" erpSession={erpSession} showSessionActions onBackToCatalogue={onBack} />
       <div className="mx-auto max-w-5xl px-4 py-4">
         <div className="mb-3 flex items-center justify-between">
-          <button type="button" onClick={onBack} className="text-sm font-bold text-indigo-700">Back</button>
+          <ErpPageBack onBack={onBack} className="text-sm font-bold text-indigo-700" />
           <h1 className="text-lg font-black text-slate-900">Commission · {SERIES}</h1>
           <span className="text-sm font-black text-slate-600">{savedNo ? `Bill ${savedNo}` : 'New'}</span>
         </div>

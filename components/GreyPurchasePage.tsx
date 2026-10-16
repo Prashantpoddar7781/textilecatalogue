@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertCircle, ArrowLeft, ListOrdered, Loader2 } from 'lucide-react';
+import { AlertCircle, ListOrdered, Loader2 } from 'lucide-react';
 import { GREY_QUALITY_OPTIONS } from '../constants/greyQualities';
 import { getGstDefaultsForTransactionType } from '../constants/erpTransactionTypes';
 import { postingPartyAccountType, formatSeriesBillNumber, getGstDocumentType, getItcEligibility, gstReturnSection, postingDiscountAccount, postingSummary } from '../constants/erpTransactionPostingRules';
@@ -7,6 +7,7 @@ import { greyPurchasesApi, purchasesApi } from '../services/api';
 import { isWrongGstNumber, normalizeGstNumber } from '../services/gstValidation';
 import { AccountParty, ErpSession, GreyPurchaseLine, GreyTakaDetailRow, Supplier } from '../types';
 import { AccountsInformationDialog, AddPartyConfirmDialog } from './AccountsInformationDialog';
+import { ErpPageBack } from './ErpPageBack';
 import { ErpTopMenu } from './ErpTopMenu';
 import { ErpFormShell } from './ErpFormShell';
 import { ErpSaveButton } from './ErpSaveButton';
@@ -436,10 +437,7 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
 
       <main className="mx-auto max-w-[1400px] px-4 py-5">
         <div className="mb-4 flex items-center justify-between">
-          <button type="button" onClick={onBack} className="flex items-center gap-2 text-sm font-bold text-gray-600 hover:text-gray-900">
-            <ArrowLeft className="h-4 w-4" />
-            ERP
-          </button>
+          <ErpPageBack onBack={onBack} className="flex items-center gap-2 text-sm font-bold text-gray-600 hover:text-gray-900" />
           <p className="text-xs font-black uppercase tracking-wide text-violet-700">
             {isEditMode ? 'Edit Grey Purchase' : 'Grey Purchase'}
           </p>

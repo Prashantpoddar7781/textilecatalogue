@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, ListOrdered, Loader2 } from 'lucide-react';
+import { ListOrdered, Loader2 } from 'lucide-react';
 import { greyDispatchesApi } from '../services/api';
 import { ErpSession, GreyReceiptSummary, GreyTakaDetailRow } from '../types';
 import { DispatchTakaSelectModal } from './DispatchTakaSelectModal';
 import { ErpFormShell } from './ErpFormShell';
 import { ErpSaveButton } from './ErpSaveButton';
+import { ErpPageBack } from './ErpPageBack';
 import { ErpTopMenu } from './ErpTopMenu';
 import { useVoucherJump } from '../hooks/useVoucherJump';
 import { parseVoucherNumber } from '../utils/parseVoucherNumber';
@@ -355,10 +356,7 @@ export const GreyDispatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
 
       <main className="mx-auto max-w-[1400px] px-4 py-5">
         <div className="mb-4 flex items-center justify-between">
-          <button type="button" onClick={onBack} className="flex items-center gap-2 text-sm font-bold text-gray-600 hover:text-gray-900">
-            <ArrowLeft className="h-4 w-4" />
-            ERP
-          </button>
+          <ErpPageBack onBack={onBack} className="flex items-center gap-2 text-sm font-bold text-gray-600 hover:text-gray-900" />
           <p className="text-xs font-black uppercase tracking-wide text-orange-700">{isEditMode ? 'Edit Grey Dispatch' : 'Grey Dispatch'}</p>
         </div>
 
