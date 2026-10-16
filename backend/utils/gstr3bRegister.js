@@ -75,7 +75,7 @@ function classify(doc, reconciled, hasStatement) {
     } else if (doc.kind === 'inward_credit' || doc.kind === 'inward_debit') {
       subType = doc.docType;
       table = '4(A)(5)';
-    } else if (hasStatement) {
+    } else if (hasStatement || reconciled.has(doc.id)) {
       subType = reconciled.has(doc.id) ? 'ITC (Reconciled with 2B)' : 'ITC (Unreconciled with 2B)';
       table = '4(A)(5)';
     } else {

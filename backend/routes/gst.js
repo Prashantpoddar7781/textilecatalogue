@@ -6,7 +6,7 @@ import { loadGstDocuments, monthRange } from '../utils/gstDocuments.js';
 import { buildGstr1, gstDataProblems } from '../utils/gstr1.js';
 import { buildGstr1Workbook, buildTableWorkbook } from '../utils/gstr1Excel.js';
 import { buildGstr3bRegister } from '../utils/gstr3bRegister.js';
-import { buildGstr2bMatch, financialYearStart, parsePortalStatement } from '../utils/gstr2b.js';
+import { buildGstr2bMatch, matchWindowStart, parsePortalStatement } from '../utils/gstr2b.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -86,23 +86,30 @@ router.get('/problems', ...guard, async (req, res, next) => {
   }
 });
 
-/** Statements of earlier months in the same financial year (they decide what is already reconciled). */
-async function earlierStatements(userId, range) {
-  const fyPeriod = financialYearStart(range.fromDate).slice(0, 7);
+/** Statements of earlier months in the matching window (they decide what is already reconciled). */
+async function earlierStatements(userId, range, prevYear) {
+  const startPeriod = matchWindowStart(range.fromDate, prevYear).slice(0, 7);
   return prisma.gstPortalStatement.findMany({
-    where: { userId, period: { gte: fyPeriod, lt: range.period } },
+    where: { userId, period: { gte: startPeriod, lt: range.period } },
     select: { period: true, source: true, rows: true }
   });
 }
 
+const wantsPrevYear = (value) => value === true || value === '1' || value === 'true';
+
+async function runMatch(userId, range, source, prevYear = false) {
+  const statement = await findStatement(userId, range.period, source);
+  const [earlier, saved] = await Promise.all([
+    earlierStatements(userId, range, prevYear),
+    prisma.gstReconciliation.findMany({ where: { userId } })
+  ]);
+  const result = await buildGstr2bMatch(prisma, userId, range, statement, earlier, { saved, prevYear });
+  return { statement, result };
+}
+
 async function registerFor(userId, range) {
-  const statement = await findStatement(userId, range.period);
-  let reconciledIds = [];
-  if (statement) {
-    const match = await buildGstr2bMatch(prisma, userId, range, statement, await earlierStatements(userId, range));
-    reconciledIds = match.reconciledIds;
-  }
-  const result = await buildGstr3bRegister(prisma, userId, range, { reconciledIds, hasStatement: Boolean(statement) });
+  const { statement, result: match } = await runMatch(userId, range);
+  const result = await buildGstr3bRegister(prisma, userId, range, { reconciledIds: match.reconciledIds, hasStatement: Boolean(statement) });
   return { ...result, statementSource: statement?.source || null };
 }
 
@@ -204,10 +211,99 @@ router.delete('/portal-statements/:id', ...guard, async (req, res, next) => {
 async function matchFor(req, res) {
   const range = periodFrom(req, res);
   if (!range) return null;
-  const statement = await findStatement(req.user.userId, range.period, req.query.source);
-  const result = await buildGstr2bMatch(prisma, req.user.userId, range, statement, await earlierStatements(req.user.userId, range));
-  return { range, result };
+  const input = { ...req.query, ...(req.body || {}) };
+  const { statement, result } = await runMatch(req.user.userId, range, input.source, wantsPrevYear(input.prevYear));
+  return { range, statement, result };
 }
+
+/** Save Reconciliation Status: all MATCHED rows (or the picked ones), or Mark Directly as Reconciled. */
+router.post('/reconciliations', ...guard, async (req, res, next) => {
+  try {
+    const found = await matchFor(req, res);
+    if (!found) return;
+    const { range, statement, result } = found;
+    const direct = req.body?.mode === 'direct';
+    const picked = new Set(Array.isArray(req.body?.rowKeys) ? req.body.rowKeys.map(String) : []);
+    const rows = result.rows.filter(row => (direct
+      ? picked.has(row.rowKey)
+      : row.status === 'MATCHED' && (!picked.size || picked.has(row.rowKey))));
+    if (!rows.length) {
+      return res.status(400).json({ error: direct ? 'Tick the bills to mark as reconciled.' : 'No matched bills to save.' });
+    }
+    await prisma.gstReconciliation.createMany({
+      data: rows.map(row => ({
+        userId: req.user.userId,
+        period: range.period,
+        source: statement?.source || 'NONE',
+        method: direct ? 'DIRECT' : 'MATCHED',
+        status: row.status,
+        bookIds: row.bookIds,
+        portalKey: row.portalKey || null,
+        gstin: row.gstin || null,
+        partyName: row.partyName || null,
+        billNo: row.book?.billNo || null,
+        billDate: row.book?.date || null,
+        portalDocNo: row.portal?.docNo || null,
+        portalDate: row.portal?.date || null,
+        bookTax: row.book?.tax || 0,
+        portalTax: row.portal?.tax || 0
+      }))
+    });
+    res.json({ saved: rows.length });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.delete('/reconciliations/:id', ...guard, async (req, res, next) => {
+  try {
+    const result = await prisma.gstReconciliation.deleteMany({ where: { id: req.params.id, userId: req.user.userId } });
+    if (!result.count) return res.status(404).json({ error: 'Saved reconciliation not found.' });
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+const BOOK_BILL_NO_FIELD = {
+  purchase_bill: ['purchaseBill', 'supplierBillNo'],
+  grey_purchase: ['greyPurchase', 'billNo'],
+  grey_return: ['greyPurchaseReturn', 'billNo'],
+  mill_receipt: ['millReceipt', 'billNo'],
+  work_receipt: ['workReceipt', 'billNo']
+};
+
+/** Edit Bill Nos. in mismatched: fix the party bill no. in the books and/or on the uploaded 2B row. */
+router.post('/gstr-2b-match/bill-no', ...guard, async (req, res, next) => {
+  try {
+    const found = await matchFor(req, res);
+    if (!found) return;
+    const { statement, result } = found;
+    const row = result.rows.find(r => r.rowKey === String(req.body?.rowKey || ''));
+    if (!row) return res.status(404).json({ error: 'Bill not found in the matching. Refresh and try again.' });
+    const bookBillNo = String(req.body?.bookBillNo ?? '').trim();
+    const portalDocNo = String(req.body?.portalDocNo ?? '').trim();
+
+    if (bookBillNo && row.book && bookBillNo !== row.book.billNo) {
+      const target = BOOK_BILL_NO_FIELD[row.bookSource];
+      if (!target) return res.status(400).json({ error: 'Open the entry to change the number of this document.' });
+      const [model, field] = target;
+      await prisma[model].updateMany({
+        where: { id: { in: row.bookIds }, userId: req.user.userId },
+        data: { [field]: bookBillNo }
+      });
+    }
+
+    if (portalDocNo && row.portal && statement && portalDocNo !== row.portal.docNo) {
+      const rows = (Array.isArray(statement.rows) ? statement.rows : [])
+        .map(r => (r.key === row.portal.rowId ? { ...r, docNo: portalDocNo } : r));
+      await prisma.gstPortalStatement.update({ where: { id: statement.id }, data: { rows } });
+    }
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
 
 router.get('/gstr-2b-match', ...guard, async (req, res, next) => {
   try {

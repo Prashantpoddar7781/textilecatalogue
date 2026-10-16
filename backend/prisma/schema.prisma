@@ -56,6 +56,7 @@ model User {
   salesOrders             SalesOrder[]
   salesItemMasters        SalesItemMaster[]
   gstPortalStatements     GstPortalStatement[]
+  gstReconciliations      GstReconciliation[]
 }
 
 /// GSTR-2B / 2A downloaded from the portal (sent by the CA), one per return month and source.
@@ -73,6 +74,32 @@ model GstPortalStatement {
 
   @@unique([userId, period, source])
   @@index([userId])
+}
+
+/// Bills saved as reconciled from 2A/2B matching (Empire "Save Reconciliation Status").
+/// A saved bill drops out of later matching; period is the 3B month it was claimed in.
+model GstReconciliation {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  period      String // 3B month YYYY-MM
+  source      String // 2B | 2A | NONE
+  method      String // MATCHED | DIRECT
+  status      String // matching status when saved
+  bookIds     Json // document ids of the booked bill ([] for a portal-only row)
+  portalKey   String? // GSTIN|kind|bill no. of the portal row
+  gstin       String?
+  partyName   String?
+  billNo      String?
+  billDate    String?
+  portalDocNo String?
+  portalDate  String?
+  bookTax     Float    @default(0)
+  portalTax   Float    @default(0)
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@index([userId, period])
 }
 
 model ErpUser {

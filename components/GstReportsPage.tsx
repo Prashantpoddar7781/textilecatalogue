@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, ArrowLeft, ChevronDown, ChevronRight, Download, FileSpreadsheet, Loader2, Trash2, Upload } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, CheckCheck, ChevronDown, ChevronRight, Download, FileSpreadsheet, Loader2, Pencil, RefreshCw, Save, Trash2, Undo2, Upload } from 'lucide-react';
 import {
   GstDocRef,
   GstPortalStatementInfo,
@@ -548,23 +548,79 @@ const MatchView: React.FC<{ period: string }> = ({ period }) => {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [filter, setFilter] = useState('');
+  const [prevYear, setPrevYear] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [notice, setNotice] = useState('');
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [editing, setEditing] = useState<{ rowKey: string; bookBillNo: string; portalDocNo: string } | null>(null);
+  const [showSaved, setShowSaved] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (quiet = false) => {
+    if (quiet) setRefreshing(true);
+    else setLoading(true);
     setError('');
     try {
-      const [match, list] = await Promise.all([gstApi.getGstr2bMatch(period), gstApi.listStatements()]);
+      const [match, list] = await Promise.all([gstApi.getGstr2bMatch(period, prevYear), gstApi.listStatements()]);
       setData(match);
       setStatements(list.statements);
+      setPicked(new Set());
+      setEditing(null);
       if (match.statement?.source === '2A' || match.statement?.source === '2B') setSource(match.statement.source);
     } catch (err: any) {
       setError(err.message || 'Could not load the matching report.');
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
-  }, [period]);
+  }, [period, prevYear]);
 
   useEffect(() => { void load(); }, [load]);
+
+  const act = async (work: () => Promise<string>) => {
+    setBusy(true);
+    setError('');
+    setNotice('');
+    try {
+      const message = await work();
+      await load(true);
+      setNotice(message);
+    } catch (err: any) {
+      setError(err.message || 'Could not save.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const saveMatched = () => act(async () => {
+    const { saved } = await gstApi.saveReconciliation({ period, prevYear, mode: 'matched' });
+    return `${saved} matched bill(s) saved as reconciled for 3B month ${period}. They will not show in matching again.`;
+  });
+
+  const markDirect = () => act(async () => {
+    const { saved } = await gstApi.saveReconciliation({ period, prevYear, mode: 'direct', rowKeys: Array.from(picked) });
+    return `${saved} bill(s) marked directly as reconciled for 3B month ${period}.`;
+  });
+
+  const undo = (id: string) => act(async () => {
+    await gstApi.undoReconciliation(id);
+    return 'Reconciliation undone. The bill is back in matching.';
+  });
+
+  const saveBillNo = () => {
+    if (!editing) return;
+    const current = editing;
+    void act(async () => {
+      await gstApi.editMatchBillNo({ period, prevYear, ...current });
+      return 'Bill no. updated and matching refreshed. Save reconciliation status to keep the matched bills.';
+    });
+  };
+
+  const togglePick = (rowKey: string) => setPicked(prev => {
+    const next = new Set(prev);
+    if (next.has(rowKey)) next.delete(rowKey);
+    else next.add(rowKey);
+    return next;
+  });
 
   const upload = async (file: File | undefined) => {
     if (!file) return;
@@ -596,6 +652,7 @@ const MatchView: React.FC<{ period: string }> = ({ period }) => {
 
   const monthStatements = statements.filter(s => s.period === period);
   const rows = (data?.rows || []).filter(row => !filter || row.status === filter);
+  const matchedCount = (data?.rows || []).filter(row => row.status === 'MATCHED').length;
 
   return (
     <>
@@ -614,6 +671,15 @@ const MatchView: React.FC<{ period: string }> = ({ period }) => {
             <input type="file" accept=".xlsx,.xlsm,.json,.csv" className="hidden" disabled={busy}
               onChange={e => { void upload(e.target.files?.[0]); e.target.value = ''; }} />
           </label>
+          <button type="button" onClick={() => void load(true)} disabled={busy || refreshing}
+            className={`${btnClass} border border-indigo-200 bg-white text-indigo-700 disabled:opacity-60`}
+            title="Match again with the latest entries. No need to upload the file again.">
+            <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} /> Refresh matching
+          </button>
+          <label className="inline-flex items-center gap-2 text-xs font-semibold text-slate-700">
+            <input type="checkbox" checked={prevYear} onChange={e => setPrevYear(e.target.checked)} />
+            Show unreconciled purchase bills from previous financial year
+          </label>
           {monthStatements.map(s => (
             <span key={s.id} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700">
               {s.source}: {s.fileName || 'file'} · {s.rowCount} bills
@@ -628,6 +694,7 @@ const MatchView: React.FC<{ period: string }> = ({ period }) => {
       </Section>
 
       {error && <div className="mb-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">{error}</div>}
+      {notice && <div className="mb-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">{notice}</div>}
       {loading && <div className="p-10 text-center"><Loader2 className="mx-auto h-6 w-6 animate-spin text-indigo-600" /></div>}
 
       {!loading && data && (
@@ -637,6 +704,10 @@ const MatchView: React.FC<{ period: string }> = ({ period }) => {
               No statement uploaded for {period}. Without it every taxed purchase shows as "ABSENT IN 2A" (or "GST BLANK" when the party has no GSTIN).
             </p>
           )}
+          <p className="mb-3 text-xs text-gray-500">
+            Bills dated {formatDate(data.windowStart)} to {formatDate(data.toDate)} that are not saved as reconciled. Fix a bill no. or entry, press
+            Refresh matching, then Save reconciliation status so those bills do not come back next month.
+          </p>
           <div className="mb-4 grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-6">
             {data.summary.map(s => (
               <button key={s.status} type="button" onClick={() => setFilter(prev => (prev === s.status ? '' : s.status))} title={s.help}
@@ -648,37 +719,123 @@ const MatchView: React.FC<{ period: string }> = ({ period }) => {
             ))}
           </div>
           <Section title={`Matching result${filter ? ` · ${filter}` : ''} · click a booked bill to edit`} right={
-            <button type="button" onClick={() => void gstApi.downloadGstr2bMatchExcel(period).catch(err => setError(err.message))} className={`${btnClass} bg-white text-indigo-700`}>
-              <Download className="h-4 w-4" /> Excel
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button type="button" onClick={() => void saveMatched()} disabled={busy || !matchedCount}
+                className={`${btnClass} bg-emerald-600 text-white disabled:opacity-50`}
+                title="Save all MATCHED bills as reconciled for this 3B month. They will not show in matching again.">
+                <Save className="h-4 w-4" /> Save reconciliation status ({matchedCount})
+              </button>
+              <button type="button" onClick={() => void markDirect()} disabled={busy || !picked.size}
+                className={`${btnClass} bg-indigo-600 text-white disabled:opacity-50`}
+                title="Mark the ticked bills as reconciled even if they did not match.">
+                <CheckCheck className="h-4 w-4" /> Mark ticked as reconciled ({picked.size})
+              </button>
+              <button type="button" onClick={() => void gstApi.downloadGstr2bMatchExcel(period, prevYear).catch(err => setError(err.message))} className={`${btnClass} bg-white text-indigo-700`}>
+                <Download className="h-4 w-4" /> Excel
+              </button>
+            </div>
           }>
-            <table className="w-full min-w-[1400px] border-collapse text-xs">
+            <table className="w-full min-w-[1450px] border-collapse text-xs">
               <thead>
-                <tr>{['Status', 'Party', 'GSTIN', 'Our V.No.', 'Party Bill No.', 'Bill Date', 'Books Taxable', 'Books Tax', 'Portal Bill No.', 'Portal Date', 'Portal Taxable', 'Portal Tax', 'Tax Diff', 'Remark'].map(h => <th key={h} className={thClass}>{h}</th>)}</tr>
+                <tr>
+                  <th className={thClass}>
+                    <input type="checkbox" aria-label="Tick all" checked={rows.length > 0 && rows.every(row => picked.has(row.rowKey))}
+                      onChange={e => setPicked(e.target.checked ? new Set(rows.map(row => row.rowKey)) : new Set())} />
+                  </th>
+                  {['Status', 'Party', 'GSTIN', 'Our V.No.', 'Party Bill No.', 'Bill Date', 'Books Taxable', 'Books Tax', 'Portal Bill No.', 'Portal Date', 'Portal Taxable', 'Portal Tax', 'Tax Diff', 'Remark'].map(h => <th key={h} className={thClass}>{h}</th>)}
+                </tr>
               </thead>
               <tbody>
-                {rows.length === 0 && <EmptyRow cols={14} text="No bills." />}
-                {rows.map((row, i) => (
-                  <tr key={`${row.status}-${row.gstin}-${row.book?.voucherNo || row.portal?.docNo}-${i}`} onClick={() => openEdit(row.editPath)}
-                    className={row.editPath ? 'cursor-pointer hover:bg-indigo-50' : ''}>
-                    <td className={tdClass}><span className={`rounded border px-1.5 py-0.5 text-[10px] font-black ${STATUS_STYLE[row.status] || ''}`}>{row.status}</span></td>
-                    <td className={`${tdClass} font-bold`}>{row.partyName || '-'}</td>
-                    <td className={tdClass}>{row.gstin || '-'}</td>
-                    <td className={tdCenter}>{row.book?.voucherNo || '-'}</td>
-                    <td className={tdCenter}>{row.book?.billNo || '-'}</td>
-                    <td className={tdCenter}>{formatDate(row.book?.date)}</td>
-                    <td className={tdNum}>{row.book ? money(row.book.taxable) : '-'}</td>
-                    <td className={tdNum}>{row.book ? money(row.book.tax) : '-'}</td>
-                    <td className={tdCenter}>{row.portal?.docNo || '-'}</td>
-                    <td className={tdCenter}>{formatDate(row.portal?.date)}</td>
-                    <td className={tdNum}>{row.portal ? money(row.portal.taxable) : '-'}</td>
-                    <td className={tdNum}>{row.portal ? money(row.portal.tax) : '-'}</td>
-                    <td className={`${tdNum} ${row.taxDiff ? 'font-black text-rose-700' : ''}`}>{row.book && row.portal ? money(row.taxDiff) : '-'}</td>
-                    <td className={`${tdClass} text-[11px]`}>{row.remark}</td>
-                  </tr>
-                ))}
+                {rows.length === 0 && <EmptyRow cols={15} text="No bills." />}
+                {rows.map(row => {
+                  const isEditing = editing?.rowKey === row.rowKey;
+                  const canEditBook = Boolean(row.book) && row.bookSource !== 'credit_debit_note';
+                  return (
+                    <tr key={row.rowKey} onClick={() => !isEditing && openEdit(row.editPath)}
+                      className={`${row.editPath && !isEditing ? 'cursor-pointer hover:bg-indigo-50' : ''} ${isEditing ? 'bg-amber-50' : ''}`}>
+                      <td className={tdCenter} onClick={e => e.stopPropagation()}>
+                        <input type="checkbox" checked={picked.has(row.rowKey)} onChange={() => togglePick(row.rowKey)} />
+                      </td>
+                      <td className={tdClass}><span className={`rounded border px-1.5 py-0.5 text-[10px] font-black ${STATUS_STYLE[row.status] || ''}`}>{row.status}</span></td>
+                      <td className={`${tdClass} font-bold`}>{row.partyName || '-'}</td>
+                      <td className={tdClass}>{row.gstin || '-'}</td>
+                      <td className={tdCenter}>{row.book?.voucherNo || '-'}</td>
+                      <td className={tdCenter} onClick={e => isEditing && e.stopPropagation()}>
+                        {isEditing && canEditBook
+                          ? <input value={editing.bookBillNo} onChange={e => setEditing({ ...editing, bookBillNo: e.target.value })}
+                              className="w-24 rounded border border-amber-300 px-1.5 py-1 text-xs" />
+                          : (row.book?.billNo || '-')}
+                      </td>
+                      <td className={tdCenter}>{formatDate(row.book?.date)}</td>
+                      <td className={tdNum}>{row.book ? money(row.book.taxable) : '-'}</td>
+                      <td className={tdNum}>{row.book ? money(row.book.tax) : '-'}</td>
+                      <td className={tdCenter} onClick={e => isEditing && e.stopPropagation()}>
+                        {isEditing && row.portal
+                          ? <input value={editing.portalDocNo} onChange={e => setEditing({ ...editing, portalDocNo: e.target.value })}
+                              className="w-24 rounded border border-amber-300 px-1.5 py-1 text-xs" />
+                          : (row.portal?.docNo || '-')}
+                      </td>
+                      <td className={tdCenter}>{formatDate(row.portal?.date)}</td>
+                      <td className={tdNum}>{row.portal ? money(row.portal.taxable) : '-'}</td>
+                      <td className={tdNum}>{row.portal ? money(row.portal.tax) : '-'}</td>
+                      <td className={`${tdNum} ${row.taxDiff ? 'font-black text-rose-700' : ''}`}>{row.book && row.portal ? money(row.taxDiff) : '-'}</td>
+                      <td className={`${tdClass} text-[11px]`} onClick={e => (row.status === 'MISMATCH' || isEditing) && e.stopPropagation()}>
+                        {row.remark}
+                        {row.status === 'MISMATCH' && !isEditing && (
+                          <button type="button" className="ml-2 inline-flex items-center gap-1 font-black text-amber-700"
+                            onClick={() => setEditing({ rowKey: row.rowKey, bookBillNo: row.book?.billNo || '', portalDocNo: row.portal?.docNo || '' })}>
+                            <Pencil className="h-3 w-3" /> Edit bill no.
+                          </button>
+                        )}
+                        {isEditing && (
+                          <span className="ml-2 inline-flex gap-2">
+                            <button type="button" disabled={busy} onClick={saveBillNo} className="font-black text-emerald-700">Save</button>
+                            <button type="button" onClick={() => setEditing(null)} className="font-black text-slate-500">Cancel</button>
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
+          </Section>
+
+          <Section title={`Saved as reconciled · 3B month ${period} (${data.savedRows.length})`} right={
+            <button type="button" onClick={() => setShowSaved(v => !v)} className={`${btnClass} bg-white text-indigo-700`}>
+              {showSaved ? 'Hide' : 'Show'}
+            </button>
+          }>
+            {showSaved && (
+              <table className="w-full min-w-[1100px] border-collapse text-xs">
+                <thead>
+                  <tr>{['How', 'Status when saved', 'Party', 'GSTIN', 'Party Bill No.', 'Bill Date', 'Books Tax', 'Portal Bill No.', 'Portal Date', 'Portal Tax', 'Recon Date', ''].map(h => <th key={h} className={thClass}>{h}</th>)}</tr>
+                </thead>
+                <tbody>
+                  {data.savedRows.length === 0 && <EmptyRow cols={12} text="Nothing saved for this 3B month yet." />}
+                  {data.savedRows.map(rec => (
+                    <tr key={rec.id}>
+                      <td className={tdCenter}>{rec.method === 'DIRECT' ? 'Marked directly' : 'Matched'}</td>
+                      <td className={tdCenter}><span className={`rounded border px-1.5 py-0.5 text-[10px] font-black ${STATUS_STYLE[rec.status] || ''}`}>{rec.status}</span></td>
+                      <td className={`${tdClass} font-bold`}>{rec.partyName || '-'}</td>
+                      <td className={tdClass}>{rec.gstin || '-'}</td>
+                      <td className={tdCenter}>{rec.billNo || '-'}</td>
+                      <td className={tdCenter}>{formatDate(rec.billDate)}</td>
+                      <td className={tdNum}>{money(rec.bookTax)}</td>
+                      <td className={tdCenter}>{rec.portalDocNo || '-'}</td>
+                      <td className={tdCenter}>{formatDate(rec.portalDate)}</td>
+                      <td className={tdNum}>{money(rec.portalTax)}</td>
+                      <td className={tdCenter}>{formatDate(rec.reconciledAt?.slice(0, 10))}</td>
+                      <td className={tdCenter}>
+                        <button type="button" disabled={busy} onClick={() => void undo(rec.id)} className="inline-flex items-center gap-1 font-black text-rose-600">
+                          <Undo2 className="h-3.5 w-3.5" /> Undo
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </Section>
         </>
       )}

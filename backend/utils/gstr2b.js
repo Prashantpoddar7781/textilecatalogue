@@ -515,8 +515,14 @@ function portalSide(row) {
     itcAvailable: row.itcAvailable,
     reason: row.reason,
     amended: Boolean(row.amended),
-    originalDocNo: row.originalDocNo || ''
+    originalDocNo: row.originalDocNo || '',
+    rowId: row.key || ''
   };
+}
+
+/** Survives re-uploading the same 2B (row keys like p1 do not). */
+export function portalKeyOf(row) {
+  return `${normalizeGstin(row.gstin)}|${portalClass(row)}|${normalizeBillNo(row.docNo)}`;
 }
 
 function resultRow(status, remark, { book = null, portal = null, partyName = '', gstin = '' }) {
@@ -529,7 +535,12 @@ function resultRow(status, remark, { book = null, portal = null, partyName = '',
   if (portal && /^n/i.test(portal.itcAvailable || '')) {
     notes.push(`Portal says ITC not available${portal.reason ? ` (${portal.reason})` : ''}.`);
   }
+  const portalKey = portal ? portalKeyOf(portal) : '';
   return {
+    rowKey: book ? `b:${book.key}` : `p:${portalKey}`,
+    bookIds: book?.ids || [],
+    bookSource: book?.source || '',
+    portalKey,
     status,
     remark: notes.filter(Boolean).join(' '),
     gstin: gstin || book?.gstin || portal?.gstin || '',
@@ -546,6 +557,12 @@ function resultRow(status, remark, { book = null, portal = null, partyName = '',
 export function financialYearStart(dateKeyValue) {
   const [year, month] = String(dateKeyValue).split('-').map(Number);
   return `${month >= 4 ? year : year - 1}-04-01`;
+}
+
+/** First bill date the matching looks at: 1 April, or 1 April of last year with prevYear. */
+export function matchWindowStart(dateKeyValue, prevYear = false) {
+  const fyStart = financialYearStart(dateKeyValue);
+  return prevYear ? `${Number(fyStart.slice(0, 4)) - 1}-04-01` : fyStart;
 }
 
 /** Book entries that an earlier month's 2B/2A already reconciled. */
@@ -565,28 +582,35 @@ function reconciledEarlier(books, earlierStatements) {
  * (bill date from 1 April to the month end): bills of the month plus older bills of
  * the financial year that no earlier month's statement reconciled. A portal bill
  * booked outside that window (late filing, previous year) is MATCHED with the book date.
+ * Bills and portal rows saved as reconciled (any 3B month) are left out; the ones saved
+ * for this month come back in savedRows.
  */
-export async function buildGstr2bMatch(prisma, userId, range, statement, earlierStatements = []) {
+export async function buildGstr2bMatch(prisma, userId, range, statement, earlierStatements = [], options = {}) {
+  const saved = options.saved || [];
   const all = await loadGstDocuments(prisma, userId, {});
-  const entries = bookEntries(all.docs);
-  const fyStart = financialYearStart(range.fromDate);
+  const savedBookIds = new Set(saved.flatMap(rec => (Array.isArray(rec.bookIds) ? rec.bookIds : [])));
+  const savedPortalKeys = new Set(saved.map(rec => rec.portalKey).filter(Boolean));
+  const allEntries = bookEntries(all.docs);
+  const entries = allEntries.filter(entry => !entry.ids.some(id => savedBookIds.has(id)));
+  const windowStart = matchWindowStart(range.fromDate, options.prevYear);
   const inMonth = (entry) => entry.date >= range.fromDate && entry.date <= range.toDate;
-  const earlierInYear = entries.filter(entry => entry.date >= fyStart && entry.date < range.fromDate);
+  const earlierInYear = entries.filter(entry => entry.date >= windowStart && entry.date < range.fromDate);
   const alreadyDone = reconciledEarlier(earlierInYear, earlierStatements);
   const carried = new Set(earlierInYear.filter(entry => !alreadyDone.has(entry.key)).map(entry => entry.key));
   const monthBooks = entries.filter(entry => inMonth(entry) || carried.has(entry.key));
   const otherBooks = entries.filter(entry => !inMonth(entry) && !carried.has(entry.key));
-  const portalRows = Array.isArray(statement?.rows) ? statement.rows : [];
+  const statementRows = Array.isArray(statement?.rows) ? statement.rows : [];
+  const portalRows = statementRows.filter(row => !savedPortalKeys.has(portalKeyOf(row)));
   const carriedNote = (book) => (carried.has(book.key) ? ` Bill of ${book.date.slice(0, 7)} carried forward (not reconciled earlier).` : '');
 
   const masterGstins = new Set([
     ...all.parties.suppliers.map(row => normalizeGstin(row.gstNumber)),
     ...all.parties.customers.map(row => normalizeGstin(row.gstNumber)),
-    ...entries.map(entry => entry.gstin)
+    ...allEntries.map(entry => entry.gstin)
   ].filter(Boolean));
 
   const rows = [];
-  const reconciledIds = [];
+  const reconciledIds = [...savedBookIds];
 
   // Older GST-blank bills were already listed in their own month; repeat only this month's.
   for (const book of monthBooks.filter(entry => !entry.gstin && inMonth(entry))) {
@@ -660,7 +684,7 @@ export async function buildGstr2bMatch(prisma, userId, range, statement, earlier
     };
   });
 
-  const portalTotal = portalRows.reduce((acc, row) => {
+  const portalTotal = statementRows.reduce((acc, row) => {
     const sign = row.kind === 'credit' ? -1 : 1;
     acc.taxable = roundMoney(acc.taxable + row.taxable * sign);
     acc.igst = roundMoney(acc.igst + row.igst * sign);
@@ -677,8 +701,25 @@ export async function buildGstr2bMatch(prisma, userId, range, statement, earlier
       ? { id: statement.id, source: statement.source, fileName: statement.fileName, rowCount: statement.rowCount, createdAt: statement.createdAt }
       : null,
     portalTotal: { ...portalTotal, tax: roundMoney(portalTotal.igst + portalTotal.cgst + portalTotal.sgst) },
+    windowStart,
     summary,
     rows,
-    reconciledIds
+    savedRows: saved
+      .filter(rec => rec.period === range.period)
+      .map(rec => ({
+        id: rec.id,
+        method: rec.method,
+        status: rec.status,
+        gstin: rec.gstin || '',
+        partyName: rec.partyName || '',
+        billNo: rec.billNo || '',
+        billDate: rec.billDate || '',
+        portalDocNo: rec.portalDocNo || '',
+        portalDate: rec.portalDate || '',
+        bookTax: rec.bookTax,
+        portalTax: rec.portalTax,
+        reconciledAt: rec.createdAt
+      })),
+    reconciledIds: Array.from(new Set(reconciledIds))
   };
 }

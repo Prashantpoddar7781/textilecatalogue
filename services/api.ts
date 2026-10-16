@@ -1761,8 +1761,17 @@ export type Gstr2bMatchReport = {
   period: string;
   statement: GstPortalStatementInfo | null;
   portalTotal: GstTotals & { tax: number };
+  fromDate: string;
+  toDate: string;
+  windowStart: string;
   summary: Array<{ status: string; help: string; count: number; bookTax: number; portalTax: number }>;
+  savedRows: Array<{
+    id: string; method: 'MATCHED' | 'DIRECT'; status: string; gstin: string; partyName: string;
+    billNo: string; billDate: string; portalDocNo: string; portalDate: string; bookTax: number; portalTax: number; reconciledAt: string;
+  }>;
   rows: Array<{
+    rowKey: string;
+    bookSource: string;
     status: string;
     remark: string;
     gstin: string;
@@ -1809,8 +1818,17 @@ export const gstApi = {
     body: JSON.stringify(payload)
   }),
   deleteStatement: (id: string) => request<{ ok: boolean }>(`/gst/portal-statements/${encodeURIComponent(id)}`, { method: 'DELETE' }),
-  getGstr2bMatch: (period: string, source?: '2B' | '2A') => request<Gstr2bMatchReport>(`/gst/gstr-2b-match?period=${encodeURIComponent(period)}${source ? `&source=${source}` : ''}`),
-  downloadGstr2bMatchExcel: (period: string, source?: '2B' | '2A') => downloadFile(`/gst/gstr-2b-match/excel?period=${encodeURIComponent(period)}${source ? `&source=${source}` : ''}`, `GSTR2B_Matching_${period}.xlsx`)
+  getGstr2bMatch: (period: string, prevYear = false) => request<Gstr2bMatchReport>(`/gst/gstr-2b-match?period=${encodeURIComponent(period)}${prevYear ? '&prevYear=1' : ''}`),
+  downloadGstr2bMatchExcel: (period: string, prevYear = false) => downloadFile(`/gst/gstr-2b-match/excel?period=${encodeURIComponent(period)}${prevYear ? '&prevYear=1' : ''}`, `GSTR2B_Matching_${period}.xlsx`),
+  saveReconciliation: (payload: { period: string; prevYear: boolean; mode: 'matched' | 'direct'; rowKeys?: string[] }) => request<{ saved: number }>('/gst/reconciliations', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  }),
+  undoReconciliation: (id: string) => request<{ ok: boolean }>(`/gst/reconciliations/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  editMatchBillNo: (payload: { period: string; prevYear: boolean; rowKey: string; bookBillNo?: string; portalDocNo?: string }) => request<{ ok: boolean }>('/gst/gstr-2b-match/bill-no', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  })
 };
 
 export const millReceiptsApi = {
