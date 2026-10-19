@@ -1806,6 +1806,56 @@ async function downloadFile(endpoint: string, fallbackName: string) {
   URL.revokeObjectURL(url);
 }
 
+export type PhotoEntryKind = 'purchase' | 'expense' | 'grey_purchase' | 'mill_receipt' | 'work_receipt' | 'sales' | 'note' | 'bank';
+
+export type PhotoExtractionLine = {
+  description: string; hsn: string; takas: number; pcs: number; cut: number; mts: number; qty: number;
+  unit: string; rate: number; amount: number; gstRate: number;
+};
+
+export type PhotoExtraction = {
+  party: { name: string; gstin: string; mobile: string; address: string; city: string; state: string; pincode: string; pan: string };
+  docNo: string;
+  docDate: string;
+  refDocNo: string;
+  refDocDate: string;
+  challanNo: string;
+  orderNo: string;
+  lotNo: string;
+  broker: string;
+  transport: { name: string; lrNo: string; vehicleNo: string };
+  hsn: string;
+  lines: PhotoExtractionLine[];
+  takaCount: number;
+  totalMts: number;
+  totalPcs: number;
+  grossAmount: number;
+  discountPercent: number;
+  discountAmount: number;
+  otherAdd: number;
+  otherLess: number;
+  taxableAmount: number;
+  gstRate: number;
+  cgstAmount: number;
+  sgstAmount: number;
+  igstAmount: number;
+  tdsAmount: number;
+  tcsAmount: number;
+  roundOff: number;
+  totalAmount: number;
+  payment: { mode: string; bankName: string; chequeNo: string; utr: string; amount: number };
+  remarks: string;
+  confidence: 'high' | 'medium' | 'low';
+  unclear: string[];
+};
+
+export const photoEntryApi = {
+  extract: (kind: PhotoEntryKind, images: string[]) => request<{ extraction: PhotoExtraction; warnings: string[] }>('/photo-entry/extract', {
+    method: 'POST',
+    body: JSON.stringify({ kind, images })
+  })
+};
+
 export const gstApi = {
   getGstr1: (period: string) => request<Gstr1Report>(`/gst/gstr-1?period=${encodeURIComponent(period)}`),
   downloadGstr1Excel: (period: string) => downloadFile(`/gst/gstr-1/excel?period=${encodeURIComponent(period)}`, `GSTR1_${period}.xlsx`),

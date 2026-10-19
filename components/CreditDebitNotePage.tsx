@@ -22,6 +22,9 @@ import { BankPendingBill, CreditDebitNote, Customer, ErpSession, Supplier } from
 import { ErpFormShell } from './ErpFormShell';
 import { ErpSaveButton } from './ErpSaveButton';
 import { ErpTopMenu } from './ErpTopMenu';
+import { PhotoEntryButton } from './PhotoEntryButton';
+import { PhotoExtraction } from '../services/api';
+import { matchPhotoParty, photoPartyState } from '../utils/photoEntry';
 import { isInterStateSupply } from '../utils/gstState';
 import { partyDhara } from '../utils/partyBillingTerms';
 import { useVoucherJump } from '../hooks/useVoucherJump';
@@ -422,6 +425,52 @@ export const CreditDebitNotePage: React.FC<Props> = ({ noteType: initialNoteType
     }
   };
 
+  const applyPhoto = (x: PhotoExtraction) => {
+    const out: string[] = [];
+    const isCustomer = noteType.partyType === 'customer';
+    const customerPool: Array<Customer & { name: string }> = customers.map(c => ({ ...c, name: c.organizationName }));
+    const match: (Customer & { name: string }) | Supplier | null = isCustomer
+      ? matchPhotoParty(customerPool, x)
+      : matchPhotoParty(suppliers, x);
+    if (match) {
+      if (isCustomer) setCustomerId(match.id);
+      else setSupplierId(match.id);
+      setPartyName(match.name);
+      if (match.state) setPlaceOfSupply(match.state);
+      if (!editingId) setDiscountPercent(String(partyDhara(match) || ''));
+    } else if (x.party.name) {
+      setPartyName(x.party.name);
+      out.push(`"${x.party.name}" is not in your ${isCustomer ? 'customer' : 'supplier'} list — pick or add the party before saving.`);
+    }
+    const pos = match?.state || photoPartyState(x);
+    if (pos && INDIAN_STATES.includes(pos)) setPlaceOfSupply(pos);
+    if (x.docNo) setNoteNumber(x.docNo);
+    if (x.docDate) setNoteDate(x.docDate);
+    if (x.refDocNo) {
+      setRefBillNumber(x.refDocNo);
+      setRefBillQuery(x.refDocNo);
+    }
+    if (x.refDocDate) setRefBillDate(x.refDocDate);
+    if (x.challanNo) setChallanNumber(x.challanNo);
+    const hsn = x.hsn || x.lines.find(line => line.hsn)?.hsn;
+    if (hsn) setHsnSac(hsn);
+    const rate = x.gstRate || x.lines.find(line => line.gstRate)?.gstRate;
+    if (rate) setGstRate(String(rate));
+    const pcs = x.totalPcs || x.lines.reduce((s, line) => s + line.pcs, 0);
+    const qty = x.totalMts || x.lines.reduce((s, line) => s + (line.mts || line.qty), 0);
+    if (pcs) setPieces(String(pcs));
+    if (qty) setQuantity(String(Math.round(qty * 100) / 100));
+    const gross = x.grossAmount || x.lines.reduce((s, line) => s + line.amount, 0) || x.taxableAmount;
+    if (gross) setGrossAmount(String(gross));
+    if (x.discountPercent) setDiscountPercent(String(x.discountPercent));
+    else if (x.discountAmount) setDiscountAmount(String(x.discountAmount));
+    if (x.otherLess) setOtherLess(String(x.otherLess));
+    if (x.otherAdd) setAddAmount(String(x.otherAdd));
+    if (x.remarks) setRemarks(x.remarks);
+    if (!x.refDocNo) out.push('No original bill number was read — pick the Ref Bill No.');
+    return out;
+  };
+
   return (
     <div className="min-h-screen bg-[#F6F7FB]">
       <ErpTopMenu title="Credit / Debit Note" erpSession={erpSession} onBackToCatalogue={onBack} />
@@ -436,13 +485,16 @@ export const CreditDebitNotePage: React.FC<Props> = ({ noteType: initialNoteType
               </p>
               <p className="mt-1 text-[11px] font-semibold text-indigo-700">{postingSummary(noteType.series)}</p>
             </div>
-            <button
-              type="button"
-              onClick={startNew}
-              className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-black uppercase text-gray-700"
-            >
-              New
-            </button>
+            <div className="flex items-center gap-2">
+              <PhotoEntryButton kind="note" onApply={applyPhoto} disabled={loadingEdit} />
+              <button
+                type="button"
+                onClick={startNew}
+                className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-black uppercase text-gray-700"
+              >
+                New
+              </button>
+            </div>
           </div>
 
           {error && <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{error}</div>}

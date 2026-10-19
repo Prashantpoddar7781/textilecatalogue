@@ -24,6 +24,9 @@ import { AccountsInformationDialog, AddPartyConfirmDialog } from './AccountsInfo
 import { ErpFormShell } from './ErpFormShell';
 import { ErpSaveButton } from './ErpSaveButton';
 import { ErpPageBack } from './ErpPageBack';
+import { PhotoEntryButton } from './PhotoEntryButton';
+import { PhotoExtraction } from '../services/api';
+import { PhotoPartyDetails, matchPhotoParty, photoPartyDetails, photoPartyState, rateBasisQty } from '../utils/photoEntry';
 import { ErpTopMenu } from './ErpTopMenu';
 import { gstTypeLabel, isInterStateSupply } from '../utils/gstState';
 import { partyDhara, partyGraceDays } from '../utils/partyBillingTerms';
@@ -168,6 +171,7 @@ export const ErpExpensesPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [pendingNewParty, setPendingNewParty] = useState('');
   const [showAddConfirm, setShowAddConfirm] = useState(false);
   const [showAccountsDialog, setShowAccountsDialog] = useState(false);
+  const [newPartyDetails, setNewPartyDetails] = useState<PhotoPartyDetails | null>(null);
 
   const applyTypeGstDefaults = (type: string) => {
     const d = getGstDefaultsForTransactionType(type, companyGstRate, companyHsnCode);
@@ -375,6 +379,63 @@ export const ErpExpensesPage: React.FC<Props> = ({ onBack, erpSession }) => {
     }
   };
 
+  const applyPhoto = (x: PhotoExtraction) => {
+    const notes: string[] = [];
+    const match = matchPhotoParty<Supplier>(suppliers, x);
+    const partyState = match?.state || photoPartyState(x);
+    const pct = x.discountPercent || (match ? partyDhara(match) : toNum(dhara));
+    if (match) {
+      chooseSupplier(match.id);
+    } else if (x.party.name) {
+      setSupplierId('');
+      setPartyName(x.party.name);
+      setPartyGstin(x.party.gstin);
+      setState(partyState);
+      setStation(x.party.city);
+      setPendingNewParty(x.party.name);
+      setNewPartyDetails(photoPartyDetails(x));
+      setShowAddConfirm(true);
+      notes.push(`"${x.party.name}" is not in your party master — add it with the details from the bill.`);
+    }
+    if (x.docNo) setSupplierBillNo(x.docNo);
+    if (x.docDate) setBillDate(x.docDate);
+    if (x.orderNo) setOrderRef(x.orderNo);
+    if (x.broker) setBrokerName(x.broker);
+    if (x.transport.name) setTransportName(x.transport.name);
+    if (x.transport.lrNo) setLrNo(x.transport.lrNo);
+    if (x.transport.vehicleNo) setVehicleNo(x.transport.vehicleNo);
+    if (x.remarks) setRemarks(x.remarks);
+    if (x.hsn) setHsnCode(x.hsn);
+    if (x.lines.length) {
+      setLineItems(x.lines.map((line, index) => {
+        const basis = rateBasisQty(line);
+        const hasQty = basis.qty > 0 && line.rate > 0;
+        return calcLine({
+          ...blankLine(index + 1, line.gstRate || x.gstRate || defaultGstRate, line.hsn || x.hsn || defaultHsnCode, pct),
+          itemName: line.description,
+          mainScreen: line.description,
+          screenName: line.description,
+          unit: basis.perMetre ? 'MTR' : 'PCS',
+          pcs: hasQty ? basis.qty : 1,
+          cut: line.cut,
+          mtsQty: line.mts || 0,
+          rate: hasQty ? line.rate : line.amount
+        }, businessState, partyState);
+      }));
+    } else if (x.taxableAmount) {
+      setLineItems([calcLine({
+        ...blankLine(1, x.gstRate || defaultGstRate, x.hsn || defaultHsnCode, pct),
+        itemName: x.remarks || 'Expense',
+        screenName: x.remarks || 'Expense',
+        pcs: 1,
+        rate: x.taxableAmount
+      }, businessState, partyState)]);
+      notes.push('No item lines were read — one line with the taxable amount was added.');
+    }
+    if (!purchaseAccount) notes.push('Pick the expense account (Purchase A/C).');
+    return notes;
+  };
+
   const updateLine = (index: number, key: keyof SalesLineItem, value: string | number) => {
     setLineItems(prev => prev.map((line, row) => {
       if (row !== index) return line;
@@ -498,6 +559,7 @@ export const ErpExpensesPage: React.FC<Props> = ({ onBack, erpSession }) => {
             <button type="button" onClick={() => { window.location.href = '/erp/reports/expenses'; }} className="rounded-xl border bg-white px-3 py-2 text-xs font-black uppercase text-emerald-800">
               Expenses Report
             </button>
+            <PhotoEntryButton kind="expense" onApply={applyPhoto} disabled={loading} />
           </div>
         </div>
 
@@ -761,6 +823,7 @@ export const ErpExpensesPage: React.FC<Props> = ({ onBack, erpSession }) => {
       <AccountsInformationDialog
         open={showAccountsDialog}
         initialName={pendingNewParty}
+        initialDetails={newPartyDetails}
         context="expenses"
         suggestedAccountType={postingPartyAccountType(transactionType) || undefined}
         onClose={() => setShowAccountsDialog(false)}

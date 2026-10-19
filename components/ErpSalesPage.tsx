@@ -20,6 +20,9 @@ import { ErpFormShell } from './ErpFormShell';
 import { EwayBillDialog } from './EwayBillDialog';
 import { ErpSaveButton } from './ErpSaveButton';
 import { ErpPageBack } from './ErpPageBack';
+import { PhotoEntryButton } from './PhotoEntryButton';
+import { PhotoExtraction } from '../services/api';
+import { PhotoPartyDetails, matchPhotoParty, photoPartyDetails, photoPartyState, rateBasisQty } from '../utils/photoEntry';
 import { ErpTopMenu } from './ErpTopMenu';
 import { gstTypeLabel, isInterStateSupply } from '../utils/gstState';
 import { partyDhara, partyGraceDays } from '../utils/partyBillingTerms';
@@ -285,6 +288,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [pendingNewParty, setPendingNewParty] = useState('');
   const [showAddConfirm, setShowAddConfirm] = useState(false);
   const [showAccountsDialog, setShowAccountsDialog] = useState(false);
+  const [newPartyDetails, setNewPartyDetails] = useState<PhotoPartyDetails | null>(null);
   const [accountParties, setAccountParties] = useState<AccountParty[]>([]);
   const [pendingBroker, setPendingBroker] = useState('');
   const [showBrokerConfirm, setShowBrokerConfirm] = useState(false);
@@ -708,6 +712,54 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
     }
   };
 
+  const applyPhoto = (x: PhotoExtraction) => {
+    const notes: string[] = [];
+    const pool: Array<Customer & { name: string }> = customers.map(c => ({ ...c, name: c.organizationName }));
+    const match = matchPhotoParty(pool, x);
+    const partyState = match?.state || photoPartyState(x);
+    const pct = x.discountPercent || (match ? partyDhara(match) : toNum(dhara));
+    if (match) {
+      chooseCustomer(match.id);
+    } else if (x.party.name) {
+      setCustomerId('');
+      setPartyName(x.party.name);
+      setPartyGstin(x.party.gstin);
+      setState(partyState);
+      setStation(x.party.city);
+      setPendingNewParty(x.party.name);
+      setNewPartyDetails(photoPartyDetails(x));
+      setShowAddConfirm(true);
+      notes.push(`"${x.party.name}" is not in your party master — add it with the details from the photo.`);
+    }
+    if (x.broker) setBrokerName(x.broker);
+    if (x.transport.name) setTransportName(x.transport.name);
+    if (x.transport.lrNo) setLrNo(x.transport.lrNo);
+    if (x.transport.vehicleNo) setVehicleNo(x.transport.vehicleNo);
+    const ref = [x.orderNo && `Order ${x.orderNo}`, x.docNo && `Ref ${x.docNo}`].filter(Boolean).join(' · ');
+    if (x.remarks || ref) setRemarks([ref, x.remarks].filter(Boolean).join(' — '));
+    if (x.hsn) setHsnCode(x.hsn);
+    if (x.lines.length) {
+      setLineItems(x.lines.map((line, index) => {
+        const basis = rateBasisQty(line);
+        return calcLine({
+          ...blankLine(index + 1, line.gstRate || x.gstRate || defaultGstRate, line.hsn || x.hsn || defaultHsnCode, pct),
+          itemName: line.description,
+          mainScreen: line.description,
+          screenName: line.description,
+          unit: basis.perMetre ? 'MTR' : 'PCS',
+          pcs: basis.qty,
+          cut: line.cut,
+          mtsQty: line.mts || 0,
+          rate: line.rate
+        }, businessState, partyState);
+      }));
+    } else {
+      notes.push('No item lines were read — add the items by hand.');
+    }
+    notes.push('Bill no. and date follow your own sales series — they were not taken from the photo.');
+    return notes;
+  };
+
   const updateLine = (index: number, key: keyof SalesLineItem, value: string | number) => {
     setLineItems(prev => prev.map((line, row) => {
       if (row !== index) return line;
@@ -923,6 +975,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
             <button type="button" onClick={() => { window.location.href = '/erp/reports/finish-sales'; }} className="rounded-xl border bg-white px-3 py-2 text-xs font-black uppercase text-fuchsia-800">
               Sales Register / Return
             </button>
+            <PhotoEntryButton kind="sales" onApply={applyPhoto} disabled={loading} />
           </div>
         </div>
 
@@ -1481,6 +1534,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
       <AccountsInformationDialog
         open={showAccountsDialog}
         initialName={pendingNewParty}
+        initialDetails={newPartyDetails}
         context="sales"
         suggestedAccountType={postingPartyAccountType(transactionType) || undefined}
         onClose={() => setShowAccountsDialog(false)}

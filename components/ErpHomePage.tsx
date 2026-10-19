@@ -1,5 +1,5 @@
 import React from 'react';
-import { Banknote, BookOpen, Boxes, Calculator, FileText, NotebookPen, Package, PackageCheck, ReceiptText, Truck } from 'lucide-react';
+import { Banknote, BookOpen, Camera, Boxes, Calculator, FileText, NotebookPen, Package, PackageCheck, ReceiptText, Truck } from 'lucide-react';
 import { accessLevelLabel } from '../services/erpSession';
 import { ErpSession } from '../types';
 import { ErpTopMenu } from './ErpTopMenu';
@@ -10,12 +10,13 @@ interface Props {
   erpSession?: ErpSession | null;
 }
 
-const sections = [
+const sections: Array<{ title: string; description: string; icon: typeof FileText; href: string; status: string; photo?: boolean }> = [
   {
     title: 'Sales',
     description: 'Sales Order and Finish Sales in one entry — switch using Type. Reports are under Reports menu.',
     icon: ReceiptText,
     href: '/erp/sales',
+    photo: true,
     status: 'Ready'
   },
   {
@@ -23,6 +24,7 @@ const sections = [
     description: 'Purchase entries with type heads, supplier bills, and ledger.',
     icon: FileText,
     href: '/erp/purchase',
+    photo: true,
     status: 'Demo ready'
   },
   {
@@ -30,6 +32,7 @@ const sections = [
     description: 'GST capital / general goods / input services with Pur A/C and party ledger.',
     icon: ReceiptText,
     href: '/erp/expenses',
+    photo: true,
     status: 'Ready'
   },
   {
@@ -37,6 +40,7 @@ const sections = [
     description: 'Enter bank payments and receipts, then link them to bills and notes.',
     icon: Banknote,
     href: '/erp/bank',
+    photo: true,
     status: 'Build today'
   },
   {
@@ -44,6 +48,7 @@ const sections = [
     description: 'Credit and debit notes on sales or purchase — pick the original bill like Empire.',
     icon: NotebookPen,
     href: '/erp/notes',
+    photo: true,
     status: 'Ready'
   },
   {
@@ -65,6 +70,7 @@ const sections = [
     description: 'Grey purchase entry with party GST, disc, taxable, CGST/SGST or IGST, and net amount.',
     icon: Package,
     href: '/erp/grey-purchase',
+    photo: true,
     status: 'Ready'
   },
   {
@@ -79,6 +85,7 @@ const sections = [
     description: 'Receive processed fabric from mill — lot no, despatch pick, taka details, job work bill.',
     icon: PackageCheck,
     href: '/erp/mill-receipt',
+    photo: true,
     status: 'Ready'
   },
   {
@@ -100,6 +107,7 @@ const sections = [
     description: 'Receive job-work back from khataval — posts WORK CHARGES to ledger.',
     icon: PackageCheck,
     href: '/erp/work-receipt',
+    photo: true,
     status: 'Ready'
   }
 ];
@@ -143,14 +151,21 @@ export const ErpHomePage: React.FC<Props> = ({ onBack, user, erpSession }) => {
             const Icon = section.icon;
             const disabled = section.href === '#';
             return (
-              <button
+              <div
                 key={section.title}
-                type="button"
-                disabled={disabled}
+                role="button"
+                tabIndex={disabled ? -1 : 0}
+                aria-disabled={disabled}
                 onClick={() => {
                   if (!disabled) window.location.href = section.href;
                 }}
-                className={`group min-h-[190px] rounded-3xl border bg-white p-5 text-left shadow-sm transition ${
+                onKeyDown={e => {
+                  if (!disabled && (e.key === 'Enter' || e.key === ' ')) {
+                    e.preventDefault();
+                    window.location.href = section.href;
+                  }
+                }}
+                className={`group min-h-[190px] cursor-pointer rounded-3xl border bg-white p-5 text-left shadow-sm transition ${
                   disabled
                     ? 'cursor-not-allowed border-gray-100 opacity-70'
                     : 'border-gray-100 hover:-translate-y-0.5 hover:border-indigo-200 hover:shadow-lg'
@@ -173,11 +188,25 @@ export const ErpHomePage: React.FC<Props> = ({ onBack, user, erpSession }) => {
                 <h3 className="mt-5 text-xl font-black text-gray-950">{section.title}</h3>
                 <p className="mt-2 text-sm font-medium leading-6 text-gray-500">{section.description}</p>
                 {!disabled && (
-                  <p className="mt-5 text-xs font-black uppercase tracking-wide text-indigo-600 group-hover:text-indigo-800">
-                    Open module
-                  </p>
+                  <div className="mt-5 flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-xs font-black uppercase tracking-wide text-indigo-600 group-hover:text-indigo-800">
+                      Open module
+                    </p>
+                    {section.photo && (
+                      <button
+                        type="button"
+                        onClick={e => {
+                          e.stopPropagation();
+                          window.location.href = `${section.href}?photo=1`;
+                        }}
+                        className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-indigo-600 to-fuchsia-600 px-3 py-1.5 text-[11px] font-black uppercase tracking-wide text-white shadow-sm hover:opacity-90"
+                      >
+                        <Camera className="h-3.5 w-3.5" /> From bill photo
+                      </button>
+                    )}
+                  </div>
                 )}
-              </button>
+              </div>
             );
           })}
         </section>

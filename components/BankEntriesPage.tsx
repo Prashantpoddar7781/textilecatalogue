@@ -28,6 +28,9 @@ import { parseNoteType } from '../constants/creditDebitNoteTypes';
 import { AccountsInformationDialog } from './AccountsInformationDialog';
 import { ErpFormShell } from './ErpFormShell';
 import { ErpPageBack } from './ErpPageBack';
+import { PhotoEntryButton } from './PhotoEntryButton';
+import { PhotoExtraction } from '../services/api';
+import { matchPhotoParty } from '../utils/photoEntry';
 import { ErpSaveButton } from './ErpSaveButton';
 
 const isUnadjBillTypeQuery = (value?: string | null) => {
@@ -385,6 +388,28 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
     if (form.partyType === 'customer') return completedParties.map(p => p.name);
     return brokerNames;
   }, [accountParties, completedParties, purchaseParties, form.partyType]);
+
+  const applyPhoto = (x: PhotoExtraction) => {
+    const notes: string[] = [];
+    const gstByName = new Map(accountParties.map(party => [party.name.toLowerCase(), party.gstNumber || '']));
+    const match = matchPhotoParty(partyOptions.map(name => ({ name, gstNumber: gstByName.get(name.toLowerCase()) || '' })), x);
+    const amount = x.payment.amount || x.totalAmount;
+    const mode = x.payment.mode.toLowerCase();
+    setForm(f => ({
+      ...f,
+      partyName: match?.name || x.party.name || f.partyName,
+      entryDate: x.docDate || f.entryDate,
+      amount: amount ? String(amount) : f.amount,
+      chequeNumber: x.payment.chequeNo || f.chequeNumber,
+      chequeDate: x.payment.chequeNo && x.docDate ? x.docDate : f.chequeDate,
+      referenceNumber: x.payment.utr || x.docNo || f.referenceNumber,
+      remarks: [mode && mode.toUpperCase(), x.payment.bankName, x.remarks].filter(Boolean).join(' · ') || f.remarks
+    }));
+    if (amount) setAmountTouched(true);
+    if (!match && x.party.name) notes.push(`"${x.party.name}" was not found for this series' party type — check the party.`);
+    notes.push('Allocate the amount against the bills below before saving.');
+    return notes;
+  };
 
   const adjustedBills = useMemo(
     () => pendingBills.filter(bill => (bill.adjustAmount || 0) > 0),
@@ -932,6 +957,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            {viewMode === 'entry' && <PhotoEntryButton kind="bank" onApply={applyPhoto} />}
             <button
               type="button"
               onClick={() => setViewMode('entry')}

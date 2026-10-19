@@ -8,6 +8,9 @@ import { isWrongGstNumber, normalizeGstNumber } from '../services/gstValidation'
 import { AccountParty, ErpSession, GreyPurchaseLine, GreyTakaDetailRow, Supplier } from '../types';
 import { AccountsInformationDialog, AddPartyConfirmDialog } from './AccountsInformationDialog';
 import { ErpPageBack } from './ErpPageBack';
+import { PhotoEntryButton } from './PhotoEntryButton';
+import { PhotoExtraction } from '../services/api';
+import { PhotoPartyDetails, matchPhotoParty, photoPartyDetails, photoPartyState } from '../utils/photoEntry';
 import { ErpTopMenu } from './ErpTopMenu';
 import { ErpFormShell } from './ErpFormShell';
 import { ErpSaveButton } from './ErpSaveButton';
@@ -100,6 +103,7 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [showAddConfirm, setShowAddConfirm] = useState(false);
   const [showAccountsDialog, setShowAccountsDialog] = useState(false);
   const [allowUnknownParty, setAllowUnknownParty] = useState(false);
+  const [newPartyDetails, setNewPartyDetails] = useState<PhotoPartyDetails | null>(null);
   const [success, setSuccess] = useState('');
   const voucherJump = useVoucherJump({
     module: 'grey-purchase',
@@ -256,6 +260,56 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
     }
     if (supplier.msmeType) setPartyMsme(supplier.msmeType);
     if (!isEditMode) setDiscountPercent(String(partyDhara(supplier) || ''));
+  };
+
+  const applyPhoto = (x: PhotoExtraction) => {
+    const notes: string[] = [];
+    const match = matchPhotoParty<Supplier>(suppliers, x);
+    if (match) {
+      applyParty(match);
+    } else if (x.party.name) {
+      applyParty(null);
+      setPartyName(x.party.name);
+      if (x.party.gstin) {
+        setPartyGstin(x.party.gstin);
+        setStateCode(x.party.gstin.slice(0, 2));
+      }
+      const pos = photoPartyState(x);
+      if (pos) setPlaceOfSupply(pos);
+      setPendingNewParty(x.party.name);
+      setNewPartyDetails(photoPartyDetails(x));
+      setShowAddConfirm(true);
+      notes.push(`"${x.party.name}" is not in your party master — add it with the details from the bill.`);
+    }
+    if (x.docNo) setBillNo(x.docNo);
+    if (x.docDate) setBillDate(x.docDate);
+    if (x.broker) setBrokerName(x.broker);
+    if (x.remarks) setRemarks(x.remarks);
+    const hsn = x.hsn || x.lines.find(line => line.hsn)?.hsn;
+    if (hsn) setHsnCode(hsn);
+    const rate = x.gstRate || x.lines.find(line => line.gstRate)?.gstRate;
+    if (rate) setGstRate(String(rate));
+    const takas = x.takaCount || x.lines.reduce((s, line) => s + line.takas, 0);
+    const mts = x.totalMts || x.lines.reduce((s, line) => s + line.mts, 0);
+    if (takas) setRecTaka(String(takas));
+    if (mts) setRecMts(String(Math.round(mts * 100) / 100));
+    const rated = x.lines.filter(line => line.rate > 0);
+    if (rated.length) {
+      setPurRate(String(rated[0].rate));
+      if (new Set(rated.map(line => line.rate)).size > 1) {
+        notes.push('The bill has more than one rate — the first rate was used; check the amount.');
+      }
+    }
+    const qualityName = x.lines.find(line => line.description)?.description;
+    if (qualityName) {
+      const known = GREY_QUALITY_OPTIONS.find(q => q.toLowerCase() === qualityName.toLowerCase());
+      setQuality(known || qualityName);
+    }
+    if (x.discountPercent) setDiscountPercent(String(x.discountPercent));
+    if (x.otherAdd) setOtherAddBefore(String(x.otherAdd));
+    if (x.otherLess) setOtherLessBefore(String(x.otherLess));
+    if (x.lines.length > 1) notes.push('Taka-wise metres can be entered in Taka Details if needed.');
+    return notes;
   };
 
   const onPartySaved = (party: AccountParty) => {
@@ -438,9 +492,12 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
       <main className="mx-auto max-w-[1400px] px-4 py-5">
         <div className="mb-4 flex items-center justify-between">
           <ErpPageBack onBack={onBack} className="flex items-center gap-2 text-sm font-bold text-gray-600 hover:text-gray-900" />
-          <p className="text-xs font-black uppercase tracking-wide text-violet-700">
-            {isEditMode ? 'Edit Grey Purchase' : 'Grey Purchase'}
-          </p>
+          <div className="flex items-center gap-3">
+            <PhotoEntryButton kind="grey_purchase" onApply={applyPhoto} disabled={loading} />
+            <p className="text-xs font-black uppercase tracking-wide text-violet-700">
+              {isEditMode ? 'Edit Grey Purchase' : 'Grey Purchase'}
+            </p>
+          </div>
         </div>
 
         {error && <div className="mb-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{error}</div>}
@@ -811,6 +868,7 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
       <AccountsInformationDialog
         open={showAccountsDialog}
         initialName={pendingNewParty}
+        initialDetails={newPartyDetails}
         context="grey"
         suggestedAccountType={postingPartyAccountType('GREY PURCHASE') || undefined}
         onClose={() => setShowAccountsDialog(false)}

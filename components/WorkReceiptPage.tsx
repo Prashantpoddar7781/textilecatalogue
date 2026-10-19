@@ -9,6 +9,9 @@ import { AccountsInformationDialog, AddPartyConfirmDialog } from './AccountsInfo
 import { ErpFormShell } from './ErpFormShell';
 import { ErpSaveButton } from './ErpSaveButton';
 import { ErpPageBack } from './ErpPageBack';
+import { PhotoEntryButton } from './PhotoEntryButton';
+import { PhotoExtraction } from '../services/api';
+import { PhotoPartyDetails, matchPhotoParty, photoPartyDetails, photoPartyState } from '../utils/photoEntry';
 import { ErpTopMenu } from './ErpTopMenu';
 import { partyDhara } from '../utils/partyBillingTerms';
 import { useVoucherJump } from '../hooks/useVoucherJump';
@@ -28,6 +31,35 @@ const labelClass = 'mb-1 block text-[10px] font-black uppercase tracking-wide te
 
 const calcFresh = (pcs: number, plain: number, sec: number, lost: number, lace: number) =>
   round2(Math.max(0, pcs - plain - sec - lost - lace));
+
+const computeWorkLine = (row: WorkLineItem, patch: Partial<WorkLineItem> = {}): WorkLineItem => {
+  const next = { ...row, ...patch };
+  const pcs = toNum(next.pcs);
+  const cut = toNum(next.cut) || DEFAULT_CUT;
+  const mtsQty = patch.mtsQty != null ? toNum(patch.mtsQty) : round2(pcs * cut);
+  const plain = toNum(next.plain);
+  const sec = toNum(next.sec);
+  const lost = toNum(next.lost);
+  const lace = toNum(next.lace);
+  const fresh = calcFresh(pcs, plain, sec, lost, lace);
+  const rate = toNum(next.rate);
+  const amount = round2(fresh * rate);
+  return {
+    ...next,
+    pcs,
+    cut,
+    mtsQty,
+    plain,
+    sec,
+    lost,
+    lace,
+    fresh,
+    rate,
+    amount,
+    taxableValue: amount,
+    fabricRate: toNum(next.fabricRate)
+  };
+};
 
 const blankLine = (lineNo: number): WorkLineItem => ({
   lineNo,
@@ -63,6 +95,7 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [showAddConfirm, setShowAddConfirm] = useState(false);
   const [showAccountsDialog, setShowAccountsDialog] = useState(false);
   const [allowUnknownParty, setAllowUnknownParty] = useState(false);
+  const [newPartyDetails, setNewPartyDetails] = useState<PhotoPartyDetails | null>(null);
   const [companyName, setCompanyName] = useState('');
   const [transactionTypes, setTransactionTypes] = useState<string[]>([]);
   const [parties, setParties] = useState<Array<{ name: string; gstNumber?: string | null; state?: string | null; brokerName?: string | null; suggestedTdsPercent?: number | null; dhara?: number | null; graceDays?: number | null; interestRate?: number | null }>>([]);
@@ -394,36 +427,57 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
     }
   };
 
+  const applyPhoto = (x: PhotoExtraction) => {
+    const notes: string[] = [];
+    const match = matchPhotoParty(parties, x);
+    if (match) {
+      setPartyName(match.name);
+      applyPartyDefaults(match.name);
+    } else if (x.party.name) {
+      setPartyName(x.party.name);
+      if (x.party.gstin) {
+        setPartyGstin(x.party.gstin);
+        setStateCode(x.party.gstin.slice(0, 2));
+      }
+      const pos = photoPartyState(x);
+      if (pos) setPlaceOfSupply(pos);
+      setPendingNewParty(x.party.name);
+      setNewPartyDetails(photoPartyDetails(x));
+      setShowAddConfirm(true);
+      notes.push(`"${x.party.name}" is not in your party master — add it with the details from the bill.`);
+    }
+    if (x.docNo) setBillNo(x.docNo);
+    if (x.docDate) setReceiptDate(x.docDate);
+    if (x.challanNo) setChallanNo(x.challanNo);
+    if (x.broker) setBrokerName(x.broker);
+    if (x.transport.vehicleNo) setVehicleNo(x.transport.vehicleNo);
+    if (x.remarks) setRemarks(x.remarks);
+    const hsn = x.hsn || x.lines.find(line => line.hsn)?.hsn;
+    if (hsn) setHsnCode(hsn);
+    const rate = x.gstRate || x.lines.find(line => line.gstRate)?.gstRate;
+    if (rate) setGstRate(String(rate));
+    if (x.discountPercent) setDiscountPercent(String(x.discountPercent));
+    if (x.otherAdd) setOtherAdd(String(x.otherAdd));
+    if (x.otherLess) setOtherLess(String(x.otherLess));
+    if (x.lines.length) {
+      setLines(x.lines.map((line, index) => {
+        const pcs = line.pcs || line.qty || line.mts;
+        const fits = pcs > 0 && Math.abs(pcs * line.rate - line.amount) <= Math.max(1, line.amount * 0.01);
+        return computeWorkLine(blankLine(index + 1), {
+          itemName: line.description,
+          pcs,
+          ...(line.cut ? { cut: line.cut } : {}),
+          ...(line.mts ? { mtsQty: line.mts } : {}),
+          rate: fits || !pcs ? line.rate : Math.round((line.amount / pcs) * 100) / 100
+        });
+      }));
+      notes.push('Lines are not linked to a despatch challan — use Pick Desp Challan if this job came from one.');
+    }
+    return notes;
+  };
+
   const updateLine = (index: number, patch: Partial<WorkLineItem>) => {
-    setLines(prev => prev.map((row, i) => {
-      if (i !== index) return row;
-      const next = { ...row, ...patch };
-      const pcs = toNum(next.pcs);
-      const cut = toNum(next.cut) || DEFAULT_CUT;
-      const mtsQty = patch.mtsQty != null ? toNum(patch.mtsQty) : round2(pcs * cut);
-      const plain = toNum(next.plain);
-      const sec = toNum(next.sec);
-      const lost = toNum(next.lost);
-      const lace = toNum(next.lace);
-      const fresh = calcFresh(pcs, plain, sec, lost, lace);
-      const rate = toNum(next.rate);
-      const amount = round2(fresh * rate);
-      return {
-        ...next,
-        pcs,
-        cut,
-        mtsQty,
-        plain,
-        sec,
-        lost,
-        lace,
-        fresh,
-        rate,
-        amount,
-        taxableValue: amount,
-        fabricRate: toNum(next.fabricRate)
-      };
-    }));
+    setLines(prev => prev.map((row, i) => i === index ? computeWorkLine(row, patch) : row));
   };
 
   useEffect(() => {
@@ -596,6 +650,7 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
             <button type="button" onClick={() => void loadPending()} className="inline-flex items-center gap-2 rounded-xl bg-fuchsia-700 px-3 py-2 text-xs font-black uppercase text-white">
               <ListOrdered className="h-3.5 w-3.5" /> Pick Desp Challan
             </button>
+            <PhotoEntryButton kind="work_receipt" onApply={applyPhoto} disabled={loading} />
           </div>
         </div>
 
@@ -964,6 +1019,7 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
       <AccountsInformationDialog
         open={showAccountsDialog}
         initialName={pendingNewParty}
+        initialDetails={newPartyDetails}
         context="work"
         suggestedAccountType={postingPartyAccountType(transactionType) || undefined}
         onClose={() => setShowAccountsDialog(false)}

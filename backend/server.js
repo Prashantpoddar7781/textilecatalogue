@@ -34,6 +34,7 @@ import cuttingCostRoutes from './routes/cuttingCosts.js';
 import voucherLookupRoutes from './routes/voucherLookup.js';
 import stockRoutes from './routes/stock.js';
 import gstRoutes from './routes/gst.js';
+import photoEntryRoutes from './routes/photoEntry.js';
 import appRoutes from './routes/app.js';
 import { startDesignImageMigration } from './utils/designImages.js';
 
@@ -164,6 +165,7 @@ try {
   app.use('/api/vouchers', voucherLookupRoutes);
   app.use('/api/stock', stockRoutes);
   app.use('/api/gst', gstRoutes);
+  app.use('/api/photo-entry', photoEntryRoutes);
   app.use('/api/app', appRoutes);
   console.log('Routes configured: /api/auth, /api/billing, /api/designs, /api/users, /api/catalogues, /api/contacts, /api/customers, /api/share-links, /api/orders, /api/invoices, /api/purchases, /api/bank-entries, /api/credit-debit-notes, /api/ledger, /api/erp-users, /api/erp-auth, /api/grey-purchases, /api/grey-dispatches, /api/grey-purchase-returns, /api/app');
 } catch (error) {

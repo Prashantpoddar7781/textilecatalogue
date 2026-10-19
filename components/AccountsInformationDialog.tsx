@@ -20,6 +20,8 @@ interface Props {
   context?: PartyEntryContext;
   suggestedAccountType?: string;
   initialAccountGroup?: string;
+  /** Pre-fill for a new party, e.g. read from a bill photo. */
+  initialDetails?: Partial<Pick<AccountParty, 'gstNumber' | 'mobileNumber' | 'address' | 'city' | 'state' | 'pincode' | 'panNumber'>> | null;
   editParty?: AccountParty | null;
   onClose: () => void;
   onSaved: (party: AccountParty) => void;
@@ -34,6 +36,7 @@ export const AccountsInformationDialog: React.FC<Props> = ({
   context = 'purchase',
   suggestedAccountType,
   initialAccountGroup = '',
+  initialDetails = null,
   editParty = null,
   onClose,
   onSaved
@@ -89,8 +92,17 @@ export const AccountsInformationDialog: React.FC<Props> = ({
     setBrokerPercent(editParty?.brokerPercent != null ? String(editParty.brokerPercent) : '');
     setMsmeType(editParty?.msmeType || '');
     setUdyamNumber(editParty?.udyamNumber || '');
+    if (!editParty && initialDetails) {
+      if (initialDetails.gstNumber) setGstNumber(initialDetails.gstNumber);
+      if (initialDetails.mobileNumber) setMobileNumber(initialDetails.mobileNumber);
+      if (initialDetails.address) setAddress(initialDetails.address);
+      if (initialDetails.city) setCity(initialDetails.city);
+      if (initialDetails.state) setState(initialDetails.state);
+      if (initialDetails.pincode) setPincode(initialDetails.pincode);
+      if (initialDetails.panNumber) setPanNumber(initialDetails.panNumber);
+    }
     partiesApi.list().then(result => setGroupParties(result.parties || [])).catch(() => setGroupParties([]));
-  }, [open, initialName, initialAccountGroup, context, suggestedAccountType, editParty]);
+  }, [open, initialName, initialAccountGroup, context, suggestedAccountType, editParty, initialDetails]);
 
   const applyAccountGroup = (groupName: string) => {
     setAccountGroup(groupName);

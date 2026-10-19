@@ -8,6 +8,9 @@ import { AccountsInformationDialog, AddPartyConfirmDialog } from './AccountsInfo
 import { ErpFormShell } from './ErpFormShell';
 import { ErpSaveButton } from './ErpSaveButton';
 import { ErpPageBack } from './ErpPageBack';
+import { PhotoEntryButton } from './PhotoEntryButton';
+import { PhotoExtraction } from '../services/api';
+import { PhotoPartyDetails, matchPhotoParty, photoPartyDetails, photoPartyState } from '../utils/photoEntry';
 import { ErpTopMenu } from './ErpTopMenu';
 import { MillReceiptTakaModal } from './MillReceiptTakaModal';
 import { useVoucherJump } from '../hooks/useVoucherJump';
@@ -454,6 +457,49 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [pendingNewParty, setPendingNewParty] = useState('');
   const [showAddConfirm, setShowAddConfirm] = useState(false);
   const [showAccountsDialog, setShowAccountsDialog] = useState(false);
+  const [newPartyDetails, setNewPartyDetails] = useState<PhotoPartyDetails | null>(null);
+
+  const applyPhoto = (x: PhotoExtraction) => {
+    const notes: string[] = [];
+    const match = matchPhotoParty(millParties, x);
+    if (match) {
+      setMillName(match.name);
+      if (match.gstNumber) setMillGstin(match.gstNumber);
+      applyMillPartyDefaults(match.name);
+    } else if (x.party.name) {
+      setMillName(x.party.name);
+      if (x.party.gstin) {
+        setMillGstin(x.party.gstin);
+        setStateCode(x.party.gstin.slice(0, 2));
+      }
+      const pos = photoPartyState(x);
+      if (pos) setPlaceOfSupply(pos);
+      setNewPartyDetails(photoPartyDetails(x));
+      applyMillPartyDefaults(x.party.name);
+      notes.push(`"${x.party.name}" is not in your party master — add it with the details from the bill.`);
+    }
+    if (x.docNo) setBillNo(x.docNo);
+    if (x.docDate) setReceiptDate(x.docDate);
+    if (x.remarks) setRemarks(x.remarks);
+    const hsn = x.hsn || x.lines.find(line => line.hsn)?.hsn;
+    if (hsn) setHsnCode(hsn);
+    const rate = x.gstRate || x.lines.find(line => line.gstRate)?.gstRate;
+    if (rate) setGstRate(String(rate));
+    if (x.discountPercent) setDiscountPercent(String(x.discountPercent));
+    if (x.otherAdd) setOtherAdd(String(x.otherAdd));
+    if (x.otherLess) setOtherLess(String(x.otherLess));
+    const first = x.lines[0];
+    if (x.challanNo) setRecChallan(x.challanNo);
+    if (x.lotNo) setLotNo(x.lotNo);
+    const takas = first?.takas || x.takaCount;
+    const mts = first?.mts || x.totalMts;
+    if (takas) setRecTaka(String(takas));
+    if (mts) setRecMts(String(Math.round(mts * 100) / 100));
+    if (first?.rate) setJobRate(String(first.rate));
+    notes.push('Use Open Despatch to pick the grey despatch this lot came from — the bill values above are kept for checking.');
+    if (x.lines.length > 1) notes.push(`The bill has ${x.lines.length} lots — the first lot was filled; add the others one by one.`);
+    return notes;
+  };
 
   const applyMillPartyDefaults = (name: string) => {
     const trimmed = name.trim();
@@ -780,6 +826,7 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
               <ListOrdered className="h-3.5 w-3.5" />
               Open Despatch
             </button>
+            <PhotoEntryButton kind="mill_receipt" onApply={applyPhoto} disabled={loading} />
           </div>
         </div>
 
@@ -1356,6 +1403,7 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
       <AccountsInformationDialog
         open={showAccountsDialog}
         initialName={pendingNewParty}
+        initialDetails={newPartyDetails}
         context="mill"
         onClose={() => setShowAccountsDialog(false)}
         onSaved={onPartySaved}
