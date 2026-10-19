@@ -327,6 +327,10 @@ model Order {
   /// Optional extra Sales Orders this bill covers. sourceSalesOrderId stays the
   /// primary so legacy pending and the Order→SalesOrder relation keep working.
   sourceSalesOrderIds String[]      @default([])
+  /// Catalogue order form (barcode / manual) this sale bill was copied from.
+  sourceOrderFormId  String?
+  sourceOrderForm    Order?         @relation("SaleBillOrderForm", fields: [sourceOrderFormId], references: [id], onDelete: SetNull)
+  copiedIntoBills    Order[]        @relation("SaleBillOrderForm")
   challanNo          String?
   gstType            String?
   lrNo               String?
@@ -357,6 +361,7 @@ model Order {
   @@index([manualBatchId])
   @@index([transactionType])
   @@index([sourceSalesOrderId])
+  @@index([sourceOrderFormId])
 }
 
 model SalesOrder {

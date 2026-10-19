@@ -207,6 +207,8 @@ export interface Order {
   sourceSalesOrder?: SalesOrder | null;
   /** Every Sales Order this bill covers; sourceSalesOrderId is the primary one when picked. */
   sourceSalesOrderIds?: string[];
+  /** Catalogue order form this sale bill was copied from. */
+  sourceOrderFormId?: string | null;
   challanNo?: string | null;
   gstType?: string | null;
   lrNo?: string | null;
@@ -231,6 +233,8 @@ export interface Order {
 export interface SalesLineItem {
   lineNo?: number;
   sourceLineNo?: number;
+  /** sales_order lines show as SO; order_form lines show as OF. */
+  sourceKind?: 'order_form' | 'sales_order' | null;
   sourceSalesOrderId?: string | null;
   sourceOrderNo?: string | null;
   /** When several Sales Orders contribute the same item, pending is split here. */

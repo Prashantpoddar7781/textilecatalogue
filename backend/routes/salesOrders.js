@@ -109,7 +109,8 @@ function normalizeSalesLines(raw, context = {}) {
       sourceOrderNo: optionalString(input.sourceOrderNo),
       sourceLineNo: optionalNumber(input.sourceLineNo)
         ?? (optionalString(input.sourceSalesOrderId) ? (Number(input.lineNo) || index + 1) : null),
-      sourceAllocations: normalizeSourceAllocations(input.sourceAllocations)
+      sourceAllocations: normalizeSourceAllocations(input.sourceAllocations),
+      sourceKind: optionalString(input.sourceKind) === 'order_form' ? 'order_form' : null
     };
   }).filter(line => line.itemName && (line.pcs > 0 || line.amount > 0));
 }
@@ -615,6 +616,9 @@ function tagSalesLinesToOrders(lines, sources) {
   const errors = [];
   const tagged = lines.map(line => {
     const scaled = scaleAllocationsToLine(line);
+    if (scaled.sourceKind === 'order_form') {
+      return { ...scaled, sourceSalesOrderId: null };
+    }
     if (scaled.sourceAllocations?.length) {
       for (const alloc of scaled.sourceAllocations) {
         if (!byId.has(alloc.sourceSalesOrderId)) {
@@ -662,6 +666,14 @@ async function saveBill(req, res, existing = null) {
     transactionType
   });
   if (!customer) return res.status(400).json({ error: 'Customer is required' });
+
+  const sourceOrderFormId = optionalString(req.body.sourceOrderFormId);
+  if (sourceOrderFormId) {
+    const form = await prisma.order.findFirst({
+      where: { id: sourceOrderFormId, userId, NOT: { manualType: 'erp_sales' } }
+    });
+    if (!form) return res.status(400).json({ error: 'Order form not found.' });
+  }
 
   const goodsReturn = String(transactionType).toUpperCase() === 'SALES GOODS RETURN';
   const requestedIds = goodsReturn ? [] : requestedSalesOrderIds(req.body);
@@ -767,6 +779,7 @@ async function saveBill(req, res, existing = null) {
       station: optionalString(req.body.station),
       sourceSalesOrderId: primary?.id || null,
       sourceSalesOrderIds: sources.map(row => row.id),
+      sourceOrderFormId,
       challanNo: optionalString(req.body.challanNo),
       gstType: optionalString(req.body.gstType),
       lrNo: optionalString(req.body.lrNo),

@@ -5,7 +5,7 @@ import { body, validationResult } from 'express-validator';
 import { authenticateToken } from '../middleware/auth.js';
 import { requireActiveSubscription } from '../middleware/subscription.js';
 import { allocateNextInvoiceNumber } from '../utils/orderBilling.js';
-import { normalizeTransactionType, DEFAULT_SALES_TRANSACTION_TYPE } from '../constants/erpTransactionTypes.js';
+import { normalizeTransactionType, DEFAULT_SALES_TRANSACTION_TYPE, getGstDefaultsForTransactionType } from '../constants/erpTransactionTypes.js';
 import { allocateNextTypeBillNumber } from '../utils/transactionBilling.js';
 import { DESIGN_PREVIEW_SELECT, presentDesignPreview, publicImageRef } from '../utils/designImages.js';
 
@@ -687,6 +687,155 @@ router.post('/erp-sales', authenticateToken, requireActiveSubscription, [
 });
 
 // Auth: get orders for current user
+const formNumberOf = (order) => String(order.orderNumber || order.typeBillNumber || order.invoiceNumber || '').trim();
+
+const keyOf = (value) => String(value || '').trim().toLowerCase();
+
+function matchMasterItem(items, name, mainScreen) {
+  const n = keyOf(name);
+  const m = keyOf(mainScreen);
+  return items.find(item => keyOf(item.name) === n && keyOf(item.mainScreen) === m)
+    || items.find(item => m && keyOf(item.mainScreen) === m)
+    || null;
+}
+
+function presentOpenForm(order) {
+  const lines = Array.isArray(order.orderLines) ? order.orderLines : [];
+  return {
+    id: order.id,
+    number: formNumberOf(order),
+    buyerName: order.buyerName || '',
+    customerId: order.customerId || null,
+    designCount: lines.filter(line => line?.designId || line?.designName).length || lines.length,
+    orderDate: order.orderDate || order.createdAt,
+    station: order.station || order.customer?.city || '',
+    state: order.customer?.state || '',
+    agentName: order.agentName || order.customer?.agentName || '',
+    transportName: order.transportName || '',
+    haste: order.haste || '',
+    gstNumber: order.customer?.gstNumber || ''
+  };
+}
+
+/** Order forms not yet copied into a sale bill. */
+router.get('/open-forms', authenticateToken, requireActiveSubscription, async (req, res, next) => {
+  try {
+    const userId = req.user.userId;
+    const used = await prisma.order.findMany({
+      where: { userId, manualType: 'erp_sales', sourceOrderFormId: { not: null } },
+      select: { sourceOrderFormId: true }
+    });
+    const usedIds = used.map(row => row.sourceOrderFormId).filter(Boolean);
+    const forms = await prisma.order.findMany({
+      where: {
+        userId,
+        id: usedIds.length ? { notIn: usedIds } : undefined,
+        status: { not: 'completed' },
+        OR: [
+          { manualType: 'design' },
+          { manualType: null, designId: { not: null } }
+        ]
+      },
+      include: { customer: true },
+      orderBy: { createdAt: 'desc' },
+      take: 20
+    });
+    res.json({
+      forms: forms
+        .filter(order => Array.isArray(order.orderLines) && order.orderLines.some(line => line?.designId || line?.designName))
+        .map(presentOpenForm)
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/** Put this order form's designs into item master and return sale-bill lines. */
+router.post('/:id/prepare-sale', authenticateToken, requireActiveSubscription, async (req, res, next) => {
+  try {
+    const userId = req.user.userId;
+    const form = await prisma.order.findFirst({
+      where: {
+        id: req.params.id,
+        userId,
+        OR: [{ manualType: 'design' }, { manualType: null }]
+      },
+      include: { customer: true }
+    });
+    if (!form || form.manualType === 'erp_sales') {
+      return res.status(404).json({ error: 'Order form not found.' });
+    }
+    const rawLines = (Array.isArray(form.orderLines) ? form.orderLines : []).filter(line => line?.designName || line?.designId);
+    if (!rawLines.length) return res.status(400).json({ error: 'This order form has no designs.' });
+
+    const profile = await prisma.businessProfile.findUnique({ where: { userId } });
+    const gst = getGstDefaultsForTransactionType(
+      'FINISH SALES',
+      Number(profile?.defaultGstRate) || 5,
+      profile?.defaultHsnCode || '5407'
+    );
+    let masters = await prisma.salesItemMaster.findMany({ where: { userId } });
+    const createdNames = [];
+    const lines = [];
+
+    for (const line of rawLines) {
+      const designName = optionalString(line.designName) || 'Untitled Design';
+      const designCode = optionalString(line.designCode) || designName;
+      let item = matchMasterItem(masters, designName, designCode);
+      if (!item) {
+        item = await prisma.salesItemMaster.create({
+          data: {
+            userId,
+            name: designName,
+            mainScreen: designCode,
+            packing: 'NAKED',
+            cut: 0,
+            finishType: 'FINISH',
+            itemType: 'SAREE',
+            category: optionalString(line.fabric),
+            unit: 'PCS',
+            sellingRate: Number(line.basePrice || line.retailPrice) || 0,
+            hsnSac: gst.hsnCode,
+            gstRate: gst.gstRate,
+            remark: `From order form ${formNumberOf(form) || form.id}`
+          }
+        });
+        masters = [...masters, item];
+        createdNames.push(designName);
+      }
+      const pcs = Number(line.quantity) || 0;
+      const masterRate = Number(item.sellingRate) || 0;
+      lines.push({
+        itemMasterId: item.id,
+        itemName: item.name,
+        mainScreen: item.mainScreen,
+        screenName: item.name,
+        packing: item.packing || 'NAKED',
+        unit: item.unit || 'PCS',
+        cut: Number(item.cut) || 0,
+        pcs,
+        rate: masterRate > 0 ? masterRate : (Number(line.basePrice || line.retailPrice) || 0),
+        gstRate: Number(item.gstRate) || gst.gstRate,
+        hsnCode: item.hsnSac || gst.hsnCode,
+        sourceOrderNo: formNumberOf(form),
+        sourceKind: 'order_form'
+      });
+    }
+
+    res.json({
+      form: { ...presentOpenForm(form), remarks: form.remarks || '' },
+      items: masters.filter(item => lines.some(line => line.itemMasterId === item.id)),
+      createdNames,
+      lines
+    });
+  } catch (error) {
+    if (error?.code === 'P2002') {
+      return res.status(409).json({ error: 'One of these designs is already in item master under a different name. Open Quality Information and check it.' });
+    }
+    next(error);
+  }
+});
+
 router.get('/next-invoice-number', authenticateToken, requireActiveSubscription, async (req, res, next) => {
   try {
     const userId = req.user.userId;

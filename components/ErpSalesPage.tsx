@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, Plus, Trash2, X } from 'lucide-react';
-import { EwayBillInfo, bankEntriesApi, partiesApi, salesOrdersApi } from '../services/api';
+import { EwayBillInfo, bankEntriesApi, ordersApi, partiesApi, salesOrdersApi } from '../services/api';
 import { AccountParty, Customer, ErpSession, Order, SalesItemMaster, SalesLineItem, SalesOrder } from '../types';
 import {
   DEFAULT_SALES_TRANSACTION_TYPE,
@@ -267,6 +267,11 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [screenSeries, setScreenSeries] = useState('');
   const [orderNo, setOrderNo] = useState('');
   const [sourceSalesOrderId, setSourceSalesOrderId] = useState('');
+  const [sourceOrderFormId, setSourceOrderFormId] = useState('');
+  const [openForms, setOpenForms] = useState<Awaited<ReturnType<typeof ordersApi.getOpenForms>>['forms']>([]);
+  const [dismissedForms, setDismissedForms] = useState<string[]>([]);
+  const [formPickId, setFormPickId] = useState('');
+  const [copyingForm, setCopyingForm] = useState(false);
   const [orderDate, setOrderDate] = useState(today());
   const [expectedDate, setExpectedDate] = useState('');
   const [remarks, setRemarks] = useState('');
@@ -422,6 +427,29 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
     return () => window.clearTimeout(timer);
   }, [customerId, partyName, isSalesOrder, isGoodsReturn, editId, editKind]);
 
+  useEffect(() => {
+    if (isSalesOrder || isGoodsReturn || isEditMode) return;
+    void ordersApi.getOpenForms()
+      .then(({ forms }) => setOpenForms(forms || []))
+      .catch(() => setOpenForms([]));
+  }, [isSalesOrder, isGoodsReturn, isEditMode]);
+
+  const promptForms = useMemo(() => {
+    const waiting = openForms.filter(form => form.id !== sourceOrderFormId && !dismissedForms.includes(form.id));
+    const wanted = partyName.trim().toLowerCase();
+    if (!wanted) return waiting;
+    return waiting.filter(form =>
+      (customerId && form.customerId === customerId)
+      || form.buyerName.trim().toLowerCase() === wanted
+    );
+  }, [openForms, sourceOrderFormId, dismissedForms, partyName, customerId]);
+
+  useEffect(() => {
+    if (!promptForms.some(form => form.id === formPickId)) {
+      setFormPickId(promptForms[0]?.id || '');
+    }
+  }, [promptForms, formPickId]);
+
   const applyOrderDoc = (order: SalesOrder, companyState: string, gstRate: number, hsn: string) => {
     setCustomerId(order.customerId || '');
     setPartyName(order.partyName || '');
@@ -474,6 +502,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
     setScreenSeries(bill.screenSeries || '');
     setSelectedSources(sources);
     setSourceSalesOrderId(bill.sourceSalesOrderId || sources[0]?.id || '');
+    setSourceOrderFormId(bill.sourceOrderFormId || '');
     setOrderNo(
       sources.length
         ? sources.map(row => row.orderNo).join(', ')
@@ -499,6 +528,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
 
   const clearLinkedOrder = () => {
     setSourceSalesOrderId('');
+    setSourceOrderFormId('');
     setSelectedSources([]);
     setChecked({});
     setOrderNo('');
@@ -598,6 +628,73 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
         : `${orders.length} Sales Orders loaded. Same item names are merged and quantities added.`
     );
     setPickerOpen(false);
+  };
+
+  const copyOrderForm = async (formId: string) => {
+    setCopyingForm(true);
+    setError('');
+    try {
+      const result = await ordersApi.prepareSaleFromForm(formId);
+      const form = result.form;
+      const customer = customers.find(row => row.id === form.customerId)
+        || customers.find(row => row.organizationName.toLowerCase() === form.buyerName.trim().toLowerCase());
+      const partyState = customer?.state || form.state || '';
+      if (customer) {
+        setCustomerId(customer.id);
+        setPartyName(customer.organizationName);
+        setPartyGstin(customer.gstNumber || form.gstNumber || '');
+        setState(customer.state || partyState);
+        setStation(customer.city || form.station || '');
+        setBrokerName(customer.agentName || form.agentName || brokerName);
+        const pct = partyDhara(customer);
+        setDhara(String(pct));
+        setGrace(String(partyGraceDays(customer)));
+      } else if (form.buyerName) {
+        setCustomerId(form.customerId || '');
+        setPartyName(form.buyerName);
+        setPartyGstin(form.gstNumber || '');
+        setState(form.state || '');
+        setStation(form.station || '');
+        setBrokerName(form.agentName || '');
+      }
+      if (form.transportName) setTransportName(form.transportName);
+      if (form.haste) setHaste(form.haste);
+      if (form.remarks) setRemarks(form.remarks);
+      setSourceOrderFormId(form.id);
+      setSelectedSources([]);
+      setSourceSalesOrderId('');
+      setChecked({});
+      setItems(prev => {
+        const byId = new Map(prev.map(item => [item.id, item]));
+        for (const item of result.items) byId.set(item.id, item);
+        return Array.from(byId.values()).sort((a, b) => a.mainScreen.localeCompare(b.mainScreen) || a.name.localeCompare(b.name));
+      });
+      const pct = customer ? partyDhara(customer) : toNum(dhara);
+      setLineItems(result.lines.map((line, index) => calcLine({
+        ...blankLine(index + 1, line.gstRate || defaultGstRate, line.hsnCode || defaultHsnCode, pct),
+        itemMasterId: line.itemMasterId,
+        itemName: line.itemName,
+        mainScreen: line.mainScreen,
+        screenName: line.screenName,
+        packing: line.packing,
+        unit: line.unit,
+        pcs: line.pcs,
+        cut: line.cut,
+        rate: line.rate,
+        gstRate: line.gstRate || defaultGstRate,
+        hsnCode: line.hsnCode || defaultHsnCode,
+        sourceOrderNo: line.sourceOrderNo,
+        sourceKind: 'order_form'
+      }, businessState, partyState)));
+      const added = result.createdNames.length
+        ? ` ${result.createdNames.length} new design(s) added to item master: ${result.createdNames.join(', ')}. The next sale bill that picks these names fills cut, rate, HSN and GST from the master.`
+        : ' These designs were already in item master, so cut, rate, HSN and GST came from there.';
+      setSuccess(`Order form #${form.number || '—'} copied into this sale bill.${added}`);
+    } catch (err: any) {
+      setError(err.message || 'Could not copy the order form.');
+    } finally {
+      setCopyingForm(false);
+    }
   };
 
   const chooseCustomer = (id: string) => {
@@ -919,6 +1016,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
           ...payload,
           sourceSalesOrderId: isGoodsReturn ? undefined : (sourceSalesOrderId || undefined),
           sourceSalesOrderIds: isGoodsReturn ? undefined : selectedSources.map(source => source.id),
+          sourceOrderFormId: isGoodsReturn ? undefined : (sourceOrderFormId || undefined),
           orderNumber: orderNo || undefined
         };
         const result = editId && editKind === 'bill'
@@ -938,6 +1036,8 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
         if (!isEditMode) {
           setLineItems([blankLine(1, defaultGstRate, defaultHsnCode, toNum(dhara))]);
           setSourceSalesOrderId('');
+          setSourceOrderFormId('');
+          setOpenForms(prev => prev.filter(form => form.id !== sourceOrderFormId));
           setSelectedSources([]);
           setChecked({});
           setOrderNo('');
@@ -981,6 +1081,55 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
 
         {error && <div className="mb-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">{error}</div>}
         {success && <div className="mb-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">{success}</div>}
+        {isBillEntry && !isGoodsReturn && !isEditMode && promptForms.length > 0 && (() => {
+          const picked = promptForms.find(form => form.id === formPickId) || promptForms[0];
+          return (
+            <div className="mb-3 rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-3">
+              <p className="text-sm font-black text-indigo-950">
+                Copy this sale bill from order form #{picked.number || '—'}?
+              </p>
+              <p className="mt-1 text-xs font-semibold text-indigo-800">
+                {picked.buyerName || 'No party'} · {picked.designCount} design{picked.designCount === 1 ? '' : 's'}
+                {picked.station ? ` · ${picked.station}` : ''}
+                . Yes adds any new designs to item master, then fills this bill. Later bills that pick the same item get cut, rate, HSN and GST from the master.
+              </p>
+              {promptForms.length > 1 && (
+                <label className="mt-2 block text-[10px] font-black uppercase text-indigo-700">
+                  Other waiting order forms
+                  <select
+                    className="mt-1 w-full rounded-lg border border-indigo-200 bg-white px-2 py-1.5 text-sm font-semibold text-indigo-950"
+                    value={picked.id}
+                    onChange={e => setFormPickId(e.target.value)}
+                  >
+                    {promptForms.map(form => (
+                      <option key={form.id} value={form.id}>
+                        #{form.number || '—'} · {form.buyerName} · {form.designCount} design{form.designCount === 1 ? '' : 's'}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  disabled={copyingForm}
+                  onClick={() => void copyOrderForm(picked.id)}
+                  className="rounded-xl bg-indigo-600 px-4 py-2 text-xs font-black uppercase text-white disabled:opacity-50"
+                >
+                  {copyingForm ? 'Copying…' : 'Yes, copy'}
+                </button>
+                <button
+                  type="button"
+                  disabled={copyingForm}
+                  onClick={() => setDismissedForms(prev => prev.includes(picked.id) ? prev : [...prev, picked.id])}
+                  className="rounded-xl border border-indigo-200 bg-white px-4 py-2 text-xs font-black uppercase text-indigo-800"
+                >
+                  Not now
+                </button>
+              </div>
+            </div>
+          );
+        })()}
 
         <ErpFormShell onSave={() => void handleSave()} saving={saving}>
           <section className="rounded-2xl border border-indigo-200 bg-indigo-50/40 p-4 shadow-sm">
@@ -1215,7 +1364,9 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
                       <td className="px-2 py-1.5 font-black">{index + 1}</td>
                       {!isSalesOrder && (
                         <td className="px-2 py-1.5 text-right font-semibold text-amber-800">
-                          {line.sourceOrderNo ? `SO ${line.sourceOrderNo}` : (line.sourceLineNo || '-')}
+                          {line.sourceKind === 'order_form'
+                            ? `OF ${line.sourceOrderNo || ''}`
+                            : line.sourceOrderNo ? `SO ${line.sourceOrderNo}` : (line.sourceLineNo || '-')}
                         </td>
                       )}
                       {isSalesOrder ? (

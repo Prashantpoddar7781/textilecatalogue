@@ -568,6 +568,57 @@ export const ordersApi = {
       body: JSON.stringify({ status }),
     });
   },
+  getOpenForms: async () => {
+    return request<{ forms: Array<{
+      id: string;
+      number: string;
+      buyerName: string;
+      customerId?: string | null;
+      designCount: number;
+      orderDate?: string | null;
+      station?: string;
+      state?: string;
+      agentName?: string;
+      transportName?: string;
+      haste?: string;
+      gstNumber?: string;
+    }> }>('/orders/open-forms');
+  },
+  prepareSaleFromForm: async (id: string) => {
+    return request<{
+      form: {
+        id: string;
+        number: string;
+        buyerName: string;
+        customerId?: string | null;
+        designCount: number;
+        station?: string;
+        state?: string;
+        agentName?: string;
+        transportName?: string;
+        haste?: string;
+        gstNumber?: string;
+        remarks?: string;
+      };
+      items: import('../types').SalesItemMaster[];
+      createdNames: string[];
+      lines: Array<{
+        itemMasterId: string;
+        itemName: string;
+        mainScreen: string;
+        screenName: string;
+        packing: string;
+        unit: string;
+        cut: number;
+        pcs: number;
+        rate: number;
+        gstRate: number;
+        hsnCode: string;
+        sourceOrderNo: string;
+        sourceKind: 'order_form';
+      }>;
+    }>(`/orders/${id}/prepare-sale`, { method: 'POST' });
+  },
   updateLineCompletion: async (id: string, lineIndex: number, completed: boolean) => {
     return request<{ order: any }>(`/orders/${id}/lines/${lineIndex}/completion`, {
       method: 'PUT',
