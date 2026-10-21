@@ -173,10 +173,20 @@ export const MillDispatchReportPage: React.FC<Props> = ({ onBack, erpSession }) 
     setError('');
     try {
       const result = await greyDispatchesApi.getMillDispatchReport(activeFilter);
+      const segments = (result.millSegments || []) as MillQualitySegment[];
+      let detailRows = (result.rows || []) as MillDispatchRow[];
+      const attached = segments.flatMap(segment =>
+        segment.qualities.flatMap(quality => quality.dispatches || [])
+      );
+      if (!detailRows.length && attached.length) detailRows = attached;
+      if (!detailRows.length && activeFilter !== 'all') {
+        const allReport = await greyDispatchesApi.getMillDispatchReport('all');
+        detailRows = (allReport.rows || []) as MillDispatchRow[];
+      }
       setCompanyName(result.companyName || '');
-      setRows(result.rows || []);
+      setRows(detailRows);
       setGroups(result.groups || []);
-      setMillSegments(result.millSegments || []);
+      setMillSegments(segments);
       setSummary(result.summary || []);
       setTotals(result.totals || { taka: 0, mts: 0, balTaka: 0, balMts: 0, balAmount: 0, rate: 0, entries: 0 });
     } catch (err: any) {
@@ -192,9 +202,15 @@ export const MillDispatchReportPage: React.FC<Props> = ({ onBack, erpSession }) 
 
   const reportDate = new Date().toLocaleDateString('en-IN');
 
+  const sameName = (left?: string | null, right?: string | null) =>
+    String(left || '').trim().toLowerCase() === String(right || '').trim().toLowerCase();
+
   const dispatchesForQuality = (millName: string, quality: string, attached?: MillDispatchRow[]) => {
-    if (attached?.length) return attached;
-    return rows.filter(row => row.millName === millName && (row.quality || 'Unspecified') === quality);
+    const fromRows = rows.filter(row =>
+      sameName(row.millName, millName) && sameName(row.quality || 'Unspecified', quality)
+    );
+    if (fromRows.length) return fromRows;
+    return attached || [];
   };
 
   const dispatchesForMill = (millName: string) => {
@@ -367,6 +383,7 @@ export const MillDispatchReportPage: React.FC<Props> = ({ onBack, erpSession }) 
                         </div>
                         {segment.qualities.map(quality => {
                           const matches = dispatchesForQuality(segment.millName, quality.quality, quality.dispatches);
+                          if (!matches.length) return null;
                           return (
                             <div key={`${segment.millName}::${quality.quality}`}>
                               <DispatchListTable rows={matches} />
