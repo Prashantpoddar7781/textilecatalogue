@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { ArrowLeft, Loader2, RefreshCw, Truck } from 'lucide-react';
 import { greyDispatchesApi } from '../services/api';
-import { ErpSession, GreyDispatch } from '../types';
+import { ErpSession } from '../types';
 import { ErpTopMenu } from './ErpTopMenu';
 
 interface Props {
@@ -89,8 +89,6 @@ const takaCount = (v: number) => String(Math.round(Number(v) || 0));
 const formatDate = (value?: string | null) =>
   value ? new Date(value).toLocaleDateString('en-IN') : '-';
 
-const round2 = (v: number) => Math.round((Number(v) || 0) * 100) / 100;
-
 const PendingRowCells: React.FC<{
   quality: string;
   taka: number;
@@ -128,11 +126,10 @@ const PendingTableHead: React.FC = () => (
 
 const DispatchListTable: React.FC<{
   rows: MillDispatchRow[];
-  selectedId?: string | null;
-  onSelect: (id: string) => void;
+  onOpen: (id: string) => void;
   showGrand?: boolean;
   grand?: Partial<MillDispatchGroup['totals'] & { rate: number }>;
-}> = ({ rows, selectedId, onSelect, showGrand, grand }) => (
+}> = ({ rows, onOpen, showGrand, grand }) => (
   <table className="min-w-full text-left text-xs">
     <thead className="border-b bg-gray-50 text-[10px] uppercase text-gray-500">
       <tr>
@@ -154,8 +151,16 @@ const DispatchListTable: React.FC<{
       {rows.map(row => (
         <tr
           key={row.id}
-          className={`cursor-pointer border-b transition-colors hover:bg-orange-50 ${selectedId === row.id ? 'bg-orange-50' : ''}`}
-          onClick={() => onSelect(row.id)}
+          role="button"
+          tabIndex={0}
+          className="cursor-pointer border-b transition-colors hover:bg-orange-50"
+          onClick={() => onOpen(row.id)}
+          onKeyDown={event => {
+            if (event.key !== 'Enter') return;
+            event.preventDefault();
+            onOpen(row.id);
+          }}
+          title="Open this dispatch"
         >
           <td className="px-2 py-2 font-semibold">{row.srNo ?? '-'}</td>
           <td className="px-2 py-2">{row.challanNo || '-'}</td>
@@ -186,102 +191,8 @@ const DispatchListTable: React.FC<{
   </table>
 );
 
-const DispatchDetailPanel: React.FC<{
-  entryId: string;
-  onClose: () => void;
-}> = ({ entryId, onClose }) => {
-  const [entry, setEntry] = useState<GreyDispatch | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-
-  useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      setLoading(true);
-      setError('');
-      try {
-        const { entry: fetched } = await greyDispatchesApi.getById(entryId);
-        if (!cancelled) setEntry(fetched);
-      } catch (err: any) {
-        if (!cancelled) setError(err.message || 'Could not load dispatch.');
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    };
-    void load();
-    return () => { cancelled = true; };
-  }, [entryId]);
-
-  if (loading) {
-    return (
-      <div className="mt-4 rounded-2xl border border-orange-100 bg-orange-50/70 p-4 text-sm text-orange-800">
-        <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
-        Loading dispatch details...
-      </div>
-    );
-  }
-
-  if (error || !entry) {
-    return (
-      <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">
-        {error || 'Dispatch not found.'}
-      </div>
-    );
-  }
-
-  const balAmount = round2((entry.despMts || 0) * (entry.rate || 0));
-
-  return (
-    <div className="mt-4 rounded-3xl border border-orange-100 bg-orange-50/60 p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h3 className="text-sm font-black uppercase tracking-wide text-orange-950">
-            Mill Dispatch #{entry.srNo ?? '-'}
-          </h3>
-          <p className="mt-1 text-xs font-semibold text-orange-700">
-            {entry.millName} · Pur Sr. {entry.purSr ?? '-'} · Ch. {entry.challanNo || '-'}
-          </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <button
-            type="button"
-            onClick={() => { window.location.href = `/erp/grey-dispatch?edit=${entry.id}`; }}
-            className="rounded-lg bg-orange-700 px-2.5 py-1.5 text-xs font-black uppercase text-white"
-          >
-            Edit entry
-          </button>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg border border-orange-200 bg-white px-2.5 py-1.5 text-xs font-bold text-orange-700"
-          >
-            Close
-          </button>
-        </div>
-      </div>
-      <div className="mt-4 grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-4">
-        {[
-          { label: 'Date', value: formatDate(entry.dispatchDate) },
-          { label: 'Weaver', value: entry.weaverName || '-' },
-          { label: 'Quality', value: entry.quality || '-' },
-          { label: 'Broker', value: entry.brokerName || '-' },
-          { label: 'Desp Taka', value: takaCount(entry.despTaka) },
-          { label: 'Desp Mts', value: money(entry.despMts) },
-          { label: 'Rate', value: money(entry.rate) },
-          { label: 'Bal Amount', value: money(balAmount) },
-          { label: 'Vehicle', value: entry.vehicleNo || '-' },
-          { label: 'E-Way Bill', value: entry.ewayBillNo || '-' },
-          { label: 'Remark', value: entry.remark || '-' },
-          { label: 'Process', value: entry.transactionType || 'PROCESS' }
-        ].map(field => (
-          <p key={field.label} className="rounded-xl bg-white/80 px-3 py-2">
-            <span className="font-bold text-gray-700">{field.label}:</span>{' '}
-            <span className="text-gray-900">{field.value}</span>
-          </p>
-        ))}
-      </div>
-    </div>
-  );
+const openDispatch = (id: string) => {
+  window.location.href = `/erp/grey-dispatch?edit=${id}`;
 };
 
 export const MillDispatchReportPage: React.FC<Props> = ({ onBack, erpSession }) => {
@@ -294,7 +205,7 @@ export const MillDispatchReportPage: React.FC<Props> = ({ onBack, erpSession }) 
   const [totals, setTotals] = useState({ taka: 0, mts: 0, balTaka: 0, balMts: 0, balAmount: 0, rate: 0, entries: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null);
+  const [expandedQuality, setExpandedQuality] = useState<string | null>(null);
 
   const load = async (activeFilter = filter) => {
     setLoading(true);
@@ -319,6 +230,20 @@ export const MillDispatchReportPage: React.FC<Props> = ({ onBack, erpSession }) 
   }, [filter]);
 
   const reportDate = new Date().toLocaleDateString('en-IN');
+
+  const dispatchesForQuality = (millName: string, quality: string) =>
+    rows.filter(row => row.millName === millName && (row.quality || 'Unspecified') === quality);
+
+  const openQualityLine = (millName: string, quality: string) => {
+    const matches = dispatchesForQuality(millName, quality);
+    if (matches.length === 1) {
+      openDispatch(matches[0].id);
+      return;
+    }
+    if (matches.length < 2) return;
+    const key = `${millName}::${quality}`;
+    setExpandedQuality(current => current === key ? null : key);
+  };
 
   return (
     <div className="min-h-screen bg-[#F6F7FB]">
@@ -443,9 +368,7 @@ export const MillDispatchReportPage: React.FC<Props> = ({ onBack, erpSession }) 
             <section className="rounded-3xl border border-gray-100 bg-white p-4 shadow-sm">
               <h3 className="text-sm font-black uppercase tracking-wide text-gray-900">Mill Dispatch Report</h3>
               <p className="mt-1 text-xs text-gray-500">
-                {filter === 'mill_quality_wise'
-                  ? 'Mill-wise, quality-wise pending at mill. Click a dispatch row in other views for details.'
-                  : 'Click any row to view dispatch details.'}
+                Click a dispatch to open that entry. A quality with more than one dispatch opens the list first.
               </p>
 
               {filter === 'mill_quality_wise' ? (
@@ -463,19 +386,44 @@ export const MillDispatchReportPage: React.FC<Props> = ({ onBack, erpSession }) 
                                 {segment.millName}
                               </td>
                             </tr>
-                            {segment.qualities.map(quality => (
-                              <tr key={`${segment.millName}-${quality.quality}`} className="border-b text-blue-900">
-                                <PendingRowCells
-                                  quality={quality.quality}
-                                  taka={quality.taka}
-                                  mts={quality.mts}
-                                  balTaka={quality.balTaka}
-                                  balMts={quality.balMts}
-                                  rate={quality.rate}
-                                  balAmount={quality.balAmount}
-                                />
-                              </tr>
-                            ))}
+                            {segment.qualities.map(quality => {
+                              const qualityKey = `${segment.millName}::${quality.quality}`;
+                              const matches = dispatchesForQuality(segment.millName, quality.quality);
+                              const open = expandedQuality === qualityKey;
+                              return (
+                                <React.Fragment key={qualityKey}>
+                                  <tr
+                                    role="button"
+                                    tabIndex={0}
+                                    className="cursor-pointer border-b text-blue-900 hover:bg-orange-50"
+                                    onClick={() => openQualityLine(segment.millName, quality.quality)}
+                                    onKeyDown={event => {
+                                      if (event.key !== 'Enter') return;
+                                      event.preventDefault();
+                                      openQualityLine(segment.millName, quality.quality);
+                                    }}
+                                    title={matches.length > 1 ? 'Show these dispatches' : 'Open this dispatch'}
+                                  >
+                                    <PendingRowCells
+                                      quality={quality.quality}
+                                      taka={quality.taka}
+                                      mts={quality.mts}
+                                      balTaka={quality.balTaka}
+                                      balMts={quality.balMts}
+                                      rate={quality.rate}
+                                      balAmount={quality.balAmount}
+                                    />
+                                  </tr>
+                                  {open && matches.length > 1 && (
+                                    <tr className="border-b bg-orange-50/40">
+                                      <td colSpan={7} className="px-2 py-2">
+                                        <DispatchListTable rows={matches} onOpen={openDispatch} />
+                                      </td>
+                                    </tr>
+                                  )}
+                                </React.Fragment>
+                              );
+                            })}
                             <tr className="border-b bg-blue-50 font-bold text-blue-950">
                               <PendingRowCells
                                 quality="MILL-SUBTOTAL"
@@ -511,8 +459,7 @@ export const MillDispatchReportPage: React.FC<Props> = ({ onBack, erpSession }) 
                   <div className="mt-3 overflow-x-auto">
                     <DispatchListTable
                       rows={rows}
-                      selectedId={selectedEntryId}
-                      onSelect={setSelectedEntryId}
+                      onOpen={openDispatch}
                       showGrand
                       grand={totals}
                     />
@@ -532,20 +479,13 @@ export const MillDispatchReportPage: React.FC<Props> = ({ onBack, erpSession }) 
                       </div>
                       <DispatchListTable
                         rows={group.rows}
-                        selectedId={selectedEntryId}
-                        onSelect={setSelectedEntryId}
+                        onOpen={openDispatch}
                       />
                     </div>
                   ))}
                 </div>
               )}
 
-              {selectedEntryId && filter !== 'mill_quality_wise' && (
-                <DispatchDetailPanel
-                  entryId={selectedEntryId}
-                  onClose={() => setSelectedEntryId(null)}
-                />
-              )}
             </section>
           </>
         )}

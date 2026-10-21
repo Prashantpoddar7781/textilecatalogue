@@ -518,7 +518,7 @@ router.get('/mill-dispatch-report', authenticateToken, requireActiveSubscription
       filter: activeFilter,
       companyName: ctx.companyName,
       reportDate: new Date().toISOString(),
-      rows: activeFilter === 'all' ? rows : [],
+      rows: activeFilter === 'all' || activeFilter === 'mill_quality_wise' ? rows : [],
       groups: activeFilter === 'all' || activeFilter === 'mill_quality_wise' ? [] : groupDispatchRows(rows, activeFilter),
       millSegments: activeFilter === 'mill_quality_wise' ? buildMillQualitySegments(rows) : [],
       summary: Array.from(byMill.values()).sort((a, b) => a.mill.localeCompare(b.mill)),
