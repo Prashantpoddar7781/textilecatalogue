@@ -234,15 +234,6 @@ export const MillDispatchReportPage: React.FC<Props> = ({ onBack, erpSession }) 
     return segment?.qualities.flatMap(quality => quality.dispatches || []) || [];
   };
 
-  const openMill = (millName: string) => {
-    const matches = dispatchesForMill(millName);
-    if (matches.length === 1) {
-      window.location.href = dispatchHref(matches[0].id);
-      return;
-    }
-    document.getElementById(`mill-dispatch-${millName}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  };
-
   return (
     <div className="min-h-screen bg-[#F6F7FB]">
       <ErpTopMenu
@@ -348,20 +339,40 @@ export const MillDispatchReportPage: React.FC<Props> = ({ onBack, erpSession }) 
                       </tr>
                     </thead>
                     <tbody>
-                      {summary.map(row => (
-                        <tr
-                          key={row.mill}
-                          className="cursor-pointer border-b hover:bg-orange-50"
-                          onClick={() => openMill(row.mill)}
-                          title={row.entries === 1 ? 'Open this dispatch' : 'Show this mill’s dispatches'}
-                        >
-                          <td className="py-3 font-semibold">{row.mill}</td>
-                          <td className="text-right">{row.entries}</td>
-                          <td className="text-right">{takaCount(row.taka)}</td>
-                          <td className="text-right">{money(row.mts)}</td>
-                          <td className="text-right font-bold">{money(row.balAmount)}</td>
-                        </tr>
-                      ))}
+                      {summary.map(row => {
+                        const matches = dispatchesForMill(row.mill);
+                        const only = matches.length === 1 ? matches[0] : null;
+                        return (
+                          <React.Fragment key={row.mill}>
+                            <tr className={`border-b ${only ? 'cursor-pointer hover:bg-orange-50' : 'bg-gray-50'}`}>
+                              <td className="py-3 font-semibold">
+                                {only ? (
+                                  <a href={dispatchHref(only.id)} className="block text-inherit no-underline">{row.mill}</a>
+                                ) : row.mill}
+                              </td>
+                              <td className="text-right">{only ? <a href={dispatchHref(only.id)} className="block text-inherit no-underline">{row.entries}</a> : row.entries}</td>
+                              <td className="text-right">{only ? <a href={dispatchHref(only.id)} className="block text-inherit no-underline">{takaCount(row.taka)}</a> : takaCount(row.taka)}</td>
+                              <td className="text-right">{only ? <a href={dispatchHref(only.id)} className="block text-inherit no-underline">{money(row.mts)}</a> : money(row.mts)}</td>
+                              <td className="text-right font-bold">{only ? <a href={dispatchHref(only.id)} className="block text-inherit no-underline">{money(row.balAmount)}</a> : money(row.balAmount)}</td>
+                            </tr>
+                            {!only && matches.map(entry => (
+                              <tr key={entry.id} className="border-b hover:bg-orange-50">
+                                <td colSpan={5} className="px-2 py-2">
+                                  <a href={dispatchHref(entry.id)} className="flex flex-wrap gap-x-4 gap-y-1 text-xs font-semibold text-orange-900 no-underline">
+                                    <span>Sr {entry.srNo ?? '-'}</span>
+                                    <span>Ch {entry.challanNo || '-'}</span>
+                                    <span>{formatDate(entry.date)}</span>
+                                    <span>{entry.quality || '-'}</span>
+                                    <span>{entry.weaverName || '-'}</span>
+                                    <span>{takaCount(entry.taka)} pcs</span>
+                                    <span>{money(entry.mts)} mtrs</span>
+                                  </a>
+                                </td>
+                              </tr>
+                            ))}
+                          </React.Fragment>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -393,35 +404,37 @@ export const MillDispatchReportPage: React.FC<Props> = ({ onBack, erpSession }) 
                               const matches = dispatchesForQuality(segment.millName, quality.quality, quality.dispatches);
                               return (
                                 <React.Fragment key={`${segment.millName}::${quality.quality}`}>
-                                  <tr
-                                    className={`border-b text-blue-900 ${matches.length === 1 ? 'cursor-pointer hover:bg-orange-50' : ''}`}
-                                    onClick={matches.length === 1 ? () => { window.location.href = dispatchHref(matches[0].id); } : undefined}
-                                    title={matches.length === 1 ? 'Open this dispatch' : undefined}
-                                  >
-                                    <PendingRowCells
-                                      quality={quality.quality}
-                                      taka={quality.taka}
-                                      mts={quality.mts}
-                                      balTaka={quality.balTaka}
-                                      balMts={quality.balMts}
-                                      rate={quality.rate}
-                                      balAmount={quality.balAmount}
-                                    />
-                                  </tr>
                                   {matches.map(entry => (
                                     <tr key={entry.id} className="border-b bg-white hover:bg-orange-50">
-                                      <td colSpan={7} className="px-2 py-1.5">
-                                        <a href={dispatchHref(entry.id)} className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] font-semibold text-orange-900 no-underline">
-                                          <span>Sr {entry.srNo ?? '-'}</span>
-                                          <span>Ch {entry.challanNo || '-'}</span>
-                                          <span>{formatDate(entry.date)}</span>
-                                          <span>{entry.weaverName || '-'}</span>
-                                          <span>{takaCount(entry.taka)} pcs</span>
-                                          <span>{money(entry.mts)} mtrs</span>
+                                      <td className="px-2 py-2">
+                                        <a href={dispatchHref(entry.id)} className="block font-semibold text-orange-950 no-underline">
+                                          {entry.quality || quality.quality}
+                                          <span className="mt-0.5 block text-[10px] font-bold text-gray-600">
+                                            Sr {entry.srNo ?? '-'} · Ch {entry.challanNo || '-'} · {formatDate(entry.date)} · {entry.weaverName || '-'}
+                                          </span>
                                         </a>
                                       </td>
+                                      <td className="px-2 py-2 text-right"><a href={dispatchHref(entry.id)} className="block text-inherit no-underline">{takaCount(entry.taka)}</a></td>
+                                      <td className="px-2 py-2 text-right"><a href={dispatchHref(entry.id)} className="block text-inherit no-underline">{money(entry.mts)}</a></td>
+                                      <td className="px-2 py-2 text-right"><a href={dispatchHref(entry.id)} className="block text-inherit no-underline">{takaCount(entry.balTaka)}</a></td>
+                                      <td className="px-2 py-2 text-right"><a href={dispatchHref(entry.id)} className="block text-inherit no-underline">{money(entry.balMts)}</a></td>
+                                      <td className="px-2 py-2 text-right"><a href={dispatchHref(entry.id)} className="block text-inherit no-underline">{money(entry.rate)}</a></td>
+                                      <td className="px-2 py-2 text-right font-bold"><a href={dispatchHref(entry.id)} className="block text-inherit no-underline">{money(entry.balAmount)}</a></td>
                                     </tr>
                                   ))}
+                                  {matches.length !== 1 && (
+                                    <tr className="border-b bg-blue-50 font-bold text-blue-950">
+                                      <PendingRowCells
+                                        quality={`${quality.quality} total`}
+                                        taka={quality.taka}
+                                        mts={quality.mts}
+                                        balTaka={quality.balTaka}
+                                        balMts={quality.balMts}
+                                        rate={quality.rate}
+                                        balAmount={quality.balAmount}
+                                      />
+                                    </tr>
+                                  )}
                                 </React.Fragment>
                               );
                             })}
