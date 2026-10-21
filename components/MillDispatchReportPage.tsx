@@ -58,6 +58,7 @@ interface MillQualitySegment {
     balAmount: number;
     rate: number;
     entries: number;
+    dispatches?: MillDispatchRow[];
   }>;
   subtotal: {
     taka: number;
@@ -124,12 +125,19 @@ const PendingTableHead: React.FC = () => (
   </thead>
 );
 
+const dispatchHref = (id: string) => `/erp/grey-dispatch?edit=${encodeURIComponent(id)}`;
+
+const DispatchLink: React.FC<{ id: string; children: React.ReactNode }> = ({ id, children }) => (
+  <a href={dispatchHref(id)} className="block text-inherit no-underline hover:text-orange-800">
+    {children}
+  </a>
+);
+
 const DispatchListTable: React.FC<{
   rows: MillDispatchRow[];
-  onOpen: (id: string) => void;
   showGrand?: boolean;
   grand?: Partial<MillDispatchGroup['totals'] & { rate: number }>;
-}> = ({ rows, onOpen, showGrand, grand }) => (
+}> = ({ rows, showGrand, grand }) => (
   <table className="min-w-full text-left text-xs">
     <thead className="border-b bg-gray-50 text-[10px] uppercase text-gray-500">
       <tr>
@@ -149,31 +157,19 @@ const DispatchListTable: React.FC<{
     </thead>
     <tbody>
       {rows.map(row => (
-        <tr
-          key={row.id}
-          role="button"
-          tabIndex={0}
-          className="cursor-pointer border-b transition-colors hover:bg-orange-50"
-          onClick={() => onOpen(row.id)}
-          onKeyDown={event => {
-            if (event.key !== 'Enter') return;
-            event.preventDefault();
-            onOpen(row.id);
-          }}
-          title="Open this dispatch"
-        >
-          <td className="px-2 py-2 font-semibold">{row.srNo ?? '-'}</td>
-          <td className="px-2 py-2">{row.challanNo || '-'}</td>
-          <td className="px-2 py-2">{formatDate(row.date)}</td>
-          <td className="px-2 py-2 font-semibold">{row.millName}</td>
-          <td className="px-2 py-2">{row.weaverName || '-'}</td>
-          <td className="px-2 py-2">{row.quality || '-'}</td>
-          <td className="px-2 py-2 text-right">{takaCount(row.taka)}</td>
-          <td className="px-2 py-2 text-right">{money(row.mts)}</td>
-          <td className="px-2 py-2 text-right">{takaCount(row.balTaka)}</td>
-          <td className="px-2 py-2 text-right">{money(row.balMts)}</td>
-          <td className="px-2 py-2 text-right">{money(row.rate)}</td>
-          <td className="px-2 py-2 text-right font-bold">{money(row.balAmount)}</td>
+        <tr key={row.id} className="border-b transition-colors hover:bg-orange-50" title="Open this dispatch">
+          <td className="px-2 py-2 font-semibold"><DispatchLink id={row.id}>{row.srNo ?? '-'}</DispatchLink></td>
+          <td className="px-2 py-2"><DispatchLink id={row.id}>{row.challanNo || '-'}</DispatchLink></td>
+          <td className="px-2 py-2"><DispatchLink id={row.id}>{formatDate(row.date)}</DispatchLink></td>
+          <td className="px-2 py-2 font-semibold"><DispatchLink id={row.id}>{row.millName}</DispatchLink></td>
+          <td className="px-2 py-2"><DispatchLink id={row.id}>{row.weaverName || '-'}</DispatchLink></td>
+          <td className="px-2 py-2"><DispatchLink id={row.id}>{row.quality || '-'}</DispatchLink></td>
+          <td className="px-2 py-2 text-right"><DispatchLink id={row.id}>{takaCount(row.taka)}</DispatchLink></td>
+          <td className="px-2 py-2 text-right"><DispatchLink id={row.id}>{money(row.mts)}</DispatchLink></td>
+          <td className="px-2 py-2 text-right"><DispatchLink id={row.id}>{takaCount(row.balTaka)}</DispatchLink></td>
+          <td className="px-2 py-2 text-right"><DispatchLink id={row.id}>{money(row.balMts)}</DispatchLink></td>
+          <td className="px-2 py-2 text-right"><DispatchLink id={row.id}>{money(row.rate)}</DispatchLink></td>
+          <td className="px-2 py-2 text-right font-bold"><DispatchLink id={row.id}>{money(row.balAmount)}</DispatchLink></td>
         </tr>
       ))}
       {showGrand && grand && (
@@ -191,10 +187,6 @@ const DispatchListTable: React.FC<{
   </table>
 );
 
-const openDispatch = (id: string) => {
-  window.location.href = `/erp/grey-dispatch?edit=${id}`;
-};
-
 export const MillDispatchReportPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [filter, setFilter] = useState<string>('mill_quality_wise');
   const [companyName, setCompanyName] = useState('');
@@ -205,7 +197,6 @@ export const MillDispatchReportPage: React.FC<Props> = ({ onBack, erpSession }) 
   const [totals, setTotals] = useState({ taka: 0, mts: 0, balTaka: 0, balMts: 0, balAmount: 0, rate: 0, entries: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [expandedQuality, setExpandedQuality] = useState<string | null>(null);
 
   const load = async (activeFilter = filter) => {
     setLoading(true);
@@ -231,18 +222,25 @@ export const MillDispatchReportPage: React.FC<Props> = ({ onBack, erpSession }) 
 
   const reportDate = new Date().toLocaleDateString('en-IN');
 
-  const dispatchesForQuality = (millName: string, quality: string) =>
-    rows.filter(row => row.millName === millName && (row.quality || 'Unspecified') === quality);
+  const dispatchesForQuality = (millName: string, quality: string, attached?: MillDispatchRow[]) => {
+    if (attached?.length) return attached;
+    return rows.filter(row => row.millName === millName && (row.quality || 'Unspecified') === quality);
+  };
 
-  const openQualityLine = (millName: string, quality: string) => {
-    const matches = dispatchesForQuality(millName, quality);
+  const dispatchesForMill = (millName: string) => {
+    const fromRows = rows.filter(row => row.millName === millName);
+    if (fromRows.length) return fromRows;
+    const segment = millSegments.find(item => item.millName === millName);
+    return segment?.qualities.flatMap(quality => quality.dispatches || []) || [];
+  };
+
+  const openMill = (millName: string) => {
+    const matches = dispatchesForMill(millName);
     if (matches.length === 1) {
-      openDispatch(matches[0].id);
+      window.location.href = dispatchHref(matches[0].id);
       return;
     }
-    if (matches.length < 2) return;
-    const key = `${millName}::${quality}`;
-    setExpandedQuality(current => current === key ? null : key);
+    document.getElementById(`mill-dispatch-${millName}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
   return (
@@ -351,7 +349,12 @@ export const MillDispatchReportPage: React.FC<Props> = ({ onBack, erpSession }) 
                     </thead>
                     <tbody>
                       {summary.map(row => (
-                        <tr key={row.mill} className="border-b">
+                        <tr
+                          key={row.mill}
+                          className="cursor-pointer border-b hover:bg-orange-50"
+                          onClick={() => openMill(row.mill)}
+                          title={row.entries === 1 ? 'Open this dispatch' : 'Show this mill’s dispatches'}
+                        >
                           <td className="py-3 font-semibold">{row.mill}</td>
                           <td className="text-right">{row.entries}</td>
                           <td className="text-right">{takaCount(row.taka)}</td>
@@ -368,7 +371,7 @@ export const MillDispatchReportPage: React.FC<Props> = ({ onBack, erpSession }) 
             <section className="rounded-3xl border border-gray-100 bg-white p-4 shadow-sm">
               <h3 className="text-sm font-black uppercase tracking-wide text-gray-900">Mill Dispatch Report</h3>
               <p className="mt-1 text-xs text-gray-500">
-                Click a dispatch to open that entry. A quality with more than one dispatch opens the list first.
+                Click a challan to open that mill dispatch.
               </p>
 
               {filter === 'mill_quality_wise' ? (
@@ -381,28 +384,19 @@ export const MillDispatchReportPage: React.FC<Props> = ({ onBack, erpSession }) 
                       <tbody>
                         {millSegments.map(segment => (
                           <React.Fragment key={segment.millName}>
-                            <tr className="bg-fuchsia-100/80">
+                            <tr id={`mill-dispatch-${segment.millName}`} className="bg-fuchsia-100/80">
                               <td className="px-2 py-2 font-black uppercase text-fuchsia-900" colSpan={7}>
                                 {segment.millName}
                               </td>
                             </tr>
                             {segment.qualities.map(quality => {
-                              const qualityKey = `${segment.millName}::${quality.quality}`;
-                              const matches = dispatchesForQuality(segment.millName, quality.quality);
-                              const open = expandedQuality === qualityKey;
+                              const matches = dispatchesForQuality(segment.millName, quality.quality, quality.dispatches);
                               return (
-                                <React.Fragment key={qualityKey}>
+                                <React.Fragment key={`${segment.millName}::${quality.quality}`}>
                                   <tr
-                                    role="button"
-                                    tabIndex={0}
-                                    className="cursor-pointer border-b text-blue-900 hover:bg-orange-50"
-                                    onClick={() => openQualityLine(segment.millName, quality.quality)}
-                                    onKeyDown={event => {
-                                      if (event.key !== 'Enter') return;
-                                      event.preventDefault();
-                                      openQualityLine(segment.millName, quality.quality);
-                                    }}
-                                    title={matches.length > 1 ? 'Show these dispatches' : 'Open this dispatch'}
+                                    className={`border-b text-blue-900 ${matches.length === 1 ? 'cursor-pointer hover:bg-orange-50' : ''}`}
+                                    onClick={matches.length === 1 ? () => { window.location.href = dispatchHref(matches[0].id); } : undefined}
+                                    title={matches.length === 1 ? 'Open this dispatch' : undefined}
                                   >
                                     <PendingRowCells
                                       quality={quality.quality}
@@ -414,13 +408,20 @@ export const MillDispatchReportPage: React.FC<Props> = ({ onBack, erpSession }) 
                                       balAmount={quality.balAmount}
                                     />
                                   </tr>
-                                  {open && matches.length > 1 && (
-                                    <tr className="border-b bg-orange-50/40">
-                                      <td colSpan={7} className="px-2 py-2">
-                                        <DispatchListTable rows={matches} onOpen={openDispatch} />
+                                  {matches.map(entry => (
+                                    <tr key={entry.id} className="border-b bg-white hover:bg-orange-50">
+                                      <td colSpan={7} className="px-2 py-1.5">
+                                        <a href={dispatchHref(entry.id)} className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] font-semibold text-orange-900 no-underline">
+                                          <span>Sr {entry.srNo ?? '-'}</span>
+                                          <span>Ch {entry.challanNo || '-'}</span>
+                                          <span>{formatDate(entry.date)}</span>
+                                          <span>{entry.weaverName || '-'}</span>
+                                          <span>{takaCount(entry.taka)} pcs</span>
+                                          <span>{money(entry.mts)} mtrs</span>
+                                        </a>
                                       </td>
                                     </tr>
-                                  )}
+                                  ))}
                                 </React.Fragment>
                               );
                             })}
@@ -459,7 +460,6 @@ export const MillDispatchReportPage: React.FC<Props> = ({ onBack, erpSession }) 
                   <div className="mt-3 overflow-x-auto">
                     <DispatchListTable
                       rows={rows}
-                      onOpen={openDispatch}
                       showGrand
                       grand={totals}
                     />
@@ -479,7 +479,6 @@ export const MillDispatchReportPage: React.FC<Props> = ({ onBack, erpSession }) 
                       </div>
                       <DispatchListTable
                         rows={group.rows}
-                        onOpen={openDispatch}
                       />
                     </div>
                   ))}

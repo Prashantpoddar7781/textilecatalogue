@@ -295,7 +295,8 @@ function buildMillQualitySegments(rows) {
       balMts: 0,
       balAmount: 0,
       rate: row.rate,
-      entries: 0
+      entries: 0,
+      dispatches: []
     };
     current.taka += Number(row.taka) || 0;
     current.mts += Number(row.mts) || 0;
@@ -303,6 +304,7 @@ function buildMillQualitySegments(rows) {
     current.balMts += Number(row.balMts) || 0;
     current.balAmount += Number(row.balAmount) || 0;
     current.entries += 1;
+    current.dispatches.push(row);
     millEntry.qualities.set(quality, current);
     addToMillTotals(millEntry.subtotal, row);
   }
