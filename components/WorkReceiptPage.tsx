@@ -13,6 +13,7 @@ import { PhotoEntryButton } from './PhotoEntryButton';
 import { PhotoExtraction } from '../services/api';
 import { PhotoPartyDetails, matchPhotoParty, photoPartyDetails, photoPartyState } from '../utils/photoEntry';
 import { ErpTopMenu } from './ErpTopMenu';
+import { MasterNameInput } from './MasterNameInput';
 import { partyDhara } from '../utils/partyBillingTerms';
 import { useVoucherJump } from '../hooks/useVoucherJump';
 
@@ -725,7 +726,17 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
               </label>
               <label><span className={labelClass}>Bill No.</span><input className={inputClass} value={billNo} onChange={e => setBillNo(e.target.value)} /></label>
               <label><span className={labelClass}>Work Type</span><input className={inputClass} value={workType} onChange={e => setWorkType(e.target.value)} /></label>
-              <label><span className={labelClass}>Broker</span><input className={inputClass} value={brokerName} onChange={e => setBrokerName(e.target.value)} /></label>
+              <label>
+                <span className={labelClass}>Broker</span>
+                <MasterNameInput
+                  className={inputClass}
+                  listId="work-receipt-brokers"
+                  value={brokerName}
+                  onChange={setBrokerName}
+                  suggestPattern={/broker|brok/i}
+                  suggestedAccountType={postingPartyAccountType('PURCHASE (COMM)') || 'CREDITORS FOR BROKERAGE'}
+                />
+              </label>
               <label><span className={labelClass}>Vehicle No.</span><input className={inputClass} value={vehicleNo} onChange={e => setVehicleNo(e.target.value)} /></label>
               <label><span className={labelClass}>Party GSTIN</span><input className={inputClass} value={partyGstin} onChange={e => setPartyGstin(e.target.value)} /></label>
               <label><span className={labelClass}>GST Type</span><input className={readonlyClass} value={gstType || '-'} readOnly /></label>

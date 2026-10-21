@@ -1405,6 +1405,7 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
         initialName={pendingNewParty}
         initialDetails={newPartyDetails}
         context="mill"
+        suggestedAccountType="CREDITORS FOR JOBWORK"
         onClose={() => setShowAccountsDialog(false)}
         onSaved={onPartySaved}
       />

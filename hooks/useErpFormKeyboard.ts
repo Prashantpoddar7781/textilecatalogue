@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react';
 
 const FIELD_SELECTOR = [
   'input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([disabled]):not([data-erp-skip-nav])',
@@ -53,7 +53,7 @@ export function useErpFormKeyboard(onSave: () => void | Promise<void>, options: 
     }
   }, []);
 
-  const handleKeyDown = useCallback((event: React.KeyboardEvent) => {
+  const handleKeyDown = useCallback((event: KeyboardEvent) => {
     if (disabled || saving || confirmOpen) return;
 
     const target = event.target as HTMLElement | null;
@@ -83,6 +83,8 @@ export function useErpFormKeyboard(onSave: () => void | Promise<void>, options: 
     if (event.key === 'Enter') {
       if (target instanceof HTMLTextAreaElement && event.shiftKey) return;
       if (target.hasAttribute('data-erp-voucher-jump')) return;
+      // The field handles Enter itself (open taka details, next metres, and so on).
+      if (target.hasAttribute('data-erp-enter-custom')) return;
 
       event.preventDefault();
       if (currentIndex === fields.length - 1) {

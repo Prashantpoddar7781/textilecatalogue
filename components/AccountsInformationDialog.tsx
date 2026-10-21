@@ -331,11 +331,20 @@ export const AccountsInformationDialog: React.FC<Props> = ({
 interface PromptProps {
   open: boolean;
   partyName: string;
+  title?: string;
+  detail?: string;
   onYes: () => void;
   onNo: () => void;
 }
 
-export const AddPartyConfirmDialog: React.FC<PromptProps> = ({ open, partyName, onYes, onNo }) => {
+export const AddPartyConfirmDialog: React.FC<PromptProps> = ({
+  open,
+  partyName,
+  title = 'Do you want to add this party name?',
+  detail = 'Yes opens Accounts Information Manager (A/C Type, address, GSTIN, etc.).',
+  onYes,
+  onNo
+}) => {
   const yesRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (!open) return;
@@ -348,13 +357,13 @@ export const AddPartyConfirmDialog: React.FC<PromptProps> = ({ open, partyName, 
       <div className="w-full max-w-md rounded-2xl border bg-white p-5 shadow-2xl">
         <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">New party</p>
         <h3 className="mt-1 text-base font-black text-slate-900">
-          Do you want to add this party name?
+          {title}
         </h3>
         <p className="mt-2 rounded-xl bg-slate-50 px-3 py-2 text-sm font-bold text-indigo-800">
           {partyName}
         </p>
         <p className="mt-2 text-xs text-gray-500">
-          Yes opens Accounts Information Manager (A/C Type, address, GSTIN, etc.).
+          {detail}
         </p>
         <div className="mt-4 flex justify-end gap-2">
           <button type="button" onClick={onNo} className="rounded-xl border bg-white px-4 py-2 text-xs font-black uppercase text-slate-700">

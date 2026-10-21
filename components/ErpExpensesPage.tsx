@@ -24,6 +24,7 @@ import { AccountsInformationDialog, AddPartyConfirmDialog } from './AccountsInfo
 import { ErpFormShell } from './ErpFormShell';
 import { ErpSaveButton } from './ErpSaveButton';
 import { ErpPageBack } from './ErpPageBack';
+import { MasterNameInput } from './MasterNameInput';
 import { PhotoEntryButton } from './PhotoEntryButton';
 import { PhotoExtraction } from '../services/api';
 import { PhotoPartyDetails, matchPhotoParty, photoPartyDetails, photoPartyState, rateBasisQty } from '../utils/photoEntry';
@@ -641,7 +642,17 @@ export const ErpExpensesPage: React.FC<Props> = ({ onBack, erpSession }) => {
                 />
               </label>
               <label><span className={labelClass}>Station</span><input className={inputClass} value={station} onChange={e => setStation(e.target.value)} /></label>
-              <label><span className={labelClass}>Broker</span><input className={inputClass} value={brokerName} onChange={e => setBrokerName(e.target.value)} /></label>
+              <label>
+                <span className={labelClass}>Broker</span>
+                <MasterNameInput
+                  className={inputClass}
+                  listId="expense-brokers"
+                  value={brokerName}
+                  onChange={setBrokerName}
+                  suggestPattern={/broker|brok/i}
+                  suggestedAccountType={postingPartyAccountType('PURCHASE (COMM)') || 'CREDITORS FOR BROKERAGE'}
+                />
+              </label>
               <label><span className={labelClass}>Transport</span><input className={inputClass} value={transportName} onChange={e => setTransportName(e.target.value)} /></label>
               <label>
                 <span className={labelClass}>Voucher</span>

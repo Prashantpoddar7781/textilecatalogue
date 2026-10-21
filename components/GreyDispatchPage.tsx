@@ -7,6 +7,7 @@ import { ErpFormShell } from './ErpFormShell';
 import { ErpSaveButton } from './ErpSaveButton';
 import { ErpPageBack } from './ErpPageBack';
 import { ErpTopMenu } from './ErpTopMenu';
+import { MasterNameInput } from './MasterNameInput';
 import { useVoucherJump } from '../hooks/useVoucherJump';
 import { parseVoucherNumber } from '../utils/parseVoucherNumber';
 
@@ -473,16 +474,17 @@ export const GreyDispatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
               <div className="grid gap-3 md:grid-cols-4 xl:grid-cols-6">
                 <label className="xl:col-span-2">
                   <span className={labelClass}>Mill</span>
-                  <input
-                    list="mill-list"
+                  <MasterNameInput
                     className={inputClass}
+                    listId="mill-list"
                     value={millName}
-                    onChange={e => setMillName(e.target.value)}
+                    onChange={setMillName}
+                    extraKnownNames={mills}
+                    suggestedAccountType="CREDITORS FOR JOBWORK"
+                    context="mill"
                     placeholder="Select or type mill"
+                    onPartySaved={party => setMills(prev => prev.some(name => name.toLowerCase() === party.name.toLowerCase()) ? prev : [...prev, party.name])}
                   />
-                  <datalist id="mill-list">
-                    {mills.map(name => <option key={name} value={name} />)}
-                  </datalist>
                 </label>
                 <label>
                   <span className={labelClass}>Our Marka</span>

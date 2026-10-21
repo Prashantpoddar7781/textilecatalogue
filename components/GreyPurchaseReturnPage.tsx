@@ -2,13 +2,14 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ListOrdered, Loader2 } from 'lucide-react';
 import { greyDispatchesApi, greyPurchaseReturnsApi } from '../services/api';
 import { getGstDefaultsForTransactionType } from '../constants/erpTransactionTypes';
-import { getGstDocumentType, getItcEligibility, gstReturnSection, postingDiscountAccount } from '../constants/erpTransactionPostingRules';
+import { getGstDocumentType, getItcEligibility, gstReturnSection, postingDiscountAccount, postingPartyAccountType } from '../constants/erpTransactionPostingRules';
 import { ErpSession, GreyReceiptSummary, GreyTakaDetailRow } from '../types';
 import { DispatchTakaSelectModal } from './DispatchTakaSelectModal';
 import { ErpFormShell } from './ErpFormShell';
 import { ErpSaveButton } from './ErpSaveButton';
 import { ErpPageBack } from './ErpPageBack';
 import { ErpTopMenu } from './ErpTopMenu';
+import { MasterNameInput } from './MasterNameInput';
 import { useVoucherJump } from '../hooks/useVoucherJump';
 
 interface Props {
@@ -509,7 +510,17 @@ export const GreyPurchaseReturnPage: React.FC<Props> = ({ onBack, erpSession }) 
                 <label><span className={labelClass}>Bill No.</span><input className={inputClass} value={billNo} onChange={e => setBillNo(e.target.value)} /></label>
                 <label><span className={labelClass}>Ref Bill No</span><input className={inputClass} value={refBillNo} onChange={e => setRefBillNo(e.target.value)} /></label>
                 <label><span className={labelClass}>Ref Bill Date</span><input type="date" className={inputClass} value={refBillDate} onChange={e => setRefBillDate(e.target.value)} /></label>
-                <label><span className={labelClass}>Broker</span><input className={inputClass} value={brokerName} onChange={e => setBrokerName(e.target.value)} /></label>
+                <label>
+                  <span className={labelClass}>Broker</span>
+                  <MasterNameInput
+                    className={inputClass}
+                    listId="grey-return-brokers"
+                    value={brokerName}
+                    onChange={setBrokerName}
+                    suggestPattern={/broker|brok/i}
+                    suggestedAccountType={postingPartyAccountType('PURCHASE (COMM)') || 'CREDITORS FOR BROKERAGE'}
+                  />
+                </label>
                 <label><span className={labelClass}>Station</span><input className={inputClass} value={station} onChange={e => setStation(e.target.value)} /></label>
                 <label><span className={labelClass}>Transport</span><input className={inputClass} value={transport} onChange={e => setTransport(e.target.value)} /></label>
                 <label><span className={labelClass}>Vehicle No.</span><input className={inputClass} value={vehicleNo} onChange={e => setVehicleNo(e.target.value)} /></label>

@@ -22,6 +22,7 @@ import { AccountsInformationDialog, AddPartyConfirmDialog } from './AccountsInfo
 import { ErpFormShell } from './ErpFormShell';
 import { ErpSaveButton } from './ErpSaveButton';
 import { ErpPageBack } from './ErpPageBack';
+import { MasterNameInput } from './MasterNameInput';
 import { PhotoEntryButton } from './PhotoEntryButton';
 import { PhotoExtraction } from '../services/api';
 import { PhotoPartyDetails, matchPhotoParty, photoPartyDetails, photoPartyState, rateBasisQty } from '../utils/photoEntry';
@@ -650,7 +651,17 @@ export const ErpPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
                 />
               </label>
               <label><span className={labelClass}>Haste</span><input className={inputClass} value={haste} onChange={e => setHaste(e.target.value)} /></label>
-              <label><span className={labelClass}>Broker</span><input className={inputClass} value={brokerName} onChange={e => setBrokerName(e.target.value)} /></label>
+              <label>
+                <span className={labelClass}>Broker</span>
+                <MasterNameInput
+                  className={inputClass}
+                  listId="purchase-brokers"
+                  value={brokerName}
+                  onChange={setBrokerName}
+                  suggestPattern={/broker|brok/i}
+                  suggestedAccountType={postingPartyAccountType('PURCHASE (COMM)') || 'CREDITORS FOR BROKERAGE'}
+                />
+              </label>
               <label><span className={labelClass}>Station</span><input className={inputClass} value={station} onChange={e => setStation(e.target.value)} /></label>
               <label><span className={labelClass}>Transport</span><input className={inputClass} value={transportName} onChange={e => setTransportName(e.target.value)} /></label>
               <label><span className={labelClass}>LR No.</span><input className={inputClass} value={lrNo} onChange={e => setLrNo(e.target.value)} /></label>

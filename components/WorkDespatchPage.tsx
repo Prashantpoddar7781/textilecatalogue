@@ -9,6 +9,7 @@ import { ErpFormShell } from './ErpFormShell';
 import { ErpSaveButton } from './ErpSaveButton';
 import { ErpPageBack } from './ErpPageBack';
 import { ErpTopMenu } from './ErpTopMenu';
+import { MasterNameInput } from './MasterNameInput';
 import { useVoucherJump } from '../hooks/useVoucherJump';
 
 interface Props {
@@ -335,7 +336,17 @@ export const WorkDespatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
               </label>
               <label><span className={labelClass}>State</span><input className={inputClass} value={stateCode} onChange={e => setStateCode(e.target.value)} /></label>
               <label><span className={labelClass}>GST Type</span><input className={inputClass} value={gstType} onChange={e => setGstType(e.target.value)} /></label>
-              <label><span className={labelClass}>Broker</span><input className={inputClass} value={brokerName} onChange={e => setBrokerName(e.target.value)} /></label>
+              <label>
+                <span className={labelClass}>Broker</span>
+                <MasterNameInput
+                  className={inputClass}
+                  listId="work-despatch-brokers"
+                  value={brokerName}
+                  onChange={setBrokerName}
+                  suggestPattern={/broker|brok/i}
+                  suggestedAccountType={postingPartyAccountType('PURCHASE (COMM)') || 'CREDITORS FOR BROKERAGE'}
+                />
+              </label>
               <label><span className={labelClass}>Vehicle No.</span><input className={inputClass} value={vehicleNo} onChange={e => setVehicleNo(e.target.value)} /></label>
               <label>
                 <span className={labelClass}>Work Type</span>

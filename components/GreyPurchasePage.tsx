@@ -3,9 +3,9 @@ import { AlertCircle, ListOrdered, Loader2 } from 'lucide-react';
 import { GREY_QUALITY_OPTIONS } from '../constants/greyQualities';
 import { getGstDefaultsForTransactionType } from '../constants/erpTransactionTypes';
 import { postingPartyAccountType, formatSeriesBillNumber, getGstDocumentType, getItcEligibility, gstReturnSection, postingDiscountAccount, postingSummary } from '../constants/erpTransactionPostingRules';
-import { greyPurchasesApi, purchasesApi } from '../services/api';
+import { greyPurchasesApi, purchasesApi, salesOrdersApi } from '../services/api';
 import { isWrongGstNumber, normalizeGstNumber } from '../services/gstValidation';
-import { AccountParty, ErpSession, GreyPurchaseLine, GreyTakaDetailRow, Supplier } from '../types';
+import { AccountParty, ErpSession, GreyPurchaseLine, GreyTakaDetailRow, SalesItemMaster, Supplier } from '../types';
 import { AccountsInformationDialog, AddPartyConfirmDialog } from './AccountsInformationDialog';
 import { ErpPageBack } from './ErpPageBack';
 import { PhotoEntryButton } from './PhotoEntryButton';
@@ -15,6 +15,8 @@ import { ErpTopMenu } from './ErpTopMenu';
 import { ErpFormShell } from './ErpFormShell';
 import { ErpSaveButton } from './ErpSaveButton';
 import { TakaDetailsModal } from './TakaDetailsModal';
+import { MasterNameInput } from './MasterNameInput';
+import { QualityInformationDialog } from './QualityInformationDialog';
 import { partyDhara } from '../utils/partyBillingTerms';
 import { useVoucherJump } from '../hooks/useVoucherJump';
 import { parseVoucherNumber } from '../utils/parseVoucherNumber';
@@ -104,6 +106,9 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [showAccountsDialog, setShowAccountsDialog] = useState(false);
   const [allowUnknownParty, setAllowUnknownParty] = useState(false);
   const [newPartyDetails, setNewPartyDetails] = useState<PhotoPartyDetails | null>(null);
+  const [qualityItems, setQualityItems] = useState<SalesItemMaster[]>([]);
+  const [qualityPrompt, setQualityPrompt] = useState('');
+  const [qualityDialogOpen, setQualityDialogOpen] = useState(false);
   const [success, setSuccess] = useState('');
   const voucherJump = useVoucherJump({
     module: 'grey-purchase',
@@ -174,6 +179,9 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
         }
         setPlaceOfSupply(meta.businessState || '');
         setSuppliers(suppliersRes.suppliers || []);
+        salesOrdersApi.getItems().then(result => {
+          if (!cancelled) setQualityItems(result.items || []);
+        }).catch(() => undefined);
 
         if (isEditMode && editId) {
           const { entry } = await greyPurchasesApi.getById(editId);
@@ -225,6 +233,29 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
 
   const knownSupplier = (name: string) =>
     suppliers.find(s => s.name.toLowerCase() === name.trim().toLowerCase());
+
+  const knownQualityName = (name: string) => {
+    const key = name.trim().toLowerCase();
+    if (!key) return '';
+    const legacy = GREY_QUALITY_OPTIONS.find(option => option.toLowerCase() === key);
+    if (legacy) return legacy;
+    const item = qualityItems.find(row =>
+      String(row.finishType || '').toUpperCase() === 'GREY'
+      && (row.name.toLowerCase() === key || row.mainScreen.toLowerCase() === key)
+    );
+    return item?.name || '';
+  };
+
+  const askQuality = (raw: string) => {
+    const trimmed = raw.trim();
+    if (!trimmed) return;
+    const canonical = knownQualityName(trimmed);
+    if (canonical) {
+      if (canonical !== quality) setQuality(canonical);
+      return;
+    }
+    setQualityPrompt(trimmed);
+  };
 
   const promptIfNewParty = (name: string) => {
     const trimmed = name.trim();
@@ -557,15 +588,20 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
                 </label>
                 <label>
                   <span className={labelClass}>Quality</span>
-                  <select className={inputClass} value={quality} onChange={e => setQuality(e.target.value)}>
-                    <option value="">Select quality</option>
-                    {quality && !GREY_QUALITY_OPTIONS.includes(quality as typeof GREY_QUALITY_OPTIONS[number]) && (
-                      <option value={quality}>{quality}</option>
-                    )}
-                    {GREY_QUALITY_OPTIONS.map(opt => (
-                      <option key={opt} value={opt}>{opt}</option>
-                    ))}
-                  </select>
+                  <input
+                    list="grey-quality-list"
+                    className={inputClass}
+                    value={quality}
+                    onChange={e => setQuality(e.target.value)}
+                    onBlur={e => askQuality(e.target.value)}
+                    placeholder="Type or pick a quality"
+                  />
+                  <datalist id="grey-quality-list">
+                    {Array.from(new Set([
+                      ...GREY_QUALITY_OPTIONS,
+                      ...qualityItems.filter(row => String(row.finishType || '').toUpperCase() === 'GREY').map(row => row.name)
+                    ])).map(name => <option key={name} value={name} />)}
+                  </datalist>
                 </label>
                 <label>
                   <span className={labelClass}>HSN Code</span>
@@ -585,7 +621,15 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
                 </label>
                 <label>
                   <span className={labelClass}>Broker</span>
-                  <input className={inputClass} value={brokerName} onChange={e => setBrokerName(e.target.value)} />
+                  <MasterNameInput
+                    className={inputClass}
+                    listId="grey-purchase-brokers"
+                    value={brokerName}
+                    onChange={setBrokerName}
+                    suggestPattern={/broker|brok/i}
+                    suggestedAccountType={postingPartyAccountType('PURCHASE (COMM)') || 'CREDITORS FOR BROKERAGE'}
+                    context="other"
+                  />
                 </label>
                 <label>
                   <span className={labelClass}>Date</span>
@@ -632,7 +676,20 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
                 <label>
                   <span className={labelClass}>Rec. Taka</span>
                   <div className="flex gap-1">
-                    <input className={calcInputClass} type="number" step="0.01" value={recTaka} onChange={e => setRecTaka(e.target.value)} />
+                    <input
+                      className={calcInputClass}
+                      type="number"
+                      step="0.01"
+                      data-erp-enter-custom
+                      value={recTaka}
+                      onChange={e => setRecTaka(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key !== 'Enter') return;
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setTakaModalOpen(true);
+                      }}
+                    />
                     <button
                       type="button"
                       onClick={() => setTakaModalOpen(true)}
@@ -873,6 +930,27 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
         suggestedAccountType={postingPartyAccountType('GREY PURCHASE') || undefined}
         onClose={() => setShowAccountsDialog(false)}
         onSaved={onPartySaved}
+      />
+      <AddPartyConfirmDialog
+        open={Boolean(qualityPrompt) && !qualityDialogOpen}
+        partyName={qualityPrompt}
+        title="Do you want to add this quality?"
+        detail="Yes opens Quality Information (name, cut, packing, HSN, GST) so later bills can pick it."
+        onNo={() => setQualityPrompt('')}
+        onYes={() => setQualityDialogOpen(true)}
+      />
+      <QualityInformationDialog
+        open={qualityDialogOpen}
+        initialName={qualityPrompt}
+        preset="grey"
+        onClose={() => {
+          setQualityDialogOpen(false);
+          setQualityPrompt('');
+        }}
+        onSaved={item => {
+          setQualityItems(prev => prev.some(row => row.id === item.id) ? prev : [...prev, item]);
+          setQuality(item.name);
+        }}
       />
     </div>
   );
