@@ -76,7 +76,8 @@ function calcLine(input: SalesLineItem, businessState: string, partyState: strin
     ? toNum(input.mtsQty)
     : round2(pcs * cut);
   const rate = toNum(input.rate);
-  const amount = round2(pcs * rate);
+  const metre = /^(MTS|MTR|METRE|METER|METERS)$/i.test(String(input.unit || '').trim());
+  const amount = round2((metre ? (mtsQty || pcs) : pcs) * rate);
   const discountAmount = round2(amount * toNum(input.discountPercent) / 100);
   const taxableAmount = round2(amount - discountAmount + toNum(input.manualAddLess));
   const gstRate = toNum(input.gstRate);

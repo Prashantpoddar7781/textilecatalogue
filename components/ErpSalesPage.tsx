@@ -77,7 +77,8 @@ function calcLine(input: SalesLineItem, businessState: string, partyState: strin
     ? toNum(input.mtsQty)
     : round2(pcs * cut);
   const rate = toNum(input.rate);
-  const amount = round2(pcs * rate);
+  const metre = /^(MTS|MTR|METRE|METER|METERS)$/i.test(String(input.unit || '').trim());
+  const amount = round2((metre ? (mtsQty || pcs) : pcs) * rate);
   const discountAmount = round2(amount * toNum(input.discountPercent) / 100);
   const taxableAmount = round2(amount - discountAmount + toNum(input.manualAddLess));
   const gstRate = toNum(input.gstRate);
@@ -397,14 +398,14 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
   }, [editId, editKind]);
 
   useEffect(() => {
-    if (isSalesOrder) {
-      setTypeBillNumber(null);
+    if (isSalesOrder || isEditMode) {
+      if (isSalesOrder) setTypeBillNumber(null);
       return;
     }
     void bankEntriesApi.getNextTypeBillNumber({ transactionType, source: 'order' })
       .then(result => setTypeBillNumber(result.typeBillNumber))
       .catch(() => setTypeBillNumber(null));
-  }, [transactionType, isSalesOrder]);
+  }, [transactionType, isSalesOrder, isEditMode]);
 
   useEffect(() => {
     // Sales Goods Return does not consume Sales Order pending — skip Ord/Ref SO list.
