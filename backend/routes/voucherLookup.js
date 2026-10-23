@@ -45,7 +45,7 @@ router.get('/lookup', authenticateToken, requireActiveSubscription, async (req, 
       const bill = await prisma.order.findFirst({
         where,
         select: { id: true, transactionType: true, typeBillNumber: true },
-        orderBy: { createdAt: 'desc' }
+        orderBy: [{ orderDate: { sort: 'desc', nulls: 'last' } }, { createdAt: 'desc' }]
       });
       if (bill) found = hit(bill.id, `/erp/sales?edit=${bill.id}&kind=bill`, { kind: 'bill' });
     } else if (module === 'sales-order') {

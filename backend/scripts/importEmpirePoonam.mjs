@@ -140,6 +140,25 @@ function gstOf(row, rateKey = 'VATRATE', addKey = 'ADD_VATRATE', amtKey = 'VATAM
   };
 }
 
+function simpleBillNumber(bill, vno) {
+  const raw = text(bill.BILL, 40);
+  const match = raw.match(/^(\d+)/);
+  if (match) {
+    const printed = Number(match[1]);
+    if (printed > 0 && printed < 100000) return printed;
+  }
+  const internal = int(vno);
+  if (internal >= 100000) return internal % 100000;
+  return internal || null;
+}
+
+function orderRefOf(bill, simple) {
+  const ref = text(bill.ORDERNO, 40);
+  const leading = ref.match(/^(\d+)/);
+  if (!ref || ref === '0' || (leading && leading[1] === String(simple || ''))) return null;
+  return ref.replace(/\*/g, '');
+}
+
 function billAmounts(row, lineSum) {
   const billAmt = num(row.BILLAMT);
   const gross = num(row.grossamt);
@@ -514,10 +533,26 @@ async function main() {
       hsn_code: bill.BILLS_HSN_CODE,
       DETAILS: ''
     }]).map((line, index) => {
-      const amount = round(num(line.AMT) || (num(line.PCS) * num(line.RATE)));
+      let amount = round(num(line.AMT) || (num(line.PCS) * num(line.RATE)));
       const pcs = num(line.PCS);
       const mts = num(line.MTS);
-      const rate = num(line.RATE);
+      let rate = num(line.RATE);
+      const headerTax = index === 0 ? gst.totalTax : 0;
+      if (!(rate > 0) && amount > 0) {
+        let taxable = amount;
+        if (gst.gstRate > 0 && headerTax > 0 && headerTax < amount) {
+          const included = round((amount - headerTax) * gst.gstRate / 100);
+          const extra = round(amount * gst.gstRate / 100);
+          if (Math.abs(included - headerTax) <= 1 && Math.abs(extra - headerTax) > 1) taxable = round(amount - headerTax);
+        }
+        const unitGuess = text(line.UNIT, 20) || 'PCS';
+        const metre = /MTS|MTR|METRE|METER/i.test(unitGuess);
+        const qty = metre ? (mts || pcs) : (pcs || mts);
+        if (qty > 0) {
+          rate = round(taxable / qty);
+          amount = round(qty * rate);
+        }
+      }
       const quantity = pcs > 0 ? Math.max(1, Math.round(pcs)) : (amount !== 0 ? 1 : 0);
       const itemName = text(line.qual || line.DETAILS || bill.QUAL || 'Item', 160);
       const priced = priceBasis(pcs, mts, rate, amount, text(line.UNIT, 20) || 'PCS');
@@ -635,6 +670,7 @@ async function main() {
 
     if (SALES_INVOICE.has(code) || SALES_CHALLAN.has(code) || SALES_RETURN.has(code)) {
       const customer = customerByName.get(norm(partyName));
+      const simpleNo = simpleBillNumber(bill, vno);
       orders.push({
         userId,
         customerId: customer?.id || null,
@@ -646,9 +682,9 @@ async function main() {
         remarks: tag(code, vno, bill.RMK),
         manualType: 'erp_sales',
         transactionType: SALES_RETURN.has(code) ? 'SALES GOODS RETURN' : name,
-        typeBillNumber: vno || null,
+        typeBillNumber: simpleNo,
         invoiceNumber: null,
-        orderNumber: billNo,
+        orderNumber: orderRefOf(bill, simpleNo),
         agentName: text(bill.BCODE, 80) || null,
         transportName: text(bill.TRANSPORT, 80) || null,
         discountRate: 0,

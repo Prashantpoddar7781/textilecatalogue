@@ -1,4 +1,5 @@
 import { formatSeriesBillNumber } from '../constants/erpTransactionPostingRules.js';
+import { getCurrentAccountingYear, parseAccountingYear } from './accountingYear.js';
 
 export function formatTypeBillNumber(typeBillNumber, transactionType = null) {
   if (typeBillNumber == null) return null;
@@ -34,8 +35,23 @@ export async function allocateNextTypeBillNumber(tx, userId, transactionType, so
     return (result._max.typeBillNumber ?? 0) + 1;
   }
 
+  // Empire restarts the printed bill number each financial year. Older years can
+  // hold a higher counter (a year prefix, or last year's last bill), so the next
+  // number follows the current year when that year already has bills.
+  const year = parseAccountingYear(getCurrentAccountingYear());
+  if (year) {
+    const current = await tx.order.aggregate({
+      where: {
+        userId,
+        transactionType: type,
+        orderDate: { gte: year.startDate, lte: year.endDate }
+      },
+      _max: { typeBillNumber: true }
+    });
+    if (current._max.typeBillNumber != null) return current._max.typeBillNumber + 1;
+  }
   const result = await tx.order.aggregate({
-    where: { userId, transactionType: type },
+    where: { userId, transactionType: type, typeBillNumber: { lt: 100000 } },
     _max: { typeBillNumber: true }
   });
   return (result._max.typeBillNumber ?? 0) + 1;

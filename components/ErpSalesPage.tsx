@@ -8,7 +8,6 @@ import {
   getGstDefaultsForTransactionType
 } from '../constants/erpTransactionTypes';
 import {
-  formatSeriesBillNumber,
   getGstDocumentType,
   gstReturnSection,
   postingPartyAccountType,
@@ -70,6 +69,12 @@ const blankLine = (lineNo = 1, gstRate = 5, hsnCode = '5407', discountPercent = 
   hsnCode
 });
 
+function plainBillNo(counter?: number | string | null) {
+  if (counter == null || counter === '') return '';
+  const numeric = Number(counter);
+  return Number.isFinite(numeric) && numeric > 0 ? String(Math.trunc(numeric)) : String(counter);
+}
+
 function calcLine(input: SalesLineItem, businessState: string, partyState: string): SalesLineItem {
   const pcs = toNum(input.pcs);
   const cut = toNum(input.cut);
@@ -78,7 +83,9 @@ function calcLine(input: SalesLineItem, businessState: string, partyState: strin
     : round2(pcs * cut);
   const rate = toNum(input.rate);
   const metre = /^(MTS|MTR|METRE|METER|METERS)$/i.test(String(input.unit || '').trim());
-  const amount = round2((metre ? (mtsQty || pcs) : pcs) * rate);
+  const computed = round2((metre ? (mtsQty || pcs) : pcs) * rate);
+  const stored = round2(toNum(input.amount));
+  const amount = computed !== 0 ? computed : stored;
   const discountAmount = round2(amount * toNum(input.discountPercent) / 100);
   const taxableAmount = round2(amount - discountAmount + toNum(input.manualAddLess));
   const gstRate = toNum(input.gstRate);
@@ -330,7 +337,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
     setVoucherInput(
       isSalesOrder
         ? String(orderNo || nextOrderNo)
-        : (formatSeriesBillNumber(transactionType, typeBillNumber) || '')
+        : plainBillNo(typeBillNumber)
     );
   }, [isSalesOrder, orderNo, nextOrderNo, transactionType, typeBillNumber]);
   const gstReturn = gstReturnSection(transactionType);
@@ -482,10 +489,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
     setTransactionType(bill.transactionType || 'FINISH SALES');
     setTypeBillNumber(bill.typeBillNumber || null);
     setSavedBillId(bill.id);
-    setSavedBillLabel(
-      formatSeriesBillNumber(bill.transactionType || 'FINISH SALES', bill.typeBillNumber)
-      || String(bill.invoiceNumber || '')
-    );
+    setSavedBillLabel(plainBillNo(bill.typeBillNumber) || String(bill.invoiceNumber || ''));
     setEwayBill(ewayFromBill(bill));
     setCustomerId(bill.customerId || '');
     setPartyName(bill.buyerName || '');
@@ -1025,8 +1029,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
           : await salesOrdersApi.createBill(body);
         setSavedBillId(result.bill.id);
         setTypeBillNumber(result.bill.typeBillNumber ?? null);
-        const no = formatSeriesBillNumber(transactionType, result.bill.typeBillNumber)
-          || result.bill.invoiceNumber || '-';
+        const no = plainBillNo(result.bill.typeBillNumber) || result.bill.invoiceNumber || '-';
         setSavedBillLabel(String(no));
         setEwayBill(ewayFromBill(result.bill));
         setSuccess(
@@ -1540,7 +1543,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
       {ewayOpen && savedBillId && (
         <EwayBillDialog
           billId={savedBillId}
-          docNo={savedBillLabel || formatSeriesBillNumber(transactionType, typeBillNumber) || 'Sales bill'}
+          docNo={savedBillLabel || plainBillNo(typeBillNumber) || 'Sales bill'}
           existing={ewayBill}
           onClose={() => setEwayOpen(false)}
           onGenerated={setEwayBill}
