@@ -863,6 +863,16 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
   };
 
   const updateLine = (index: number, key: keyof SalesLineItem, value: string | number) => {
+    const current = lineItems[index];
+    if ((key === 'rate' || key === 'cut') && toNum(value) > 0 && current) {
+      const name = String(current.itemName || '').trim().toLowerCase();
+      setItems(prev => prev.map(item => {
+        const match = (current.itemMasterId && item.id === current.itemMasterId)
+          || (name && item.name.trim().toLowerCase() === name);
+        if (!match) return item;
+        return key === 'rate' ? { ...item, sellingRate: toNum(value) } : { ...item, cut: toNum(value) };
+      }));
+    }
     setLineItems(prev => prev.map((line, row) => {
       if (row !== index) return line;
       const next = { ...line, [key]: value };

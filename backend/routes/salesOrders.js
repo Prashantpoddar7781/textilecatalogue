@@ -9,6 +9,7 @@ import { allocateNextTypeBillNumber } from '../utils/transactionBilling.js';
 import { getStateFromGstin, calculateGstBreakup } from '../utils/gstCalculation.js';
 import { getGstDefaultsForTransactionType } from '../constants/erpTransactionTypes.js';
 import { linesForSource, qtySlicesForSalesOrder } from '../utils/documentLinkAttribution.js';
+import { rememberItemRateAndCut } from '../utils/itemMasterRates.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -756,6 +757,7 @@ async function saveBill(req, res, existing = null) {
   }));
 
   const saved = await prisma.$transaction(async (tx) => {
+    await rememberItemRateAndCut(tx, userId, orderLines);
     const data = {
       customerId: customer.id,
       buyerName: customer.organizationName,
@@ -926,6 +928,7 @@ async function saveSalesOrder(req, res, existing = null) {
       data: { userId, orderNo: optionalNumber(req.body.orderNo) ?? (orderNoResult._max.orderNo || 0) + 1, status: 'open', ...data }
     });
   }
+  await rememberItemRateAndCut(prisma, userId, lines);
   res.status(existing ? 200 : 201).json({ order });
 }
 

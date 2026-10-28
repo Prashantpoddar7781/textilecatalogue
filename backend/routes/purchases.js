@@ -14,7 +14,8 @@ import { findOrCreateSupplier, resolveSupplierForEntry } from '../utils/partyMas
 import { allocateNextTypeBillNumber } from '../utils/transactionBilling.js';
 import { buildSupplierLedger } from '../utils/accountLedger.js';
 import { roundMoney } from '../utils/orderBilling.js';
-import { aggregateErpLines, isPurchaseReturn, normalizeErpLines } from '../utils/erpLineItems.js';
+import { aggregateErpLines, normalizeErpLines } from '../utils/erpLineItems.js';
+import { rememberItemRateAndCut } from '../utils/itemMasterRates.js';
 import { getStateFromGstin, isInterStateSupply } from '../utils/gstCalculation.js';
 
 const router = express.Router();
@@ -456,37 +457,6 @@ function buildManualBillData(req, supplier, ctx, lines, totals, typeBillNumber) 
   };
 }
 
-function findQuality(masters, line) {
-  if (line.itemMasterId) {
-    const byId = masters.find(item => item.id === line.itemMasterId);
-    if (byId) return byId;
-  }
-  const name = String(line.itemName || '').trim().toLowerCase();
-  if (!name) return null;
-  return masters.find(item => String(item.name || '').trim().toLowerCase() === name) || null;
-}
-
-/** The rate and cut typed on a purchase line become the next default for that quality. */
-async function rememberPurchaseItemRates(tx, userId, lines) {
-  const masters = await tx.salesItemMaster.findMany({ where: { userId } });
-  const latest = new Map();
-  for (const line of lines) {
-    const item = findQuality(masters, line);
-    if (!item) continue;
-    const rate = Number(line.rate) || 0;
-    const cut = Number(line.cut) || 0;
-    if (!(rate > 0) && !(cut > 0)) continue;
-    latest.set(item.id, { rate, cut });
-  }
-  for (const [id, next] of latest) {
-    const item = masters.find(row => row.id === id);
-    const data = {};
-    if (next.rate > 0 && Math.abs(next.rate - (Number(item.sellingRate) || 0)) > 0.001) data.sellingRate = next.rate;
-    if (next.cut > 0 && Math.abs(next.cut - (Number(item.cut) || 0)) > 0.001) data.cut = next.cut;
-    if (Object.keys(data).length) await tx.salesItemMaster.update({ where: { id }, data });
-  }
-}
-
 async function saveManualBill(req, res, existing = null) {
   const userId = req.user.userId;
   const ctx = await getCompanyContext(userId);
@@ -521,9 +491,7 @@ async function saveManualBill(req, res, existing = null) {
   const totals = aggregateErpLines(lines);
 
   const bill = await prisma.$transaction(async (tx) => {
-    if (!isExpensePurchaseType(transactionType) && !isPurchaseReturn(transactionType)) {
-      await rememberPurchaseItemRates(tx, userId, lines);
-    }
+    await rememberItemRateAndCut(tx, userId, lines);
     if (existing) {
       const data = buildManualBillData(req, supplier, ctx, lines, totals, existing.typeBillNumber);
       delete data.typeBillNumber;
