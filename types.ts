@@ -262,6 +262,8 @@ export interface SalesLineItem {
   unit: string;
   pcs: number;
   cut: number;
+  /** Amount taken off 100. The printed bill shows 100 minus this. 0 prints as 100. */
+  lessFold?: number;
   mtsQty: number;
   rate: number;
   amount: number;

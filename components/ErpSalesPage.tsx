@@ -59,6 +59,7 @@ const blankLine = (lineNo = 1, gstRate = 5, hsnCode = '5407', discountPercent = 
   unit: 'PCS',
   pcs: 0,
   cut: 0,
+  lessFold: 0,
   mtsQty: 0,
   rate: 0,
   amount: 0,
@@ -1140,6 +1141,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
         cloth: line.screenName && line.screenName !== line.itemName ? line.screenName : '',
         pcs: toNum(line.pcs),
         cut: toNum(line.cut),
+        lessFold: toNum(line.lessFold),
         mts: toNum(line.mtsQty),
         rate: toNum(line.rate),
         unit: line.unit || 'PCS',
@@ -1469,7 +1471,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
                   <tr>
                     {(isSalesOrder
                       ? ['#', 'Main Screen', 'Bundles', 'Screen Name', 'Packing', 'Unit', 'PCS', 'Cut', 'MTS/Qty', 'Rate', 'Amount', 'R.D.', 'Disc %', 'Manual Add/Ls', 'IGST %', 'SGST %', 'CGST/IGST Amt', '']
-                      : ['#', 'Ref', 'Item Name', 'Bundles', 'Design No', 'Packing', 'Unit', 'PCS', 'Cut', 'MTS/Qty', 'Rate', 'Amount', 'Disc %', 'Add/Less', 'GST %', 'Tax', 'Net', '']
+                      : ['#', 'Ref', 'Item Name', 'Bundles', 'Design No', 'Packing', 'Unit', 'PCS', 'Cut', 'MTS/Qty', 'Rate', 'Amount', 'Less Fold', 'Disc %', 'Add/Less', 'GST %', 'Tax', 'Net', '']
                     ).map(head => <th key={head} className="px-2 py-2 font-black">{head}</th>)}
                   </tr>
                 </thead>
@@ -1533,6 +1535,9 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
                       <td className="px-1 py-1.5"><input className={inputClass} type="number" value={line.mtsQty || ''} onChange={e => updateLine(index, 'mtsQty', toNum(e.target.value))} /></td>
                       <td className="px-1 py-1.5"><input className={inputClass} type="number" value={line.rate || ''} onChange={e => updateLine(index, 'rate', toNum(e.target.value))} /></td>
                       <td className="px-2 py-1.5 text-right font-bold">{round2(toNum(line.amount)).toFixed(2)}</td>
+                      {!isSalesOrder && (
+                        <td className="px-1 py-1.5"><input className={inputClass} type="number" value={toNum(line.lessFold)} onChange={e => updateLine(index, 'lessFold', toNum(e.target.value))} /></td>
+                      )}
                       {isSalesOrder ? (
                         <>
                           <td className="px-1 py-1.5"><input className={inputClass} type="number" value={line.rd || ''} onChange={e => updateLine(index, 'rd', toNum(e.target.value))} /></td>

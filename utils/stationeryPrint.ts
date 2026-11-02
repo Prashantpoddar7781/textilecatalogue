@@ -171,6 +171,8 @@ export interface SaleBillPrintInput {
     cloth?: string;
     pcs: number;
     cut: number;
+    /** Entered less-fold. The bill prints 100 minus this figure. */
+    lessFold?: number;
     mts: number;
     rate: number;
     unit?: string;
@@ -233,13 +235,14 @@ export function openSaleBillPrint(input: SaleBillPrintInput) {
       <td>${escapeHtml(line.cloth || '')}</td>
       <td class="n">${line.pcs || ''}</td>
       <td class="n">${line.cut ? line.cut.toFixed(2) : ''}</td>
+      <td class="n">${(100 - (Number(line.lessFold) || 0)).toFixed(2)}</td>
       <td class="n">${line.mts ? line.mts.toFixed(2) : ''}</td>
       <td class="n">${line.rate ? line.rate.toFixed(2) : ''}</td>
       <td class="c">${escapeHtml(line.unit || '')}</td>
       <td class="n">${money(line.amount)}</td>
     </tr>`).join('');
   const qr = input.qrDataUrl ? `<img class="qr" alt="QR" src="${input.qrDataUrl}" />` : '<div class="qr empty"></div>';
-  const cols = ['5%', '15%', '13%', '11%', '11%', '6%', '7%', '8%', '8%', '6%', '10%'];
+  const cols = ['4%', '14%', '12%', '9%', '9%', '6%', '6%', '8%', '8%', '8%', '6%', '10%'];
   const fillPage = input.lines.length <= 16;
   const html = `
     <article class="invoice${fillPage ? ' full' : ''}">
@@ -292,7 +295,7 @@ export function openSaleBillPrint(input: SaleBillPrintInput) {
           <thead>
             <tr>
               <th>SR.</th><th>ITEM</th><th>CATEGORY</th><th>PACK</th><th>CLOTH</th>
-              <th>PCS</th><th>CUT</th><th>MTS.</th><th>RATE</th><th>PER</th><th>AMOUNT</th>
+              <th>PCS</th><th>CUT</th><th>LESS FOLD</th><th>MTS.</th><th>RATE</th><th>PER</th><th>AMOUNT</th>
             </tr>
           </thead>
           <tbody>${itemRows}</tbody>
@@ -309,14 +312,15 @@ export function openSaleBillPrint(input: SaleBillPrintInput) {
               <td colspan="5">SUB TOTAL</td>
               <td class="n">${input.totalPcs || ''}</td>
               <td></td>
+              <td></td>
               <td class="n">${money(input.totalMts || 0)}</td>
               <td colspan="2"></td>
               <td class="n amt">${money(input.grossAmount)}</td>
             </tr>
-            ${taxRows.map(row => `<tr><td class="taxline" colspan="11">${row}</td></tr>`).join('')}
+            ${taxRows.map(row => `<tr><td class="taxline" colspan="12">${row}</td></tr>`).join('')}
             <tr>
               <td colspan="5">DUE DAYS: ${Number(input.dueDays) || 0}</td>
-              <td class="inv" colspan="5">Invoice Value</td>
+              <td class="inv" colspan="6">Invoice Value</td>
               <td class="n amt">${money(input.netAmount)}</td>
             </tr>
           </tbody>
