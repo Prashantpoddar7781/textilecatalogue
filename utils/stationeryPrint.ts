@@ -73,8 +73,6 @@ function escapeHtml(value: string) {
 }
 
 const SHEET_CSS = `
-  @page { size: 8in 12in; margin: 0; }
-  html, body { margin: 0; }
   .sheet { position: relative; width: 8in; height: 12in; background: white; overflow: hidden; font-family: "Courier New", Courier, monospace; }
   .field { position: absolute; white-space: pre; line-height: 1; }
 `;
@@ -105,7 +103,7 @@ function printSheet(markup: string, pageCss = '@page { size: 8in 12in; margin: 0
     return;
   }
   doc.open();
-  doc.write(`<!doctype html><html><head><title>Print</title><style>${pageCss}${SHEET_CSS}</style></head><body>${markup}</body></html>`);
+  doc.write(`<!doctype html><html><head><title>Print</title><style>html,body{margin:0;padding:0;background:#fff}${pageCss}${SHEET_CSS}</style></head><body><div id="stationery-preview">${markup}</div></body></html>`);
   doc.close();
   window.setTimeout(() => {
     win.focus();
@@ -241,15 +239,17 @@ export function openSaleBillPrint(input: SaleBillPrintInput) {
       <td class="n">${money(line.amount)}</td>
     </tr>`).join('');
   const qr = input.qrDataUrl ? `<img class="qr" alt="QR" src="${input.qrDataUrl}" />` : '<div class="qr empty"></div>';
+  const cols = ['5%', '15%', '13%', '11%', '11%', '6%', '7%', '8%', '8%', '6%', '10%'];
+  const fillPage = input.lines.length <= 16;
   const html = `
-    <article class="invoice${input.lines.length <= 16 ? ' full' : ''}">
+    <article class="invoice${fillPage ? ' full' : ''}">
       <header class="head">
         ${qr}
         <div class="firm">
           <div class="bless">!! Shree Ganeshaya Namah !!</div>
           ${input.companyPhone ? `<div class="tiny">PHONES: ${escapeHtml(input.companyPhone)}</div>` : ''}
           <h1>${escapeHtml(input.companyName || 'TAX INVOICE')}</h1>
-          <div class="tiny">${[input.companyUdyam ? `Udyam ${input.companyUdyam}` : '', input.companyPan ? `PAN No.: ${input.companyPan}` : ''].filter(Boolean).map(escapeHtml).join(' &nbsp; ')}</div>
+          <div class="tiny">${[input.companyUdyam ? `Udyam ${input.companyUdyam}` : '', input.companyPan ? `PAN No.: ${input.companyPan}` : ''].filter(Boolean).map(escapeHtml).join(' &nbsp;&nbsp; ')}</div>
           <div class="tiny">${escapeHtml(input.companyAddress || '')}</div>
           ${input.companyGstin ? `<div class="tiny">GSTIN: ${escapeHtml(input.companyGstin)}</div>` : ''}
           <div class="title">TAX INVOICE</div>
@@ -262,96 +262,126 @@ export function openSaleBillPrint(input: SaleBillPrintInput) {
         </table>
       </header>
       <section class="party">
-        <div>
+        <div class="buyer">
           <div><b>Buyer:</b> ${escapeHtml(input.partyName)}</div>
-          <div>${escapeHtml(input.address1 || '')}</div>
-          <div>${escapeHtml(input.address2 || '')}</div>
-          <div>${escapeHtml(buyerPlace)}${input.phone ? ` &nbsp; MO: ${escapeHtml(input.phone)}` : ''}</div>
-          <div>${input.partyGstin ? `GSTIN: ${escapeHtml(input.partyGstin)}` : ''} ${input.state ? `&nbsp; Place of Supply: ${escapeHtml(input.state)}` : ''}</div>
-          <div class="gap"><b>Consignee:</b> ${escapeHtml(input.haste || '')}</div>
+          ${input.address1 ? `<div>${escapeHtml(input.address1)}</div>` : ''}
+          ${input.address2 ? `<div>${escapeHtml(input.address2)}</div>` : ''}
+          <div>${escapeHtml(buyerPlace)}${input.phone ? ` &nbsp;&nbsp; MO: ${escapeHtml(input.phone)}` : ''}</div>
+          <div>${input.partyGstin ? `GSTIN: ${escapeHtml(input.partyGstin)}` : ''}${input.state ? ` &nbsp;&nbsp; Place of Supply: ${escapeHtml(input.state)}` : ''}</div>
+          <div><b>Consignee:</b> ${escapeHtml(input.haste || '')}</div>
         </div>
-        <div>
+        <div class="dispatch">
           <div><b>AGENT:</b> ${escapeHtml(input.broker || '')}</div>
-          <div class="gap"><b>L.R. NO.:</b> ${escapeHtml(input.lrNo || '')}</div>
-          <div><b>LR DATE:</b> ${escapeHtml(shortDate(input.lrDate))}</div>
-          <div><b>TRANSPORT:</b> ${escapeHtml(input.transport || '')}</div>
+          <div class="lr">
+            <span><b>L.R. NO.:</b> ${escapeHtml(input.lrNo || '')}</span>
+            <span><b>LR DATE:</b> ${escapeHtml(shortDate(input.lrDate))}</span>
+            <span><b>WEIGHT:</b> 0.000</span>
+            <span><b>FREIGHT:</b> 0.00</span>
+          </div>
+          <div class="lr">
+            <span><b>TRANSPORT:</b> ${escapeHtml(input.transport || '')}</span>
+            <span><b>CASE NO.:</b> ${escapeHtml(String(input.billNo || '').split('/')[0])}</span>
+            <span><b>HSN:</b> ${escapeHtml(input.hsn || '')}</span>
+          </div>
           <div><b>STATION:</b> ${escapeHtml(input.station || input.city || '')}</div>
         </div>
-        <div>
-          <div><b>WEIGHT:</b> 0.000</div>
-          <div><b>FREIGHT:</b> 0.00</div>
-          <div><b>CASE NO.:</b> ${escapeHtml(String(input.billNo || '').split('/')[0])}</div>
-          <div><b>HSN:</b> ${escapeHtml(input.hsn || '')}</div>
-        </div>
       </section>
-      <div class="grid-wrap">
+      <div class="lines">
         <table class="grid">
+          <colgroup>${cols.map(width => `<col style="width:${width}">`).join('')}</colgroup>
           <thead>
             <tr>
               <th>SR.</th><th>ITEM</th><th>CATEGORY</th><th>PACK</th><th>CLOTH</th>
               <th>PCS</th><th>CUT</th><th>MTS.</th><th>RATE</th><th>PER</th><th>AMOUNT</th>
             </tr>
           </thead>
-          <tbody>${itemRows}${input.lines.length <= 16 ? `<tr class="pad">${'<td></td>'.repeat(11)}</tr>` : ''}</tbody>
+          <tbody>${itemRows}</tbody>
         </table>
+        ${fillPage ? `<div class="ruler" aria-hidden="true">${cols.map(() => '<i></i>').join('')}</div>` : ''}
       </div>
       <section class="foot">
-        <div>${bank ? `<b>BANK A/C:</b> ${bank}` : ''}</div>
+        <div class="bank">${bank ? `<b>BANK A/C No.:</b> ${bank}` : ''}</div>
         <div><b>REMARK:</b> ${escapeHtml(input.remarks || '')}</div>
-        <table class="sums">
-          <tr><td>SUB TOTAL</td><td class="n">${input.totalPcs || ''}</td><td class="n">${money(input.totalMts || 0)}</td><td class="n">${money(input.grossAmount)}</td></tr>
-          ${taxRows.map(row => `<tr><td colspan="3">${row}</td><td></td></tr>`).join('')}
-          <tr><td>DUE DAYS: ${Number(input.dueDays) || 0}</td><td colspan="2" class="c">Invoice Value</td><td class="n"><b>${money(input.netAmount)}</b></td></tr>
-        </table>
+        <div class="tot">
+          <span>SUB TOTAL</span>
+          <span class="n">${input.totalPcs || ''}</span>
+          <span class="n">${money(input.totalMts || 0)}</span>
+          <span class="n amt">${money(input.grossAmount)}</span>
+        </div>
+        ${taxRows.map(row => `<div class="taxline">${row}</div>`).join('')}
+        <div class="tot due">
+          <span>DUE DAYS: ${Number(input.dueDays) || 0}</span>
+          <span class="inv">Invoice Value</span>
+          <span class="n amt">${money(input.netAmount)}</span>
+        </div>
         <div class="words">${escapeHtml(rupeesInWords(input.netAmount).toUpperCase())}</div>
         <div class="sign">
-          <div class="terms">${terms.map(line => `<div>${escapeHtml(line)}</div>`).join('')}</div>
-          <div class="for">FOR ${escapeHtml(input.companyName || '')}<div class="auth">AUTH. SIGN</div></div>
+          <div class="terms">
+            <div class="termhead">TERMS &amp; CONDITIONS:-</div>
+            ${terms.map(line => `<div>${escapeHtml(line)}</div>`).join('')}
+          </div>
+          <div class="for">FOR ${escapeHtml(input.companyName || '')}</div>
         </div>
+        <div class="checks"><span>CHECKED BY</span><span>DELIVERED BY</span><span>AUTH. SIGN</span></div>
         ${input.irn ? `<div class="irn">IRN: ${escapeHtml(input.irn)}${input.ackNo ? ` &nbsp; Ack No: ${escapeHtml(input.ackNo)}` : ''}</div>` : ''}
-        ${input.ewayBillNo ? `<div>E-WAY BILL No: ${escapeHtml(input.ewayBillNo)}${input.transporterId ? ` &nbsp; Transporter ID: ${escapeHtml(input.transporterId)}` : ''}</div>` : ''}
+        ${input.ewayBillNo ? `<div class="irn">E-WAY BILL No: ${escapeHtml(input.ewayBillNo)}${input.transporterId ? ` &nbsp; Transporter ID: ${escapeHtml(input.transporterId)}` : ''}</div>` : ''}
       </section>
     </article>`;
   const pageCss = `
     @page { size: A4; margin: 0; }
-    html, body { margin: 0; padding: 0; background: white; }
-    .invoice {
-      width: 210mm; box-sizing: border-box;
-      margin: 0 auto; background: white; color: #111;
-      font-family: Arial, Helvetica, sans-serif; font-size: 11px;
-      padding: 8mm 8mm 9mm; display: flex; flex-direction: column;
+    #stationery-preview .invoice {
+      width: 210mm; box-sizing: border-box; margin: 0 auto; background: #fff; color: #111;
+      font-family: Arial, Helvetica, sans-serif; font-size: 11px; line-height: 1.25;
+      padding: 7mm 8mm 8mm; display: flex; flex-direction: column;
     }
-    .invoice.full { height: 296mm; }
-    .head { display: grid; grid-template-columns: 78px 1fr 168px; gap: 8px; align-items: start; }
-    .firm { text-align: center; }
-    .firm h1 { margin: 2px 0 4px; font-size: 22px; letter-spacing: 0.6px; }
-    .bless, .tiny { font-size: 10px; line-height: 1.35; }
-    .title { margin-top: 6px; font-size: 14px; font-weight: 800; letter-spacing: 1px; }
-    .qr { width: 72px; height: 72px; }
-    .qr.empty { border: 1px solid #ddd; }
-    .meta { width: 100%; border-collapse: collapse; }
-    .meta td { border: 1px solid #111; padding: 3px 5px; font-size: 11px; }
-    .meta td:first-child { font-weight: 700; width: 72px; }
-    .party { display: grid; grid-template-columns: 1.4fr 1.2fr 0.8fr; gap: 10px; margin-top: 8px; border-top: 1px solid #111; border-bottom: 1px solid #111; padding: 8px 0; line-height: 1.35; }
-    .gap { margin-top: 8px; }
-    .grid-wrap { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
-    .grid { width: 100%; height: 100%; border-collapse: collapse; margin-top: 6px; table-layout: fixed; }
-    .grid th, .grid td { border: 1px solid #222; padding: 4px 4px; font-size: 10px; vertical-align: top; }
-    .grid th { font-size: 9px; }
-    .grid th:nth-child(2), .grid td:nth-child(2) { width: 16%; }
-    .grid tr.pad { height: 100%; }
-    .grid tr.pad td { height: 100%; }
-    .n { text-align: right; white-space: nowrap; }
-    .c { text-align: center; }
-    .foot { margin-top: 4px; }
-    .sums { width: 100%; border-collapse: collapse; margin-top: 6px; border-top: 1px solid #111; }
-    .sums td { padding: 3px 4px; font-size: 11px; }
-    .sums td:last-child { width: 96px; }
-    .words { margin: 8px 0; font-weight: 700; letter-spacing: 0.3px; font-size: 12px; }
-    .sign { display: flex; justify-content: space-between; gap: 16px; margin-top: 4px; }
-    .for { text-align: right; min-width: 180px; font-weight: 700; }
-    .auth { margin-top: 36px; }
-    .irn { margin-top: 8px; word-break: break-all; font-size: 9px; }
+    #stationery-preview .invoice.full { min-height: 296mm; }
+    #stationery-preview .head { display: grid; grid-template-columns: 72px 1fr 158px; gap: 8px; align-items: start; }
+    #stationery-preview .firm { text-align: center; }
+    #stationery-preview .firm h1 { margin: 1px 0 2px; font-size: 20px; letter-spacing: 0.4px; line-height: 1.1; }
+    #stationery-preview .bless, #stationery-preview .tiny { font-size: 10px; line-height: 1.25; }
+    #stationery-preview .title { margin-top: 3px; font-size: 13px; font-weight: 800; letter-spacing: 0.8px; }
+    #stationery-preview .qr { width: 68px; height: 68px; display: block; }
+    #stationery-preview .qr.empty { border: 1px solid #ccc; }
+    #stationery-preview .meta { width: 100%; border-collapse: collapse; }
+    #stationery-preview .meta td { border: 1px solid #111; padding: 2px 4px; font-size: 11px; }
+    #stationery-preview .meta td:first-child { font-weight: 700; width: 68px; }
+    #stationery-preview .party {
+      display: grid; grid-template-columns: 1.15fr 1fr; gap: 6px 18px;
+      margin-top: 6px; padding: 5px 0 6px; border-top: 1px solid #111; border-bottom: 1px solid #111;
+    }
+    #stationery-preview .lr { display: flex; flex-wrap: wrap; gap: 2px 14px; margin-top: 2px; }
+    #stationery-preview .lines { flex: 1 1 auto; display: flex; flex-direction: column; margin-top: 4px; min-height: 0; }
+    #stationery-preview .grid {
+      display: table; width: 100%; height: auto; border-collapse: collapse; table-layout: fixed; flex: 0 0 auto;
+    }
+    #stationery-preview .grid thead { display: table-header-group; }
+    #stationery-preview .grid tbody { display: table-row-group; }
+    #stationery-preview .grid tr { display: table-row; }
+    #stationery-preview .grid th, #stationery-preview .grid td {
+      display: table-cell; border: 1px solid #222; padding: 2px 3px; font-size: 10px;
+      vertical-align: middle; font-weight: 500; line-height: 1.2;
+    }
+    #stationery-preview .grid th { font-size: 9px; font-weight: 700; text-align: center; background: #fff; }
+    #stationery-preview .ruler {
+      flex: 1 1 auto; display: grid; grid-template-columns: ${cols.join(' ')};
+      border-left: 1px solid #222; border-bottom: 1px solid #222; min-height: 18mm;
+    }
+    #stationery-preview .ruler i { display: block; border-right: 1px solid #222; }
+    #stationery-preview .n { text-align: right; white-space: nowrap; }
+    #stationery-preview .c { text-align: center; }
+    #stationery-preview .foot { flex: 0 0 auto; margin-top: 6px; }
+    #stationery-preview .bank { min-height: 14px; }
+    #stationery-preview .tot { display: grid; grid-template-columns: 1fr 64px 78px 88px; gap: 4px; margin-top: 3px; align-items: baseline; }
+    #stationery-preview .tot.due { grid-template-columns: 1fr auto 88px; margin-top: 2px; }
+    #stationery-preview .amt { font-weight: 800; }
+    #stationery-preview .inv { font-weight: 700; text-align: right; padding-right: 10px; }
+    #stationery-preview .taxline { text-align: right; margin-top: 2px; }
+    #stationery-preview .words { margin: 6px 0 4px; font-weight: 800; letter-spacing: 0.2px; }
+    #stationery-preview .sign { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; }
+    #stationery-preview .termhead { font-weight: 700; }
+    #stationery-preview .for { font-weight: 800; white-space: nowrap; padding-top: 14px; }
+    #stationery-preview .checks { display: flex; justify-content: space-between; margin-top: 16px; font-weight: 700; }
+    #stationery-preview .irn { margin-top: 4px; word-break: break-all; font-size: 9px; }
   `;
   return mountPreview(`Sale bill ${input.billNo || ''}`.trim(), html, pageCss, 'A4 tax invoice · choose any printer');
 }
