@@ -242,7 +242,7 @@ export function openSaleBillPrint(input: SaleBillPrintInput) {
     </tr>`).join('');
   const qr = input.qrDataUrl ? `<img class="qr" alt="QR" src="${input.qrDataUrl}" />` : '<div class="qr empty"></div>';
   const html = `
-    <article class="invoice">
+    <article class="invoice${input.lines.length <= 16 ? ' full' : ''}">
       <header class="head">
         ${qr}
         <div class="firm">
@@ -284,15 +284,17 @@ export function openSaleBillPrint(input: SaleBillPrintInput) {
           <div><b>HSN:</b> ${escapeHtml(input.hsn || '')}</div>
         </div>
       </section>
-      <table class="grid">
-        <thead>
-          <tr>
-            <th>SR.</th><th>ITEM</th><th>CATEGORY</th><th>PACK</th><th>CLOTH</th>
-            <th>PCS</th><th>CUT</th><th>MTS.</th><th>RATE</th><th>PER</th><th>AMOUNT</th>
-          </tr>
-        </thead>
-        <tbody>${itemRows}</tbody>
-      </table>
+      <div class="grid-wrap">
+        <table class="grid">
+          <thead>
+            <tr>
+              <th>SR.</th><th>ITEM</th><th>CATEGORY</th><th>PACK</th><th>CLOTH</th>
+              <th>PCS</th><th>CUT</th><th>MTS.</th><th>RATE</th><th>PER</th><th>AMOUNT</th>
+            </tr>
+          </thead>
+          <tbody>${itemRows}${input.lines.length <= 16 ? `<tr class="pad">${'<td></td>'.repeat(11)}</tr>` : ''}</tbody>
+        </table>
+      </div>
       <section class="foot">
         <div>${bank ? `<b>BANK A/C:</b> ${bank}` : ''}</div>
         <div><b>REMARK:</b> ${escapeHtml(input.remarks || '')}</div>
@@ -311,33 +313,44 @@ export function openSaleBillPrint(input: SaleBillPrintInput) {
       </section>
     </article>`;
   const pageCss = `
-    @page { size: A4; margin: 8mm; }
-    .invoice { width: 194mm; margin: 0 auto; background: white; color: #111; font-family: Arial, Helvetica, sans-serif; font-size: 10px; padding: 8px 10px 12px; }
-    .head { display: grid; grid-template-columns: 78px 1fr 150px; gap: 8px; align-items: start; }
+    @page { size: A4; margin: 0; }
+    html, body { margin: 0; padding: 0; background: white; }
+    .invoice {
+      width: 210mm; box-sizing: border-box;
+      margin: 0 auto; background: white; color: #111;
+      font-family: Arial, Helvetica, sans-serif; font-size: 11px;
+      padding: 8mm 8mm 9mm; display: flex; flex-direction: column;
+    }
+    .invoice.full { height: 296mm; }
+    .head { display: grid; grid-template-columns: 78px 1fr 168px; gap: 8px; align-items: start; }
     .firm { text-align: center; }
-    .firm h1 { margin: 2px 0; font-size: 20px; letter-spacing: 0.5px; }
-    .bless, .tiny { font-size: 9px; }
-    .title { margin-top: 4px; font-size: 13px; font-weight: 800; letter-spacing: 1px; }
+    .firm h1 { margin: 2px 0 4px; font-size: 22px; letter-spacing: 0.6px; }
+    .bless, .tiny { font-size: 10px; line-height: 1.35; }
+    .title { margin-top: 6px; font-size: 14px; font-weight: 800; letter-spacing: 1px; }
     .qr { width: 72px; height: 72px; }
     .qr.empty { border: 1px solid #ddd; }
     .meta { width: 100%; border-collapse: collapse; }
-    .meta td { border: 1px solid #111; padding: 2px 4px; font-size: 10px; }
-    .meta td:first-child { font-weight: 700; width: 62px; }
-    .party { display: grid; grid-template-columns: 1.4fr 1.2fr 0.8fr; gap: 8px; margin-top: 8px; border-top: 1px solid #111; border-bottom: 1px solid #111; padding: 6px 0; }
-    .gap { margin-top: 6px; }
-    .grid { width: 100%; border-collapse: collapse; margin-top: 6px; table-layout: fixed; }
-    .grid th, .grid td { border: 1px solid #222; padding: 3px 3px; font-size: 9px; vertical-align: top; }
-    .grid th { font-size: 8px; }
+    .meta td { border: 1px solid #111; padding: 3px 5px; font-size: 11px; }
+    .meta td:first-child { font-weight: 700; width: 72px; }
+    .party { display: grid; grid-template-columns: 1.4fr 1.2fr 0.8fr; gap: 10px; margin-top: 8px; border-top: 1px solid #111; border-bottom: 1px solid #111; padding: 8px 0; line-height: 1.35; }
+    .gap { margin-top: 8px; }
+    .grid-wrap { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
+    .grid { width: 100%; height: 100%; border-collapse: collapse; margin-top: 6px; table-layout: fixed; }
+    .grid th, .grid td { border: 1px solid #222; padding: 4px 4px; font-size: 10px; vertical-align: top; }
+    .grid th { font-size: 9px; }
     .grid th:nth-child(2), .grid td:nth-child(2) { width: 16%; }
+    .grid tr.pad { height: 100%; }
+    .grid tr.pad td { height: 100%; }
     .n { text-align: right; white-space: nowrap; }
     .c { text-align: center; }
-    .sums { width: 100%; border-collapse: collapse; margin-top: 8px; border-top: 1px solid #111; }
-    .sums td { padding: 3px 4px; }
-    .sums td:last-child { width: 90px; }
-    .words { margin: 6px 0; font-weight: 700; letter-spacing: 0.3px; }
-    .sign { display: flex; justify-content: space-between; gap: 16px; margin-top: 6px; }
-    .for { text-align: right; min-width: 160px; font-weight: 700; }
-    .auth { margin-top: 28px; }
+    .foot { margin-top: 4px; }
+    .sums { width: 100%; border-collapse: collapse; margin-top: 6px; border-top: 1px solid #111; }
+    .sums td { padding: 3px 4px; font-size: 11px; }
+    .sums td:last-child { width: 96px; }
+    .words { margin: 8px 0; font-weight: 700; letter-spacing: 0.3px; font-size: 12px; }
+    .sign { display: flex; justify-content: space-between; gap: 16px; margin-top: 4px; }
+    .for { text-align: right; min-width: 180px; font-weight: 700; }
+    .auth { margin-top: 36px; }
     .irn { margin-top: 8px; word-break: break-all; font-size: 9px; }
   `;
   return mountPreview(`Sale bill ${input.billNo || ''}`.trim(), html, pageCss, 'A4 tax invoice · choose any printer');
