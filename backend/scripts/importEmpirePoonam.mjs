@@ -567,6 +567,7 @@ async function main() {
         unit: priced.unit,
         pcs: round(pcs),
         cut: round(num(line.CUT)),
+        lessFold: round(num(line.LESSFOLD)),
         mtsQty: round(mts),
         rate: round(rate),
         amount,

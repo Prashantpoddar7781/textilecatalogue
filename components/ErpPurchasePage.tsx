@@ -55,6 +55,7 @@ const blankLine = (lineNo = 1, gstRate = 5, hsnCode = '5407', discountPercent = 
   unit: 'PCS',
   pcs: 0,
   cut: 0,
+  lessFold: 0,
   mtsQty: 0,
   rate: 0,
   amount: 0,
@@ -723,7 +724,7 @@ export const ErpPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
               <table className="min-w-[1500px] w-full text-left text-xs">
                 <thead className="border-b bg-gray-50 text-[10px] uppercase text-gray-500">
                   <tr>
-                    {['#', 'Item Name', 'Bundles', 'Category / Main Screen', 'Packing', 'Unit', 'PCS', 'Cut', 'MTS', 'Rate', 'Amount', 'Disc %', 'Add/Less', 'GST %', 'Tax', 'Net', ''].map(head => (
+                    {['#', 'Item Name', 'Bundles', 'Category / Main Screen', 'Packing', 'Unit', 'PCS', 'Cut', 'MTS', 'Rate', 'Amount', 'Less Fold', 'Disc %', 'Add/Less', 'GST %', 'Tax', 'Net', ''].map(head => (
                       <th key={head} className="px-2 py-2 font-black">{head}</th>
                     ))}
                   </tr>
@@ -760,6 +761,7 @@ export const ErpPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
                       <td className="px-1 py-1.5"><input className={inputClass} type="number" value={line.mtsQty || ''} onChange={e => updateLine(index, 'mtsQty', toNum(e.target.value))} /></td>
                       <td className="px-1 py-1.5"><input className={inputClass} type="number" value={line.rate || ''} onChange={e => updateLine(index, 'rate', toNum(e.target.value))} /></td>
                       <td className="px-2 py-1.5 text-right font-bold">{round2(toNum(line.amount)).toFixed(2)}</td>
+                      <td className="px-1 py-1.5"><input className={inputClass} type="number" value={toNum(line.lessFold)} onChange={e => updateLine(index, 'lessFold', toNum(e.target.value))} /></td>
                       <td className="px-1 py-1.5"><input className={inputClass} type="number" value={line.discountPercent || ''} onChange={e => updateLine(index, 'discountPercent', toNum(e.target.value))} /></td>
                       <td className="px-1 py-1.5"><input className={inputClass} type="number" value={line.manualAddLess || ''} onChange={e => updateLine(index, 'manualAddLess', toNum(e.target.value))} /></td>
                       <td className="px-1 py-1.5"><input className={inputClass} type="number" value={line.gstRate || ''} onChange={e => updateLine(index, 'gstRate', toNum(e.target.value))} /></td>
