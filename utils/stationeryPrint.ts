@@ -302,18 +302,25 @@ export function openSaleBillPrint(input: SaleBillPrintInput) {
       <section class="foot">
         <div class="bank">${bank ? `<b>BANK A/C No.:</b> ${bank}` : ''}</div>
         <div><b>REMARK:</b> ${escapeHtml(input.remarks || '')}</div>
-        <div class="tot">
-          <span>SUB TOTAL</span>
-          <span class="n">${input.totalPcs || ''}</span>
-          <span class="n">${money(input.totalMts || 0)}</span>
-          <span class="n amt">${money(input.grossAmount)}</span>
-        </div>
-        ${taxRows.map(row => `<div class="taxline">${row}</div>`).join('')}
-        <div class="tot due">
-          <span>DUE DAYS: ${Number(input.dueDays) || 0}</span>
-          <span class="inv">Invoice Value</span>
-          <span class="n amt">${money(input.netAmount)}</span>
-        </div>
+        <table class="totals">
+          <colgroup>${cols.map(width => `<col style="width:${width}">`).join('')}</colgroup>
+          <tbody>
+            <tr>
+              <td colspan="5">SUB TOTAL</td>
+              <td class="n">${input.totalPcs || ''}</td>
+              <td></td>
+              <td class="n">${money(input.totalMts || 0)}</td>
+              <td colspan="2"></td>
+              <td class="n amt">${money(input.grossAmount)}</td>
+            </tr>
+            ${taxRows.map(row => `<tr><td class="taxline" colspan="11">${row}</td></tr>`).join('')}
+            <tr>
+              <td colspan="5">DUE DAYS: ${Number(input.dueDays) || 0}</td>
+              <td class="inv" colspan="5">Invoice Value</td>
+              <td class="n amt">${money(input.netAmount)}</td>
+            </tr>
+          </tbody>
+        </table>
         <div class="words">${escapeHtml(rupeesInWords(input.netAmount).toUpperCase())}</div>
         <div class="sign">
           <div class="terms">
@@ -371,11 +378,11 @@ export function openSaleBillPrint(input: SaleBillPrintInput) {
     #stationery-preview .c { text-align: center; }
     #stationery-preview .foot { flex: 0 0 auto; margin-top: 6px; }
     #stationery-preview .bank { min-height: 14px; }
-    #stationery-preview .tot { display: grid; grid-template-columns: 1fr 64px 78px 88px; gap: 4px; margin-top: 3px; align-items: baseline; }
-    #stationery-preview .tot.due { grid-template-columns: 1fr auto 88px; margin-top: 2px; }
+    #stationery-preview .totals { width: 100%; border-collapse: collapse; table-layout: fixed; margin-top: 2px; }
+    #stationery-preview .totals td { border: none; padding: 2px 3px; font-size: 11px; vertical-align: middle; }
     #stationery-preview .amt { font-weight: 800; }
-    #stationery-preview .inv { font-weight: 700; text-align: right; padding-right: 10px; }
-    #stationery-preview .taxline { text-align: right; margin-top: 2px; }
+    #stationery-preview .inv { font-weight: 700; text-align: right; }
+    #stationery-preview .taxline { text-align: right; }
     #stationery-preview .words { margin: 6px 0 4px; font-weight: 800; letter-spacing: 0.2px; }
     #stationery-preview .sign { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; }
     #stationery-preview .termhead { font-weight: 700; }
