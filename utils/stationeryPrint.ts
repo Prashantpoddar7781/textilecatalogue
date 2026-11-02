@@ -1,7 +1,8 @@
 /**
  * Stationery taken from Poonam's Empire formats.
- * Sale bill: SALEBILLNEW. Cheque: RCHEQUE. Envelope: REPLABEL_envelope.
- * The page is 8 inch by 12 inch. The print dialog chooses the printer.
+ * Sale bill is the full tax invoice (letterhead, buyer, items, tax, words).
+ * Cheque: RCHEQUE. Envelope: REPLABEL_envelope. Those stay on the 8 by 12 inch page.
+ * The print dialog chooses the printer.
  */
 
 export interface StationeryLine {
@@ -92,7 +93,7 @@ function sheetMarkup(lines: StationeryLine[], extras = '') {
 }
 
 /** Print from a hidden frame on this page. A new window is blocked once any loading has happened. */
-function printSheet(markup: string) {
+function printSheet(markup: string, pageCss = '@page { size: 8in 12in; margin: 0; }') {
   const frame = document.createElement('iframe');
   frame.setAttribute('aria-hidden', 'true');
   frame.style.cssText = 'position:fixed;left:0;top:0;width:0;height:0;border:0;';
@@ -104,7 +105,7 @@ function printSheet(markup: string) {
     return;
   }
   doc.open();
-  doc.write(`<!doctype html><html><head><title>Print</title><style>${SHEET_CSS}</style></head><body>${markup}</body></html>`);
+  doc.write(`<!doctype html><html><head><title>Print</title><style>${pageCss}${SHEET_CSS}</style></head><body>${markup}</body></html>`);
   doc.close();
   window.setTimeout(() => {
     win.focus();
@@ -113,32 +114,41 @@ function printSheet(markup: string) {
   }, 200);
 }
 
-export function openStationeryPreview(title: string, lines: StationeryLine[], extras = '') {
+function mountPreview(title: string, markup: string, pageCss: string, hint = '8 × 12 inch · choose any printer') {
   document.getElementById('stationery-preview')?.remove();
-  const markup = sheetMarkup(lines, extras);
   const root = document.createElement('div');
   root.id = 'stationery-preview';
   root.style.cssText = 'position:fixed;inset:0;z-index:100000;background:#e5e7eb;overflow:auto;color:#111;';
   root.innerHTML = `
-    <style>${SHEET_CSS} .sheet { margin: 0 auto; box-shadow: 0 8px 24px rgba(0,0,0,.15); }</style>
-    <div style="position:sticky;top:0;display:flex;gap:12px;align-items:center;padding:10px 14px;background:#111827;color:white;font-family:Arial,sans-serif;">
+    <style>${SHEET_CSS}${pageCss} .sheet, .invoice { margin: 0 auto; box-shadow: 0 8px 24px rgba(0,0,0,.15); }</style>
+    <div style="position:sticky;top:0;display:flex;gap:12px;align-items:center;padding:10px 14px;background:#111827;color:white;font-family:Arial,sans-serif;z-index:1;">
       <button type="button" data-print style="border:0;border-radius:8px;background:white;color:#111;font-weight:800;padding:8px 14px;cursor:pointer;">Print</button>
       <button type="button" data-close style="border:0;border-radius:8px;background:#374151;color:white;font-weight:800;padding:8px 14px;cursor:pointer;">Close</button>
-      <span style="font-size:12px;font-weight:600;">${escapeHtml(title)} · 8 × 12 inch · choose any printer</span>
+      <span style="font-size:12px;font-weight:600;">${escapeHtml(title)} · ${escapeHtml(hint)}</span>
     </div>
     <div style="padding:16px 0;">${markup}</div>
   `;
   root.querySelector('[data-close]')?.addEventListener('click', () => root.remove());
-  root.querySelector('[data-print]')?.addEventListener('click', () => printSheet(markup));
+  root.querySelector('[data-print]')?.addEventListener('click', () => printSheet(markup, pageCss));
   document.body.appendChild(root);
   return true;
 }
 
+export function openStationeryPreview(title: string, lines: StationeryLine[], extras = '') {
+  return mountPreview(title, sheetMarkup(lines, extras), '@page { size: 8in 12in; margin: 0; }');
+}
+
 export interface SaleBillPrintInput {
   companyName: string;
+  companyAddress?: string;
+  companyPhone?: string;
+  companyGstin?: string;
+  companyPan?: string;
+  companyUdyam?: string;
   billNo: string;
   billDate: string;
   partyName: string;
+  partyGstin?: string;
   address1?: string;
   address2?: string;
   city?: string;
@@ -146,12 +156,31 @@ export interface SaleBillPrintInput {
   pincode?: string;
   phone?: string;
   broker?: string;
+  haste?: string;
+  station?: string;
   transport?: string;
   lrNo?: string;
+  lrDate?: string;
   orderNo?: string;
+  hsn?: string;
+  dueDays?: number;
   remarks?: string;
-  lines: Array<{ itemName: string; pcs: number; cut: number; mts: number; rate: number; amount: number }>;
+  terms?: string;
+  lines: Array<{
+    itemName: string;
+    category?: string;
+    pack?: string;
+    cloth?: string;
+    pcs: number;
+    cut: number;
+    mts: number;
+    rate: number;
+    unit?: string;
+    amount: number;
+    gstRate?: number;
+  }>;
   totalPcs: number;
+  totalMts?: number;
   grossAmount: number;
   taxable: number;
   cgst: number;
@@ -164,77 +193,154 @@ export interface SaleBillPrintInput {
   irn?: string;
   ackNo?: string;
   ewayBillNo?: string;
+  transporterId?: string;
   qrDataUrl?: string;
 }
 
+const DEFAULT_TERMS = [
+  '1) SUBJECT TO SURAT JURISDICTION.',
+  '2) GOODS HAVE BEEN SOLD & DESPATCHED AT THE ENTIRE RISK OF THE PURCHASER.',
+  '3) COMPLAINTS, IF ANY REGARDING THIS INVOICE MUST BE INFORMED IN WRITING WITHIN 48 HOURS.'
+].join('\n');
+
+function taxLine(name: string, rate: number, taxable: number, tax: number) {
+  if (!(tax > 0)) return '';
+  const rateText = rate > 0 ? ` @ ${rate.toFixed(2)}%` : '';
+  return `${name}${rateText} on Taxable Value &nbsp; ${money(taxable)} &nbsp; = &nbsp; ${money(tax)}`;
+}
+
 export function openSaleBillPrint(input: SaleBillPrintInput) {
-  const city = [input.city, input.pincode].filter(Boolean).join(' - ');
-  const place = [city, input.state].filter(Boolean).join(', ');
-  const rows: StationeryLine[] = [
-    { row: 12, col: 10, text: clip(input.partyName, 58) },
-    { row: 12, col: 70, text: clip(input.billNo, 8), bold: true },
-    { row: 13, col: 10, text: clip(input.address1, 58) },
-    { row: 13, col: 70, text: shortDate(input.billDate) },
-    { row: 14, col: 10, text: clip(input.phone ? `PH: ${input.phone}` : '', 58) },
-    { row: 15, col: 10, text: clip(input.address2, 58) },
-    { row: 15, col: 70, text: clip(input.orderNo, 10) },
-    { row: 16, col: 10, text: clip(place, 58) },
-    { row: 19, col: 16, text: clip(input.broker, 40) },
-    { row: 21, col: 25, text: clip(input.transport, 28) },
-    { row: 21, col: 55, text: clip(input.lrNo, 16) },
-    { row: 23, col: 1, text: 'Sr Particulars              PCS   Cut     Mts    Rate      Amount' },
-    { row: 24, col: 1, text: '----------------------------------------------------------------' }
-  ];
-  const shown = input.lines.slice(0, 18);
-  shown.forEach((line, index) => {
-    const text = [
-      String(index + 1).padStart(2, ' '),
-      clip(line.itemName, 22).padEnd(22, ' '),
-      String(line.pcs || 0).padStart(6, ' '),
-      (line.cut ? line.cut.toFixed(2) : '').padStart(6, ' '),
-      (line.mts ? line.mts.toFixed(2) : '').padStart(8, ' '),
-      (line.rate ? line.rate.toFixed(2) : '').padStart(8, ' '),
-      money(line.amount).padStart(12, ' ')
-    ].join(' ');
-    rows.push({ row: 25 + index, col: 1, text });
-  });
-  if (input.lines.length > shown.length) {
-    rows.push({ row: 43, col: 1, text: `+ ${input.lines.length - shown.length} more items` });
-  }
-  const taxBits = [
-    input.taxable ? `Taxable ${money(input.taxable)}` : '',
-    input.cgst ? `CGST ${money(input.cgst)}` : '',
-    input.sgst ? `SGST ${money(input.sgst)}` : '',
-    input.igst ? `IGST ${money(input.igst)}` : ''
-  ].filter(Boolean).join('  ');
-  if (taxBits) rows.push({ row: 48, col: 2, text: clip(taxBits, 76) });
-  rows.push({
-    row: 51,
-    col: 2,
-    text: `Pcs ${String(input.totalPcs || 0).padStart(6, ' ')}          Gross ${money(input.grossAmount).padStart(14, ' ')}`
-  });
-  rows.push({
-    row: 53,
-    col: 10,
-    text: clip(`RS-> ${rupeesInWords(input.netAmount)}`, 54)
-  });
-  rows.push({ row: 53, col: 66, text: money(input.netAmount), bold: true });
-  if (input.remarks) rows.push({ row: 57, col: 10, text: clip(input.remarks, 60) });
-  if (input.ewayBillNo) rows.push({ row: 59, col: 5, text: `E-WAY ${input.ewayBillNo}` });
-  if (input.bankName) {
-    rows.push({ row: 62, col: 6, text: 'OUR BANKER', bold: true });
-    rows.push({ row: 63, col: 6, text: clip(input.bankName, 40), bold: true });
-    const account = [input.bankAccount ? `A/C NO.: ${input.bankAccount}` : '', input.bankIfsc ? `IFSC ${input.bankIfsc}` : ''].filter(Boolean).join('  ');
-    if (account) rows.push({ row: 64, col: 6, text: clip(account, 60), bold: true });
-  }
-  if (input.irn) {
-    rows.push({ row: 66, col: 2, text: `IRN ${input.irn}` });
-    if (input.ackNo) rows.push({ row: 67, col: 2, text: `Ack ${input.ackNo}` });
-  }
-  const qr = input.qrDataUrl
-    ? `<img alt="QR" src="${input.qrDataUrl}" style="position:absolute;right:0.35in;bottom:0.45in;width:1.15in;height:1.15in" />`
-    : '';
-  return openStationeryPreview(`Sale bill ${input.billNo || ''}`.trim(), rows, qr);
+  const cityLine = [input.city, input.pincode].filter(Boolean).join('-');
+  const buyerPlace = [cityLine, input.state].filter(Boolean).join(', ');
+  const gstRates = Array.from(new Set(input.lines.map(line => Number(line.gstRate) || 0).filter(rate => rate > 0)));
+  const gstRate = gstRates.length === 1 ? gstRates[0] : 0;
+  const halfRate = gstRate ? gstRate / 2 : 0;
+  const taxRows = [
+    input.igst ? taxLine('IGST', gstRate, input.taxable, input.igst) : '',
+    input.cgst ? taxLine('CGST', halfRate, input.taxable, input.cgst) : '',
+    input.sgst ? taxLine('SGST', halfRate, input.taxable, input.sgst) : ''
+  ].filter(Boolean);
+  const bank = [
+    input.bankName,
+    input.bankAccount ? `A/C NO.: ${input.bankAccount}` : '',
+    input.bankIfsc ? `IFSC: ${input.bankIfsc}` : ''
+  ].filter(Boolean).map(part => escapeHtml(String(part))).join(' &nbsp; - &nbsp; ');
+  const terms = (input.terms || DEFAULT_TERMS).split(/\r?\n/).filter(Boolean);
+  const itemRows = input.lines.map((line, index) => `
+    <tr>
+      <td class="c">${index + 1}</td>
+      <td>${escapeHtml(line.itemName)}</td>
+      <td>${escapeHtml(line.category || '')}</td>
+      <td>${escapeHtml(line.pack || '')}</td>
+      <td>${escapeHtml(line.cloth || '')}</td>
+      <td class="n">${line.pcs || ''}</td>
+      <td class="n">${line.cut ? line.cut.toFixed(2) : ''}</td>
+      <td class="n">${line.mts ? line.mts.toFixed(2) : ''}</td>
+      <td class="n">${line.rate ? line.rate.toFixed(2) : ''}</td>
+      <td class="c">${escapeHtml(line.unit || '')}</td>
+      <td class="n">${money(line.amount)}</td>
+    </tr>`).join('');
+  const qr = input.qrDataUrl ? `<img class="qr" alt="QR" src="${input.qrDataUrl}" />` : '<div class="qr empty"></div>';
+  const html = `
+    <article class="invoice">
+      <header class="head">
+        ${qr}
+        <div class="firm">
+          <div class="bless">!! Shree Ganeshaya Namah !!</div>
+          ${input.companyPhone ? `<div class="tiny">PHONES: ${escapeHtml(input.companyPhone)}</div>` : ''}
+          <h1>${escapeHtml(input.companyName || 'TAX INVOICE')}</h1>
+          <div class="tiny">${[input.companyUdyam ? `Udyam ${input.companyUdyam}` : '', input.companyPan ? `PAN No.: ${input.companyPan}` : ''].filter(Boolean).map(escapeHtml).join(' &nbsp; ')}</div>
+          <div class="tiny">${escapeHtml(input.companyAddress || '')}</div>
+          ${input.companyGstin ? `<div class="tiny">GSTIN: ${escapeHtml(input.companyGstin)}</div>` : ''}
+          <div class="title">TAX INVOICE</div>
+        </div>
+        <table class="meta">
+          <tr><td>BILL NO.</td><td>${escapeHtml(input.billNo)}</td></tr>
+          <tr><td>CHALLAN</td><td>${escapeHtml(input.billNo)}</td></tr>
+          <tr><td>DATE</td><td>${escapeHtml(shortDate(input.billDate))}</td></tr>
+          <tr><td>ORDER NO.</td><td>${escapeHtml(input.orderNo || '')}</td></tr>
+        </table>
+      </header>
+      <section class="party">
+        <div>
+          <div><b>Buyer:</b> ${escapeHtml(input.partyName)}</div>
+          <div>${escapeHtml(input.address1 || '')}</div>
+          <div>${escapeHtml(input.address2 || '')}</div>
+          <div>${escapeHtml(buyerPlace)}${input.phone ? ` &nbsp; MO: ${escapeHtml(input.phone)}` : ''}</div>
+          <div>${input.partyGstin ? `GSTIN: ${escapeHtml(input.partyGstin)}` : ''} ${input.state ? `&nbsp; Place of Supply: ${escapeHtml(input.state)}` : ''}</div>
+          <div class="gap"><b>Consignee:</b> ${escapeHtml(input.haste || '')}</div>
+        </div>
+        <div>
+          <div><b>AGENT:</b> ${escapeHtml(input.broker || '')}</div>
+          <div class="gap"><b>L.R. NO.:</b> ${escapeHtml(input.lrNo || '')}</div>
+          <div><b>LR DATE:</b> ${escapeHtml(shortDate(input.lrDate))}</div>
+          <div><b>TRANSPORT:</b> ${escapeHtml(input.transport || '')}</div>
+          <div><b>STATION:</b> ${escapeHtml(input.station || input.city || '')}</div>
+        </div>
+        <div>
+          <div><b>WEIGHT:</b> 0.000</div>
+          <div><b>FREIGHT:</b> 0.00</div>
+          <div><b>CASE NO.:</b> ${escapeHtml(String(input.billNo || '').split('/')[0])}</div>
+          <div><b>HSN:</b> ${escapeHtml(input.hsn || '')}</div>
+        </div>
+      </section>
+      <table class="grid">
+        <thead>
+          <tr>
+            <th>SR.</th><th>ITEM</th><th>CATEGORY</th><th>PACK</th><th>CLOTH</th>
+            <th>PCS</th><th>CUT</th><th>MTS.</th><th>RATE</th><th>PER</th><th>AMOUNT</th>
+          </tr>
+        </thead>
+        <tbody>${itemRows}</tbody>
+      </table>
+      <section class="foot">
+        <div>${bank ? `<b>BANK A/C:</b> ${bank}` : ''}</div>
+        <div><b>REMARK:</b> ${escapeHtml(input.remarks || '')}</div>
+        <table class="sums">
+          <tr><td>SUB TOTAL</td><td class="n">${input.totalPcs || ''}</td><td class="n">${money(input.totalMts || 0)}</td><td class="n">${money(input.grossAmount)}</td></tr>
+          ${taxRows.map(row => `<tr><td colspan="3">${row}</td><td></td></tr>`).join('')}
+          <tr><td>DUE DAYS: ${Number(input.dueDays) || 0}</td><td colspan="2" class="c">Invoice Value</td><td class="n"><b>${money(input.netAmount)}</b></td></tr>
+        </table>
+        <div class="words">${escapeHtml(rupeesInWords(input.netAmount).toUpperCase())}</div>
+        <div class="sign">
+          <div class="terms">${terms.map(line => `<div>${escapeHtml(line)}</div>`).join('')}</div>
+          <div class="for">FOR ${escapeHtml(input.companyName || '')}<div class="auth">AUTH. SIGN</div></div>
+        </div>
+        ${input.irn ? `<div class="irn">IRN: ${escapeHtml(input.irn)}${input.ackNo ? ` &nbsp; Ack No: ${escapeHtml(input.ackNo)}` : ''}</div>` : ''}
+        ${input.ewayBillNo ? `<div>E-WAY BILL No: ${escapeHtml(input.ewayBillNo)}${input.transporterId ? ` &nbsp; Transporter ID: ${escapeHtml(input.transporterId)}` : ''}</div>` : ''}
+      </section>
+    </article>`;
+  const pageCss = `
+    @page { size: A4; margin: 8mm; }
+    .invoice { width: 194mm; margin: 0 auto; background: white; color: #111; font-family: Arial, Helvetica, sans-serif; font-size: 10px; padding: 8px 10px 12px; }
+    .head { display: grid; grid-template-columns: 78px 1fr 150px; gap: 8px; align-items: start; }
+    .firm { text-align: center; }
+    .firm h1 { margin: 2px 0; font-size: 20px; letter-spacing: 0.5px; }
+    .bless, .tiny { font-size: 9px; }
+    .title { margin-top: 4px; font-size: 13px; font-weight: 800; letter-spacing: 1px; }
+    .qr { width: 72px; height: 72px; }
+    .qr.empty { border: 1px solid #ddd; }
+    .meta { width: 100%; border-collapse: collapse; }
+    .meta td { border: 1px solid #111; padding: 2px 4px; font-size: 10px; }
+    .meta td:first-child { font-weight: 700; width: 62px; }
+    .party { display: grid; grid-template-columns: 1.4fr 1.2fr 0.8fr; gap: 8px; margin-top: 8px; border-top: 1px solid #111; border-bottom: 1px solid #111; padding: 6px 0; }
+    .gap { margin-top: 6px; }
+    .grid { width: 100%; border-collapse: collapse; margin-top: 6px; table-layout: fixed; }
+    .grid th, .grid td { border: 1px solid #222; padding: 3px 3px; font-size: 9px; vertical-align: top; }
+    .grid th { font-size: 8px; }
+    .grid th:nth-child(2), .grid td:nth-child(2) { width: 16%; }
+    .n { text-align: right; white-space: nowrap; }
+    .c { text-align: center; }
+    .sums { width: 100%; border-collapse: collapse; margin-top: 8px; border-top: 1px solid #111; }
+    .sums td { padding: 3px 4px; }
+    .sums td:last-child { width: 90px; }
+    .words { margin: 6px 0; font-weight: 700; letter-spacing: 0.3px; }
+    .sign { display: flex; justify-content: space-between; gap: 16px; margin-top: 6px; }
+    .for { text-align: right; min-width: 160px; font-weight: 700; }
+    .auth { margin-top: 28px; }
+    .irn { margin-top: 8px; word-break: break-all; font-size: 9px; }
+  `;
+  return mountPreview(`Sale bill ${input.billNo || ''}`.trim(), html, pageCss, 'A4 tax invoice · choose any printer');
 }
 
 export interface ChequePrintInput {

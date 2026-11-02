@@ -9,6 +9,7 @@ import {
 } from '../constants/erpTransactionTypes';
 import {
   getGstDocumentType,
+  getPostingRule,
   gstReturnSection,
   postingPartyAccountType,
   postingSummary,
@@ -1100,11 +1101,21 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
     const qrDataUrl = einvoice?.signedQr && einvoice.status !== 'cancelled'
       ? await QRCode.toDataURL(einvoice.signedQr, { margin: 0, width: 160 }).catch(() => '')
       : '';
+    const plainNo = savedBillLabel || plainBillNo(typeBillNumber);
+    const suffix = getPostingRule(transactionType)?.billSuffix;
+    const printedNo = suffix ? `${plainNo}/${suffix}` : plainNo;
+    const printable = lineItems.filter(line => (line.itemName || line.mainScreen || '').trim() && (toNum(line.pcs) > 0 || toNum(line.amount) > 0));
     const opened = openSaleBillPrint({
-      companyName,
-      billNo: savedBillLabel || plainBillNo(typeBillNumber),
+      companyName: profile?.tradeName || profile?.legalName || companyName,
+      companyAddress: [profile?.addressLine1, profile?.addressLine2, profile?.city, profile?.pincode].filter(Boolean).join(', '),
+      companyPhone: [profile?.phone, profile?.mobileNumber].filter(Boolean).join(', '),
+      companyGstin: profile?.gstNumber || '',
+      companyPan: profile?.panNumber || '',
+      companyUdyam: profile?.udyamNumber || '',
+      billNo: printedNo,
       billDate: orderDate,
       partyName,
+      partyGstin: partyGstin || customer?.gstNumber || '',
       address1: customer?.address || '',
       address2: customer?.addressLine2 || '',
       city: customer?.city || station,
@@ -1112,21 +1123,31 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
       pincode: customer?.pincode || '',
       phone: customer?.mobileNumber || '',
       broker: brokerName,
+      haste,
+      station,
       transport: transportName,
       lrNo,
+      lrDate,
       orderNo,
+      hsn: hsnCode || printable.find(line => line.hsnCode)?.hsnCode || '',
+      dueDays: Number(grace) || 0,
       remarks,
-      lines: lineItems
-        .filter(line => (line.itemName || line.mainScreen || '').trim() && (toNum(line.pcs) > 0 || toNum(line.amount) > 0))
-        .map(line => ({
-          itemName: line.itemName || line.mainScreen,
-          pcs: toNum(line.pcs),
-          cut: toNum(line.cut),
-          mts: toNum(line.mtsQty),
-          rate: toNum(line.rate),
-          amount: toNum(line.amount)
-        })),
+      terms: profile?.terms || '',
+      lines: printable.map(line => ({
+        itemName: line.itemName || line.mainScreen,
+        category: line.mainScreen || '',
+        pack: line.packing || '',
+        cloth: line.screenName && line.screenName !== line.itemName ? line.screenName : '',
+        pcs: toNum(line.pcs),
+        cut: toNum(line.cut),
+        mts: toNum(line.mtsQty),
+        rate: toNum(line.rate),
+        unit: line.unit || 'PCS',
+        amount: toNum(line.amount),
+        gstRate: toNum(line.gstRate)
+      })),
       totalPcs: totals.pcs,
+      totalMts: totals.mts,
       grossAmount: totals.amount,
       taxable: totals.taxable,
       cgst: totals.cgst,
@@ -1139,6 +1160,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
       irn: einvoice?.status === 'cancelled' ? '' : (einvoice?.irn || ''),
       ackNo: einvoice?.status === 'cancelled' ? '' : (einvoice?.ackNo || ''),
       ewayBillNo: ewayBill?.ewayBillNo || '',
+      transporterId: ewayBill?.transporterId || '',
       qrDataUrl
     });
     if (!opened) setError('Allow pop-ups for this site, then print the bill again.');
