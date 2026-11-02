@@ -225,6 +225,13 @@ export interface Order {
   ewayBillMode?: string | null;
   ewayBillDistance?: number | null;
   ewayBillTransporterId?: string | null;
+  einvoiceIrn?: string | null;
+  einvoiceAckNo?: string | null;
+  einvoiceAckDate?: string | null;
+  einvoiceSignedQr?: string | null;
+  einvoiceStatus?: string | null;
+  einvoiceMode?: string | null;
+  einvoiceCancelReason?: string | null;
   createdAt: string;
   customer?: Customer | null;
   design?: TextileDesign;
@@ -1187,6 +1194,13 @@ export interface CreditDebitNote {
   remarks?: string | null;
   isTally: boolean;
   status: string;
+  einvoiceIrn?: string | null;
+  einvoiceAckNo?: string | null;
+  einvoiceAckDate?: string | null;
+  einvoiceSignedQr?: string | null;
+  einvoiceStatus?: string | null;
+  einvoiceMode?: string | null;
+  einvoiceCancelReason?: string | null;
   createdAt: string;
   updatedAt: string;
 }

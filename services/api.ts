@@ -918,6 +918,91 @@ export interface EwayBillTransportInput {
   transDocDate?: string;
 }
 
+export interface EinvoiceInfo {
+  irn: string;
+  ackNo?: string | null;
+  ackDate?: string | null;
+  signedQr?: string | null;
+  status?: string | null;
+  mode?: string | null;
+  cancelReason?: string | null;
+}
+
+export interface EinvoicePreview {
+  mode: 'mock' | 'sandbox' | 'production';
+  gstDocumentType: string;
+  docNo: string;
+  docDate?: string | null;
+  partyName: string;
+  amount: number;
+  blockers: string[];
+  warnings: string[];
+  einvoice: EinvoiceInfo | null;
+  canCancel: boolean;
+  reasons: Array<{ value: string; label: string }>;
+}
+
+export interface EinvoiceListRow {
+  id: string;
+  partyName: string;
+  billNo: string;
+  date: string;
+  caseNo: string;
+  lrNo: string;
+  lrDate: string;
+  transportName: string;
+  irn: string;
+  status: string;
+  mode: string;
+  ackNo: string;
+  ewayBillNo: string;
+  station: string;
+  haste: string;
+  weight: number;
+  amount: number;
+  editPath: string;
+  eligible: boolean;
+  notNeeded: boolean;
+  missing: string[];
+}
+
+export const einvoicesApi = {
+  getSalesPreview: (id: string) => request<EinvoicePreview>(`/einvoices/sales/${id}`),
+  getNotePreview: (id: string) => request<EinvoicePreview>(`/einvoices/notes/${id}`),
+  generateSales: (id: string, dummy = false) => request<{ einvoice: EinvoiceInfo; docNo: string; warnings: string[]; mode: string }>(
+    `/einvoices/sales/${id}`,
+    { method: 'POST', body: JSON.stringify({ dummy }) }
+  ),
+  generateNote: (id: string, dummy = false) => request<{ einvoice: EinvoiceInfo; docNo: string; warnings: string[]; mode: string }>(
+    `/einvoices/notes/${id}`,
+    { method: 'POST', body: JSON.stringify({ dummy }) }
+  ),
+  cancelSales: (id: string, reason: string, remark: string) => request<{ einvoice: EinvoiceInfo | null; removed: boolean }>(
+    `/einvoices/sales/${id}/cancel`,
+    { method: 'POST', body: JSON.stringify({ reason, remark }) }
+  ),
+  cancelNote: (id: string, reason: string, remark: string) => request<{ einvoice: EinvoiceInfo | null; removed: boolean }>(
+    `/einvoices/notes/${id}/cancel`,
+    { method: 'POST', body: JSON.stringify({ reason, remark }) }
+  ),
+  listSales: (params: { fromDate: string; toDate: string; transactionType: string }) => {
+    const query = new URLSearchParams(params);
+    return request<{ rows: EinvoiceListRow[]; gstDocumentType: string; mode: string; companyName: string }>(`/einvoices/sales?${query}`);
+  },
+  listNotes: (params: { fromDate: string; toDate: string; transactionType: string }) => {
+    const query = new URLSearchParams(params);
+    return request<{ rows: EinvoiceListRow[]; gstDocumentType: string; mode: string; companyName: string }>(`/einvoices/notes?${query}`);
+  },
+  generateSalesBulk: (ids: string[], dummy = false) => request<{
+    generated: Array<{ id: string; billNo: string; already?: boolean; einvoice?: EinvoiceInfo }>;
+    missing: Array<{ id: string; billNo: string; details: string[] }>;
+  }>(`/einvoices/sales/bulk`, { method: 'POST', body: JSON.stringify({ ids, dummy }) }),
+  generateNotesBulk: (ids: string[], dummy = false) => request<{
+    generated: Array<{ id: string; billNo: string; already?: boolean; einvoice?: EinvoiceInfo }>;
+    missing: Array<{ id: string; billNo: string; details: string[] }>;
+  }>(`/einvoices/notes/bulk`, { method: 'POST', body: JSON.stringify({ ids, dummy }) })
+};
+
 export const ewayBillsApi = {
   /** Pre-flight for the Generate dialog: mode, prefill and what is still missing. */
   getSalesPreview: async (billId: string, transport?: EwayBillTransportInput) => {

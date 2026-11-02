@@ -349,6 +349,15 @@ model Order {
   ewayBillDistance      Int?
   ewayBillTransporterId String?
   ewayBillRaw           Json?
+  /// IRP e-invoice stamped on this sale bill. Cancelled live IRNs stay on the bill.
+  einvoiceIrn           String?
+  einvoiceAckNo         String?
+  einvoiceAckDate       DateTime?
+  einvoiceSignedQr      String?
+  einvoiceStatus        String?
+  einvoiceMode          String?
+  einvoiceCancelReason  String?
+  einvoiceRaw           Json?
   salesInvoices      SalesInvoice[]
   createdAt          DateTime       @default(now())
 
@@ -1131,6 +1140,14 @@ model CreditDebitNote {
   remarks           String?
   isTally           Boolean   @default(false)
   status            String    @default("posted")
+  einvoiceIrn           String?
+  einvoiceAckNo         String?
+  einvoiceAckDate       DateTime?
+  einvoiceSignedQr      String?
+  einvoiceStatus        String?
+  einvoiceMode          String?
+  einvoiceCancelReason  String?
+  einvoiceRaw           Json?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 

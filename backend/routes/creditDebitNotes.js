@@ -352,6 +352,20 @@ router.put('/:id', authenticateToken, requireActiveSubscription, [
       where: { id: req.params.id, userId: req.user.userId }
     });
     if (!existing) return res.status(404).json({ error: 'Note not found' });
+    if (existing.einvoiceIrn && existing.einvoiceStatus !== 'cancelled') {
+      const sameDay = (left, right) => new Date(left).toISOString().slice(0, 10) === new Date(right || left).toISOString().slice(0, 10);
+      const moneyMoved = (left, right) => Math.abs(Number(left) - Number(right)) > 0.05;
+      const changed = existing.partyName !== (req.body.partyName || existing.partyName)
+        || !sameDay(existing.noteDate, req.body.noteDate)
+        || moneyMoved(existing.taxableAmount, req.body.taxableAmount ?? existing.taxableAmount)
+        || moneyMoved(existing.netAmount, req.body.netAmount ?? existing.netAmount)
+        || String(existing.hsnSac || '') !== String(req.body.hsnSac != null ? req.body.hsnSac : (existing.hsnSac || ''));
+      if (changed) {
+        return res.status(409).json({
+          error: `This note has IRN ${existing.einvoiceIrn}. Party, date, HSN and amounts stay locked until that IRN is cancelled.`
+        });
+      }
+    }
 
     const noteType = parseNoteType(req.body.noteType || `${existing.noteKind}_note_${existing.noteSide}`);
     if (!noteType) {
@@ -395,6 +409,9 @@ router.delete('/:id', authenticateToken, requireActiveSubscription, async (req, 
       where: { id: req.params.id, userId: req.user.userId }
     });
     if (!existing) return res.status(404).json({ error: 'Note not found' });
+    if (existing.einvoiceIrn && existing.einvoiceStatus !== 'cancelled') {
+      return res.status(409).json({ error: `This note has IRN ${existing.einvoiceIrn}. Cancel that IRN before deleting the note.` });
+    }
     await prisma.creditDebitNote.delete({ where: { id: existing.id } });
     res.json({ success: true });
   } catch (error) {

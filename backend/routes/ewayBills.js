@@ -11,6 +11,7 @@ import {
   resolveEwayConfig,
   validateEwayBillPayload
 } from '../services/ewayBill.js';
+import { activeIrn, generateEwayFromIrn } from '../services/einvoice.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -173,8 +174,43 @@ async function generateOneSalesEway(userId, billId, body = {}) {
   }
   const config = resolveEwayConfig(loaded.profile);
   const transport = resolveTransport(loaded.bill, body, config);
-  const missing = localMissing(loaded, config);
+  const checked = buildEwayBillPayload({ ...loaded, transport });
+  const { errors: missing } = validateEwayBillPayload(checked);
+  if (text(transport.vehicleNo) && !checked.vehicleNo) {
+    missing.unshift(`Vehicle number ${text(transport.vehicleNo)} is not accepted. Use a real registration such as GJ05JX2427. The first two letters are the state code.`);
+  }
   if (missing.length) return { id: loaded.bill.id, billNo, missing };
+
+  if (activeIrn(loaded.bill)) {
+    try {
+      const result = await generateEwayFromIrn(loaded.bill, transport, config);
+      const saved = await prisma.order.update({
+        where: { id: loaded.bill.id },
+        data: {
+          ewayBillNo: result.ewayBillNo,
+          ewayBillDate: result.ewayBillDate,
+          ewayBillValidUpto: result.validUpto,
+          ewayBillStatus: 'generated',
+          ewayBillMode: loaded.bill.einvoiceMode || config.mode,
+          ewayBillDistance: Math.round(Number(transport.distance) || 0) || null,
+          ewayBillTransporterId: transport.transporterId || null,
+          ewayBillRaw: result.raw ?? undefined,
+          vehicleNo: transport.vehicleNo || loaded.bill.vehicleNo
+        }
+      });
+      return {
+        id: saved.id,
+        billNo,
+        ewayBillNo: saved.ewayBillNo,
+        ewayBillDate: saved.ewayBillDate,
+        alert: result.alert || '',
+        warnings: []
+      };
+    } catch (error) {
+      const message = text(error?.message) || 'The e-way bill was not generated from this IRN.';
+      return { id: loaded.bill.id, billNo, missing: message.split('\n').map(line => line.trim()).filter(Boolean) };
+    }
+  }
 
   const built = buildEwayBillPayload({ ...loaded, transport });
   const prepared = await finalizeEwayPayload(built, config);

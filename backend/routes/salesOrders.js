@@ -756,6 +756,25 @@ async function saveBill(req, res, existing = null) {
     lrNo: optionalString(req.body.lrNo)
   }));
 
+  if (existing?.einvoiceIrn && existing.einvoiceStatus !== 'cancelled') {
+    const oldLines = Array.isArray(existing.orderLines) ? existing.orderLines : [];
+    const sum = (rows, key) => rows.reduce((total, line) => total + (Number(line[key]) || 0), 0);
+    const hsn = (rows) => rows.map(line => String(line.hsnCode || '').trim()).sort().join('|');
+    const sameDay = (left, right) => new Date(left).toISOString().slice(0, 10) === new Date(right).toISOString().slice(0, 10);
+    const locked = [];
+    if (existing.customerId !== customer.id) locked.push('party');
+    if (!sameDay(existing.orderDate || existing.createdAt, toDate(req.body.orderDate))) locked.push('bill date');
+    if (existing.transactionType !== transactionType) locked.push('bill type');
+    if (Math.abs(sum(oldLines, 'taxableAmount') - sum(orderLines, 'taxableAmount')) > 0.05) locked.push('taxable value');
+    if (Math.abs(sum(oldLines, 'totalAmount') - sum(orderLines, 'totalAmount')) > 0.05) locked.push('invoice value');
+    if (hsn(oldLines) !== hsn(orderLines) || oldLines.length !== orderLines.length) locked.push('HSN or lines');
+    if (locked.length) {
+      return res.status(409).json({
+        error: `This bill has IRN ${existing.einvoiceIrn}. ${locked.join(', ')} stay locked until that IRN is cancelled.`
+      });
+    }
+  }
+
   const saved = await prisma.$transaction(async (tx) => {
     await rememberItemRateAndCut(tx, userId, orderLines);
     const data = {

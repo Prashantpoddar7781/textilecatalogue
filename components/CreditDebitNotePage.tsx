@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Loader2 } from 'lucide-react';
-import { bankEntriesApi, creditDebitNotesApi, customersApi, purchasesApi } from '../services/api';
+import { bankEntriesApi, creditDebitNotesApi, customersApi, EinvoiceInfo, purchasesApi } from '../services/api';
 import {
   CREDIT_DEBIT_NOTE_TYPES,
   CreditDebitNoteType,
@@ -21,6 +21,7 @@ import {
 import { BankPendingBill, CreditDebitNote, Customer, ErpSession, Supplier } from '../types';
 import { ErpFormShell } from './ErpFormShell';
 import { ErpSaveButton } from './ErpSaveButton';
+import { EinvoiceDialog } from './EinvoiceDialog';
 import { ErpTopMenu } from './ErpTopMenu';
 import { PhotoEntryButton } from './PhotoEntryButton';
 import { PhotoExtraction } from '../services/api';
@@ -53,6 +54,8 @@ const initialTypeFromUrl = (fallback?: CreditDebitNoteType) => {
 export const CreditDebitNotePage: React.FC<Props> = ({ noteType: initialNoteType, onBack, erpSession }) => {
   const [noteType, setNoteType] = useState<CreditDebitNoteType>(() => initialTypeFromUrl(initialNoteType));
   const [editingId, setEditingId] = useState<string | null>(() => new URLSearchParams(window.location.search).get('edit'));
+  const [einvoice, setEinvoice] = useState<EinvoiceInfo | null>(null);
+  const [einvoiceOpen, setEinvoiceOpen] = useState(false);
   const [companyName, setCompanyName] = useState('');
   const [businessState, setBusinessState] = useState('');
   const [voucherNumber, setVoucherNumber] = useState('');
@@ -217,6 +220,15 @@ export const CreditDebitNotePage: React.FC<Props> = ({ noteType: initialNoteType
     setAdjustBillId(note.adjustBillId || '');
     setRemarks(note.remarks || '');
     setIsTally(Boolean(note.isTally));
+    setEinvoice(note.einvoiceIrn ? {
+      irn: note.einvoiceIrn,
+      ackNo: note.einvoiceAckNo,
+      ackDate: note.einvoiceAckDate,
+      signedQr: note.einvoiceSignedQr,
+      status: note.einvoiceStatus,
+      mode: note.einvoiceMode,
+      cancelReason: note.einvoiceCancelReason
+    } : null);
   };
 
   useEffect(() => {
@@ -324,6 +336,7 @@ export const CreditDebitNotePage: React.FC<Props> = ({ noteType: initialNoteType
     if (!next) return;
     setNoteType(next);
     setEditingId(null);
+    setEinvoice(null);
     setError('');
     setSuccess('');
     resetAmounts();
@@ -349,6 +362,7 @@ export const CreditDebitNotePage: React.FC<Props> = ({ noteType: initialNoteType
 
   const startNew = () => {
     setEditingId(null);
+    setEinvoice(null);
     resetAmounts();
     applySeriesDefaults(noteType);
     const url = new URL(window.location.href);
@@ -665,6 +679,24 @@ export const CreditDebitNotePage: React.FC<Props> = ({ noteType: initialNoteType
           </div>
           {itc ? <p className="mt-3 text-xs font-semibold text-emerald-800">ITC: {itc}</p> : null}
           <div className="mt-4"><label className={labelClass}>Remark</label><textarea className={`${inputClass} min-h-[80px]`} value={remarks} onChange={e => setRemarks(e.target.value)} /></div>
+          {editingId && noteType.noteSide === 'sales' && (
+            <section className="mt-4 rounded-2xl border border-indigo-200 bg-indigo-50/60 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-xs font-black uppercase tracking-wide text-indigo-950">E-Invoice</h2>
+                  <p className="mt-0.5 text-[11px] font-semibold text-indigo-900">
+                    {einvoice && einvoice.status !== 'cancelled'
+                      ? `IRN on voucher ${voucherNumber || editingId}. Ack ${einvoice.ackNo || '—'}.`
+                      : 'Generate the e-invoice for this sales note. The master class is Credit Note or Debit Note.'}
+                  </p>
+                  {einvoice?.irn && <p className="mt-1 break-all font-mono text-[10px] font-bold">{einvoice.irn}</p>}
+                </div>
+                <button type="button" onClick={() => setEinvoiceOpen(true)} className="rounded-xl bg-indigo-700 px-4 py-2 text-xs font-black uppercase text-white">
+                  {einvoice && einvoice.status !== 'cancelled' ? 'View E-Invoice' : 'Generate E-Invoice'}
+                </button>
+              </div>
+            </section>
+          )}
           <ErpSaveButton
             saving={saving}
             label={editingId ? `Update ${noteType.label}` : `Save ${noteType.label}`}
@@ -672,6 +704,16 @@ export const CreditDebitNotePage: React.FC<Props> = ({ noteType: initialNoteType
           />
           </div>
           </ErpFormShell>
+          {einvoiceOpen && editingId && (
+            <EinvoiceDialog
+              source="note"
+              id={editingId}
+              docNo={voucherNumber || noteNumber || 'Note'}
+              existing={einvoice}
+              onClose={() => setEinvoiceOpen(false)}
+              onChanged={setEinvoice}
+            />
+          )}
         </section>
 
         <section className="mt-6 rounded-3xl border border-gray-100 bg-white p-5 shadow-sm">
