@@ -785,6 +785,7 @@ async function saveBill(req, res, existing = null) {
       challanNo: optionalString(req.body.challanNo),
       gstType: optionalString(req.body.gstType),
       lrNo: optionalString(req.body.lrNo),
+      lrDate: req.body.lrDate ? toDate(req.body.lrDate, null) : null,
       hasteGstin: optionalString(req.body.hasteGstin),
       vehicleNo: optionalString(req.body.vehicleNo),
       dhara: optionalNumber(req.body.dhara),
@@ -829,6 +830,110 @@ router.put('/bills/:id', authenticateToken, requireActiveSubscription, async (re
     });
     if (!existing) return res.status(404).json({ error: 'Sales bill not found' });
     await saveBill(req, res, existing);
+  } catch (error) {
+    next(error);
+  }
+});
+
+const LR_SALE_TYPES = new Set([
+  'FINISH SALES',
+  'FINISH SALES (GST)',
+  'GREY SALES',
+  'CASH SALES',
+  'FENT SALES',
+  'SALES CHALLAN',
+  'SALES GOODS RETURN'
+]);
+
+const dateOnly = (value) => {
+  if (!value) return null;
+  const text = String(value).slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return null;
+  const date = new Date(`${text}T00:00:00.000Z`);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const ymd = (value) => (value ? new Date(value).toISOString().slice(0, 10) : '');
+
+router.get('/lr-entry', authenticateToken, requireActiveSubscription, async (req, res, next) => {
+  try {
+    const userId = req.user.userId;
+    const requested = String(req.query.transactionType || 'FINISH SALES (GST)').trim();
+    const transactionType = LR_SALE_TYPES.has(requested) ? requested : 'FINISH SALES (GST)';
+    const from = dateOnly(req.query.fromDate);
+    const to = dateOnly(req.query.toDate);
+    const orderDate = {};
+    if (from) orderDate.gte = from;
+    if (to) orderDate.lte = new Date(`${ymd(to)}T23:59:59.999Z`);
+    const [company, bills] = await Promise.all([
+      getCompanyContext(userId),
+      prisma.order.findMany({
+        where: {
+          userId,
+          manualType: 'erp_sales',
+          transactionType,
+          ...(Object.keys(orderDate).length ? { orderDate } : {})
+        },
+        include: { customer: { select: { mobileNumber: true } } },
+        orderBy: [{ orderDate: 'asc' }, { typeBillNumber: 'asc' }]
+      })
+    ]);
+    const rows = bills.map(bill => {
+      const lines = Array.isArray(bill.orderLines) ? bill.orderLines : [];
+      const weight = roundMoney(lines.reduce((sum, line) => sum + (Number(line.mtsQty) || 0), 0));
+      const amount = roundMoney(lines.reduce((sum, line) => sum + (Number(line.totalAmount) || Number(line.amount) || 0), 0));
+      const billNo = bill.typeBillNumber || bill.invoiceNumber || '';
+      return {
+        id: bill.id,
+        partyName: bill.buyerName || '',
+        billNo: String(billNo),
+        billDate: ymd(bill.orderDate || bill.createdAt),
+        caseNo: String(billNo),
+        lrNo: bill.lrNo || lines[0]?.lrNo || '',
+        lrDate: ymd(bill.lrDate),
+        weight,
+        freight: 0,
+        transportName: bill.transportName || '',
+        vehicleNo: bill.vehicleNo || '',
+        ewayBillNo: bill.ewayBillNo || '',
+        station: bill.station || '',
+        haste: bill.haste || '',
+        brokerName: bill.agentName || '',
+        phone: bill.customer?.mobileNumber || bill.buyerPhone || '',
+        amount,
+        remarks: bill.remarks || ''
+      };
+    });
+    res.json({ companyName: company.companyName, rows });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.put('/lr-entry', authenticateToken, requireActiveSubscription, async (req, res, next) => {
+  try {
+    const userId = req.user.userId;
+    const rows = Array.isArray(req.body?.rows) ? req.body.rows.slice(0, 400) : [];
+    let updated = 0;
+    await prisma.$transaction(async (tx) => {
+      for (const row of rows) {
+        const id = String(row?.id || '');
+        if (!id) continue;
+        const current = await tx.order.findFirst({
+          where: { id, userId, manualType: 'erp_sales' },
+          select: { id: true, orderLines: true }
+        });
+        if (!current) continue;
+        const lrNo = optionalString(row.lrNo);
+        const lrDate = dateOnly(row.lrDate);
+        const orderLines = Array.isArray(current.orderLines)
+          ? current.orderLines.map(line => ({ ...line, lrNo }))
+          : current.orderLines;
+        await tx.order.update({ where: { id }, data: { lrNo, lrDate, orderLines } });
+        updated += 1;
+      }
+    }, { timeout: 30000, maxWait: 10000 });
+    res.json({ updated });
   } catch (error) {
     next(error);
   }

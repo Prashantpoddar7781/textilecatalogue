@@ -212,6 +212,7 @@ export interface Order {
   challanNo?: string | null;
   gstType?: string | null;
   lrNo?: string | null;
+  lrDate?: string | null;
   hasteGstin?: string | null;
   vehicleNo?: string | null;
   dhara?: number | null;

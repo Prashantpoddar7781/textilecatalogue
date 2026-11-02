@@ -268,6 +268,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [transportName, setTransportName] = useState('');
   const [vehicleNo, setVehicleNo] = useState('');
   const [lrNo, setLrNo] = useState('');
+  const [lrDate, setLrDate] = useState('');
   const [haste, setHaste] = useState('');
   const [hasteGstin, setHasteGstin] = useState('');
   const [dhara, setDhara] = useState('0');
@@ -500,6 +501,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
     setTransportName(bill.transportName || '');
     setVehicleNo(bill.vehicleNo || '');
     setLrNo(bill.lrNo || '');
+    setLrDate(bill.lrDate ? String(bill.lrDate).slice(0, 10) : '');
     setHaste(bill.haste || '');
     setHasteGstin(bill.hasteGstin || '');
     setDhara(String(bill.dhara ?? 0));
@@ -981,6 +983,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
     transportName,
     vehicleNo,
     lrNo,
+    lrDate: lrDate || undefined,
     haste,
     hasteGstin,
     dhara: toNum(dhara),
@@ -1057,6 +1060,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
           setOrderNo('');
           setRemarks('');
           setLrNo('');
+          setLrDate('');
           void bankEntriesApi.getNextTypeBillNumber({ transactionType, source: 'order' })
             .then(resultBill => setTypeBillNumber(resultBill.typeBillNumber));
         }
@@ -1312,6 +1316,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
               <label><span className={labelClass}>Transport</span><input className={inputClass} value={transportName} onChange={e => setTransportName(e.target.value)} /></label>
               <label><span className={labelClass}>Vehicle No.</span><input className={inputClass} value={vehicleNo} onChange={e => setVehicleNo(e.target.value)} /></label>
               {!isSalesOrder && <label><span className={labelClass}>LR No. / AWB</span><input className={inputClass} value={lrNo} onChange={e => setLrNo(e.target.value)} /></label>}
+              {!isSalesOrder && <label><span className={labelClass}>LR Date</span><input type="date" className={inputClass} value={lrDate} onChange={e => setLrDate(e.target.value)} /></label>}
               <label><span className={labelClass}>Screen Series</span><input className={inputClass} value={screenSeries} onChange={e => setScreenSeries(e.target.value)} /></label>
               <label><span className={labelClass}>Party GSTIN</span><input className={inputClass} value={partyGstin} onChange={e => setPartyGstin(e.target.value)} /></label>
               {isSalesOrder && <label><span className={labelClass}>Delivery Due Date</span><input type="date" className={inputClass} value={expectedDate} onChange={e => setExpectedDate(e.target.value)} /></label>}

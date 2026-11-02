@@ -860,8 +860,42 @@ export const salesOrdersApi = {
     return request<{ rows: Array<Record<string, any>>; totals: Record<string, number> }>(
       `/sales-orders/finish-report?${query.toString()}`
     );
+  },
+  getLrEntry: async (params: { transactionType?: string; fromDate?: string; toDate?: string }) => {
+    const query = new URLSearchParams();
+    if (params.transactionType) query.set('transactionType', params.transactionType);
+    if (params.fromDate) query.set('fromDate', params.fromDate);
+    if (params.toDate) query.set('toDate', params.toDate);
+    return request<{ companyName: string; rows: LrEntryRow[] }>(`/sales-orders/lr-entry?${query.toString()}`);
+  },
+  saveLrEntry: async (rows: Array<{ id: string; lrNo: string; lrDate: string }>) => {
+    return request<{ updated: number }>('/sales-orders/lr-entry', {
+      method: 'PUT',
+      body: JSON.stringify({ rows })
+    });
   }
 };
+
+export interface LrEntryRow {
+  id: string;
+  partyName: string;
+  billNo: string;
+  billDate: string;
+  caseNo: string;
+  lrNo: string;
+  lrDate: string;
+  weight: number;
+  freight: number;
+  transportName: string;
+  vehicleNo: string;
+  ewayBillNo: string;
+  station: string;
+  haste: string;
+  brokerName: string;
+  phone: string;
+  amount: number;
+  remarks: string;
+}
 
 export interface EwayBillInfo {
   ewayBillNo: string;

@@ -334,6 +334,7 @@ model Order {
   challanNo          String?
   gstType            String?
   lrNo               String?
+  lrDate             DateTime?
   hasteGstin         String?
   vehicleNo          String?
   dhara              Float?

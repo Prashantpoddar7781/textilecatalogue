@@ -43,6 +43,7 @@ import { SalesOrderPage } from './components/SalesOrderPage';
 import { SalesOrderReportPage } from './components/SalesOrderReportPage';
 import { FinishSalesReportPage } from './components/FinishSalesReportPage';
 import { BulkEwayPage } from './components/BulkEwayPage';
+import { LrEntryPage } from './components/LrEntryPage';
 import { CommissionPage } from './components/CommissionPage';
 import { CommissionReportPage } from './components/CommissionReportPage';
 import { FinishPurchaseReportPage } from './components/FinishPurchaseReportPage';
@@ -168,6 +169,7 @@ const App: React.FC = () => {
   const erpNotesMatch = pathname.match(/^\/erp\/notes\/([^/]+)\/?$/);
   const erpJournalMatch = pathname.match(/^\/erp\/journal\/?$/);
   const erpEwayMatch = pathname.match(/^\/erp\/eway\/?$/);
+  const erpLrEntryMatch = pathname.match(/^\/erp\/lr-entry\/?$/);
   const erpCommissionMatch = pathname.match(/^\/erp\/commission\/?$/);
   const erpCommissionReportMatch = pathname.match(/^\/erp\/reports\/commission\/?$/);
   const isErpRoute = Boolean(
@@ -179,7 +181,7 @@ const App: React.FC = () => {
     || erpFinishPurchaseReportMatch || erpExpensesReportMatch || erpFinalAccountsReportMatch
     || erpAccountsMasterMatch
     || erpOutstandingReportMatch
-    || erpNotesHubMatch || erpNotesMatch || erpJournalMatch || erpEwayMatch || erpCommissionMatch || erpCommissionReportMatch || supplierLedgerMatch
+    || erpNotesHubMatch || erpNotesMatch || erpJournalMatch || erpEwayMatch || erpLrEntryMatch || erpCommissionMatch || erpCommissionReportMatch || supplierLedgerMatch
   );
   const shareStatsMatch = pathname.match(/^\/share-stats\/?$/);
   const reportsMatch = pathname.match(/^\/reports\/?$/);
@@ -1288,6 +1290,15 @@ const App: React.FC = () => {
   if (erpEwayMatch) {
     return (
       <BulkEwayPage
+        erpSession={erpSession}
+        onBack={() => { window.location.href = '/erp'; }}
+      />
+    );
+  }
+
+  if (erpLrEntryMatch) {
+    return (
+      <LrEntryPage
         erpSession={erpSession}
         onBack={() => { window.location.href = '/erp'; }}
       />
