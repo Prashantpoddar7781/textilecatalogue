@@ -26,6 +26,7 @@ import {
 } from '../constants/bankCashSeries';
 import { parseNoteType } from '../constants/creditDebitNoteTypes';
 import { AccountsInformationDialog } from './AccountsInformationDialog';
+import { openChequePrint } from '../utils/stationeryPrint';
 import { ErpFormShell } from './ErpFormShell';
 import { ErpPageBack } from './ErpPageBack';
 import { PhotoEntryButton } from './PhotoEntryButton';
@@ -1162,6 +1163,27 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                 <div>
                   <label className={labelClass}>Chq. No.</label>
                   <input className={inputClass} value={form.chequeNumber} onChange={e => setForm(f => ({ ...f, chequeNumber: e.target.value }))} />
+                  {form.entryType === 'payment' && form.paymentMode === 'bank' && (
+                    <button
+                      type="button"
+                      className="mt-2 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-[10px] font-black uppercase text-slate-800 disabled:opacity-40"
+                      disabled={!form.partyName.trim() || !(Number(form.amount) > 0)}
+                      onClick={() => {
+                        const party = accountParties.find(row => row.name.trim().toLowerCase() === form.partyName.trim().toLowerCase());
+                        const opened = openChequePrint({
+                          payee: form.partyName,
+                          date: form.chequeDate || form.entryDate,
+                          amount: Number(form.amount) || 0,
+                          remark: form.remarks,
+                          address: [party?.address, party?.city].filter(Boolean).join(', '),
+                          phone: party?.mobileNumber || ''
+                        });
+                        if (!opened) setError('Allow pop-ups for this site, then print the cheque again.');
+                      }}
+                    >
+                      Print cheque
+                    </button>
+                  )}
                 </div>
                 <div>
                   <label className={labelClass}>Chq. Date</label>

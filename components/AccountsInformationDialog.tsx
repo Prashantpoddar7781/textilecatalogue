@@ -10,6 +10,7 @@ import {
 } from '../constants/accountTypes';
 import { INDIAN_STATES } from '../constants/creditDebitNoteTypes';
 import { partiesApi } from '../services/api';
+import { openEnvelopePrint } from '../utils/stationeryPrint';
 import { AccountParty } from '../types';
 
 export type { PartyEntryContext };
@@ -309,6 +310,25 @@ export const AccountsInformationDialog: React.FC<Props> = ({
         </div>
 
         <div className="flex flex-wrap items-center justify-end gap-2 border-t bg-slate-50 px-4 py-3">
+          <button
+            type="button"
+            disabled={!name.trim()}
+            onClick={() => {
+              const opened = openEnvelopePrint({
+                name,
+                mobile: mobileNumber,
+                address1: address,
+                address2: addressLine2,
+                city,
+                pincode,
+                state
+              });
+              if (!opened) setError('Allow pop-ups for this site, then print the envelope again.');
+            }}
+            className="mr-auto rounded-xl border bg-white px-4 py-2 text-xs font-black uppercase text-slate-800 disabled:opacity-40"
+          >
+            Print envelope
+          </button>
           <button type="button" onClick={onClose} className="rounded-xl border bg-white px-4 py-2 text-xs font-black uppercase text-slate-700">
             Cancel
           </button>

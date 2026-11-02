@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, Plus, Trash2, X } from 'lucide-react';
-import { EinvoiceInfo, EwayBillInfo, bankEntriesApi, ordersApi, partiesApi, salesOrdersApi } from '../services/api';
+import { EinvoiceInfo, EwayBillInfo, bankEntriesApi, invoicesApi, ordersApi, partiesApi, salesOrdersApi } from '../services/api';
 import { AccountParty, Customer, ErpSession, Order, SalesItemMaster, SalesLineItem, SalesOrder } from '../types';
 import {
   DEFAULT_SALES_TRANSACTION_TYPE,
@@ -18,6 +18,8 @@ import { AccountsInformationDialog, AddPartyConfirmDialog } from './AccountsInfo
 import { ErpFormShell } from './ErpFormShell';
 import { EwayBillDialog } from './EwayBillDialog';
 import { EinvoiceDialog } from './EinvoiceDialog';
+import { openSaleBillPrint } from '../utils/stationeryPrint';
+import QRCode from 'qrcode';
 import { ErpSaveButton } from './ErpSaveButton';
 import { ErpPageBack } from './ErpPageBack';
 import { PhotoEntryButton } from './PhotoEntryButton';
@@ -1092,6 +1094,56 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
     }
   };
 
+  const printCurrentBill = async () => {
+    const profile = await invoicesApi.getProfile().then(result => result.profile).catch(() => null);
+    const customer = customers.find(row => row.id === customerId);
+    const qrDataUrl = einvoice?.signedQr && einvoice.status !== 'cancelled'
+      ? await QRCode.toDataURL(einvoice.signedQr, { margin: 0, width: 160 }).catch(() => '')
+      : '';
+    const opened = openSaleBillPrint({
+      companyName,
+      billNo: savedBillLabel || plainBillNo(typeBillNumber),
+      billDate: orderDate,
+      partyName,
+      address1: customer?.address || '',
+      address2: customer?.addressLine2 || '',
+      city: customer?.city || station,
+      state: customer?.state || state,
+      pincode: customer?.pincode || '',
+      phone: customer?.mobileNumber || '',
+      broker: brokerName,
+      transport: transportName,
+      lrNo,
+      orderNo,
+      remarks,
+      lines: lineItems
+        .filter(line => (line.itemName || line.mainScreen || '').trim() && (toNum(line.pcs) > 0 || toNum(line.amount) > 0))
+        .map(line => ({
+          itemName: line.itemName || line.mainScreen,
+          pcs: toNum(line.pcs),
+          cut: toNum(line.cut),
+          mts: toNum(line.mtsQty),
+          rate: toNum(line.rate),
+          amount: toNum(line.amount)
+        })),
+      totalPcs: totals.pcs,
+      grossAmount: totals.amount,
+      taxable: totals.taxable,
+      cgst: totals.cgst,
+      sgst: totals.sgst,
+      igst: totals.igst,
+      netAmount: totals.net,
+      bankName: profile?.bankName || '',
+      bankAccount: profile?.bankAccount || '',
+      bankIfsc: profile?.bankIfsc || '',
+      irn: einvoice?.status === 'cancelled' ? '' : (einvoice?.irn || ''),
+      ackNo: einvoice?.status === 'cancelled' ? '' : (einvoice?.ackNo || ''),
+      ewayBillNo: ewayBill?.ewayBillNo || '',
+      qrDataUrl
+    });
+    if (!opened) setError('Allow pop-ups for this site, then print the bill again.');
+  };
+
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#F6F7FB]">
@@ -1600,6 +1652,16 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
             </section>
           )}
 
+          {!isSalesOrder && (
+            <button
+              type="button"
+              onClick={() => void printCurrentBill()}
+              disabled={!partyName.trim() && lineItems.every(line => !toNum(line.amount) && !toNum(line.pcs))}
+              className="mt-4 w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-black text-slate-800 disabled:opacity-40"
+            >
+              Print bill
+            </button>
+          )}
           <ErpSaveButton
             saving={saving}
             label={isEditMode
