@@ -71,10 +71,15 @@ function escapeHtml(value: string) {
     .replace(/>/g, '&gt;');
 }
 
-export function openStationeryPreview(title: string, lines: StationeryLine[], extras = '') {
-  const page = window.open('', '_blank', 'noopener,width=920,height=1000');
-  if (!page) return false;
-  const body = lines.map(line => {
+const SHEET_CSS = `
+  @page { size: 8in 12in; margin: 0; }
+  html, body { margin: 0; }
+  .sheet { position: relative; width: 8in; height: 12in; background: white; overflow: hidden; font-family: "Courier New", Courier, monospace; }
+  .field { position: absolute; white-space: pre; line-height: 1; }
+`;
+
+function sheetMarkup(lines: StationeryLine[], extras = '') {
+  const fields = lines.map(line => {
     const pitch = line.pitch || 10;
     const columns = pitch === 17 ? 136 : pitch === 6 ? 48 : 80;
     const left = ((line.col - 1) * (8 / columns)).toFixed(3);
@@ -83,28 +88,49 @@ export function openStationeryPreview(title: string, lines: StationeryLine[], ex
     const weight = line.bold || pitch === 6 ? 700 : 500;
     return `<div class="field" style="left:${left}in;top:${top}in;font-size:${size};font-weight:${weight}">${escapeHtml(line.text)}</div>`;
   }).join('');
-  page.document.write(`<!doctype html><html><head><title>${escapeHtml(title)}</title>
-    <style>
-      @page { size: 8in 12in; margin: 0; }
-      body { margin: 0; background: #e5e7eb; color: #111; }
-      .bar { position: sticky; top: 0; display: flex; gap: 12px; align-items: center; padding: 10px 14px; background: #111827; color: white; font-family: Arial, sans-serif; }
-      .bar button { border: 0; border-radius: 8px; background: white; color: #111; font-weight: 800; padding: 8px 14px; cursor: pointer; }
-      .bar span { font-size: 12px; font-weight: 600; }
-      .sheet { position: relative; width: 8in; height: 12in; margin: 16px auto; background: white; box-shadow: 0 8px 24px rgba(0,0,0,.15); overflow: hidden; font-family: "Courier New", Courier, monospace; }
-      .field { position: absolute; white-space: pre; line-height: 1; }
-      @media print {
-        body { background: white; }
-        .bar { display: none; }
-        .sheet { margin: 0; box-shadow: none; }
-      }
-    </style></head><body>
-    <div class="bar">
-      <button type="button" onclick="window.print()">Print</button>
-      <span>${escapeHtml(title)} · 8 × 12 inch · choose any printer</span>
+  return `<div class="sheet">${fields}${extras}</div>`;
+}
+
+/** Print from a hidden frame on this page. A new window is blocked once any loading has happened. */
+function printSheet(markup: string) {
+  const frame = document.createElement('iframe');
+  frame.setAttribute('aria-hidden', 'true');
+  frame.style.cssText = 'position:fixed;left:0;top:0;width:0;height:0;border:0;';
+  document.body.appendChild(frame);
+  const doc = frame.contentDocument || frame.contentWindow?.document;
+  const win = frame.contentWindow;
+  if (!doc || !win) {
+    frame.remove();
+    return;
+  }
+  doc.open();
+  doc.write(`<!doctype html><html><head><title>Print</title><style>${SHEET_CSS}</style></head><body>${markup}</body></html>`);
+  doc.close();
+  window.setTimeout(() => {
+    win.focus();
+    win.print();
+    window.setTimeout(() => frame.remove(), 1500);
+  }, 200);
+}
+
+export function openStationeryPreview(title: string, lines: StationeryLine[], extras = '') {
+  document.getElementById('stationery-preview')?.remove();
+  const markup = sheetMarkup(lines, extras);
+  const root = document.createElement('div');
+  root.id = 'stationery-preview';
+  root.style.cssText = 'position:fixed;inset:0;z-index:100000;background:#e5e7eb;overflow:auto;color:#111;';
+  root.innerHTML = `
+    <style>${SHEET_CSS} .sheet { margin: 0 auto; box-shadow: 0 8px 24px rgba(0,0,0,.15); }</style>
+    <div style="position:sticky;top:0;display:flex;gap:12px;align-items:center;padding:10px 14px;background:#111827;color:white;font-family:Arial,sans-serif;">
+      <button type="button" data-print style="border:0;border-radius:8px;background:white;color:#111;font-weight:800;padding:8px 14px;cursor:pointer;">Print</button>
+      <button type="button" data-close style="border:0;border-radius:8px;background:#374151;color:white;font-weight:800;padding:8px 14px;cursor:pointer;">Close</button>
+      <span style="font-size:12px;font-weight:600;">${escapeHtml(title)} · 8 × 12 inch · choose any printer</span>
     </div>
-    <div class="sheet">${body}${extras}</div>
-    </body></html>`);
-  page.document.close();
+    <div style="padding:16px 0;">${markup}</div>
+  `;
+  root.querySelector('[data-close]')?.addEventListener('click', () => root.remove());
+  root.querySelector('[data-print]')?.addEventListener('click', () => printSheet(markup));
+  document.body.appendChild(root);
   return true;
 }
 
