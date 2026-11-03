@@ -90,27 +90,24 @@ function sheetMarkup(lines: StationeryLine[], extras = '') {
   return `<div class="sheet">${fields}${extras}</div>`;
 }
 
-/** Print from a hidden frame on this page. A new window is blocked once any loading has happened. */
-function printSheet(markup: string, pageCss = '@page { size: 8in 12in; margin: 0; }') {
-  const frame = document.createElement('iframe');
-  frame.setAttribute('aria-hidden', 'true');
-  frame.style.cssText = 'position:fixed;left:-1200px;top:0;width:210mm;height:297mm;border:0;';
-  document.body.appendChild(frame);
-  const doc = frame.contentDocument || frame.contentWindow?.document;
-  const win = frame.contentWindow;
-  if (!doc || !win) {
-    frame.remove();
-    return;
+const PRINT_ONCE = `
+  @media print {
+    html, body { margin: 0 !important; padding: 0 !important; background: #fff !important; }
+    body > *:not(#stationery-preview) { display: none !important; }
+    iframe { display: none !important; }
+    #stationery-preview {
+      position: absolute !important; left: 0 !important; top: 0 !important;
+      inset: auto !important; width: 100% !important; height: auto !important; overflow: hidden !important;
+      background: #fff !important; z-index: auto !important;
+    }
+    #stationery-preview .no-print, #stationery-preview .sheet-pad { padding: 0 !important; }
+    #stationery-preview .no-print { display: none !important; }
+    #stationery-preview .invoice {
+      width: 100% !important; max-width: 100% !important; min-height: 0 !important; height: auto !important;
+      margin: 0 !important; box-shadow: none !important; overflow: hidden !important;
+    }
   }
-  doc.open();
-  doc.write(`<!doctype html><html><head><title>Print</title><style>html,body{margin:0;padding:0;background:#fff}${pageCss}${SHEET_CSS}</style></head><body><div id="stationery-preview">${markup}</div></body></html>`);
-  doc.close();
-  window.setTimeout(() => {
-    win.focus();
-    win.print();
-    window.setTimeout(() => frame.remove(), 1500);
-  }, 200);
-}
+`;
 
 function mountPreview(title: string, markup: string, pageCss: string, hint = '8 × 12 inch · choose any printer') {
   document.getElementById('stationery-preview')?.remove();
@@ -118,16 +115,18 @@ function mountPreview(title: string, markup: string, pageCss: string, hint = '8 
   root.id = 'stationery-preview';
   root.style.cssText = 'position:fixed;inset:0;z-index:100000;background:#e5e7eb;overflow:auto;color:#111;';
   root.innerHTML = `
-    <style>${SHEET_CSS}${pageCss} .sheet, .invoice { margin: 0 auto; box-shadow: 0 8px 24px rgba(0,0,0,.15); }</style>
-    <div style="position:sticky;top:0;display:flex;gap:12px;align-items:center;padding:10px 14px;background:#111827;color:white;font-family:Arial,sans-serif;z-index:1;">
+    <style>${SHEET_CSS}${pageCss}${PRINT_ONCE}
+      .sheet, .invoice { margin: 0 auto; box-shadow: 0 8px 24px rgba(0,0,0,.15); }
+    </style>
+    <div class="no-print" style="position:sticky;top:0;display:flex;gap:12px;align-items:center;padding:10px 14px;background:#111827;color:white;font-family:Arial,sans-serif;z-index:1;">
       <button type="button" data-print style="border:0;border-radius:8px;background:white;color:#111;font-weight:800;padding:8px 14px;cursor:pointer;">Print</button>
       <button type="button" data-close style="border:0;border-radius:8px;background:#374151;color:white;font-weight:800;padding:8px 14px;cursor:pointer;">Close</button>
       <span style="font-size:12px;font-weight:600;">${escapeHtml(title)} · ${escapeHtml(hint)}</span>
     </div>
-    <div style="padding:16px 0;">${markup}</div>
+    <div class="sheet-pad" style="padding:16px 0;">${markup}</div>
   `;
   root.querySelector('[data-close]')?.addEventListener('click', () => root.remove());
-  root.querySelector('[data-print]')?.addEventListener('click', () => printSheet(markup, pageCss));
+  root.querySelector('[data-print]')?.addEventListener('click', () => window.print());
   document.body.appendChild(root);
   return true;
 }
