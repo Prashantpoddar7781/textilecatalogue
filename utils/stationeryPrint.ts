@@ -96,16 +96,21 @@ const PRINT_ONCE = `
     body > *:not(#stationery-preview) { display: none !important; }
     iframe { display: none !important; }
     #stationery-preview {
-      position: absolute !important; left: 0 !important; top: 0 !important;
-      inset: auto !important; width: 100% !important; height: auto !important; overflow: hidden !important;
-      background: #fff !important; z-index: auto !important;
+      position: static !important; inset: auto !important; left: auto !important; top: auto !important;
+      width: auto !important; height: auto !important; overflow: visible !important;
+      background: #fff !important; z-index: auto !important; display: block !important;
     }
-    #stationery-preview .no-print, #stationery-preview .sheet-pad { padding: 0 !important; }
+    #stationery-preview .no-print, #stationery-preview .sheet-pad { padding: 0 !important; margin: 0 !important; }
     #stationery-preview .no-print { display: none !important; }
     #stationery-preview .invoice {
-      width: 100% !important; max-width: 100% !important; min-height: 0 !important; height: auto !important;
+      width: 100% !important; max-width: 100% !important;
       margin: 0 !important; box-shadow: none !important; overflow: hidden !important;
     }
+    #stationery-preview .invoice.full {
+      height: 270mm !important; min-height: 270mm !important; max-height: 270mm !important;
+    }
+    #stationery-preview .lines { flex: 1 1 auto !important; min-height: 0 !important; display: flex !important; flex-direction: column !important; }
+    #stationery-preview .ruler { flex: 1 1 auto !important; min-height: 0 !important; }
   }
 `;
 
@@ -338,13 +343,13 @@ export function openSaleBillPrint(input: SaleBillPrintInput) {
       </section>
     </article>`;
   const pageCss = `
-    @page { size: A4; margin: 8mm; }
+    @page { size: A4 portrait; margin: 8mm; }
     #stationery-preview .invoice {
       width: 194mm; max-width: 100%; box-sizing: border-box; margin: 0 auto; background: #fff; color: #111;
       font-family: Arial, Helvetica, sans-serif; font-size: 11px; line-height: 1.25;
       padding: 0; display: flex; flex-direction: column; overflow: hidden;
     }
-    #stationery-preview .invoice.full { min-height: 270mm; }
+    #stationery-preview .invoice.full { height: 270mm; min-height: 270mm; }
     #stationery-preview .head { display: grid; grid-template-columns: 18mm minmax(0, 1fr) 42mm; gap: 3mm; align-items: start; }
     #stationery-preview .firm, #stationery-preview .party, #stationery-preview .tiny, #stationery-preview .words, #stationery-preview .terms {
       overflow-wrap: anywhere;
@@ -396,13 +401,11 @@ export function openSaleBillPrint(input: SaleBillPrintInput) {
     #stationery-preview .checks { display: flex; justify-content: space-between; margin-top: 16px; font-weight: 700; }
     #stationery-preview .irn { margin-top: 4px; word-break: break-all; font-size: 9px; }
     @media print {
-      html, body, #stationery-preview { width: auto; margin: 0; padding: 0; background: #fff; }
-      #stationery-preview .invoice {
-        width: auto; max-width: 100%; min-height: 0; height: auto; margin: 0;
-        box-shadow: none; overflow: hidden;
+      #stationery-preview .invoice.full {
+        width: 100%; height: 270mm; min-height: 270mm; max-height: 270mm;
+        page-break-inside: avoid; break-inside: avoid; page-break-after: avoid; break-after: avoid;
       }
-      #stationery-preview .invoice.full { min-height: 0; }
-      #stationery-preview .lines { min-height: 120mm; }
+      #stationery-preview .lines { min-height: 0; }
     }
   `;
   return mountPreview(`Sale bill ${input.billNo || ''}`.trim(), html, pageCss, 'A4 tax invoice · choose any printer');
