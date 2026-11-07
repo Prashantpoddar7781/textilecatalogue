@@ -90,59 +90,50 @@ function sheetMarkup(lines: StationeryLine[], extras = '') {
   return `<div class="sheet">${fields}${extras}</div>`;
 }
 
-const PRINT_STYLE_ID = 'stationery-print-style';
-
 /**
- * Print the bill already on screen. A second hidden copy is what the printer
- * squeezes down the right edge, so nothing else is added to the page.
+ * Open a page that is only the sheet. Printing the ERP screen is what shrinks
+ * the bill and paints a second copy down the right edge.
  */
-function printCss(markup: string, pageCss: string) {
+function printInOwnWindow(title: string, markup: string, pageCss: string) {
   const invoice = markup.includes('class="invoice');
-  const fit = invoice
-    ? `
-    @page { size: A4 portrait; margin: 0; }
-    @media print {
-      html, body {
-        margin: 0 !important; padding: 0 !important; background: #fff !important;
-        width: 210mm !important; height: 297mm !important; overflow: hidden !important;
-      }
-      body > *:not(#stationery-preview) { display: none !important; }
-      #stationery-preview {
-        display: block !important; position: absolute !important;
-        inset: auto !important; left: 0 !important; top: 0 !important; right: auto !important; bottom: auto !important;
-        width: 210mm !important; height: 296mm !important; max-height: 296mm !important;
-        margin: 0 !important; padding: 0 !important; overflow: hidden !important;
-        background: #fff !important; transform: none !important;
-      }
-      #stationery-preview .no-print { display: none !important; }
-      #stationery-preview .sheet-pad { margin: 0 !important; padding: 0 !important; }
-      #stationery-preview .invoice {
-        width: 210mm !important; max-width: 210mm !important;
-        height: 296mm !important; min-height: 296mm !important; max-height: 296mm !important;
-        margin: 0 !important; padding: 8mm !important; box-sizing: border-box !important;
-        overflow: hidden !important; box-shadow: none !important; transform: none !important;
-      }
-    }`
-    : `
-    @media print {
-      body > *:not(#stationery-preview) { display: none !important; }
-      #stationery-preview {
-        display: block !important; position: absolute !important;
-        inset: auto !important; left: 0 !important; top: 0 !important;
-        margin: 0 !important; padding: 0 !important; overflow: hidden !important; background: #fff !important;
-      }
-      #stationery-preview .no-print { display: none !important; }
-      #stationery-preview .sheet-pad { margin: 0 !important; padding: 0 !important; }
-    }`;
-  return `${pageCss}\n${fit}`;
+  const width = invoice ? '210mm' : '8in';
+  const height = invoice ? '297mm' : '12in';
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title>
+<style>
+@page { size: ${width} ${height}; margin: 0; }
+html, body {
+  margin: 0; padding: 0; width: ${width}; height: ${height};
+  overflow: hidden; background: #fff;
 }
+#stationery-preview, #stationery-preview .sheet-pad {
+  margin: 0; padding: 0; width: ${width}; height: ${height};
+  overflow: hidden; background: #fff;
+}
+#stationery-preview .invoice {
+  width: ${width} !important; max-width: ${width} !important;
+  height: ${height} !important; min-height: ${height} !important; max-height: ${height} !important;
+  margin: 0 !important; box-shadow: none !important; overflow: hidden !important;
+}
+#stationery-preview .sheet { margin: 0; box-shadow: none; }
+${SHEET_CSS}
+${pageCss}
+</style></head>
+<body><div id="stationery-preview"><div class="sheet-pad">${markup}</div></div></body></html>`;
 
-function armPrint(markup: string, pageCss: string) {
-  document.getElementById(PRINT_STYLE_ID)?.remove();
-  const style = document.createElement('style');
-  style.id = PRINT_STYLE_ID;
-  style.textContent = printCss(markup, pageCss);
-  document.head.appendChild(style);
+  const popup = window.open('', 'threadx-print');
+  if (!popup) {
+    window.alert('Allow pop-ups for textilecatalogue.vercel.app so the bill can print on one A4 page.');
+    return;
+  }
+  popup.document.open();
+  popup.document.write(html);
+  popup.document.close();
+  const run = () => {
+    popup.focus();
+    popup.print();
+  };
+  popup.addEventListener('afterprint', () => popup.close(), { once: true });
+  window.setTimeout(run, 250);
 }
 
 function mountPreview(title: string, markup: string, pageCss: string, hint = '8 × 12 inch · choose any printer') {
@@ -162,20 +153,19 @@ function mountPreview(title: string, markup: string, pageCss: string, hint = '8 
     <div class="sheet-pad" style="padding:16px 0;">${markup}</div>
   `;
   const close = () => {
-    window.removeEventListener('beforeprint', onBeforePrint);
-    window.removeEventListener('afterprint', onAfterPrint);
-    document.getElementById(PRINT_STYLE_ID)?.remove();
+    document.removeEventListener('keydown', onKey);
     root.remove();
   };
-  const onBeforePrint = () => armPrint(markup, pageCss);
-  const onAfterPrint = () => document.getElementById(PRINT_STYLE_ID)?.remove();
+  const onKey = (event: KeyboardEvent) => {
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'p') {
+      event.preventDefault();
+      event.stopPropagation();
+      printInOwnWindow(title, markup, pageCss);
+    }
+  };
   root.querySelector('[data-close]')?.addEventListener('click', close);
-  root.querySelector('[data-print]')?.addEventListener('click', () => {
-    armPrint(markup, pageCss);
-    window.print();
-  });
-  window.addEventListener('beforeprint', onBeforePrint);
-  window.addEventListener('afterprint', onAfterPrint);
+  root.querySelector('[data-print]')?.addEventListener('click', () => printInOwnWindow(title, markup, pageCss));
+  document.addEventListener('keydown', onKey);
   document.body.appendChild(root);
   return true;
 }
