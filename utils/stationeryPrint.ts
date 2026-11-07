@@ -91,49 +91,36 @@ function sheetMarkup(lines: StationeryLine[], extras = '') {
 }
 
 /**
- * Open a page that is only the sheet. Printing the ERP screen is what shrinks
- * the bill and paints a second copy down the right edge.
+ * The sales screen must never be printed. Chrome prints that wide page as a
+ * small bill plus a crushed copy down the right edge. This opens a document
+ * that is only the sheet, and that document prints itself.
  */
 function printInOwnWindow(title: string, markup: string, pageCss: string) {
   const invoice = markup.includes('class="invoice');
-  const width = invoice ? '210mm' : '8in';
-  const height = invoice ? '297mm' : '12in';
+  const pageSize = invoice ? 'A4 portrait' : '8in 12in';
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title>
 <style>
-@page { size: ${width} ${height}; margin: 0; }
-html, body {
-  margin: 0; padding: 0; width: ${width}; height: ${height};
-  overflow: hidden; background: #fff;
-}
-#stationery-preview, #stationery-preview .sheet-pad {
-  margin: 0; padding: 0; width: ${width}; height: ${height};
-  overflow: hidden; background: #fff;
-}
-#stationery-preview .invoice {
-  width: ${width} !important; max-width: ${width} !important;
-  height: ${height} !important; min-height: ${height} !important; max-height: ${height} !important;
-  margin: 0 !important; box-shadow: none !important; overflow: hidden !important;
-}
-#stationery-preview .sheet { margin: 0; box-shadow: none; }
+@page { size: ${pageSize}; margin: 0; }
+html, body { margin: 0; padding: 0; background: #fff; }
+#stationery-preview, #stationery-preview .sheet-pad { margin: 0; padding: 0; }
+#stationery-preview .invoice, #stationery-preview .sheet { margin: 0; box-shadow: none; }
+@media print { .no-print { display: none !important; } }
 ${SHEET_CSS}
 ${pageCss}
 </style></head>
-<body><div id="stationery-preview"><div class="sheet-pad">${markup}</div></div></body></html>`;
-
-  const popup = window.open('', 'threadx-print');
+<body>
+<div class="no-print" style="position:absolute;left:8px;top:8px;z-index:2;font-family:Arial,sans-serif;">
+  <button type="button" onclick="window.print()" style="font-weight:800;padding:8px 14px;">Print this bill</button>
+</div>
+<div id="stationery-preview"><div class="sheet-pad">${markup}</div></div>
+<script>window.addEventListener('load', function () { window.setTimeout(function () { window.print(); }, 300); });</script>
+</body></html>`;
+  const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
+  const popup = window.open(url, '_blank');
+  window.setTimeout(() => URL.revokeObjectURL(url), 60000);
   if (!popup) {
-    window.alert('Allow pop-ups for textilecatalogue.vercel.app so the bill can print on one A4 page.');
-    return;
+    window.alert('Allow pop-ups for textilecatalogue.vercel.app, then press Print again. Do not print the sales screen.');
   }
-  popup.document.open();
-  popup.document.write(html);
-  popup.document.close();
-  const run = () => {
-    popup.focus();
-    popup.print();
-  };
-  popup.addEventListener('afterprint', () => popup.close(), { once: true });
-  window.setTimeout(run, 250);
 }
 
 function mountPreview(title: string, markup: string, pageCss: string, hint = '8 × 12 inch · choose any printer') {
@@ -438,7 +425,7 @@ export function openSaleBillPrint(input: SaleBillPrintInput) {
       #stationery-preview .lines { min-height: 0; }
     }
   `;
-  return mountPreview(`Sale bill ${input.billNo || ''}`.trim(), html, pageCss, 'A4 · scale 100% · margins None');
+  return mountPreview(`Sale bill ${input.billNo || ''}`.trim(), html, pageCss, 'A new tab opens · A4 · Actual size · margins None');
 }
 
 export interface ChequePrintInput {
