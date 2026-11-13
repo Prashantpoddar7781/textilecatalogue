@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Edit3, Loader2, Plus, RefreshCw, Search, Trash2 } from 'lucide-react';
-import { bankEntriesApi, commissionsApi, invoicesApi, partiesApi } from '../services/api';
-import { useVoucherJump } from '../hooks/useVoucherJump';
+import { bankEntriesApi, commissionsApi, invoicesApi, partiesApi, vouchersApi } from '../services/api';
+import { getNavigableFields } from '../hooks/useErpFormKeyboard';
+import { parseVoucherNumber } from '../utils/parseVoucherNumber';
 import { AccountParty, BankEntry, BankPendingBill, CompletedOrderParty, PurchaseBillParty } from '../types';
 import { postingSaleOrPurchaseAccount, warnsOnManualEntry } from '../constants/erpTransactionPostingRules';
 import {
@@ -136,13 +137,13 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
   const editingIdRef = useRef<string | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState('');
-  const bankVoucherJump = useVoucherJump({
-    module: 'bank',
-    transactionType: form.series || form.transactionType,
-    currentId: editingId,
-    shownNumber: form.voucherNumber,
-    onError: setError
-  });
+  const seriesRef = useRef(form.series);
+  seriesRef.current = form.series;
+  const voucherValueRef = useRef(form.voucherNumber);
+  voucherValueRef.current = form.voucherNumber;
+  const nextBySeriesRef = useRef<Record<string, string>>({});
+  const formEpoch = useRef(0);
+  const openingVoucher = useRef(false);
   const [quickBillNo, setQuickBillNo] = useState('');
   const [billType, setBillType] = useState(defaultBillTypeForEntry(bankCashEntryType(DEFAULT_BANK_CASH_SERIES)));
   const [billTypePickerOpen, setBillTypePickerOpen] = useState(false);
@@ -191,17 +192,27 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
     }
   };
 
-  const loadMasterData = async (seriesName?: string) => {
-    const series = seriesName || DEFAULT_BANK_CASH_SERIES;
+  const loadMasterData = async () => {
+    const epoch = formEpoch.current;
     try {
-      const [voucherResult, accountsResult, partiesResult, purchasePartiesResult, profileResult, accountResult] = await Promise.all([
-        bankEntriesApi.getNextVoucher(series),
+      const [nextResults, accountsResult, partiesResult, purchasePartiesResult, profileResult, accountResult] = await Promise.all([
+        Promise.all(BANK_CASH_SERIES.map(async name => {
+          const result = await bankEntriesApi.getNextVoucher(name);
+          return [name, result] as const;
+        })),
         bankEntriesApi.getBankAccounts(),
         bankEntriesApi.getCompletedOrderParties(),
         bankEntriesApi.getPurchaseBillParties(),
         invoicesApi.getProfile().catch(() => null),
         partiesApi.list().catch(() => ({ parties: [] as AccountParty[] }))
       ]);
+      const nextMap: Record<string, string> = {};
+      let companyName = '';
+      for (const [name, result] of nextResults) {
+        nextMap[name] = String(result.voucherNumber || '');
+        companyName = result.companyName || companyName;
+      }
+      nextBySeriesRef.current = { ...nextBySeriesRef.current, ...nextMap };
       setCompletedParties(partiesResult.parties || []);
       setPurchaseParties(purchasePartiesResult.parties || []);
       setAccountParties(accountResult.parties || []);
@@ -211,11 +222,22 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
         String(account.accountType || '').toUpperCase() === 'BANK'
         || (!/cash/i.test(account.name) && String(account.accountType || '').toUpperCase() !== 'CASH')
       )?.name;
-      if (!editingIdRef.current) setAllocatedVoucher(String(voucherResult.voucherNumber || ''));
+      const activeSeries = seriesRef.current;
+      const nextNo = nextBySeriesRef.current[activeSeries] || '';
+      const userIsTyping = Boolean(
+        voucherValueRef.current
+        && allocatedVoucher
+        && voucherValueRef.current !== allocatedVoucher
+      );
+      if (!editingIdRef.current && formEpoch.current === epoch && nextNo && !userIsTyping) {
+        setAllocatedVoucher(nextNo);
+      }
       setForm(f => ({
         ...f,
-        voucherNumber: editingIdRef.current ? f.voucherNumber : voucherResult.voucherNumber,
-        companyName: voucherResult.companyName,
+        voucherNumber: editingIdRef.current || formEpoch.current !== epoch || userIsTyping
+          ? f.voucherNumber
+          : (nextBySeriesRef.current[f.series] || f.voucherNumber),
+        companyName: companyName || f.companyName,
         bankName: f.paymentMode === 'cash'
           ? (postingSaleOrPurchaseAccount(f.series) || 'CASH A/C')
           : (f.bankName && !/cash/i.test(f.bankName)
@@ -336,10 +358,32 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
 
   const applySeries = (seriesValue: string) => {
     const series = normalizeBankCashSeries(seriesValue);
+    if (series === seriesRef.current && !editingIdRef.current) return;
     const entryType = bankCashEntryType(series);
     const paymentMode = bankCashPaymentMode(series);
     const partyType = bankCashDefaultPartyType(series);
     const cashAccount = postingSaleOrPurchaseAccount(series) || 'CASH A/C';
+    const nextNo = nextBySeriesRef.current[series] || '';
+    seriesRef.current = series;
+    formEpoch.current += 1;
+    const epoch = formEpoch.current;
+    editingIdRef.current = null;
+    setEditingId(null);
+    setRestoreAllocations(null);
+    setPendingBills([]);
+    setAmountTouched(false);
+    setAllowOverAllocation(false);
+    setQuickBillNo('');
+    setCommissionPercent('');
+    setCommissionTouched(false);
+    setBillType(defaultBillTypeForEntry(entryType));
+    setBillPickerOpen(false);
+    setBillTypePickerOpen(false);
+    if (nextNo) {
+      setAllocatedVoucher(nextNo);
+      voucherValueRef.current = nextNo;
+    }
+    const voucherAtRequest = voucherValueRef.current;
     setForm(f => ({
       ...f,
       series,
@@ -348,23 +392,25 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
       paymentMode,
       partyType,
       partyName: '',
+      amount: '',
+      chequeNumber: '',
+      referenceNumber: '',
+      remarks: '',
       bankName: paymentMode === 'cash' ? cashAccount : f.bankName,
-      slipNumber: slipNumberFromDate(f.entryDate)
+      slipNumber: slipNumberFromDate(f.entryDate),
+      voucherNumber: nextNo || f.voucherNumber
     }));
-    setPendingBills([]);
-    setAmountTouched(false);
-    setAllowOverAllocation(false);
-    setQuickBillNo('');
-    setBillType(defaultBillTypeForEntry(entryType));
-    setBillPickerOpen(false);
-    setBillTypePickerOpen(false);
-    if (editingIdRef.current) return;
+    if (window.location.search) window.history.replaceState(null, '', '/erp/bank');
     void bankEntriesApi.getNextVoucher(series).then(result => {
-      if (editingIdRef.current) return;
-      setAllocatedVoucher(String(result.voucherNumber || ''));
+      const number = String(result.voucherNumber || '');
+      if (!number) return;
+      nextBySeriesRef.current = { ...nextBySeriesRef.current, [series]: number };
+      if (formEpoch.current !== epoch || editingIdRef.current || seriesRef.current !== series) return;
+      if (voucherValueRef.current !== voucherAtRequest) return;
+      setAllocatedVoucher(number);
       setForm(current => current.series === series ? {
         ...current,
-        voucherNumber: result.voucherNumber,
+        voucherNumber: number,
         companyName: result.companyName || current.companyName
       } : current);
     }).catch(() => undefined);
@@ -736,6 +782,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
   const startEdit = async (entry: BankEntry) => {
     editingIdRef.current = entry.id;
     setEditingId(entry.id);
+    setAllocatedVoucher(String(entry.voucherNumber || ''));
     setViewMode('entry');
     setAmountTouched(true);
     const series = normalizeBankCashSeries(
@@ -822,6 +869,58 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editIdFromUrl]);
 
+  const openTypedVoucher = async (raw: string) => {
+    const typed = parseVoucherNumber(raw);
+    const shown = parseVoucherNumber(allocatedVoucher);
+    if (!typed || (shown && typed === shown)) return false;
+    if (openingVoucher.current) return false;
+    openingVoucher.current = true;
+    const epoch = formEpoch.current;
+    const series = seriesRef.current;
+    setError('');
+    try {
+      const found = await vouchersApi.lookup({
+        module: 'bank',
+        voucher: String(typed),
+        transactionType: series
+      });
+      if (formEpoch.current !== epoch || seriesRef.current !== series) return false;
+      const { entry } = await bankEntriesApi.getById(found.id);
+      if (formEpoch.current !== epoch || seriesRef.current !== series) return false;
+      await startEdit(entry);
+      const number = String(entry.voucherNumber || typed);
+      setAllocatedVoucher(number);
+      window.history.replaceState(null, '', found.editPath || `/erp/bank?edit=${found.id}`);
+      return true;
+    } catch (err: any) {
+      if (formEpoch.current !== epoch || seriesRef.current !== series) return false;
+      setError(err.message || `No voucher ${raw} found.`);
+      setForm(f => ({ ...f, voucherNumber: allocatedVoucher || f.voucherNumber }));
+      voucherValueRef.current = allocatedVoucher || voucherValueRef.current;
+      return false;
+    } finally {
+      openingVoucher.current = false;
+    }
+  };
+
+  const onVoucherEnter = async (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    event.stopPropagation();
+    const field = event.currentTarget;
+    const typed = parseVoucherNumber(field.value);
+    const shown = parseVoucherNumber(allocatedVoucher);
+    if (typed && (!shown || typed !== shown)) {
+      await openTypedVoucher(field.value);
+      return;
+    }
+    const formEl = field.closest('[data-erp-form]') as HTMLElement | null;
+    if (!formEl) return;
+    const fields = getNavigableFields(formEl);
+    const index = fields.indexOf(field);
+    if (index >= 0 && index < fields.length - 1) focusInputStart(fields[index + 1] as HTMLInputElement);
+  };
+
   const onBankAccountSaved = (party: AccountParty) => {
     const name = party.name;
     setBankAccounts(prev => {
@@ -847,7 +946,9 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
     setBillPickerOpen(false);
     setBillTypePickerOpen(false);
     setForm(emptyForm());
-    await loadMasterData(DEFAULT_BANK_CASH_SERIES);
+    formEpoch.current += 1;
+    if (window.location.search) window.history.replaceState(null, '', '/erp/bank');
+    await loadMasterData();
     window.setTimeout(() => focusInputStart(voucherRef.current || companyRef.current), 0);
   };
 
@@ -1022,8 +1123,16 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                     ref={voucherRef}
                     className={inputClass}
                     value={form.voucherNumber}
-                    onChange={e => setForm(f => ({ ...f, voucherNumber: e.target.value }))}
-                    {...bankVoucherJump.voucherFieldProps}
+                    data-erp-voucher-jump=""
+                    autoComplete="off"
+                    title="Type a voucher number and press Enter to open that entry"
+                    onFocus={e => e.currentTarget.select()}
+                    onChange={e => {
+                      voucherValueRef.current = e.target.value;
+                      setForm(f => ({ ...f, voucherNumber: e.target.value }));
+                    }}
+                    onBlur={e => { void openTypedVoucher(e.currentTarget.value); }}
+                    onKeyDown={e => { void onVoucherEnter(e); }}
                   />
                 </div>
                 <div>
