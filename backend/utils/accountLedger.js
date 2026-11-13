@@ -5,6 +5,7 @@ import {
   isSalesGoodsReturn,
   matchesPartyName,
   matchesSupplierName,
+  forEachUniqueBillAllocation,
   normalizeBillAllocations,
   normalizeOrderLines,
   roundMoney
@@ -33,41 +34,37 @@ import {
 
 function paidInfoByBillId(bankEntries) {
   const map = new Map();
-  for (const entry of bankEntries || []) {
-    for (const allocation of normalizeBillAllocations(entry.billAllocations)) {
-      if (!allocation?.billId || allocation.billType === 'credit_debit_note') continue;
-      if (isUnadjAllocation(allocation)) continue;
-      const amount = roundMoney(allocation.adjustAmount);
-      if (amount <= 0) continue;
-      const current = map.get(allocation.billId) || { amount: 0, date: null };
-      current.amount = roundMoney(current.amount + amount);
-      const entryDate = entry.entryDate ? new Date(entry.entryDate) : null;
-      if (entryDate && (!current.date || entryDate > current.date)) {
-        current.date = entryDate;
-      }
-      map.set(allocation.billId, current);
+  forEachUniqueBillAllocation(bankEntries, (allocation, entry) => {
+    if (!allocation?.billId || allocation.billType === 'credit_debit_note') return;
+    if (isUnadjAllocation(allocation)) return;
+    const amount = roundMoney(allocation.adjustAmount);
+    if (amount <= 0) return;
+    const current = map.get(allocation.billId) || { amount: 0, date: null };
+    current.amount = roundMoney(current.amount + amount);
+    const entryDate = entry.entryDate ? new Date(entry.entryDate) : null;
+    if (entryDate && (!current.date || entryDate > current.date)) {
+      current.date = entryDate;
     }
-  }
+    map.set(allocation.billId, current);
+  });
   return map;
 }
 
 /** Map unadj bank-entry id → { amount consumed, latest settlement date }. */
 function unadjSettlementInfo(bankEntries) {
   const map = new Map();
-  for (const entry of bankEntries || []) {
-    for (const allocation of normalizeBillAllocations(entry.billAllocations)) {
-      if (!isUnadjAllocation(allocation) || !allocation?.billId) continue;
-      const amount = roundMoney(allocation.adjustAmount);
-      if (amount <= 0) continue;
-      const current = map.get(allocation.billId) || { amount: 0, date: null };
-      current.amount = roundMoney(current.amount + amount);
-      const entryDate = entry.entryDate ? new Date(entry.entryDate) : null;
-      if (entryDate && (!current.date || entryDate > current.date)) {
-        current.date = entryDate;
-      }
-      map.set(allocation.billId, current);
+  forEachUniqueBillAllocation(bankEntries, (allocation, entry) => {
+    if (!isUnadjAllocation(allocation) || !allocation?.billId) return;
+    const amount = roundMoney(allocation.adjustAmount);
+    if (amount <= 0) return;
+    const current = map.get(allocation.billId) || { amount: 0, date: null };
+    current.amount = roundMoney(current.amount + amount);
+    const entryDate = entry.entryDate ? new Date(entry.entryDate) : null;
+    if (entryDate && (!current.date || entryDate > current.date)) {
+      current.date = entryDate;
     }
-  }
+    map.set(allocation.billId, current);
+  });
   return map;
 }
 

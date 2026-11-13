@@ -1284,8 +1284,9 @@ export const bankEntriesApi = {
     if (params.source) queryParams.set('source', params.source);
     return request<{ transactionType: string; typeBillNumber: number }>(`/bank-entries/next-type-bill-number?${queryParams.toString()}`);
   },
-  getNextVoucher: async () => {
-    return request<{ voucherNumber: string; companyName: string }>('/bank-entries/next-voucher');
+  getNextVoucher: async (transactionType?: string) => {
+    const query = transactionType ? `?transactionType=${encodeURIComponent(transactionType)}` : '';
+    return request<{ voucherNumber: string; companyName: string; transactionType?: string }>(`/bank-entries/next-voucher${query}`);
   },
   getBalances: async (params: { bankName?: string; partyName?: string; partyType?: 'customer' | 'supplier' | 'other' }) => {
     const queryParams = new URLSearchParams();

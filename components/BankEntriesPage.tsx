@@ -133,6 +133,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
   const [search, setSearch] = useState('');
   const [entryTypeFilter, setEntryTypeFilter] = useState<EntryFilter>('all');
   const [editingId, setEditingId] = useState<string | null>(null);
+  const editingIdRef = useRef<string | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState('');
   const bankVoucherJump = useVoucherJump({
@@ -190,10 +191,11 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
     }
   };
 
-  const loadMasterData = async () => {
+  const loadMasterData = async (seriesName?: string) => {
+    const series = seriesName || DEFAULT_BANK_CASH_SERIES;
     try {
       const [voucherResult, accountsResult, partiesResult, purchasePartiesResult, profileResult, accountResult] = await Promise.all([
-        bankEntriesApi.getNextVoucher(),
+        bankEntriesApi.getNextVoucher(series),
         bankEntriesApi.getBankAccounts(),
         bankEntriesApi.getCompletedOrderParties(),
         bankEntriesApi.getPurchaseBillParties(),
@@ -209,10 +211,10 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
         String(account.accountType || '').toUpperCase() === 'BANK'
         || (!/cash/i.test(account.name) && String(account.accountType || '').toUpperCase() !== 'CASH')
       )?.name;
-      setAllocatedVoucher(String(voucherResult.voucherNumber || ''));
+      if (!editingIdRef.current) setAllocatedVoucher(String(voucherResult.voucherNumber || ''));
       setForm(f => ({
         ...f,
-        voucherNumber: voucherResult.voucherNumber,
+        voucherNumber: editingIdRef.current ? f.voucherNumber : voucherResult.voucherNumber,
         companyName: voucherResult.companyName,
         bankName: f.paymentMode === 'cash'
           ? (postingSaleOrPurchaseAccount(f.series) || 'CASH A/C')
@@ -356,6 +358,16 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
     setBillType(defaultBillTypeForEntry(entryType));
     setBillPickerOpen(false);
     setBillTypePickerOpen(false);
+    if (editingIdRef.current) return;
+    void bankEntriesApi.getNextVoucher(series).then(result => {
+      if (editingIdRef.current) return;
+      setAllocatedVoucher(String(result.voucherNumber || ''));
+      setForm(current => current.series === series ? {
+        ...current,
+        voucherNumber: result.voucherNumber,
+        companyName: result.companyName || current.companyName
+      } : current);
+    }).catch(() => undefined);
   };
 
   useEffect(() => {
@@ -722,6 +734,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
   };
 
   const startEdit = async (entry: BankEntry) => {
+    editingIdRef.current = entry.id;
     setEditingId(entry.id);
     setViewMode('entry');
     setAmountTouched(true);
@@ -821,6 +834,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
   };
 
   const resetForm = async () => {
+    editingIdRef.current = null;
     setEditingId(null);
     setPendingBills([]);
     setRestoreAllocations(null);
@@ -833,7 +847,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
     setBillPickerOpen(false);
     setBillTypePickerOpen(false);
     setForm(emptyForm());
-    await loadMasterData();
+    await loadMasterData(DEFAULT_BANK_CASH_SERIES);
     window.setTimeout(() => focusInputStart(voucherRef.current || companyRef.current), 0);
   };
 

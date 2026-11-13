@@ -139,25 +139,72 @@ export function normalizeBillAllocations(value) {
   return value.filter(item => item && item.billId);
 }
 
-export async function getPaidAmountsByBillType(prismaClient, userId, billType, options = {}) {
-  const entryType = billType === 'purchase_bill' ? 'payment' : 'receipt';
-  const excludeEntryId = options?.excludeEntryId || null;
-  const where = { userId, entryType };
-  if (excludeEntryId) where.id = { not: excludeEntryId };
+/**
+ * One Empire voucher is stored once per party line, with the same bill list on each line.
+ * Count each bill on that voucher a single time. A blank voucher number stays per row.
+ */
+export function forEachUniqueBillAllocation(entries, visit) {
+  const seen = new Set();
+  for (const entry of entries || []) {
+    const voucherKey = entry?.voucherNumber
+      ? `${entry.transactionType || ''}|${entry.voucherNumber}`
+      : `id:${entry?.id || ''}`;
+    normalizeBillAllocations(entry?.billAllocations).forEach((allocation, index) => {
+      const once = `${voucherKey}|${index}|${allocation.billType}|${allocation.billId}|${roundMoney(allocation.adjustAmount)}`;
+      if (seen.has(once)) return;
+      seen.add(once);
+      visit(allocation, entry);
+    });
+  }
+}
+
+/** Bank rows for allocation maths. Editing one line drops every line of that same voucher. */
+export async function loadAllocationEntries(prismaClient, userId, options = {}) {
+  const excludeEntryId = options.excludeEntryId || null;
+  const where = { userId };
+  if (options.entryType) where.entryType = options.entryType;
   const entries = await prismaClient.bankEntry.findMany({
     where,
-    select: { billAllocations: true }
-  });
-
-  const paidByBillId = new Map();
-  for (const entry of entries) {
-    for (const allocation of normalizeBillAllocations(entry.billAllocations)) {
-      if (allocation.billType !== billType) continue;
-      if (String(allocation.billType || '').toLowerCase() === 'unadj_payment') continue;
-      const current = paidByBillId.get(allocation.billId) || 0;
-      paidByBillId.set(allocation.billId, current + roundMoney(allocation.adjustAmount));
+    select: {
+      id: true,
+      transactionType: true,
+      voucherNumber: true,
+      entryDate: true,
+      billAllocations: true
     }
-  }
+  });
+  if (!excludeEntryId) return entries;
+  const current = entries.find(entry => entry.id === excludeEntryId)
+    || await prismaClient.bankEntry.findFirst({
+      where: { id: excludeEntryId },
+      select: { id: true, transactionType: true, voucherNumber: true }
+    });
+  return entries.filter(entry => {
+    if (entry.id === excludeEntryId) return false;
+    if (
+      current?.voucherNumber
+      && entry.voucherNumber === current.voucherNumber
+      && String(entry.transactionType || '') === String(current.transactionType || '')
+    ) {
+      return false;
+    }
+    return true;
+  });
+}
+
+export async function getPaidAmountsByBillType(prismaClient, userId, billType, options = {}) {
+  const entryType = billType === 'purchase_bill' ? 'payment' : 'receipt';
+  const entries = await loadAllocationEntries(prismaClient, userId, {
+    entryType,
+    excludeEntryId: options?.excludeEntryId || null
+  });
+  const paidByBillId = new Map();
+  forEachUniqueBillAllocation(entries, allocation => {
+    if (allocation.billType !== billType) return;
+    if (String(allocation.billType || '').toLowerCase() === 'unadj_payment') return;
+    const current = paidByBillId.get(allocation.billId) || 0;
+    paidByBillId.set(allocation.billId, current + roundMoney(allocation.adjustAmount));
+  });
   return paidByBillId;
 }
 
@@ -172,14 +219,25 @@ export function matchesSupplierName(supplierName, partyName) {
   return source === target || source.includes(target) || target.includes(source);
 }
 
+function printedBillLabel(value) {
+  const cleaned = String(value || '').replace(/\*/g, '').trim();
+  const match = cleaned.match(/^(\d+)/);
+  if (!match) return '';
+  const number = Number(match[1]);
+  if (!Number.isFinite(number) || number <= 0 || number >= 100000) return '';
+  return cleaned;
+}
+
 export function mapPurchaseBillToPendingBill(bill, paidByBillId, asOfValue = Date.now()) {
   const billAmount = roundMoney(bill.grandTotal);
   const paidAmount = paidByBillId.get(bill.id) || 0;
   const pendingAmount = roundMoney(Math.max(billAmount - paidAmount, 0));
   const billDate = bill.billDate || bill.createdAt;
-  const displayNumber = bill.typeBillNumber != null
-    ? String(bill.typeBillNumber)
-    : (bill.billNumber || bill.voucherNumber || bill.id.slice(-6).toUpperCase());
+  const printed = printedBillLabel(bill.supplierBillNo) || printedBillLabel(bill.billNumber);
+  const displayNumber = printed
+    || (bill.typeBillNumber != null && bill.typeBillNumber > 0 && bill.typeBillNumber < 100000
+      ? String(bill.typeBillNumber)
+      : (bill.voucherNumber || bill.id.slice(-6).toUpperCase()));
   const days = daysSince(billDate, asOfValue);
   const bucket = agingBucket(days);
 

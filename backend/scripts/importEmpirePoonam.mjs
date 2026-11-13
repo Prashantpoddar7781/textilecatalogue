@@ -16,6 +16,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import bcrypt from 'bcryptjs';
 import { PrismaClient } from '@prisma/client';
+import { repairEmpireBankAllocations } from './repairEmpireBankAllocations.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.join(here, '..', '.env') });
@@ -1217,6 +1218,8 @@ async function main() {
   }
   await batches(bankEntries, 100, (rows) => prisma.bankEntry.createMany({ data: rows }));
   await batches(journals, 80, (rows) => prisma.journalVoucher.createMany({ data: rows }));
+  const billLinks = await repairEmpireBankAllocations(prisma, userId, bills);
+  console.log(`Bank bill links: ${billLinks.updated} vouchers, ${billLinks.linked} bills linked, ${billLinks.unmatched} without a matching bill`);
 
   const counts = {
     customers: await prisma.customer.count({ where: { userId } }),

@@ -1,22 +1,16 @@
 import { getAdjustDirection, parseNoteType } from '../constants/creditDebitNoteTypes.js';
-import { daysSince, matchesPartyName, matchesSupplierName, normalizeBillAllocations, roundMoney } from './orderBilling.js';
+import { daysSince, forEachUniqueBillAllocation, loadAllocationEntries, matchesPartyName, matchesSupplierName, roundMoney } from './orderBilling.js';
 
 export async function getPaidAmountsByCreditDebitNoteId(prismaClient, userId, options = {}) {
-  const excludeEntryId = options?.excludeEntryId || null;
-  const where = { userId };
-  if (excludeEntryId) where.id = { not: excludeEntryId };
-  const entries = await prismaClient.bankEntry.findMany({
-    where,
-    select: { billAllocations: true }
+  const entries = await loadAllocationEntries(prismaClient, userId, {
+    excludeEntryId: options?.excludeEntryId || null
   });
   const paidByNoteId = new Map();
-  for (const entry of entries) {
-    for (const allocation of normalizeBillAllocations(entry.billAllocations)) {
-      if (allocation.billType !== 'credit_debit_note') continue;
-      const current = paidByNoteId.get(allocation.billId) || 0;
-      paidByNoteId.set(allocation.billId, current + roundMoney(allocation.adjustAmount));
-    }
-  }
+  forEachUniqueBillAllocation(entries, allocation => {
+    if (allocation.billType !== 'credit_debit_note') return;
+    const current = paidByNoteId.get(allocation.billId) || 0;
+    paidByNoteId.set(allocation.billId, current + roundMoney(allocation.adjustAmount));
+  });
   return paidByNoteId;
 }
 

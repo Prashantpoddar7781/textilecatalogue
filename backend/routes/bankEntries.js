@@ -15,9 +15,9 @@ import {
   isPurchaseReturn,
   mapOrderToPendingBill,
   mapPurchaseBillToPendingBill,
+  forEachUniqueBillAllocation,
   matchesPartyName,
   matchesSupplierName,
-  normalizeBillAllocations,
   roundMoney
 } from '../utils/orderBilling.js';
 import { applyInterestFields } from '../utils/interestCalculation.js';
@@ -32,10 +32,11 @@ import { postingSaleOrPurchaseAccount } from '../constants/erpTransactionPosting
 import {
   bankCashEntryType,
   bankCashPaymentMode,
+  displayUnadjBillNumber,
   formatBillNosRemark,
-  formatUnadjBillNumber,
   isBankCashSeries,
   isUnadjAllocation,
+  nextNumberFromVoucherList,
   normalizeBankCashSeries,
   slipNumberFromDate,
   UNADJ_BILL_TYPE,
@@ -360,24 +361,33 @@ async function getPurchaseBillParties(userId) {
 async function getPendingUnadjPayments(userId, partyName, partyType, excludeEntryId = null) {
   // Supplier part payments use payment vouchers; customer part receipts use receipt vouchers.
   const entryType = partyType === 'supplier' ? 'payment' : 'receipt';
-  const entries = await prisma.bankEntry.findMany({
-    where: {
-      userId,
-      entryType,
-      ...(excludeEntryId ? { id: { not: excludeEntryId } } : {})
-    },
-    select: {
-      id: true,
-      entryDate: true,
-      voucherNumber: true,
-      amount: true,
-      partyName: true,
-      partyType: true,
-      billAllocations: true,
-      transactionType: true
-    },
-    orderBy: [{ entryDate: 'asc' }, { createdAt: 'asc' }]
-  });
+  const [entries, excluded] = await Promise.all([
+    prisma.bankEntry.findMany({
+      where: {
+        userId,
+        entryType,
+        ...(excludeEntryId ? { id: { not: excludeEntryId } } : {})
+      },
+      select: {
+        id: true,
+        entryDate: true,
+        voucherNumber: true,
+        billNumber: true,
+        amount: true,
+        partyName: true,
+        partyType: true,
+        billAllocations: true,
+        transactionType: true
+      },
+      orderBy: [{ entryDate: 'asc' }, { createdAt: 'asc' }]
+    }),
+    excludeEntryId
+      ? prisma.bankEntry.findFirst({
+        where: { id: excludeEntryId, userId },
+        select: { transactionType: true, voucherNumber: true }
+      })
+      : null
+  ]);
 
   const partyEntries = entries.filter(entry => {
     const nameOk = partyType === 'supplier'
@@ -387,21 +397,24 @@ async function getPendingUnadjPayments(userId, partyName, partyType, excludeEntr
         partyName
       ) || matchesSupplierName(entry.partyName, partyName));
     if (!nameOk) return false;
+    if (
+      excluded?.voucherNumber
+      && entry.voucherNumber === excluded.voucherNumber
+      && String(entry.transactionType || '') === String(excluded.transactionType || '')
+    ) return false;
     // Prefer same partyType when stored; allow legacy rows with null/other.
     if (entry.partyType && entry.partyType !== 'other' && entry.partyType !== partyType) return false;
     return true;
   });
 
   const consumedByUnadjId = new Map();
-  for (const entry of partyEntries) {
-    for (const allocation of normalizeBillAllocations(entry.billAllocations)) {
-      if (!isUnadjAllocation(allocation)) continue;
-      const adj = roundMoney(allocation.adjustAmount);
-      if (adj <= 0) continue;
-      const key = String(allocation.billId);
-      consumedByUnadjId.set(key, roundMoney((consumedByUnadjId.get(key) || 0) + adj));
-    }
-  }
+  forEachUniqueBillAllocation(partyEntries, allocation => {
+    if (!isUnadjAllocation(allocation)) return;
+    const adj = roundMoney(allocation.adjustAmount);
+    if (adj <= 0) return;
+    const key = String(allocation.billId);
+    consumedByUnadjId.set(key, roundMoney((consumedByUnadjId.get(key) || 0) + adj));
+  });
 
   const rows = [];
   for (const entry of partyEntries) {
@@ -410,7 +423,7 @@ async function getPendingUnadjPayments(userId, partyName, partyType, excludeEntr
     const consumed = consumedByUnadjId.get(entry.id) || 0;
     const pendingAmount = roundMoney(Math.max(created - consumed, 0));
     if (pendingAmount <= 0) continue;
-    const billNumber = formatUnadjBillNumber(entry.voucherNumber);
+    const billNumber = displayUnadjBillNumber(entry);
     rows.push({
       billId: entry.id,
       billType: UNADJ_BILL_TYPE,
@@ -529,15 +542,17 @@ router.get('/purchase-bill-parties', authenticateToken, requireActiveSubscriptio
 router.get('/next-voucher', authenticateToken, requireActiveSubscription, async (req, res, next) => {
   try {
     const userId = req.user.userId;
-    const latest = await prisma.bankEntry.findFirst({
-      where: { userId },
-      orderBy: { createdAt: 'desc' },
+    const series = normalizeBankCashSeries(req.query.transactionType);
+    const rows = await prisma.bankEntry.findMany({
+      where: { userId, transactionType: series },
       select: { voucherNumber: true }
     });
-    const latestNumber = Number.parseInt(String(latest?.voucherNumber || '0').replace(/\D/g, ''), 10);
-    const nextNumber = Number.isFinite(latestNumber) ? latestNumber + 1 : 1;
     const companyName = await getCompanyName(userId);
-    res.json({ voucherNumber: String(nextNumber), companyName });
+    res.json({
+      transactionType: series,
+      voucherNumber: nextNumberFromVoucherList(rows.map(row => row.voucherNumber)),
+      companyName
+    });
   } catch (error) {
     next(error);
   }

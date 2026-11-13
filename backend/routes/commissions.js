@@ -4,7 +4,7 @@ import { authenticateToken } from '../middleware/auth.js';
 import { requireActiveSubscription } from '../middleware/subscription.js';
 import { findOrCreateSupplier } from '../utils/partyMaster.js';
 import { allocateNextTypeBillNumber } from '../utils/transactionBilling.js';
-import { orderTaxableAmount, roundMoney } from '../utils/orderBilling.js';
+import { forEachUniqueBillAllocation, orderTaxableAmount, roundMoney } from '../utils/orderBilling.js';
 import { getStateCodeFromName, getStateFromGstin } from '../utils/gstCalculation.js';
 import {
   COMMISSION_ACCOUNT,
@@ -141,17 +141,20 @@ async function loadSources(userId, brokerName, excludeBillId) {
   const orderById = new Map(orders.map(order => [order.id, order]));
   const rows = [];
 
+  const seenVoucherBill = new Set();
   for (const entry of entries) {
-    const allocations = Array.isArray(entry.billAllocations) ? entry.billAllocations : [];
-    for (const alloc of allocations) {
-      if (!alloc?.billId) continue;
+    forEachUniqueBillAllocation([entry], alloc => {
+      if (!alloc?.billId) return;
       const billType = String(alloc.billType || 'order');
-      if (billType !== 'order' && billType !== 'sales_invoice') continue;
+      if (billType !== 'order' && billType !== 'sales_invoice') return;
       const order = orderById.get(alloc.billId);
       const broker = String(alloc.brokerName || order?.agentName || '').trim();
-      if (!names.has(broker.toLowerCase())) continue;
-      const key = `${entry.id}:${alloc.billId}`;
-      if (used.has(key)) continue;
+      if (!names.has(broker.toLowerCase())) return;
+      const voucherKey = entry.voucherNumber
+        ? `${entry.transactionType || ''}|${entry.voucherNumber}|${alloc.billId}`
+        : `${entry.id}:${alloc.billId}`;
+      if (seenVoucherBill.has(voucherKey) || used.has(`${entry.id}:${alloc.billId}`)) return;
+      seenVoucherBill.add(voucherKey);
       const taxable = order
         ? orderTaxableAmount(order)
         : roundMoney(alloc.taxableAmount || alloc.billAmount || 0);
@@ -159,7 +162,7 @@ async function loadSources(userId, brokerName, excludeBillId) {
       const commissionPercent = Number.isFinite(stored) ? stored : 0;
       const commissionAmount = roundMoney(taxable * commissionPercent / 100);
       rows.push({
-        key,
+        key: `${entry.id}:${alloc.billId}`,
         bankEntryId: entry.id,
         billId: alloc.billId,
         billType,
@@ -174,7 +177,7 @@ async function loadSources(userId, brokerName, excludeBillId) {
         commissionAmount,
         voucherNumber: entry.voucherNumber || ''
       });
-    }
+    });
   }
 
   rows.sort((a, b) => new Date(a.billDate || 0) - new Date(b.billDate || 0));
@@ -251,18 +254,15 @@ router.get('/report', authenticateToken, requireActiveSubscription, async (req, 
     });
     const payments = await prisma.bankEntry.findMany({
       where: { userId, entryType: 'payment' },
-      select: { billAllocations: true }
+      select: { id: true, transactionType: true, voucherNumber: true, billAllocations: true }
     });
     const paidByBillId = new Map();
-    for (const entry of payments) {
-      const allocations = Array.isArray(entry.billAllocations) ? entry.billAllocations : [];
-      for (const allocation of allocations) {
-        if (!allocation?.billId) continue;
-        const amount = Number(allocation.adjustAmount) || 0;
-        if (amount <= 0) continue;
-        paidByBillId.set(allocation.billId, roundMoney((paidByBillId.get(allocation.billId) || 0) + amount));
-      }
-    }
+    forEachUniqueBillAllocation(payments, allocation => {
+      if (!allocation?.billId) return;
+      const amount = Number(allocation.adjustAmount) || 0;
+      if (amount <= 0) return;
+      paidByBillId.set(allocation.billId, roundMoney((paidByBillId.get(allocation.billId) || 0) + amount));
+    });
     const filtered = broker
       ? bills.filter(bill => sameName(bill.supplier?.name, broker) || sameName(bill.supplier?.accountGroup, broker))
       : bills;

@@ -1,5 +1,5 @@
 import { formatSeriesBillNumber } from '../constants/erpTransactionPostingRules.js';
-import { daysSince, matchesPartyName, matchesSupplierName, normalizeBillAllocations, roundMoney } from './orderBilling.js';
+import { daysSince, forEachUniqueBillAllocation, loadAllocationEntries, matchesPartyName, matchesSupplierName, roundMoney } from './orderBilling.js';
 
 export const JOURNAL_TRANSACTION_TYPE = 'JOURNAL';
 export const JOURNAL_BILL_TYPE = 'journal_voucher';
@@ -28,21 +28,15 @@ export function matchesJournalParty(voucher, partyName, partyType) {
 }
 
 export async function getPaidAmountsByJournalId(prismaClient, userId, options = {}) {
-  const excludeEntryId = options?.excludeEntryId || null;
-  const where = { userId };
-  if (excludeEntryId) where.id = { not: excludeEntryId };
-  const entries = await prismaClient.bankEntry.findMany({
-    where,
-    select: { billAllocations: true }
+  const entries = await loadAllocationEntries(prismaClient, userId, {
+    excludeEntryId: options?.excludeEntryId || null
   });
   const paidById = new Map();
-  for (const entry of entries) {
-    for (const allocation of normalizeBillAllocations(entry.billAllocations)) {
-      if (String(allocation.billType || '').toLowerCase() !== JOURNAL_BILL_TYPE) continue;
-      const current = paidById.get(allocation.billId) || 0;
-      paidById.set(allocation.billId, current + roundMoney(allocation.adjustAmount));
-    }
-  }
+  forEachUniqueBillAllocation(entries, allocation => {
+    if (String(allocation.billType || '').toLowerCase() !== JOURNAL_BILL_TYPE) return;
+    const current = paidById.get(allocation.billId) || 0;
+    paidById.set(allocation.billId, current + roundMoney(allocation.adjustAmount));
+  });
   return paidById;
 }
 

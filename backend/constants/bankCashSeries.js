@@ -78,6 +78,24 @@ export function formatUnadjBillNumber(voucherNumber) {
   return `${v} B`;
 }
 
+/** Imported unadj rows keep the printed bill ("852B") beside the internal voucher. */
+export function displayUnadjBillNumber(entry) {
+  const raw = String(entry?.billNumber || '').replace(/\*/g, '').trim();
+  const match = raw.match(/^(\d+)\s*B$/i);
+  if (match) return `${Number(match[1])} B`;
+  return formatUnadjBillNumber(entry?.voucherNumber);
+}
+
+/** Next voucher for one bank/cash series. Highest number already used, plus one. */
+export function nextNumberFromVoucherList(values) {
+  let max = 0;
+  for (const value of values || []) {
+    const parsed = Number.parseInt(String(value ?? '').replace(/\D/g, ''), 10);
+    if (Number.isFinite(parsed) && parsed > max) max = parsed;
+  }
+  return String(max + 1);
+}
+
 export function formatBillNosRemark(allocations) {
   if (!Array.isArray(allocations) || allocations.length === 0) return '';
   const nos = allocations
