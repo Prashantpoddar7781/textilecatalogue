@@ -38,9 +38,9 @@ async function getCompanyName(userId) {
 }
 
 async function resolveParty(userId, body) {
-  const partyType = PARTY_TYPES.includes(body.partyType) ? body.partyType : null;
+  const requested = PARTY_TYPES.includes(body.partyType) ? body.partyType : null;
   const name = optionalString(body.partyName);
-  if (!partyType) {
+  if (!requested) {
     const error = new Error('Party type must be customer or supplier');
     error.status = 400;
     throw error;
@@ -51,25 +51,39 @@ async function resolveParty(userId, body) {
     throw error;
   }
 
-  if (partyType === 'customer') {
-    const customer = await resolveCustomerForEntry(prisma, userId, {
+  const [customerByName, supplierByName] = await Promise.all([
+    prisma.customer.findFirst({
+      where: { userId, organizationName: { equals: name, mode: 'insensitive' } }
+    }),
+    prisma.supplier.findFirst({
+      where: { userId, name: { equals: name, mode: 'insensitive' } }
+    })
+  ]);
+  const supplierType = String(supplierByName?.accountType || '').trim().toUpperCase();
+  const supplierIsPlaceholder = !supplierByName || supplierType === '' || supplierType === 'OTHER';
+  const customerIsDebtor = customerByName && /DEBTOR/i.test(customerByName.accountType || '');
+  const useCustomer = requested === 'customer' || (customerIsDebtor && supplierIsPlaceholder);
+
+  if (useCustomer) {
+    const customer = customerByName || await resolveCustomerForEntry(prisma, userId, {
       customerId: body.customerId,
       partyName: name
     });
     return {
-      partyType,
+      partyType: 'customer',
       partyName: customer?.organizationName || name,
       customerId: customer?.id || null,
       supplierId: null
     };
   }
 
-  const supplier = await resolveSupplierForEntry(prisma, userId, {
+  const supplier = supplierByName || await resolveSupplierForEntry(prisma, userId, {
     supplierId: body.supplierId,
-    partyName: name
+    partyName: name,
+    transactionType: body.transactionType
   });
   return {
-    partyType,
+    partyType: 'supplier',
     partyName: supplier?.name || name,
     customerId: null,
     supplierId: supplier?.id || null

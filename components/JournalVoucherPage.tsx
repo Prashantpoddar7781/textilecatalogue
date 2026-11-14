@@ -8,6 +8,7 @@ import {
   warnsOnManualEntry
 } from '../constants/erpTransactionPostingRules';
 import { JOURNAL_TYPE } from '../constants/bankCashSeries';
+import { getAccountType } from '../constants/accountTypes';
 import { Customer, ErpSession, JournalVoucher, Supplier } from '../types';
 import { DeleteEntryButton } from './DeleteEntryButton';
 import { ErpFormShell } from './ErpFormShell';
@@ -177,6 +178,37 @@ export const JournalVoucherPage: React.FC<Props> = ({ onBack, erpSession }) => {
     [customers, partyType, suppliers]
   );
 
+  const oppositeAccounts = useMemo(() => {
+    const names = new Set(OPPOSITE_ACCOUNTS);
+    for (const supplier of suppliers) {
+      const meta = getAccountType(supplier.accountType);
+      if (!meta || !supplier.name.trim()) continue;
+      if (meta.inProfitLoss || meta.inTrading || meta.faGroup === 'fixed_assets') names.add(supplier.name.trim());
+    }
+    for (const row of vouchers) {
+      if (row.oppositeAccount?.trim()) names.add(row.oppositeAccount.trim());
+    }
+    if (oppositeAccount.trim()) names.add(oppositeAccount.trim());
+    return Array.from(names).sort((a, b) => a.localeCompare(b));
+  }, [suppliers, vouchers, oppositeAccount]);
+
+  const applyPartyName = (name: string) => {
+    setPartyName(name);
+    const key = name.trim().toLowerCase();
+    const customer = customers.find(row => row.organizationName.trim().toLowerCase() === key);
+    const supplier = suppliers.find(row => row.name.trim().toLowerCase() === key);
+    const supplierType = String(supplier?.accountType || '').trim().toUpperCase();
+    const supplierIsPlaceholder = !supplier || supplierType === '' || supplierType === 'OTHER';
+    if (customer && /debtor/i.test(customer.accountType || '') && supplierIsPlaceholder) {
+      setPartyType('customer');
+      setCustomerId(customer.id);
+      setSupplierId('');
+      return;
+    }
+    if (partyType === 'customer') setCustomerId(customer?.id || '');
+    else setSupplierId(supplier?.id || '');
+  };
+
   const save = async () => {
     if (!partyName.trim()) {
       setError('Party name is required.');
@@ -317,13 +349,7 @@ export const JournalVoucherPage: React.FC<Props> = ({ onBack, erpSession }) => {
                       className={inputClass}
                       list="journal-parties"
                       value={partyName}
-                      onChange={e => {
-                        const name = e.target.value;
-                        setPartyName(name);
-                        const match = partyOptions.find(p => p.name === name);
-                        if (partyType === 'customer') setCustomerId(match?.id || '');
-                        else setSupplierId(match?.id || '');
-                      }}
+                      onChange={e => applyPartyName(e.target.value)}
                       placeholder={partyType === 'customer' ? 'Customer name' : 'Supplier / employee'}
                     />
                     <datalist id="journal-parties">
@@ -340,7 +366,7 @@ export const JournalVoucherPage: React.FC<Props> = ({ onBack, erpSession }) => {
                       placeholder="SALARY EXP A/C"
                     />
                     <datalist id="journal-accounts">
-                      {OPPOSITE_ACCOUNTS.map(name => <option key={name} value={name} />)}
+                      {oppositeAccounts.map(name => <option key={name} value={name} />)}
                     </datalist>
                   </div>
                   <div>
