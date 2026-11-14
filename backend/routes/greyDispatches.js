@@ -4,6 +4,7 @@ import { body, validationResult } from 'express-validator';
 import { authenticateToken } from '../middleware/auth.js';
 import { requireActiveSubscription } from '../middleware/subscription.js';
 import { ensureMillParty, resolveSupplierForEntry } from '../utils/partyMaster.js';
+import { bankAdjustmentBlock } from '../utils/voucherDelete.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -825,6 +826,32 @@ router.put('/:id', authenticateToken, requireActiveSubscription, [
     });
 
     res.json({ entry });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.delete('/:id', authenticateToken, requireActiveSubscription, async (req, res, next) => {
+  try {
+    const existing = await prisma.greyDispatch.findFirst({
+      where: { id: req.params.id, userId: req.user.userId }
+    });
+    if (!existing) return res.status(404).json({ error: 'Grey dispatch not found' });
+    const [receipts, returns] = await Promise.all([
+      prisma.millReceipt.count({ where: { greyDispatchId: existing.id } }),
+      prisma.greyPurchaseReturn.count({ where: { greyDispatchId: existing.id } })
+    ]);
+    if (receipts || returns) {
+      return res.status(409).json({ error: 'This dispatch is used on a mill receipt or grey return. Delete that voucher first.' });
+    }
+    const block = await bankAdjustmentBlock(prisma, req.user.userId, existing.id);
+    if (block) return res.status(409).json({ error: block });
+    await prisma.cuttingCard.updateMany({
+      where: { userId: req.user.userId, greyDispatchId: existing.id },
+      data: { greyDispatchId: null }
+    });
+    await prisma.greyDispatch.delete({ where: { id: existing.id } });
+    res.json({ success: true });
   } catch (error) {
     next(error);
   }

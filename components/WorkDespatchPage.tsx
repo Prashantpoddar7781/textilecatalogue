@@ -5,6 +5,7 @@ import { getGstDefaultsForTransactionType } from '../constants/erpTransactionTyp
 import { workDespatchesApi } from '../services/api';
 import { AccountParty, ErpSession, WorkLineItem } from '../types';
 import { AccountsInformationDialog, AddPartyConfirmDialog } from './AccountsInformationDialog';
+import { DeleteEntryButton } from './DeleteEntryButton';
 import { ErpFormShell } from './ErpFormShell';
 import { ErpSaveButton } from './ErpSaveButton';
 import { ErpPageBack } from './ErpPageBack';
@@ -262,6 +263,16 @@ export const WorkDespatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
     }
   };
 
+  const deleteDocument = async () => {
+    if (!editId) return;
+    try {
+      await workDespatchesApi.delete(editId);
+      window.location.href = '/erp/work-despatch';
+    } catch (err: any) {
+      setError(err.message || 'Could not delete this entry.');
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#F6F7FB]">
@@ -292,9 +303,12 @@ export const WorkDespatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
           <section className="rounded-2xl border border-violet-200 bg-violet-50/40 p-4 shadow-sm">
             <div className="mb-3 flex items-center justify-between">
               <h1 className="text-lg font-black uppercase tracking-wide text-gray-900">Work Despatch Entry</h1>
-              <span className="rounded-full bg-violet-100 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-violet-800">
-                {isEditMode ? 'Edit Mode' : 'Add Mode'}
-              </span>
+              <div className="flex items-center gap-2">
+                {isEditMode && <DeleteEntryButton onDelete={deleteDocument} disabled={saving} />}
+                <span className="rounded-full bg-violet-100 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-violet-800">
+                  {isEditMode ? 'Edit Mode' : 'Add Mode'}
+                </span>
+              </div>
             </div>
             <div className="grid gap-3 md:grid-cols-4 xl:grid-cols-6">
               <label><span className={labelClass}>Company</span><input className={inputClass} value={companyName} onChange={e => setCompanyName(e.target.value)} /></label>

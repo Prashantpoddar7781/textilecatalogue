@@ -120,6 +120,34 @@ export function isPlExpensePurchase(transactionType) {
     || value === 'PURCHASE (COMM)';
 }
 
+/** Imported journals keep every line in the narration. Typed journals use party and opposite account. */
+export function journalPostingLines(voucher) {
+  const narration = String(voucher?.narration || '');
+  const parsed = [];
+  for (const part of narration.split(' | ')) {
+    const match = part.trim().match(/^(.*)\sDr\s([0-9]+(?:\.[0-9]+)?)\sCr\s([0-9]+(?:\.[0-9]+)?)/);
+    if (!match) continue;
+    const name = match[1].trim();
+    const debit = Number(match[2]) || 0;
+    const credit = Number(match[3]) || 0;
+    if (name && debit > 0) parsed.push({ name, debit: true, amount: roundMoney(debit) });
+    if (name && credit > 0) parsed.push({ name, debit: false, amount: roundMoney(credit) });
+  }
+  if (parsed.length >= 2) return parsed;
+  const amount = roundMoney(voucher?.amount);
+  if (amount <= 0) return [];
+  const partyDebit = String(voucher?.partySide || '').toLowerCase() !== 'credit';
+  return [
+    voucher?.partyName ? { name: String(voucher.partyName).trim(), debit: partyDebit, amount } : null,
+    voucher?.oppositeAccount ? { name: String(voucher.oppositeAccount).trim(), debit: !partyDebit, amount } : null
+  ].filter(line => line && line.name);
+}
+
+function accountMetaFor(partyAccountType, name) {
+  const typeName = partyAccountType.get(String(name || '').trim().toLowerCase());
+  return typeName ? getAccountType(typeName) : null;
+}
+
 const mapToRows = (map, field = 'debit') => Array.from(map.values())
   .filter(row => (row[field] || 0) > 0.001 || (row.debit || 0) > 0.001 || (row.credit || 0) > 0.001)
   .map(row => ({
@@ -168,6 +196,7 @@ export async function buildFinalAccounts(prisma, userId, {
     bankEntries,
     salesNotes,
     purchaseNotes,
+    journals,
     suppliers,
     customers
   ] = await Promise.all([
@@ -195,6 +224,21 @@ export async function buildFinalAccounts(prisma, userId, {
     }),
     prisma.creditDebitNote.findMany({
       where: { userId, noteSide: 'purchase', status: { not: 'cancelled' } }
+    }),
+    prisma.journalVoucher.findMany({
+      where: { userId, status: { not: 'cancelled' } },
+      select: {
+        id: true,
+        transactionType: true,
+        voucherNumber: true,
+        voucherDate: true,
+        createdAt: true,
+        partyName: true,
+        oppositeAccount: true,
+        partySide: true,
+        amount: true,
+        narration: true
+      }
     }),
     prisma.supplier.findMany({ where: { userId }, select: { name: true, accountType: true } }),
     prisma.customer.findMany({ where: { userId }, select: { organizationName: true, accountType: true } })
@@ -238,6 +282,7 @@ export async function buildFinalAccounts(prisma, userId, {
   let greyReturnDiscountAmt = 0;
 
   const expenseByAccount = new Map();
+  const tradingByAccount = new Map();
   const fixedAssetsPeriod = new Map();
   const fixedAssetsAsOn = new Map();
   const trial = new Map();
@@ -432,6 +477,40 @@ export async function buildFinalAccounts(prisma, userId, {
     else purchases = roundMoney(purchases + amount);
   }
 
+  let bankFromJournals = 0;
+  for (const voucher of journals) {
+    const date = voucher.voucherDate || voucher.createdAt;
+    const inPeriod = inRange(date, fromDate, toDate);
+    const asOnHit = inRange(date, null, asOn);
+    if (!inPeriod && !asOnHit) continue;
+    for (const line of journalPostingLines(voucher)) {
+      const meta = accountMetaFor(partyAccountType, line.name);
+      if (!meta || line.amount <= 0) continue;
+      const field = line.debit ? 'debit' : 'credit';
+      if (meta.inProfitLoss && inPeriod) {
+        bump(expenseByAccount, line.name, field, line.amount);
+        bump(trial, `Journal · ${line.name}`, field, line.amount);
+      } else if (meta.inTrading && inPeriod) {
+        bump(tradingByAccount, line.name, field, line.amount);
+        bump(trial, `Journal · ${line.name}`, field, line.amount);
+      } else if (asOnHit && (meta.value === 'BANK' || meta.value === 'CASH')) {
+        bankFromJournals = roundMoney(bankFromJournals + (line.debit ? line.amount : -line.amount));
+      } else if (asOnHit && meta.faGroup === 'fixed_assets') {
+        bump(fixedAssetsAsOn, line.name, field, line.amount);
+        if (inPeriod) bump(trial, `Fixed Asset · ${line.name}`, field, line.amount);
+      } else if (asOnHit && meta.inBalanceSheet) {
+        if (meta.bsSide === 'asset') bump(debtorsAsOn, line.name, field, line.amount);
+        else bump(creditorsAsOn, line.name, field, line.amount);
+        bump(trial, line.name, field, line.amount);
+      }
+    }
+  }
+
+  expenses = roundMoney(Array.from(expenseByAccount.values())
+    .reduce((sum, row) => sum + (row.debit || 0) - (row.credit || 0), 0));
+  const tradingJournalNet = roundMoney(Array.from(tradingByAccount.values())
+    .reduce((sum, row) => sum + (row.debit || 0) - (row.credit || 0), 0));
+
   let bankBalance = OPENING_BANK_BALANCE;
   for (const entry of bankEntries) {
     const date = entry.entryDate || entry.createdAt;
@@ -439,9 +518,9 @@ export async function buildFinalAccounts(prisma, userId, {
     if (entry.entryType === 'receipt') bankBalance += entry.amount;
     else if (entry.entryType === 'payment') bankBalance -= entry.amount;
   }
-  bankBalance = roundMoney(bankBalance);
+  bankBalance = roundMoney(bankBalance + bankFromJournals);
 
-  const netPurchases = roundMoney(purchases + greyPurchaseAmt - purchaseReturn - greyReturnAmt);
+  const netPurchases = roundMoney(purchases + greyPurchaseAmt + tradingJournalNet - purchaseReturn - greyReturnAmt);
   const netSales = roundMoney(sales - salesReturn);
   const grossProfit = roundMoney(netSales - netPurchases);
   const netProfit = roundMoney(grossProfit - expenses);
@@ -453,7 +532,7 @@ export async function buildFinalAccounts(prisma, userId, {
     Array.from(creditorsAsOn.values()).reduce((sum, row) => sum + Math.max((row.credit || 0) - (row.debit || 0), 0), 0)
   );
   const fixedAssetsTotal = roundMoney(
-    Array.from(fixedAssetsAsOn.values()).reduce((sum, row) => sum + (row.debit || 0), 0)
+    Array.from(fixedAssetsAsOn.values()).reduce((sum, row) => sum + Math.max((row.debit || 0) - (row.credit || 0), 0), 0)
   );
 
   const trialRows = Array.from(trial.values())
@@ -522,6 +601,14 @@ export async function buildFinalAccounts(prisma, userId, {
       { side: 'credit', particular: 'By Discount Received', amount: discountReceived, drillKey: 'trading_discount_received', clickable: true },
       { side: 'credit', particular: 'By Discount (Sales Returns)', amount: discountOnSalesReturns, drillKey: 'trading_discount_sales_return', clickable: true }
     ];
+    for (const row of tradingByAccount.values()) {
+      const net = roundMoney((row.debit || 0) - (row.credit || 0));
+      if (net > 0.001) {
+        rows.push({ side: 'debit', particular: `To ${row.account}`, amount: net, drillKey: 'pl_expense', account: row.account, clickable: true });
+      } else if (net < -0.001) {
+        rows.push({ side: 'credit', particular: `By ${row.account}`, amount: Math.abs(net), drillKey: 'pl_expense', account: row.account, clickable: true });
+      }
+    }
     if (grossProfit >= 0) rows.push({ side: 'debit', particular: 'To Gross Profit c/d', amount: grossProfit, clickable: false });
     else rows.push({ side: 'credit', particular: 'By Gross Loss c/d', amount: Math.abs(grossProfit), clickable: false });
     const filtered = rows.filter(row => row.amount > 0.001);
@@ -536,15 +623,22 @@ export async function buildFinalAccounts(prisma, userId, {
   };
 
   const buildPl = () => {
-    const expenseRows = Array.from(expenseByAccount.values()).map(row => ({
-      side: 'debit',
-      particular: `To ${row.account}`,
-      amount: row.debit,
-      note: 'GST General Goods / Input Services',
-      drillKey: 'pl_expense',
-      account: row.account,
-      clickable: true
-    }));
+    const expenseRows = [];
+    for (const row of expenseByAccount.values()) {
+      const net = roundMoney((row.debit || 0) - (row.credit || 0));
+      if (Math.abs(net) <= 0.001) continue;
+      const credit = net < 0;
+      expenseRows.push({
+        side: credit ? 'credit' : 'debit',
+        particular: `${credit ? 'By' : 'To'} ${row.account}`,
+        amount: Math.abs(net),
+        note: 'Profit & Loss',
+        drillKey: 'pl_expense',
+        account: row.account,
+        clickable: true
+      });
+    }
+    expenseRows.sort((a, b) => a.particular.localeCompare(b.particular));
     const rows = [
       ...(grossProfit >= 0
         ? [{ side: 'credit', particular: 'By Gross Profit b/d', amount: grossProfit, clickable: false }]
@@ -560,7 +654,7 @@ export async function buildFinalAccounts(prisma, userId, {
     return {
       view: 'pl',
       rows: filtered,
-      expenseAccounts: mapToRows(expenseByAccount),
+      expenseAccounts: mapToRows(expenseByAccount, 'net'),
       totals: {
         debit: roundMoney(filtered.filter(r => r.side === 'debit').reduce((s, r) => s + r.amount, 0)),
         credit: roundMoney(filtered.filter(r => r.side === 'credit').reduce((s, r) => s + r.amount, 0))
@@ -635,7 +729,7 @@ export async function buildFinalAccounts(prisma, userId, {
     }
 
     const assetRows = [
-      ...mapToRows(fixedAssetsAsOn).map(row => ({
+      ...mapToRows(fixedAssetsAsOn, 'net').map(row => ({
         side: 'asset',
         particular: `Fixed Assets · ${row.account}`,
         amount: row.amount,
@@ -686,7 +780,7 @@ export async function buildFinalAccounts(prisma, userId, {
       presentation: mode,
       assets: assetRows.filter(r => r.amount > 0.001),
       liabilities: liabilityRows.filter(r => r.amount > 0.001),
-      fixedAssetAccounts: mapToRows(fixedAssetsAsOn),
+      fixedAssetAccounts: mapToRows(fixedAssetsAsOn, 'net'),
       totals: { assets: assetsSum, liabilities: liabilitiesSum }
     };
   };
@@ -784,6 +878,7 @@ export async function buildFinalAccountsDrill(prisma, userId, {
     greyPurchases,
     greyReturns,
     bankEntries,
+    journals,
     suppliers,
     customers
   ] = await Promise.all([
@@ -812,6 +907,21 @@ export async function buildFinalAccountsDrill(prisma, userId, {
     prisma.bankEntry.findMany({
       where: { userId },
       orderBy: [{ entryDate: 'desc' }, { createdAt: 'desc' }]
+    }),
+    prisma.journalVoucher.findMany({
+      where: { userId, status: { not: 'cancelled' } },
+      select: {
+        id: true,
+        transactionType: true,
+        voucherNumber: true,
+        voucherDate: true,
+        createdAt: true,
+        partyName: true,
+        oppositeAccount: true,
+        partySide: true,
+        amount: true,
+        narration: true
+      }
     }),
     prisma.supplier.findMany({ where: { userId }, select: { name: true, accountType: true } }),
     prisma.customer.findMany({ where: { userId }, select: { organizationName: true, accountType: true } })
@@ -1070,6 +1180,34 @@ export async function buildFinalAccountsDrill(prisma, userId, {
         editPath: purchaseEditPath(bill),
         clickable: true
       });
+    }
+    for (const voucher of journals) {
+      const date = voucher.voucherDate || voucher.createdAt;
+      const inWindow = key === 'fixed_asset'
+        ? inRange(date, null, asOn)
+        : inRange(date, fromDate, toDate);
+      if (!inWindow) continue;
+      for (const line of journalPostingLines(voucher)) {
+        const meta = accountMetaFor(partyAccountType, line.name);
+        if (targetAccount) {
+          if (!partyMatch(line.name, targetAccount)) continue;
+        } else if (key === 'fixed_asset') {
+          if (meta?.faGroup !== 'fixed_assets') continue;
+        } else if (!meta?.inProfitLoss && !meta?.inTrading) {
+          continue;
+        }
+        rows.push({
+          id: voucher.id,
+          date,
+          billNo: voucher.voucherNumber || '',
+          transactionType: voucher.transactionType || 'JOURNAL',
+          purchaseAccount: line.name,
+          amount: line.debit ? line.amount : -line.amount,
+          partyName: line.name,
+          editPath: `/erp/journal?edit=${voucher.id}`,
+          clickable: true
+        });
+      }
     }
     rows.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     return {

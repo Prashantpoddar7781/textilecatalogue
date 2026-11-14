@@ -10,6 +10,7 @@ import {
   INDIAN_STATES
 } from '../utils/gstCalculation.js';
 import { ensureMillParty, resolveSupplierForEntry } from '../utils/partyMaster.js';
+import { bankAdjustmentBlock } from '../utils/voucherDelete.js';
 import { matchesSupplierName, roundMoney } from '../utils/orderBilling.js';
 import { resolvePartyPan, suggestTdsPercentFromPan } from '../utils/tds.js';
 
@@ -1455,6 +1456,25 @@ router.put('/:id', authenticateToken, requireActiveSubscription, [
     });
 
     res.json({ entry });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.delete('/:id', authenticateToken, requireActiveSubscription, async (req, res, next) => {
+  try {
+    const existing = await prisma.millReceipt.findFirst({
+      where: { id: req.params.id, userId: req.user.userId }
+    });
+    if (!existing) return res.status(404).json({ error: 'Mill receipt not found' });
+    const block = await bankAdjustmentBlock(prisma, req.user.userId, existing.id);
+    if (block) return res.status(409).json({ error: block });
+    await prisma.cuttingCard.updateMany({
+      where: { userId: req.user.userId, millReceiptId: existing.id },
+      data: { millReceiptId: null }
+    });
+    await prisma.millReceipt.delete({ where: { id: existing.id } });
+    res.json({ success: true });
   } catch (error) {
     next(error);
   }

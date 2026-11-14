@@ -1051,7 +1051,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
   };
 
   const deleteEntry = async (entry: BankEntry) => {
-    if (!confirm('Delete this bank entry?')) return;
+    if (!confirm('Delete this entry? It will be removed from the books.')) return;
     try {
       await bankEntriesApi.delete(entry.id);
       setEntries(prev => prev.filter(item => item.id !== entry.id));
@@ -1073,6 +1073,15 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            {editingId && viewMode === 'entry' && (
+              <button
+                type="button"
+                onClick={() => void deleteEntry({ id: editingId } as BankEntry)}
+                className="rounded-xl border border-rose-300 bg-rose-50 px-3 py-2 text-xs font-black uppercase tracking-wide text-rose-700"
+              >
+                Delete entry
+              </button>
+            )}
             {viewMode === 'entry' && <PhotoEntryButton kind="bank" onApply={applyPhoto} />}
             <button
               type="button"

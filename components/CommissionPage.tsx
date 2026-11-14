@@ -3,6 +3,7 @@ import { Loader2 } from 'lucide-react';
 import { CommissionBill, CommissionSourceRow, commissionsApi, invoicesApi, partiesApi } from '../services/api';
 import { AccountParty, ErpSession } from '../types';
 import { postingSaleOrPurchaseAccount } from '../constants/erpTransactionPostingRules';
+import { DeleteEntryButton } from './DeleteEntryButton';
 import { ErpPageBack } from './ErpPageBack';
 import { ErpTopMenu } from './ErpTopMenu';
 
@@ -147,6 +148,16 @@ export const CommissionPage: React.FC<Props> = ({ onBack, erpSession }) => {
     }
   };
 
+  const deleteDocument = async () => {
+    if (!editId) return;
+    try {
+      await commissionsApi.delete(editId);
+      window.location.href = '/erp/commission';
+    } catch (err: any) {
+      setError(err?.message || 'Could not delete this entry.');
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-100">
       <ErpTopMenu title="Commission" erpSession={erpSession} showSessionActions onBackToCatalogue={onBack} />
@@ -154,7 +165,10 @@ export const CommissionPage: React.FC<Props> = ({ onBack, erpSession }) => {
         <div className="mb-3 flex items-center justify-between">
           <ErpPageBack onBack={onBack} className="text-sm font-bold text-indigo-700" />
           <h1 className="text-lg font-black text-slate-900">Commission · {SERIES}</h1>
-          <span className="text-sm font-black text-slate-600">{savedNo ? `Bill ${savedNo}` : 'New'}</span>
+          <div className="flex items-center gap-2">
+            {editId && <DeleteEntryButton onDelete={deleteDocument} disabled={saving} />}
+            <span className="text-sm font-black text-slate-600">{savedNo ? `Bill ${savedNo}` : 'New'}</span>
+          </div>
         </div>
         {error && <p className="mb-3 rounded-lg bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">{error}</p>}
         <div className="grid gap-3 rounded-2xl bg-white p-4 shadow-sm md:grid-cols-3">

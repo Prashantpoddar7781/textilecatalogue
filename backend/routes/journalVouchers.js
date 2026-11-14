@@ -6,6 +6,7 @@ import { requireActiveSubscription } from '../middleware/subscription.js';
 import { formatSeriesBillNumber, warnsOnManualEntry } from '../constants/erpTransactionPostingRules.js';
 import { resolveCustomerForEntry, resolveSupplierForEntry } from '../utils/partyMaster.js';
 import { allocateNextTypeBillNumber } from '../utils/transactionBilling.js';
+import { bankAdjustmentBlock } from '../utils/voucherDelete.js';
 import { JOURNAL_TRANSACTION_TYPE } from '../utils/journalVouchers.js';
 
 const router = express.Router();
@@ -228,6 +229,8 @@ router.delete('/:id', authenticateToken, requireActiveSubscription, async (req, 
       where: { id: req.params.id, userId: req.user.userId }
     });
     if (!existing) return res.status(404).json({ error: 'Journal voucher not found' });
+    const block = await bankAdjustmentBlock(prisma, req.user.userId, existing.id);
+    if (block) return res.status(409).json({ error: block });
     await prisma.journalVoucher.delete({ where: { id: existing.id } });
     res.json({ success: true });
   } catch (error) {

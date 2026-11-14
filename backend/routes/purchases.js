@@ -17,6 +17,7 @@ import { roundMoney } from '../utils/orderBilling.js';
 import { aggregateErpLines, normalizeErpLines } from '../utils/erpLineItems.js';
 import { rememberItemRateAndCut } from '../utils/itemMasterRates.js';
 import { getStateFromGstin, isInterStateSupply } from '../utils/gstCalculation.js';
+import { bankAdjustmentBlock } from '../utils/voucherDelete.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -809,6 +810,21 @@ router.get('/expense-report', authenticateToken, requireActiveSubscription, asyn
       return acc;
     }, { pcs: 0, mts: 0, grossAmount: 0, taxableAmount: 0, ledgerAmount: 0, invoiceValue: 0, discountAmount: 0 });
     res.json({ view: 'register', rows, totals });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.delete('/entries/:id', authenticateToken, requireActiveSubscription, async (req, res, next) => {
+  try {
+    const existing = await prisma.purchaseBill.findFirst({
+      where: { id: req.params.id, userId: req.user.userId }
+    });
+    if (!existing) return res.status(404).json({ error: 'Purchase bill not found' });
+    const block = await bankAdjustmentBlock(prisma, req.user.userId, existing.id);
+    if (block) return res.status(409).json({ error: block });
+    await prisma.purchaseBill.delete({ where: { id: existing.id } });
+    res.json({ success: true });
   } catch (error) {
     next(error);
   }

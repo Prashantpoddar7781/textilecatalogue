@@ -15,6 +15,7 @@ import {
   computeCommissionAmounts,
   sameName
 } from '../utils/commission.js';
+import { bankAdjustmentBlock } from '../utils/voucherDelete.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -462,6 +463,21 @@ router.put('/:id', authenticateToken, requireActiveSubscription, async (req, res
     res.json({ bill: mapCommissionBill(bill) });
   } catch (error) {
     if (error.status) return res.status(error.status).json({ error: error.message });
+    next(error);
+  }
+});
+
+router.delete('/:id', authenticateToken, requireActiveSubscription, async (req, res, next) => {
+  try {
+    const existing = await prisma.purchaseBill.findFirst({
+      where: { id: req.params.id, userId: req.user.userId, transactionType: COMMISSION_SERIES }
+    });
+    if (!existing) return res.status(404).json({ error: 'Commission bill not found' });
+    const block = await bankAdjustmentBlock(prisma, req.user.userId, existing.id);
+    if (block) return res.status(409).json({ error: block });
+    await prisma.purchaseBill.delete({ where: { id: existing.id } });
+    res.json({ success: true });
+  } catch (error) {
     next(error);
   }
 });

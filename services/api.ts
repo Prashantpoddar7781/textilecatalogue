@@ -758,6 +758,9 @@ export const purchasesApi = {
       body: JSON.stringify(body)
     });
   },
+  deleteEntry: async (id: string) => {
+    return request<{ success: boolean }>(`/purchases/entries/${id}`, { method: 'DELETE' });
+  },
   getFinishReport: async (params: Record<string, string | undefined>) => {
     const query = new URLSearchParams();
     Object.entries(params).forEach(([key, value]) => { if (value) query.set(key, value); });
@@ -810,6 +813,9 @@ export const salesOrdersApi = {
       body: JSON.stringify(body)
     });
   },
+  delete: async (id: string) => {
+    return request<{ success: boolean }>(`/sales-orders/${id}`, { method: 'DELETE' });
+  },
   getPending: async (params: { partyName?: string; customerId?: string; excludeId?: string }) => {
     const query = new URLSearchParams();
     if (params.customerId) query.set('customerId', params.customerId);
@@ -831,6 +837,9 @@ export const salesOrdersApi = {
       method: 'PUT',
       body: JSON.stringify(body)
     });
+  },
+  deleteBill: async (id: string) => {
+    return request<{ success: boolean }>(`/sales-orders/bills/${id}`, { method: 'DELETE' });
   },
   getItems: async () => {
     return request<{ items: import('../types').SalesItemMaster[] }>('/sales-orders/items');
@@ -1569,7 +1578,8 @@ export const greyPurchasesApi = {
       method: 'PUT',
       body: JSON.stringify(body)
     });
-  }
+  },
+  delete: async (id: string) => request<{ success: boolean }>(`/grey-purchases/${id}`, { method: 'DELETE' })
 };
 
 export const greyDispatchesApi = {
@@ -1720,7 +1730,8 @@ export const greyDispatchesApi = {
       method: 'PUT',
       body: JSON.stringify(body)
     });
-  }
+  },
+  delete: async (id: string) => request<{ success: boolean }>(`/grey-dispatches/${id}`, { method: 'DELETE' })
 };
 
 export const greyPurchaseReturnsApi = {
@@ -1761,7 +1772,8 @@ export const greyPurchaseReturnsApi = {
       method: 'PUT',
       body: JSON.stringify(body)
     });
-  }
+  },
+  delete: async (id: string) => request<{ success: boolean }>(`/grey-purchase-returns/${id}`, { method: 'DELETE' })
 };
 
 export const stockApi = {
@@ -2143,6 +2155,7 @@ export const millReceiptsApi = {
       body: JSON.stringify(body)
     });
   },
+  delete: async (id: string) => request<{ success: boolean }>(`/mill-receipts/${id}`, { method: 'DELETE' }),
   saveBatch: async (body: Record<string, unknown>) => {
     return request<{ entries: MillReceipt[]; voucherNo: number }>('/mill-receipts/batch', {
       method: 'POST',
@@ -2234,7 +2247,8 @@ export const workDespatchesApi = {
       method: 'PUT',
       body: JSON.stringify(body)
     });
-  }
+  },
+  delete: async (id: string) => request<{ success: boolean }>(`/work-despatches/${id}`, { method: 'DELETE' })
 };
 
 export const workReceiptsApi = {
@@ -2330,7 +2344,8 @@ export const workReceiptsApi = {
       method: 'PUT',
       body: JSON.stringify(body)
     });
-  }
+  },
+  delete: async (id: string) => request<{ success: boolean }>(`/work-receipts/${id}`, { method: 'DELETE' })
 };
 
 // Billing API
@@ -2409,6 +2424,7 @@ export const commissionsApi = {
   get: async (id: string) => request<{ bill: CommissionBill }>(`/commissions/${id}`),
   create: async (body: Record<string, unknown>) => request<{ bill: CommissionBill }>('/commissions', { method: 'POST', body: JSON.stringify(body) }),
   update: async (id: string, body: Record<string, unknown>) => request<{ bill: CommissionBill }>(`/commissions/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+  delete: async (id: string) => request<{ success: boolean }>(`/commissions/${id}`, { method: 'DELETE' }),
   report: async (params?: { fromDate?: string; toDate?: string; broker?: string }) => {
     const query = new URLSearchParams();
     if (params?.fromDate) query.set('fromDate', params.fromDate);

@@ -19,6 +19,7 @@ import {
   warnsOnManualEntry
 } from '../constants/erpTransactionPostingRules';
 import { BankPendingBill, CreditDebitNote, Customer, ErpSession, Supplier } from '../types';
+import { DeleteEntryButton } from './DeleteEntryButton';
 import { ErpFormShell } from './ErpFormShell';
 import { ErpSaveButton } from './ErpSaveButton';
 import { EinvoiceDialog } from './EinvoiceDialog';
@@ -439,6 +440,16 @@ export const CreditDebitNotePage: React.FC<Props> = ({ noteType: initialNoteType
     }
   };
 
+  const deleteDocument = async () => {
+    if (!editingId) return;
+    try {
+      await creditDebitNotesApi.delete(editingId);
+      window.location.href = '/erp/notes';
+    } catch (err: any) {
+      setError(err.message || 'Could not delete this entry.');
+    }
+  };
+
   const applyPhoto = (x: PhotoExtraction) => {
     const out: string[] = [];
     const isCustomer = noteType.partyType === 'customer';
@@ -500,6 +511,7 @@ export const CreditDebitNotePage: React.FC<Props> = ({ noteType: initialNoteType
               <p className="mt-1 text-[11px] font-semibold text-indigo-700">{postingSummary(noteType.series)}</p>
             </div>
             <div className="flex items-center gap-2">
+              {editingId && <DeleteEntryButton onDelete={deleteDocument} disabled={saving} />}
               <PhotoEntryButton kind="note" onApply={applyPhoto} disabled={loadingEdit} />
               <button
                 type="button"

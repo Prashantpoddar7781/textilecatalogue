@@ -7,6 +7,7 @@ import { ensureMillParty, resolveSupplierForEntry } from '../utils/partyMaster.j
 import { roundMoney } from '../utils/orderBilling.js';
 import { linesForSource, sourceLineKey } from '../utils/documentLinkAttribution.js';
 import { getGstDefaultsForTransactionType } from '../constants/erpTransactionTypes.js';
+import { bankAdjustmentBlock } from '../utils/voucherDelete.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -496,6 +497,25 @@ router.put('/:id', authenticateToken, requireActiveSubscription, [
     });
 
     res.json({ entry });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.delete('/:id', authenticateToken, requireActiveSubscription, async (req, res, next) => {
+  try {
+    const existing = await prisma.workDespatch.findFirst({
+      where: { id: req.params.id, userId: req.user.userId }
+    });
+    if (!existing) return res.status(404).json({ error: 'Work despatch not found' });
+    const receipts = await prisma.workReceipt.count({ where: { workDespatchId: existing.id } });
+    if (receipts) {
+      return res.status(409).json({ error: 'This despatch is used on a work receipt. Delete that receipt first.' });
+    }
+    const block = await bankAdjustmentBlock(prisma, req.user.userId, existing.id);
+    if (block) return res.status(409).json({ error: block });
+    await prisma.workDespatch.delete({ where: { id: existing.id } });
+    res.json({ success: true });
   } catch (error) {
     next(error);
   }

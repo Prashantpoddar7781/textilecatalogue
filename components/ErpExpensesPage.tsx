@@ -20,7 +20,9 @@ import {
   postingTdsPercent,
   postingDiscountAccount
 } from '../constants/erpTransactionPostingRules';
+import { getAccountType } from '../constants/accountTypes';
 import { AccountsInformationDialog, AddPartyConfirmDialog } from './AccountsInformationDialog';
+import { DeleteEntryButton } from './DeleteEntryButton';
 import { ErpFormShell } from './ErpFormShell';
 import { ErpSaveButton } from './ErpSaveButton';
 import { ErpPageBack } from './ErpPageBack';
@@ -44,17 +46,6 @@ const round2 = (v: number) => Math.round((Number(v) || 0) * 100) / 100;
 const inputClass = 'w-full rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-sm font-semibold outline-none focus:border-indigo-400';
 const readonlyClass = 'w-full rounded-lg border border-gray-200 bg-gray-100 px-2.5 py-2 text-sm font-semibold';
 const labelClass = 'mb-1 block text-[10px] font-black uppercase tracking-wide text-gray-500';
-
-const PURCHASE_ACCOUNT_SUGGESTIONS = Array.from(new Set([
-  ...ERP_SALE_PURCHASE_ACCOUNTS,
-  'CAR ACCOUNT',
-  'RENT A/C',
-  'ELECTRICITY A/C',
-  'SALARY EXP A/C',
-  'OFFICE EXP A/C',
-  'TRANSPORT A/C',
-  'REPAIR A/C'
-])).sort((a, b) => a.localeCompare(b));
 
 const blankLine = (lineNo = 1, gstRate = 5, hsnCode = '5407', discountPercent = 0): SalesLineItem => ({
   lineNo,
@@ -173,6 +164,18 @@ export const ErpExpensesPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [showAddConfirm, setShowAddConfirm] = useState(false);
   const [showAccountsDialog, setShowAccountsDialog] = useState(false);
   const [newPartyDetails, setNewPartyDetails] = useState<PhotoPartyDetails | null>(null);
+
+  const purchaseAccountSuggestions = useMemo(() => {
+    const names = new Set(ERP_SALE_PURCHASE_ACCOUNTS);
+    for (const supplier of suppliers) {
+      const meta = getAccountType(supplier.accountType);
+      if (!meta) continue;
+      const nominal = meta.inProfitLoss || meta.inTrading || meta.faGroup === 'fixed_assets';
+      if (nominal && supplier.name.trim()) names.add(supplier.name.trim());
+    }
+    if (purchaseAccount.trim()) names.add(purchaseAccount.trim());
+    return Array.from(names).sort((a, b) => a.localeCompare(b));
+  }, [suppliers, purchaseAccount]);
 
   const applyTypeGstDefaults = (type: string) => {
     const d = getGstDefaultsForTransactionType(type, companyGstRate, companyHsnCode);
@@ -552,6 +555,16 @@ export const ErpExpensesPage: React.FC<Props> = ({ onBack, erpSession }) => {
     }
   };
 
+  const deleteDocument = async () => {
+    if (!editId) return;
+    try {
+      await purchasesApi.deleteEntry(editId);
+      window.location.href = '/erp/expenses';
+    } catch (err: any) {
+      setError(err.message || 'Could not delete this entry.');
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#F6F7FB]">
@@ -583,9 +596,12 @@ export const ErpExpensesPage: React.FC<Props> = ({ onBack, erpSession }) => {
               <h1 className="text-lg font-black uppercase tracking-wide text-gray-900">
                 Expenses{isEditMode ? ' · Edit' : ' · Add Mode'}
               </h1>
-              <span className="rounded-full bg-emerald-100 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-emerald-800">
-                Expense · Credits party ledger
-              </span>
+              <div className="flex items-center gap-2">
+                {isEditMode && <DeleteEntryButton onDelete={deleteDocument} disabled={saving} />}
+                <span className="rounded-full bg-emerald-100 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-emerald-800">
+                  Expense · Credits party ledger
+                </span>
+              </div>
             </div>
 
             <div className="grid gap-3 md:grid-cols-4 xl:grid-cols-6">
@@ -636,7 +652,7 @@ export const ErpExpensesPage: React.FC<Props> = ({ onBack, erpSession }) => {
                   placeholder="Purchase account"
                 />
                 <datalist id="erp-expense-purchase-accounts">
-                  {PURCHASE_ACCOUNT_SUGGESTIONS.map(name => <option key={name} value={name} />)}
+                  {purchaseAccountSuggestions.map(name => <option key={name} value={name} />)}
                 </datalist>
               </label>
               <label>

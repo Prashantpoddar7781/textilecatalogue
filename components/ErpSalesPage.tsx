@@ -16,6 +16,7 @@ import {
   postingDiscountAccount
 } from '../constants/erpTransactionPostingRules';
 import { AccountsInformationDialog, AddPartyConfirmDialog } from './AccountsInformationDialog';
+import { DeleteEntryButton } from './DeleteEntryButton';
 import { ErpFormShell } from './ErpFormShell';
 import { EwayBillDialog } from './EwayBillDialog';
 import { EinvoiceDialog } from './EinvoiceDialog';
@@ -1168,6 +1169,17 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
     if (!opened) setError('Allow pop-ups for this site, then print the bill again.');
   };
 
+  const deleteDocument = async () => {
+    if (!editId) return;
+    try {
+      if (isSalesOrder || editKind === 'order') await salesOrdersApi.delete(editId);
+      else await salesOrdersApi.deleteBill(editId);
+      window.location.href = '/erp/sales';
+    } catch (err: any) {
+      setError(err.message || 'Could not delete this entry.');
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#F6F7FB]">
@@ -1252,15 +1264,18 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
                 {isSalesOrder ? 'Sales Orders' : isGoodsReturn ? 'Sales Goods Return' : isFinishSales ? 'Finish Sales' : transactionType}
                 {isEditMode ? ' · Edit' : ' · Add Mode'}
               </h1>
-              <span className={`rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-widest ${
-                isSalesOrder
-                  ? 'bg-indigo-100 text-indigo-800'
-                  : isGoodsReturn
-                    ? 'bg-amber-100 text-amber-900'
-                    : 'bg-fuchsia-100 text-fuchsia-800'
-              }`}>
-                {isSalesOrder ? 'Order form · No ledger' : isGoodsReturn ? 'Return · Credits ledger' : 'Bill · Posts to ledger'}
-              </span>
+              <div className="flex items-center gap-2">
+                {isEditMode && <DeleteEntryButton onDelete={deleteDocument} disabled={saving} />}
+                <span className={`rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-widest ${
+                  isSalesOrder
+                    ? 'bg-indigo-100 text-indigo-800'
+                    : isGoodsReturn
+                      ? 'bg-amber-100 text-amber-900'
+                      : 'bg-fuchsia-100 text-fuchsia-800'
+                }`}>
+                  {isSalesOrder ? 'Order form · No ledger' : isGoodsReturn ? 'Return · Credits ledger' : 'Bill · Posts to ledger'}
+                </span>
+              </div>
             </div>
             <div className="grid gap-3 md:grid-cols-4 xl:grid-cols-6">
               <label><span className={labelClass}>Company</span><input className={readonlyClass} value={companyName} readOnly /></label>

@@ -10,6 +10,7 @@ import { getStateFromGstin, calculateGstBreakup } from '../utils/gstCalculation.
 import { getGstDefaultsForTransactionType } from '../constants/erpTransactionTypes.js';
 import { linesForSource, qtySlicesForSalesOrder } from '../utils/documentLinkAttribution.js';
 import { rememberItemRateAndCut } from '../utils/itemMasterRates.js';
+import { bankAdjustmentBlock } from '../utils/voucherDelete.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -854,6 +855,24 @@ router.put('/bills/:id', authenticateToken, requireActiveSubscription, async (re
   }
 });
 
+router.delete('/bills/:id', authenticateToken, requireActiveSubscription, async (req, res, next) => {
+  try {
+    const existing = await prisma.order.findFirst({
+      where: { id: req.params.id, userId: req.user.userId, manualType: 'erp_sales' }
+    });
+    if (!existing) return res.status(404).json({ error: 'Sales bill not found' });
+    if (existing.einvoiceIrn && existing.einvoiceStatus !== 'cancelled') {
+      return res.status(409).json({ error: `This bill has IRN ${existing.einvoiceIrn}. Cancel that IRN before deleting the bill.` });
+    }
+    const block = await bankAdjustmentBlock(prisma, req.user.userId, existing.id);
+    if (block) return res.status(409).json({ error: block });
+    await prisma.order.delete({ where: { id: existing.id } });
+    res.json({ success: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
 const LR_SALE_TYPES = new Set([
   'FINISH SALES',
   'FINISH SALES (GST)',
@@ -1076,6 +1095,31 @@ router.put('/:id', authenticateToken, requireActiveSubscription, async (req, res
     });
     if (!existing) return res.status(404).json({ error: 'Sales Order not found' });
     await saveSalesOrder(req, res, existing);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.delete('/:id', authenticateToken, requireActiveSubscription, async (req, res, next) => {
+  try {
+    const existing = await prisma.salesOrder.findFirst({
+      where: { id: req.params.id, userId: req.user.userId }
+    });
+    if (!existing) return res.status(404).json({ error: 'Sales Order not found' });
+    const billed = await prisma.order.count({
+      where: {
+        userId: req.user.userId,
+        OR: [
+          { sourceSalesOrderId: existing.id },
+          { sourceSalesOrderIds: { has: existing.id } }
+        ]
+      }
+    });
+    if (billed > 0) {
+      return res.status(409).json({ error: 'This sales order is already on a sale bill. Delete that bill first.' });
+    }
+    await prisma.salesOrder.delete({ where: { id: existing.id } });
+    res.json({ success: true });
   } catch (error) {
     next(error);
   }

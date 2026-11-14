@@ -5,6 +5,7 @@ import { getGstDocumentType, getItcEligibility, gstReturnSection, postingDiscoun
 import { getGstDefaultsForTransactionType } from '../constants/erpTransactionTypes';
 import { AccountParty, ErpSession, MillPendingDispatch, MillReceipt, MillReceiptTakaRow } from '../types';
 import { AccountsInformationDialog, AddPartyConfirmDialog } from './AccountsInformationDialog';
+import { DeleteEntryButton } from './DeleteEntryButton';
 import { ErpFormShell } from './ErpFormShell';
 import { ErpSaveButton } from './ErpSaveButton';
 import { ErpPageBack } from './ErpPageBack';
@@ -775,6 +776,16 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
     }
   };
 
+  const deleteDocument = async () => {
+    if (!editId) return;
+    try {
+      await millReceiptsApi.delete(editId);
+      window.location.href = '/erp/mill-receipt';
+    } catch (err: any) {
+      setError(err.message || 'Could not delete this entry.');
+    }
+  };
+
   const orderedPending = useMemo(() => {
     const typed = lotNo.trim().toLowerCase();
     return [...pendingDispatches].sort((a, b) => {
@@ -839,11 +850,14 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
               <h1 className="text-lg font-black uppercase tracking-wide text-gray-900">
                 {isEditMode ? 'Edit Mill Receipt' : 'Mill Receipt Entry'}
               </h1>
-              <span className={`rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-widest ${
-                isEditMode ? 'bg-amber-50 text-amber-800' : 'bg-teal-50 text-teal-800'
-              }`}>
+              <div className="flex items-center gap-2">
+                {isEditMode && <DeleteEntryButton onDelete={deleteDocument} disabled={saving} />}
+                <span className={`rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-widest ${
+                  isEditMode ? 'bg-amber-50 text-amber-800' : 'bg-teal-50 text-teal-800'
+                }`}>
                 {isEditMode ? 'Edit Mode' : 'Add Mode'}
-              </span>
+                </span>
+              </div>
             </div>
 
             <div className="grid gap-3 md:grid-cols-4 lg:grid-cols-6">

@@ -3,6 +3,7 @@ import { ListOrdered, Loader2 } from 'lucide-react';
 import { greyDispatchesApi } from '../services/api';
 import { ErpSession, GreyReceiptSummary, GreyTakaDetailRow } from '../types';
 import { DispatchTakaSelectModal } from './DispatchTakaSelectModal';
+import { DeleteEntryButton } from './DeleteEntryButton';
 import { ErpFormShell } from './ErpFormShell';
 import { ErpSaveButton } from './ErpSaveButton';
 import { ErpPageBack } from './ErpPageBack';
@@ -347,6 +348,16 @@ export const GreyDispatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
     }
   };
 
+  const deleteDocument = async () => {
+    if (!editId) return;
+    try {
+      await greyDispatchesApi.delete(editId);
+      window.location.href = '/erp/grey-dispatch';
+    } catch (err: any) {
+      setError(err.message || 'Could not delete this entry.');
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#F6F7FB]">
       <ErpTopMenu
@@ -358,7 +369,10 @@ export const GreyDispatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
       <main className="mx-auto max-w-[1400px] px-4 py-5">
         <div className="mb-4 flex items-center justify-between">
           <ErpPageBack onBack={onBack} className="flex items-center gap-2 text-sm font-bold text-gray-600 hover:text-gray-900" />
-          <p className="text-xs font-black uppercase tracking-wide text-orange-700">{isEditMode ? 'Edit Grey Dispatch' : 'Grey Dispatch'}</p>
+          <div className="flex items-center gap-2">
+            {isEditMode && <DeleteEntryButton onDelete={deleteDocument} disabled={saving} />}
+            <p className="text-xs font-black uppercase tracking-wide text-orange-700">{isEditMode ? 'Edit Grey Dispatch' : 'Grey Dispatch'}</p>
+          </div>
         </div>
 
         {error && <div className="mb-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{error}</div>}

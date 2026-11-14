@@ -11,6 +11,7 @@ import {
 } from '../utils/gstCalculation.js';
 import { resolveSupplierForEntry } from '../utils/partyMaster.js';
 import { allocateNextTypeBillNumber } from '../utils/transactionBilling.js';
+import { bankAdjustmentBlock } from '../utils/voucherDelete.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -608,6 +609,29 @@ router.put('/:id', authenticateToken, requireActiveSubscription, [
     });
 
     res.json({ entry });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.delete('/:id', authenticateToken, requireActiveSubscription, async (req, res, next) => {
+  try {
+    const existing = await prisma.greyPurchase.findFirst({
+      where: { id: req.params.id, userId: req.user.userId }
+    });
+    if (!existing) return res.status(404).json({ error: 'Grey purchase not found' });
+    const [dispatches, returns, receipts] = await Promise.all([
+      prisma.greyDispatch.count({ where: { greyPurchaseId: existing.id } }),
+      prisma.greyPurchaseReturn.count({ where: { greyPurchaseId: existing.id } }),
+      prisma.millReceipt.count({ where: { greyPurchaseId: existing.id } })
+    ]);
+    if (dispatches || returns || receipts) {
+      return res.status(409).json({ error: 'This grey purchase is used on a dispatch, return, or mill receipt. Delete that voucher first.' });
+    }
+    const block = await bankAdjustmentBlock(prisma, req.user.userId, existing.id);
+    if (block) return res.status(409).json({ error: block });
+    await prisma.greyPurchase.delete({ where: { id: existing.id } });
+    res.json({ success: true });
   } catch (error) {
     next(error);
   }

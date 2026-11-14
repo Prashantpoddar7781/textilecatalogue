@@ -6,6 +6,7 @@ import { workReceiptsApi } from '../services/api';
 import { resolvePartyPan, suggestTdsPercentFromPan } from '../utils/tds';
 import { AccountParty, ErpSession, LinkedSourceDocument, WorkLineItem } from '../types';
 import { AccountsInformationDialog, AddPartyConfirmDialog } from './AccountsInformationDialog';
+import { DeleteEntryButton } from './DeleteEntryButton';
 import { ErpFormShell } from './ErpFormShell';
 import { ErpSaveButton } from './ErpSaveButton';
 import { ErpPageBack } from './ErpPageBack';
@@ -630,6 +631,16 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
     }
   };
 
+  const deleteDocument = async () => {
+    if (!editId) return;
+    try {
+      await workReceiptsApi.delete(editId);
+      window.location.href = '/erp/work-receipt';
+    } catch (err: any) {
+      setError(err.message || 'Could not delete this entry.');
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#F6F7FB]">
@@ -664,9 +675,12 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
               <h1 className="text-lg font-black uppercase tracking-wide text-gray-900">
                 Work Rec. Bill {isEditMode ? '· Edit' : '· Add Mode'}
               </h1>
-              <span className="rounded-full bg-fuchsia-100 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-fuchsia-800">
-                Posts EMB JOB CHARGES
-              </span>
+              <div className="flex items-center gap-2">
+                {isEditMode && <DeleteEntryButton onDelete={deleteDocument} disabled={saving} />}
+                <span className="rounded-full bg-fuchsia-100 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-fuchsia-800">
+                  Posts EMB JOB CHARGES
+                </span>
+              </div>
             </div>
             <div className="grid gap-3 md:grid-cols-4 xl:grid-cols-6">
               <label><span className={labelClass}>Company</span><input className={inputClass} value={companyName} onChange={e => setCompanyName(e.target.value)} /></label>

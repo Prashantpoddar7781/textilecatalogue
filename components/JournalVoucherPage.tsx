@@ -9,6 +9,7 @@ import {
 } from '../constants/erpTransactionPostingRules';
 import { JOURNAL_TYPE } from '../constants/bankCashSeries';
 import { Customer, ErpSession, JournalVoucher, Supplier } from '../types';
+import { DeleteEntryButton } from './DeleteEntryButton';
 import { ErpFormShell } from './ErpFormShell';
 import { ErpSaveButton } from './ErpSaveButton';
 import { ErpTopMenu } from './ErpTopMenu';
@@ -228,6 +229,16 @@ export const JournalVoucherPage: React.FC<Props> = ({ onBack, erpSession }) => {
     }
   };
 
+  const deleteDocument = async () => {
+    if (!editingId) return;
+    try {
+      await journalVouchersApi.delete(editingId);
+      window.location.href = '/erp/journal';
+    } catch (err: any) {
+      setError(err.message || 'Could not delete this entry.');
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#F6F7FB]">
       <ErpTopMenu title="Journal Voucher" erpSession={erpSession} onBackToCatalogue={onBack} />
@@ -249,9 +260,12 @@ export const JournalVoucherPage: React.FC<Props> = ({ onBack, erpSession }) => {
                   </p>
                 </div>
                 {editingId && (
-                  <button type="button" onClick={startNew} className="rounded-xl bg-gray-100 px-4 py-2 text-xs font-black uppercase tracking-wide text-gray-700">
-                    New voucher
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <DeleteEntryButton onDelete={deleteDocument} disabled={saving} />
+                    <button type="button" onClick={startNew} className="rounded-xl bg-gray-100 px-4 py-2 text-xs font-black uppercase tracking-wide text-gray-700">
+                      New voucher
+                    </button>
+                  </div>
                 )}
               </div>
 

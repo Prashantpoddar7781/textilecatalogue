@@ -12,6 +12,7 @@ import { PhotoEntryButton } from './PhotoEntryButton';
 import { PhotoExtraction } from '../services/api';
 import { PhotoPartyDetails, matchPhotoParty, photoPartyDetails, photoPartyState } from '../utils/photoEntry';
 import { ErpTopMenu } from './ErpTopMenu';
+import { DeleteEntryButton } from './DeleteEntryButton';
 import { ErpFormShell } from './ErpFormShell';
 import { ErpSaveButton } from './ErpSaveButton';
 import { TakaDetailsModal } from './TakaDetailsModal';
@@ -510,6 +511,16 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
     }
   };
 
+  const deleteDocument = async () => {
+    if (!editId) return;
+    try {
+      await greyPurchasesApi.delete(editId);
+      window.location.href = '/erp/grey-purchase';
+    } catch (err: any) {
+      setError(err.message || 'Could not delete this entry.');
+    }
+  };
+
   const isLocal = gstTypeLabel === 'Local Tax' || gstTypeLabel === 'CGST+SGST';
 
   return (
@@ -525,6 +536,7 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
           <ErpPageBack onBack={onBack} className="flex items-center gap-2 text-sm font-bold text-gray-600 hover:text-gray-900" />
           <div className="flex items-center gap-3">
             <PhotoEntryButton kind="grey_purchase" onApply={applyPhoto} disabled={loading} />
+            {isEditMode && <DeleteEntryButton onDelete={deleteDocument} disabled={saving} />}
             <p className="text-xs font-black uppercase tracking-wide text-violet-700">
               {isEditMode ? 'Edit Grey Purchase' : 'Grey Purchase'}
             </p>

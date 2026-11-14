@@ -921,7 +921,7 @@ async function main() {
       remarks: tag(code, vno, [bill.RMK, num(bill.TDSAMT) ? `TDS ${round(num(bill.TDSAMT))}` : ''].filter(Boolean).join(' ')),
       challanNo: text(bill.CHALLAN, 40) || null,
       supplierBillNo: billNo,
-      purchaseAccount: name,
+      purchaseAccount: (['P93', 'P94', 'P95'].includes(code) && text(bill.cCODE, 180)) || name,
       status: 'posted',
       _party: partyName
     });

@@ -19,6 +19,7 @@ import {
   postingDiscountAccount
 } from '../constants/erpTransactionPostingRules';
 import { AccountsInformationDialog, AddPartyConfirmDialog } from './AccountsInformationDialog';
+import { DeleteEntryButton } from './DeleteEntryButton';
 import { ErpFormShell } from './ErpFormShell';
 import { ErpSaveButton } from './ErpSaveButton';
 import { ErpPageBack } from './ErpPageBack';
@@ -530,6 +531,16 @@ export const ErpPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
     }
   };
 
+  const deleteDocument = async () => {
+    if (!editId) return;
+    try {
+      await purchasesApi.deleteEntry(editId);
+      window.location.href = '/erp/purchase';
+    } catch (err: any) {
+      setError(err.message || 'Could not delete this entry.');
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#F6F7FB]">
@@ -562,11 +573,14 @@ export const ErpPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
                 {isPurchaseReturn ? 'Purchase Return' : 'Finish Purchase'}
                 {isEditMode ? ' · Edit' : ' · Add Mode'}
               </h1>
-              <span className={`rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-widest ${
-                isPurchaseReturn ? 'bg-amber-100 text-amber-900' : 'bg-emerald-100 text-emerald-800'
-              }`}>
-                {isPurchaseReturn ? 'Return · Debits supplier' : 'Bill · Credits supplier ledger'}
-              </span>
+              <div className="flex items-center gap-2">
+                {isEditMode && <DeleteEntryButton onDelete={deleteDocument} disabled={saving} />}
+                <span className={`rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-widest ${
+                  isPurchaseReturn ? 'bg-amber-100 text-amber-900' : 'bg-emerald-100 text-emerald-800'
+                }`}>
+                  {isPurchaseReturn ? 'Return · Debits supplier' : 'Bill · Credits supplier ledger'}
+                </span>
+              </div>
             </div>
 
             <div className="grid gap-3 md:grid-cols-4 xl:grid-cols-6">

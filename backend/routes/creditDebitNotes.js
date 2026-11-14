@@ -8,6 +8,7 @@ import { postingSaleOrPurchaseAccount } from '../constants/erpTransactionPosting
 import { resolveCustomerForEntry, resolveSupplierForEntry } from '../utils/partyMaster.js';
 import { calculateNoteTotals } from '../utils/gstCalculation.js';
 import { roundMoney } from '../utils/orderBilling.js';
+import { bankAdjustmentBlock } from '../utils/voucherDelete.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -412,6 +413,8 @@ router.delete('/:id', authenticateToken, requireActiveSubscription, async (req, 
     if (existing.einvoiceIrn && existing.einvoiceStatus !== 'cancelled') {
       return res.status(409).json({ error: `This note has IRN ${existing.einvoiceIrn}. Cancel that IRN before deleting the note.` });
     }
+    const block = await bankAdjustmentBlock(prisma, req.user.userId, existing.id);
+    if (block) return res.status(409).json({ error: block });
     await prisma.creditDebitNote.delete({ where: { id: existing.id } });
     res.json({ success: true });
   } catch (error) {
