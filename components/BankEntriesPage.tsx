@@ -688,34 +688,6 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
     const isDeduct = isDeductAllocation(target);
     const pending = roundMoneyLocal(target.pendingAmount || 0);
 
-    if (!isDeduct && amountTouched && received > 0) {
-      const room = roundMoneyLocal(received + deductSum - billSum);
-      const shortfallIfFull = roundMoneyLocal(Math.max(pending - Math.max(room, 0), 0));
-      const availableUnadj = roundMoneyLocal(
-        pendingBills
-          .filter(bill => isUnadjAllocation(bill) && (bill.adjustAmount || 0) <= 0)
-          .reduce((sum, bill) => sum + (bill.pendingAmount || 0), 0)
-      );
-      if (shortfallIfFull > 0.05 && availableUnadj + 0.05 >= shortfallIfFull) {
-        let need = shortfallIfFull;
-        setAllowOverAllocation(true);
-        setPendingBills(prev => prev.map(bill => {
-          if (bill.billId === billId) {
-            return { ...bill, adjustAmount: pending };
-          }
-          if (!isUnadjAllocation(bill) || (bill.adjustAmount || 0) > 0 || need <= 0) {
-            return bill;
-          }
-          const take = roundMoneyLocal(Math.min(bill.pendingAmount || 0, need));
-          need = roundMoneyLocal(Math.max(need - take, 0));
-          return { ...bill, adjustAmount: take };
-        }));
-        setQuickBillNo('');
-        setBillPickerOpen(false);
-        return true;
-      }
-    }
-
     const allocate = allocationAgainstAmount({
       pending,
       isDeduct,
