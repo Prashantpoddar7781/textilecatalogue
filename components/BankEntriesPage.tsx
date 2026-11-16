@@ -496,7 +496,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
   };
 
   const adjustedBills = useMemo(
-    () => pendingBills.filter(bill => (bill.adjustAmount || 0) > 0),
+    () => pendingBills.filter(bill => (bill.adjustAmount || 0) > 0 || (bill.discountAmount || 0) > 0),
     [pendingBills]
   );
 
@@ -798,19 +798,23 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
     setPendingBills(prev => prev.map(bill => {
       if (bill.billId !== billId || isDeductAllocation(bill)) return bill;
       const taxable = Number(bill.taxableAmount) || Number(bill.billAmount) || 0;
+      const pending = roundMoneyLocal(bill.pendingAmount || 0);
       let percent = Number(bill.discountPercent) || 0;
       let amount = Number(bill.discountAmount) || 0;
+      let adjust = roundMoneyLocal(bill.adjustAmount || 0);
       if (patch.percent != null) {
         percent = Math.max(0, Number(patch.percent) || 0);
-        amount = taxable > 0 ? roundMoneyLocal(taxable * percent / 100) : amount;
+        amount = taxable > 0 ? roundMoneyLocal(taxable * percent / 100) : 0;
       }
       if (patch.amount != null) {
         amount = Math.max(0, Number(patch.amount) || 0);
         percent = taxable > 0 ? roundMoneyLocal((amount / taxable) * 100) : percent;
       }
-      const room = Math.max((bill.pendingAmount || 0) - (bill.adjustAmount || 0), 0);
-      if (amount > room + 0.001) amount = roundMoneyLocal(room);
-      return { ...bill, discountPercent: percent, discountAmount: amount };
+      if (amount > pending) amount = pending;
+      if (adjust + amount > pending + 0.001) {
+        adjust = roundMoneyLocal(Math.max(pending - amount, 0));
+      }
+      return { ...bill, discountPercent: percent, discountAmount: amount, adjustAmount: adjust };
     }));
   };
 
