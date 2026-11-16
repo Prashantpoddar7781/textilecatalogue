@@ -1,6 +1,9 @@
 import {
   calculateOrderDiscountAmount,
   calculateOrderGrandTotal,
+  resolvePostedSaleAmount,
+  receiptBillDiscounts,
+  discountsNotCoveredByCredits,
   isPurchaseReturn,
   isSalesGoodsReturn,
   OPENING_BANK_BALANCE,
@@ -55,7 +58,7 @@ function buildPostedAccountTypeMap({ purchaseBills = [], greyPurchases = [], gre
   }
   for (const order of orders) {
     const party = order.customer?.organizationName || order.buyerName;
-    add(party, postingPartyAccountType(order.transactionType), calculateOrderGrandTotal(order));
+    add(party, postingPartyAccountType(order.transactionType), resolvePostedSaleAmount(order).amount);
   }
 
   const dominant = new Map();
@@ -293,25 +296,29 @@ export async function buildFinalAccounts(prisma, userId, {
 
   const applyOrder = (order, periodOnly) => {
     const date = order.orderDate || order.createdAt;
-    const amount = roundMoney(calculateOrderGrandTotal(order));
-    if (amount <= 0) return;
+    const posted = resolvePostedSaleAmount(order);
+    const gross = posted.amount;
+    if (gross <= 0) return;
     const party = (order.customer?.organizationName || order.buyerName || '').trim() || 'Customer';
     const isReturn = isSalesGoodsReturn(order.transactionType);
-    const disc = resolveDiscountJournal(order.transactionType, calculateOrderDiscountAmount(order));
-    const trialAmt = disc ? roundMoney(amount + disc.amount) : amount;
+    const disc = resolveDiscountJournal(order.transactionType, posted.discount);
+    // Order-level discount is added back on the trading line. Imported bills have
+    // no order discount; their DISCOUNT A/C voucher is posted with the journals,
+    // so the sale and the party stay at the full invoice.
+    const net = disc ? roundMoney(gross - disc.amount) : gross;
 
     if (!periodOnly || inRange(date, fromDate, toDate)) {
       if (periodOnly) {
         if (isReturn) {
-          salesReturn = roundMoney(salesReturn + amount);
-          bump(trial, 'Sales Goods Return', 'debit', trialAmt);
+          salesReturn = roundMoney(salesReturn + net);
+          bump(trial, 'Sales Goods Return', 'debit', gross);
           if (disc) {
             salesReturnDiscountAmt = roundMoney(salesReturnDiscountAmt + disc.amount);
             bump(trial, disc.account, 'credit', disc.amount);
           }
         } else {
-          sales = roundMoney(sales + amount);
-          bump(trial, order.transactionType || 'Finish Sales', 'credit', trialAmt);
+          sales = roundMoney(sales + net);
+          bump(trial, order.transactionType || 'Finish Sales', 'credit', gross);
           if (disc) {
             salesDiscountAmt = roundMoney(salesDiscountAmt + disc.amount);
             bump(trial, disc.account, 'debit', disc.amount);
@@ -321,7 +328,7 @@ export async function buildFinalAccounts(prisma, userId, {
     }
 
     if (inRange(date, null, asOn)) {
-      bump(debtorsAsOn, party, 'debit', isReturn ? -amount : amount);
+      bump(debtorsAsOn, party, 'debit', isReturn ? -net : net);
     }
   };
 
@@ -424,6 +431,20 @@ export async function buildFinalAccounts(prisma, userId, {
     }
   }
 
+  const journalCreditsByPartyDay = new Map();
+  for (const voucher of journals) {
+    const day = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit'
+    }).format(new Date(voucher.voucherDate || voucher.createdAt));
+    for (const line of journalPostingLines(voucher)) {
+      if (line.debit || !(line.amount > 0)) continue;
+      const key = `${String(line.name || '').trim().toLowerCase()}|${day}`;
+      const list = journalCreditsByPartyDay.get(key) || [];
+      list.push(line.amount);
+      journalCreditsByPartyDay.set(key, list);
+    }
+  }
+
   for (const entry of bankEntries) {
     const date = entry.entryDate || entry.createdAt;
     const amount = roundMoney(entry.amount);
@@ -432,6 +453,24 @@ export async function buildFinalAccounts(prisma, userId, {
     if (inRange(date, null, asOn)) {
       if (entry.entryType === 'receipt') {
         if (entry.partyType === 'customer') bump(debtorsAsOn, entry.partyName || 'Customer', 'debit', -amount);
+        const discounts = receiptBillDiscounts(entry);
+        if (discounts.length && entry.partyType === 'customer') {
+          const day = new Intl.DateTimeFormat('en-CA', {
+            timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit'
+          }).format(new Date(date));
+          const key = `${String(entry.partyName || '').trim().toLowerCase()}|${day}`;
+          const pool = journalCreditsByPartyDay.get(key) || [];
+          journalCreditsByPartyDay.set(key, pool);
+          const extra = discountsNotCoveredByCredits(discounts, pool)
+            .reduce((sum, value) => roundMoney(sum + value), 0);
+          if (extra > 0) {
+            bump(debtorsAsOn, entry.partyName || 'Customer', 'debit', -extra);
+            if (inRange(date, fromDate, toDate)) {
+              bump(expenseByAccount, 'DISCOUNT A/C', 'debit', extra);
+              bump(trial, 'DISCOUNT A/C', 'debit', extra);
+            }
+          }
+        }
         if (entry.partyType === 'supplier') bump(creditorsAsOn, entry.partyName || 'Supplier', 'credit', -amount);
       } else {
         if (entry.partyType === 'supplier') bump(creditorsAsOn, entry.partyName || 'Supplier', 'credit', -amount);
@@ -999,6 +1038,8 @@ export async function buildFinalAccountsDrill(prisma, userId, {
   for (const order of orders) {
     const date = order.orderDate || order.createdAt;
     if (!inRange(date, null, asOn)) continue;
+    // Cash figure, not the full invoice. This drill has the receipts but not the
+    // DISCOUNT A/C vouchers, and the discount is exactly the gap between the two.
     const amount = roundMoney(calculateOrderGrandTotal(order));
     if (amount <= 0) continue;
     const party = (order.customer?.organizationName || order.buyerName || '').trim() || 'Customer';
@@ -1114,7 +1155,7 @@ export async function buildFinalAccountsDrill(prisma, userId, {
       if (!inRange(date, null, asOn)) continue;
       const party = (order.customer?.organizationName || order.buyerName || '').trim();
       if (!partyMatch(party, partyName)) continue;
-      const amount = roundMoney(calculateOrderGrandTotal(order));
+      const amount = resolvePostedSaleAmount(order).amount;
       if (amount <= 0) continue;
       const editPath = salesEditPath(order);
       rows.push({
@@ -1256,7 +1297,7 @@ export async function buildFinalAccountsDrill(prisma, userId, {
       const isRet = isSalesGoodsReturn(order.transactionType);
       if (key === 'trading_sales' && isRet) continue;
       if (key === 'trading_sales_return' && !isRet) continue;
-      const amount = roundMoney(calculateOrderGrandTotal(order));
+      const amount = resolvePostedSaleAmount(order).amount;
       if (amount <= 0) continue;
       const editPath = salesEditPath(order);
       tradingBillRows.push({

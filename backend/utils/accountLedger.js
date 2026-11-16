@@ -1,6 +1,7 @@
 import {
-  calculateOrderDiscountAmount,
-  calculateOrderGrandTotal,
+  resolvePostedSaleAmount,
+  receiptBillDiscounts,
+  discountsNotCoveredByCredits,
   getOrderPartyName,
   isSalesGoodsReturn,
   matchesPartyName,
@@ -37,7 +38,7 @@ function paidInfoByBillId(bankEntries) {
   forEachUniqueBillAllocation(bankEntries, (allocation, entry) => {
     if (!allocation?.billId || allocation.billType === 'credit_debit_note') return;
     if (isUnadjAllocation(allocation)) return;
-    const amount = roundMoney(allocation.adjustAmount);
+    const amount = roundMoney((Number(allocation.adjustAmount) || 0) + (Number(allocation.discountAmount) || 0));
     if (amount <= 0) return;
     const current = map.get(allocation.billId) || { amount: 0, date: null };
     current.amount = roundMoney(current.amount + amount);
@@ -101,6 +102,52 @@ function bankEntryLedgerRow(entry, settlementByUnadjId = null) {
     slipNumber: entry.slipNumber || null,
     transactionLabel: entry.transactionType || (isReceipt ? 'BANK RECEIPT' : 'BANK PAYMENT')
   };
+}
+
+/**
+ * Receipt bill-discount that has no same-day journal credit. Imported Empire
+ * discounts already sit on the DISCOUNT A/C voucher, so only a discount typed
+ * on a receipt in this software is added here. The bank-receipt series does
+ * not journal it; the party ledger still has to credit it once.
+ */
+function pushUncoveredReceiptDiscounts(rawEntries, entries) {
+  const account = postingDiscountAccount('FINISH SALES (GST)') || 'DISCOUNT A/C';
+  const byDay = new Map();
+  for (const entry of entries || []) {
+    const amounts = receiptBillDiscounts(entry);
+    if (!amounts.length) continue;
+    const day = calendarDay(entry.entryDate || entry.createdAt);
+    const list = byDay.get(day) || [];
+    amounts.forEach(amount => list.push({ entry, amount }));
+    byDay.set(day, list);
+  }
+  for (const [day, list] of byDay) {
+    const covered = rawEntries
+      .filter(row => row.sourceType === 'journal_voucher' && calendarDay(row.date) === day)
+      .map(row => roundMoney(row.creditAmount))
+      .filter(amount => amount > 0);
+    const open = discountsNotCoveredByCredits(list.map(item => item.amount), covered);
+    const pending = [...list];
+    for (const amount of open) {
+      const index = pending.findIndex(item => Math.abs(item.amount - amount) <= 0.001);
+      const item = index >= 0 ? pending.splice(index, 1)[0] : null;
+      if (!item) continue;
+      const entry = item.entry;
+      rawEntries.push({
+        id: `bank-discount-${entry.id}-${rawEntries.length}`,
+        sourceType: 'bank_entry',
+        sourceId: entry.id,
+        date: entry.entryDate,
+        voucherNumber: entry.voucherNumber || '-',
+        billNumber: entry.voucherNumber || '-',
+        account,
+        particulars: `Discount on receipt V.${entry.voucherNumber || '-'}`,
+        remarks: '',
+        debitAmount: 0,
+        creditAmount: amount
+      });
+    }
+  }
 }
 
 function namesMatch(left, right) {
@@ -1043,14 +1090,15 @@ export async function buildCompanySelfLedger(prisma, userId, { fromDate, toDate 
 
   for (const order of orders) {
     if (invoicedOrderIds.has(order.id)) continue;
-    const amount = calculateOrderGrandTotal(order);
-    if (amount <= 0) continue;
+    const posted = resolvePostedSaleAmount(order);
+    if (posted.amount <= 0) continue;
     const billNo = order.typeBillNumber != null ? String(order.typeBillNumber) : (order.orderNumber || order.invoiceNumber || order.id.slice(-6));
     const goodsReturn = isSalesGoodsReturn(order.transactionType);
-    const disc = resolveDiscountJournal(order.transactionType, calculateOrderDiscountAmount(order));
-    const mainAmount = disc ? roundMoney(amount + disc.amount) : amount;
+    const disc = resolveDiscountJournal(order.transactionType, posted.discount);
+    const mainAmount = posted.amount;
     const paidInfo = paidByBill.get(order.id);
-    const paidOn = paidInfo && paidInfo.amount + 0.001 >= amount ? formatPaidOnRemark(paidInfo.date) : '';
+    const settled = roundMoney((paidInfo?.amount || 0) + (disc?.amount || 0));
+    const paidOn = paidInfo && settled + 0.001 >= mainAmount ? formatPaidOnRemark(paidInfo.date) : '';
     const party = getOrderPartyName(order);
     rawEntries.push(companyRow({
       id: `order-${order.id}`,
@@ -1382,14 +1430,15 @@ export async function buildCustomerLedger(prisma, userId, partyName) {
   for (const order of orders) {
     if (!matchesPartyName(order, partyName)) continue;
     if (invoicedOrderIds.has(order.id)) continue;
-    const amount = calculateOrderGrandTotal(order);
-    if (amount <= 0) continue;
+    const posted = resolvePostedSaleAmount(order);
+    if (posted.amount <= 0) continue;
     const billNo = order.typeBillNumber != null ? String(order.typeBillNumber) : (order.orderNumber || order.invoiceNumber || order.id.slice(-6));
     const goodsReturn = isSalesGoodsReturn(order.transactionType);
-    const disc = resolveDiscountJournal(order.transactionType, calculateOrderDiscountAmount(order));
-    const mainAmount = disc ? roundMoney(amount + disc.amount) : amount;
+    const disc = resolveDiscountJournal(order.transactionType, posted.discount);
+    const mainAmount = posted.amount;
     const paidInfo = paidByBill.get(order.id);
-    const paidOn = paidInfo && paidInfo.amount + 0.001 >= amount ? formatPaidOnRemark(paidInfo.date) : '';
+    const settled = roundMoney((paidInfo?.amount || 0) + (disc?.amount || 0));
+    const paidOn = paidInfo && settled + 0.001 >= mainAmount ? formatPaidOnRemark(paidInfo.date) : '';
     rawEntries.push({
       id: `order-${order.id}`,
       sourceType: 'order',
@@ -1484,12 +1533,15 @@ export async function buildCustomerLedger(prisma, userId, partyName) {
   pushJournalLedgerRows(rawEntries, customerJournals, { partyName, paidByBill });
 
   const settlementByUnadjId = unadjSettlementInfo(bankEntries);
+  const partyReceipts = [];
   for (const entry of bankEntries) {
     if (!matchesPartyName({ buyerName: entry.partyName, customer: null }, partyName)) continue;
     const row = bankEntryLedgerRow(entry, settlementByUnadjId);
     if ((row.debitAmount || 0) + (row.creditAmount || 0) <= 0) continue;
     rawEntries.push(row);
+    partyReceipts.push(entry);
   }
+  pushUncoveredReceiptDiscounts(rawEntries, partyReceipts);
 
   rawEntries.sort(sortByDate);
   const partitioned = partitionLedgerRows(rawEntries);
@@ -2009,8 +2061,9 @@ export async function getLedgerEntryDetail(prisma, userId, sourceType, sourceId)
     if (!order) return null;
 
     const lines = normalizeOrderLines(order.orderLines);
-    const grandTotal = calculateOrderGrandTotal(order);
-    const discountAmount = calculateOrderDiscountAmount(order);
+    const posted = resolvePostedSaleAmount(order);
+    const grandTotal = posted.amount;
+    const discountAmount = posted.discount;
     const billNo = order.typeBillNumber != null
       ? String(order.typeBillNumber)
       : (order.orderNumber || order.invoiceNumber || order.id.slice(-6));

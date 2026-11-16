@@ -73,6 +73,56 @@ export function calculateOrderGrandTotal(order) {
   return roundMoney(subtotal - discountAmount + shippingCharge);
 }
 
+/**
+ * Amount that hits the party for a sale or sales return.
+ * A live bill stores its discount on the order, so the party is posted at the
+ * net grand total plus that discount, and the discount is its own credit.
+ * An imported Empire bill stores the cash figure (invoice minus bill discount)
+ * in shippingCharge, so the grand total is already net while the line totals
+ * are the full invoice. That discount is already a DISCOUNT A/C voucher, so
+ * the party is posted at the line total and no second discount is added.
+ */
+export function resolvePostedSaleAmount(order) {
+  const grand = calculateOrderGrandTotal(order);
+  const bill = resolveBillAmount(order);
+  const discount = calculateOrderDiscountAmount(order);
+  if (discount > 0.001) {
+    return { amount: roundMoney(grand + discount), discount };
+  }
+  if (bill > grand + 0.05) {
+    return { amount: bill, discount: 0 };
+  }
+  return { amount: grand, discount: 0 };
+}
+
+/** Bill discounts typed on a receipt. These settle the bill, same as cash. */
+export function receiptBillDiscounts(entry) {
+  if (String(entry?.entryType || '').toLowerCase() !== 'receipt') return [];
+  return normalizeBillAllocations(entry?.billAllocations)
+    .filter(line => String(line?.billType || '').toLowerCase() !== 'unadj_payment')
+    .filter(line => String(line?.adjustDirection || 'add').toLowerCase() !== 'deduct')
+    .map(line => roundMoney(line?.discountAmount))
+    .filter(amount => amount > 0.001);
+}
+
+/**
+ * A receipt discount that already has a same-day journal credit (imported V1)
+ * must not be credited again. Amounts within a rupee are the same discount
+ * after the journal was stored in whole rupees.
+ */
+export function discountsNotCoveredByCredits(discounts, credits) {
+  const pool = Array.isArray(credits) ? credits : [];
+  const open = [];
+  for (const amount of discounts || []) {
+    const rounded = roundMoney(amount);
+    if (!(rounded > 0.001)) continue;
+    const index = pool.findIndex(credit => Math.abs(roundMoney(credit) - rounded) <= 1);
+    if (index >= 0) pool.splice(index, 1);
+    else open.push(rounded);
+  }
+  return open;
+}
+
 export function daysSince(dateValue, asOfValue = Date.now()) {
   if (!dateValue) return 0;
   const date = new Date(dateValue);
