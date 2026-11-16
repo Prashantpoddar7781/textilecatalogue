@@ -1048,12 +1048,11 @@ router.get('/outstanding-report', authenticateToken, requireActiveSubscription, 
 router.get('/bank-accounts', authenticateToken, requireActiveSubscription, async (req, res, next) => {
   try {
     const userId = req.user.userId;
-    const [entries, profile, bankParties, cashParties] = await Promise.all([
+    const [entries, bankParties, cashParties] = await Promise.all([
       prisma.bankEntry.findMany({
         where: { userId, bankName: { not: null } },
         select: { bankName: true, entryType: true, amount: true }
       }),
-      prisma.businessProfile.findUnique({ where: { userId } }),
       prisma.supplier.findMany({
         where: { userId, accountType: { equals: 'BANK', mode: 'insensitive' } },
         select: { name: true }
@@ -1067,9 +1066,7 @@ router.get('/bank-accounts', authenticateToken, requireActiveSubscription, async
     map.set('Default Bank', OPENING_BANK_BALANCE);
     map.set('CASH A/C', OPENING_BANK_BALANCE);
 
-    if (profile?.bankName) {
-      map.set(profile.bankName, OPENING_BANK_BALANCE);
-    }
+    const bankUse = new Map();
     for (const party of bankParties) {
       if (party.name) map.set(party.name, map.get(party.name) ?? OPENING_BANK_BALANCE);
     }
@@ -1082,6 +1079,17 @@ router.get('/bank-accounts', authenticateToken, requireActiveSubscription, async
       const current = map.get(entry.bankName) ?? OPENING_BANK_BALANCE;
       const next = entry.entryType === 'receipt' ? current + entry.amount : current - entry.amount;
       map.set(entry.bankName, next);
+      if (!/cash/i.test(entry.bankName)) {
+        bankUse.set(entry.bankName, (bankUse.get(entry.bankName) || 0) + 1);
+      }
+    }
+    let defaultBankName = '';
+    let mostUsed = 0;
+    for (const [name, count] of bankUse) {
+      if (count > mostUsed) {
+        mostUsed = count;
+        defaultBankName = name;
+      }
     }
 
     const accounts = Array.from(map.entries())
@@ -1092,7 +1100,7 @@ router.get('/bank-accounts', authenticateToken, requireActiveSubscription, async
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
 
-    res.json({ accounts });
+    res.json({ accounts, defaultBankName });
   } catch (error) {
     next(error);
   }

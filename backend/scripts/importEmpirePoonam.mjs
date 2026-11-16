@@ -260,14 +260,29 @@ async function main() {
     list.push({ srNo: list.length + 1, mts: round(metres) });
     takaByCard.set(card, list);
   }
+  const billDiscount = new Map();
+  for (const bill of bills) {
+    const disc = round(num(bill.billdis));
+    if (disc <= 0) continue;
+    billDiscount.set(`${text(bill.TYPE, 12)}|${int(bill.VNO)}`, {
+      disc,
+      pct: round(num(bill.DISCOUNT)),
+      finalamt: round(num(bill.finalamt))
+    });
+  }
   const allocByVoucher = new Map();
   for (const row of recpay) {
     const key = `${text(row.RECTYPE, 12)}|${int(row.RECVNO)}`;
     const list = allocByVoucher.get(key) || [];
+    const amount = round(num(row.AMT));
+    const info = billDiscount.get(`${text(row.BILLTYPE, 12)}|${int(row.BILLVNO)}`);
+    const settles = info && Math.abs(amount - info.finalamt) <= 0.5;
     list.push({
       billType: text(row.BILLTYPE, 12),
       billNo: text(row.BILLVNO, 40),
-      amount: round(num(row.AMT))
+      amount,
+      discountPercent: settles ? info.pct : 0,
+      discountAmount: settles ? info.disc : 0
     });
     allocByVoucher.set(key, list);
   }

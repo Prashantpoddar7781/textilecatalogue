@@ -203,7 +203,8 @@ export async function getPaidAmountsByBillType(prismaClient, userId, billType, o
     if (allocation.billType !== billType) return;
     if (String(allocation.billType || '').toLowerCase() === 'unadj_payment') return;
     const current = paidByBillId.get(allocation.billId) || 0;
-    paidByBillId.set(allocation.billId, current + roundMoney(allocation.adjustAmount));
+    const settled = roundMoney((Number(allocation.adjustAmount) || 0) + (Number(allocation.discountAmount) || 0));
+    paidByBillId.set(allocation.billId, current + settled);
   });
   return paidByBillId;
 }

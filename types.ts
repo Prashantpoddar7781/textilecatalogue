@@ -1128,6 +1128,8 @@ export interface BankPendingBill {
   pendingAmount: number;
   taxableAmount?: number;
   adjustAmount: number;
+  discountPercent?: number;
+  discountAmount?: number;
   entryKind?: 'bill' | 'credit_note' | 'debit_note' | 'unadj_payment' | string;
   noteKind?: 'credit' | 'debit' | string;
   noteSide?: 'sales' | 'purchase' | string;

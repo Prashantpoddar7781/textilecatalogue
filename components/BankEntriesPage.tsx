@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Edit3, Loader2, Plus, RefreshCw, Search, Trash2 } from 'lucide-react';
-import { bankEntriesApi, commissionsApi, invoicesApi, partiesApi, vouchersApi } from '../services/api';
+import { bankEntriesApi, commissionsApi, partiesApi, vouchersApi } from '../services/api';
 import { getNavigableFields } from '../hooks/useErpFormKeyboard';
 import { parseVoucherNumber } from '../utils/parseVoucherNumber';
 import { AccountParty, BankEntry, BankPendingBill, CompletedOrderParty, PurchaseBillParty } from '../types';
+import { partyRoleForAccountType } from '../constants/accountTypes';
 import { postingSaleOrPurchaseAccount, warnsOnManualEntry } from '../constants/erpTransactionPostingRules';
 import {
   BANK_CASH_SERIES,
@@ -138,6 +139,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState('');
   const seriesRef = useRef(form.series);
+  const defaultBankRef = useRef('');
   seriesRef.current = form.series;
   const voucherValueRef = useRef(form.voucherNumber);
   voucherValueRef.current = form.voucherNumber;
@@ -195,7 +197,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
   const loadMasterData = async () => {
     const epoch = formEpoch.current;
     try {
-      const [nextResults, accountsResult, partiesResult, purchasePartiesResult, profileResult, accountResult] = await Promise.all([
+      const [nextResults, accountsResult, partiesResult, purchasePartiesResult, accountResult] = await Promise.all([
         Promise.all(BANK_CASH_SERIES.map(async name => {
           const result = await bankEntriesApi.getNextVoucher(name);
           return [name, result] as const;
@@ -203,7 +205,6 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
         bankEntriesApi.getBankAccounts(),
         bankEntriesApi.getCompletedOrderParties(),
         bankEntriesApi.getPurchaseBillParties(),
-        invoicesApi.getProfile().catch(() => null),
         partiesApi.list().catch(() => ({ parties: [] as AccountParty[] }))
       ]);
       const nextMap: Record<string, string> = {};
@@ -218,10 +219,13 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
       setAccountParties(accountResult.parties || []);
       const accounts = accountsResult.accounts || [];
       setBankAccounts(accounts);
-      const preferredBank = accounts.find(account =>
-        String(account.accountType || '').toUpperCase() === 'BANK'
-        || (!/cash/i.test(account.name) && String(account.accountType || '').toUpperCase() !== 'CASH')
-      )?.name;
+      const preferredBank = accountsResult.defaultBankName
+        || accounts.find(account =>
+          String(account.accountType || '').toUpperCase() === 'BANK'
+          && !/cash/i.test(account.name)
+        )?.name
+        || '';
+      defaultBankRef.current = preferredBank;
       const activeSeries = seriesRef.current;
       const nextNo = nextBySeriesRef.current[activeSeries] || '';
       const userIsTyping = Boolean(
@@ -240,9 +244,9 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
         companyName: companyName || f.companyName,
         bankName: f.paymentMode === 'cash'
           ? (postingSaleOrPurchaseAccount(f.series) || 'CASH A/C')
-          : (f.bankName && !/cash/i.test(f.bankName)
+          : (editingIdRef.current
             ? f.bankName
-            : (profileResult?.profile?.bankName || preferredBank || accounts[0]?.name || 'Default Bank'))
+            : (preferredBank || f.bankName || accounts[0]?.name || 'Default Bank'))
       }));
     } catch (err: any) {
       console.warn('Failed to load bank master data', err);
@@ -263,6 +267,23 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
       setPartyBalance(0);
     }
   }, []);
+
+  const keepPickedBill = (bill: BankPendingBill, picked: BankPendingBill) => {
+    const discountAmount = Number(picked.discountAmount) || 0;
+    const discountPercent = Number(picked.discountPercent) || 0;
+    const adjustAmount = Math.min(
+      picked.adjustAmount || 0,
+      Math.max(bill.pendingAmount || 0, (picked.adjustAmount || 0) + discountAmount)
+    );
+    return {
+      ...bill,
+      adjustAmount,
+      pendingAmount: Math.max(bill.pendingAmount || 0, adjustAmount + discountAmount),
+      discountPercent,
+      discountAmount,
+      adjustDirection: picked.adjustDirection || bill.adjustDirection
+    };
+  };
 
   const loadPendingBills = useCallback(async (
     partyName: string,
@@ -302,12 +323,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
         const merged = seeded.map(bill => {
           const saved = byId.get(bill.billId);
           if (!saved) return bill;
-          return {
-            ...bill,
-            adjustAmount: Math.min(saved.adjustAmount || 0, bill.pendingAmount),
-            pendingAmount: Math.max(bill.pendingAmount, saved.adjustAmount || 0),
-            adjustDirection: saved.adjustDirection || bill.adjustDirection
-          };
+          return keepPickedBill(bill, saved);
         });
         for (const saved of restoreAllocations) {
           if (!merged.some(row => row.billId === saved.billId)) {
@@ -319,12 +335,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
           return merged.map(bill => {
             const picked = pickedById.get(bill.billId);
             if (!picked) return bill;
-            return {
-              ...bill,
-              adjustAmount: Math.min(picked.adjustAmount || 0, bill.pendingAmount || picked.adjustAmount || 0),
-              pendingAmount: Math.max(bill.pendingAmount, picked.adjustAmount || 0),
-              adjustDirection: picked.adjustDirection || bill.adjustDirection
-            };
+            return keepPickedBill(bill, picked);
           });
         });
         setRestoreAllocations(null);
@@ -335,12 +346,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
           const next = seeded.map(bill => {
             const picked = pickedById.get(bill.billId);
             if (!picked) return bill;
-            return {
-              ...bill,
-              adjustAmount: Math.min(picked.adjustAmount || 0, bill.pendingAmount || picked.adjustAmount || 0),
-              pendingAmount: Math.max(bill.pendingAmount, picked.adjustAmount || 0),
-              adjustDirection: picked.adjustDirection || bill.adjustDirection
-            };
+            return keepPickedBill(bill, picked);
           });
           for (const picked of pickedById.values()) {
             if (!next.some(row => row.billId === picked.billId)) next.push(picked);
@@ -396,7 +402,9 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
       chequeNumber: '',
       referenceNumber: '',
       remarks: '',
-      bankName: paymentMode === 'cash' ? cashAccount : f.bankName,
+      bankName: paymentMode === 'cash'
+        ? cashAccount
+        : (f.bankName && !/cash/i.test(f.bankName) ? f.bankName : (defaultBankRef.current || f.bankName)),
       slipNumber: slipNumberFromDate(f.entryDate),
       voucherNumber: nextNo || f.voucherNumber
     }));
@@ -440,13 +448,30 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
   }, [form.entryDate]);
 
   const partyOptions = useMemo(() => {
-    const brokerNames = accountParties.filter(party => /broker|brok/i.test(party.accountType || '')).map(party => party.name);
-    if (form.partyType === 'supplier') {
-      return Array.from(new Set([...purchaseParties.map(p => p.name), ...brokerNames, ...accountParties.filter(p => p.role === 'supplier').map(p => p.name)]));
+    const names = new Set<string>();
+    for (const party of accountParties) if (party.name) names.add(party.name);
+    for (const party of completedParties) if (party.name) names.add(party.name);
+    for (const party of purchaseParties) if (party.name) names.add(party.name);
+    return Array.from(names).sort((a, b) => a.localeCompare(b));
+  }, [accountParties, completedParties, purchaseParties]);
+
+  const partyTypeForName = (name: string) => {
+    const key = name.trim().toLowerCase();
+    const party = accountParties.find(row => row.name.trim().toLowerCase() === key);
+    if (party) {
+      if (party.role === 'customer' || partyRoleForAccountType(party.accountType) === 'customer') return 'customer' as const;
+      return 'supplier' as const;
     }
-    if (form.partyType === 'customer') return completedParties.map(p => p.name);
-    return brokerNames;
-  }, [accountParties, completedParties, purchaseParties, form.partyType]);
+    if (completedParties.some(row => row.name.trim().toLowerCase() === key)) return 'customer' as const;
+    if (purchaseParties.some(row => row.name.trim().toLowerCase() === key)) return 'supplier' as const;
+    return null;
+  };
+
+  const partyDhara = () => {
+    const key = form.partyName.trim().toLowerCase();
+    const party = accountParties.find(row => row.name.trim().toLowerCase() === key);
+    return Number(party?.dhara || party?.discountRate) || 0;
+  };
 
   const applyPhoto = (x: PhotoExtraction) => {
     const notes: string[] = [];
@@ -668,13 +693,38 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
     return pending;
   };
 
+  const settleWithDiscount = (bill: BankPendingBill, adjust: number) => {
+    if (isDeductAllocation(bill)) {
+      return { adjustAmount: adjust, discountPercent: 0, discountAmount: 0 };
+    }
+    const pct = partyDhara();
+    const taxable = Number(bill.taxableAmount) || Number(bill.billAmount) || 0;
+    const computed = pct > 0 && taxable > 0 ? roundMoneyLocal(taxable * pct / 100) : 0;
+    const pendingAmt = roundMoneyLocal(bill.pendingAmount || 0);
+    const shortfall = roundMoneyLocal(Math.max(pendingAmt - adjust, 0));
+    if (computed > 0.05 && shortfall > 0.05 && Math.abs(shortfall - computed) <= 1) {
+      return { adjustAmount: adjust, discountPercent: pct, discountAmount: shortfall };
+    }
+    if (computed > 0.05 && Math.abs(adjust - pendingAmt) <= 0.05) {
+      const discount = roundMoneyLocal(Math.min(computed, pendingAmt));
+      return {
+        adjustAmount: roundMoneyLocal(Math.max(pendingAmt - discount, 0)),
+        discountPercent: pct,
+        discountAmount: discount
+      };
+    }
+    return { adjustAmount: adjust, discountPercent: 0, discountAmount: 0 };
+  };
+
   const pickBill = (billId: string, opts?: { toggle?: boolean }) => {
     const target = pendingBills.find(bill => bill.billId === billId);
     if (!target) return false;
     const already = (target.adjustAmount || 0) > 0;
     if (already) {
       if (opts?.toggle === false) return false;
-      setPendingBills(prev => prev.map(bill => (bill.billId === billId ? { ...bill, adjustAmount: 0 } : bill)));
+      setPendingBills(prev => prev.map(bill => (
+        bill.billId === billId ? { ...bill, adjustAmount: 0, discountPercent: 0, discountAmount: 0 } : bill
+      )));
       return true;
     }
 
@@ -696,8 +746,9 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
       received
     });
     if (allocate == null || allocate <= 0) return false;
+    const settled = settleWithDiscount(target, allocate);
     setPendingBills(prev => prev.map(bill => (
-      bill.billId === billId ? { ...bill, adjustAmount: allocate } : bill
+      bill.billId === billId ? { ...bill, ...settled } : bill
     )));
     return true;
   };
@@ -741,6 +792,26 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
     setBillTypePickerOpen(false);
     setQuickBillNo('');
     window.setTimeout(() => focusInputStart(billNoRef.current), 0);
+  };
+
+  const updateBillDiscount = (billId: string, patch: { percent?: string; amount?: string }) => {
+    setPendingBills(prev => prev.map(bill => {
+      if (bill.billId !== billId || isDeductAllocation(bill)) return bill;
+      const taxable = Number(bill.taxableAmount) || Number(bill.billAmount) || 0;
+      let percent = Number(bill.discountPercent) || 0;
+      let amount = Number(bill.discountAmount) || 0;
+      if (patch.percent != null) {
+        percent = Math.max(0, Number(patch.percent) || 0);
+        amount = taxable > 0 ? roundMoneyLocal(taxable * percent / 100) : amount;
+      }
+      if (patch.amount != null) {
+        amount = Math.max(0, Number(patch.amount) || 0);
+        percent = taxable > 0 ? roundMoneyLocal((amount / taxable) * 100) : percent;
+      }
+      const room = Math.max((bill.pendingAmount || 0) - (bill.adjustAmount || 0), 0);
+      if (amount > room + 0.001) amount = roundMoneyLocal(room);
+      return { ...bill, discountPercent: percent, discountAmount: amount };
+    }));
   };
 
   const updateBillAdjust = (billId: string, value: string) => {
@@ -1200,24 +1271,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
 
                 <div>
                   <label className={labelClass}>A/C Name</label>
-                  <div className="grid grid-cols-[110px_1fr] gap-2">
-                    <select
-                      className={inputClass}
-                      value={form.partyType}
-                      onChange={e => {
-                        const partyType = e.target.value as 'customer' | 'supplier' | 'other';
-                        setBillType(defaultBillTypeForEntry(form.entryType));
-                        setForm(f => ({
-                          ...f,
-                          partyType,
-                          partyName: ''
-                        }));
-                      }}
-                    >
-                      <option value="customer">Customer</option>
-                      <option value="supplier">Supplier</option>
-                      <option value="other">Other</option>
-                    </select>
+                  <div>
                     <input
                       className={inputClass}
                       list="bank-party-options"
@@ -1228,12 +1282,13 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                         setAllowOverAllocation(false);
                         const match = accountParties.find(party => party.name.trim().toLowerCase() === value.trim().toLowerCase());
                         const broker = Boolean(match && /broker|brok/i.test(match.accountType || ''));
+                        const partyType = partyTypeForName(value) || (broker ? 'supplier' : form.partyType);
                         if (broker && form.entryType === 'payment') {
                           setBillType('PURCHASE (COMM)');
                           setForm(f => ({ ...f, partyName: match?.name || value, partyType: 'supplier' }));
                           return;
                         }
-                        setForm(f => ({ ...f, partyName: value }));
+                        setForm(f => ({ ...f, partyName: value, partyType }));
                       }}
                       onKeyDown={e => {
                         if (e.key !== 'Enter' || !form.partyName.trim()) return;
@@ -1483,7 +1538,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                     data-erp-skip-nav
                     onClick={() => {
                       setAllowOverAllocation(false);
-                      setPendingBills(prev => prev.map(bill => ({ ...bill, adjustAmount: 0 })));
+                      setPendingBills(prev => prev.map(bill => ({ ...bill, adjustAmount: 0, discountPercent: 0, discountAmount: 0 })));
                     }}
                     className="rounded-xl border px-3 py-2.5 text-xs font-black text-gray-700"
                   >
@@ -1526,6 +1581,8 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                         <th className="px-3 py-2 text-right">Taxable</th>
                         <th className="px-3 py-2 text-right">Bill Amt</th>
                         <th className="px-3 py-2 text-right">Pend Amt</th>
+                        <th className="px-3 py-2 text-right">Disc %</th>
+                        <th className="px-3 py-2 text-right">Disc Amt</th>
                         <th className="px-3 py-2 text-right">Adjust</th>
                       </tr>
                     </thead>
@@ -1557,13 +1614,40 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                                 : (
                                   <span title="Outstanding before this entry">
                                     {formatMoney(bill.pendingAmount)}
-                                    {(bill.adjustAmount || 0) > 0 && (bill.adjustAmount || 0) < (bill.pendingAmount || 0) && (
+                                    {(bill.adjustAmount || 0) + (bill.discountAmount || 0) > 0
+                                      && (bill.adjustAmount || 0) + (bill.discountAmount || 0) < (bill.pendingAmount || 0) && (
                                       <span className="mt-0.5 block text-[10px] font-bold text-rose-600">
-                                        left {formatMoney((bill.pendingAmount || 0) - (bill.adjustAmount || 0))}
+                                        left {formatMoney((bill.pendingAmount || 0) - (bill.adjustAmount || 0) - (bill.discountAmount || 0))}
                                       </span>
                                     )}
                                   </span>
                                 )}
+                            </td>
+                            <td className="px-3 py-2.5 text-right">
+                              {deduct ? '—' : (
+                                <input
+                                  data-erp-skip-nav
+                                  className="w-16 rounded-lg border border-amber-300 bg-white px-2 py-1.5 text-right text-sm font-bold"
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={bill.discountPercent || ''}
+                                  onChange={e => updateBillDiscount(bill.billId, { percent: e.target.value })}
+                                />
+                              )}
+                            </td>
+                            <td className="px-3 py-2.5 text-right">
+                              {deduct ? '—' : (
+                                <input
+                                  data-erp-skip-nav
+                                  className="w-24 rounded-lg border border-amber-300 bg-white px-2 py-1.5 text-right text-sm font-bold"
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={bill.discountAmount || ''}
+                                  onChange={e => updateBillDiscount(bill.billId, { amount: e.target.value })}
+                                />
+                              )}
                             </td>
                             <td className="px-3 py-2.5 text-right">
                               <input

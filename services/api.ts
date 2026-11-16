@@ -1341,7 +1341,7 @@ export const bankEntriesApi = {
     }>(`/bank-entries/outstanding-report?${query.toString()}`);
   },
   getBankAccounts: async () => {
-    return request<{ accounts: Array<{ name: string; balance: number }> }>('/bank-entries/bank-accounts');
+    return request<{ accounts: Array<{ name: string; balance: number; accountType?: string }>; defaultBankName?: string }>('/bank-entries/bank-accounts');
   },
   getCompletedOrderParties: async () => {
     return request<{ parties: CompletedOrderParty[] }>('/bank-entries/completed-order-parties');
