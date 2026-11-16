@@ -2,7 +2,9 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { bankEntriesApi } from '../services/api';
 import { ErpSession } from '../types';
+import { partyNameMatches } from '../utils/partyNameMatch';
 import { ErpTopMenu } from './ErpTopMenu';
+import { PartyNameField } from './PartyNameField';
 
 interface Props {
   onBack: () => void;
@@ -56,7 +58,6 @@ export const OutstandingPaymentReportPage: React.FC<Props> = ({ onBack, erpSessi
   const [includeSettled, setIncludeSettled] = useState(false);
   const [rows, setRows] = useState<Array<Record<string, any>>>([]);
   const [parties, setParties] = useState<Array<Record<string, any>>>([]);
-  const [totals, setTotals] = useState<Record<string, number>>({});
 
   const load = async () => {
     setLoading(true);
@@ -78,7 +79,6 @@ export const OutstandingPaymentReportPage: React.FC<Props> = ({ onBack, erpSessi
       });
       setRows(result.rows || []);
       setParties(result.parties || []);
-      setTotals(result.totals || {});
     } catch (err: any) {
       setError(err.message || 'Could not load Outstanding / Payment report.');
     } finally {
@@ -93,6 +93,37 @@ export const OutstandingPaymentReportPage: React.FC<Props> = ({ onBack, erpSessi
     window.location.href = row.editPath;
   };
 
+  const shownRows = useMemo(() => {
+    const query = partyName.trim();
+    if (!query) return rows;
+    return rows.filter(row => partyNameMatches(query, String(row.partyName || '')));
+  }, [partyName, rows]);
+
+  const shownParties = useMemo(() => {
+    const query = partyName.trim();
+    if (!query) return parties;
+    return parties.filter(party => partyNameMatches(query, String(party.partyName || '')));
+  }, [parties, partyName]);
+
+  const shownTotals = useMemo(() => {
+    const next: Record<string, number> = {
+      billAmount: 0,
+      paidAmount: 0,
+      pendingAmount: 0,
+      interestAmount: 0
+    };
+    for (const bucket of AGING_BUCKETS) next[bucket] = 0;
+    for (const row of shownRows) {
+      next.billAmount += Number(row.billAmount) || 0;
+      next.paidAmount += Number(row.paidAmount) || 0;
+      next.pendingAmount += Number(row.pendingAmount) || 0;
+      next.interestAmount += Number(row.interestAmount) || 0;
+      const bucket = String(row.agingBucket || '');
+      if (bucket) next[bucket] = (next[bucket] || 0) + (Number(row.pendingAmount) || 0);
+    }
+    return next;
+  }, [shownRows]);
+
   const grouped = useMemo(() => {
     if (view === 'summary') return [];
 
@@ -104,7 +135,7 @@ export const OutstandingPaymentReportPage: React.FC<Props> = ({ onBack, erpSessi
     };
 
     if (view === 'bill-wise') {
-      return [['All Bills', [...rows].sort(byDateDesc)] as [string, Array<Record<string, any>>]];
+      return [['All Bills', [...shownRows].sort(byDateDesc)] as [string, Array<Record<string, any>>]];
     }
 
     const keyFn = (row: Record<string, any>) => {
@@ -119,7 +150,7 @@ export const OutstandingPaymentReportPage: React.FC<Props> = ({ onBack, erpSessi
     };
 
     const map = new Map<string, Array<Record<string, any>>>();
-    const sortedRows = view === 'date-wise' ? [...rows].sort(byDateDesc) : rows;
+    const sortedRows = view === 'date-wise' ? [...shownRows].sort(byDateDesc) : shownRows;
     sortedRows.forEach(row => {
       const key = keyFn(row);
       if (!map.has(key)) map.set(key, []);
@@ -136,13 +167,13 @@ export const OutstandingPaymentReportPage: React.FC<Props> = ({ onBack, erpSessi
     }
 
     return entries;
-  }, [rows, view]);
+  }, [shownRows, view]);
 
   const bucketHeaders = AGING_BUCKETS;
 
   return (
     <div className="min-h-screen bg-[#F6F7FB]">
-      <ErpTopMenu title="Outstanding / Payment Reports" erpSession={erpSession} showSessionActions onBackToCatalogue={onBack} />
+      <ErpTopMenu title="Days Wise Outstanding" erpSession={erpSession} showSessionActions onBackToCatalogue={onBack} />
       <main className="mx-auto max-w-[1500px] px-4 py-6">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <button type="button" onClick={onBack} className="inline-flex items-center gap-2 text-sm font-bold text-gray-600">
@@ -170,7 +201,7 @@ export const OutstandingPaymentReportPage: React.FC<Props> = ({ onBack, erpSessi
           <div className="mb-3">
             <p className="text-[10px] font-black uppercase tracking-widest text-amber-700">Report View Options</p>
             <p className="mt-1 text-xs text-gray-500">
-              Use Date - Wise to group by bill date with the latest bills on top. Click any bill row to open that entry.
+              Type a party name to jump to that account. A near spelling such as ahmend still finds Ahmed. Click any bill row to open that entry.
             </p>
           </div>
           <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-4">
@@ -204,8 +235,13 @@ export const OutstandingPaymentReportPage: React.FC<Props> = ({ onBack, erpSessi
               <input type="date" className="w-full rounded-lg border px-2.5 py-2 text-sm font-semibold" value={toDate} onChange={e => setToDate(e.target.value)} />
             </label>
             <label>
-              <span className="mb-1 block text-[10px] font-black uppercase text-gray-500">Party</span>
-              <input className="w-full rounded-lg border px-2.5 py-2 text-sm font-semibold" value={partyName} onChange={e => setPartyName(e.target.value)} placeholder="e.g. JK FASHION" />
+              <span className="mb-1 block text-[10px] font-black uppercase text-gray-500">Party name</span>
+              <PartyNameField
+                value={partyName}
+                onChange={setPartyName}
+                names={parties.map(party => String(party.partyName || '')).filter(Boolean)}
+                placeholder="Type a party name"
+              />
             </label>
             <label>
               <span className="mb-1 block text-[10px] font-black uppercase text-gray-500">Broker</span>
@@ -246,7 +282,7 @@ export const OutstandingPaymentReportPage: React.FC<Props> = ({ onBack, erpSessi
 
         <section className="overflow-hidden rounded-2xl border bg-white shadow-sm">
           <div className="border-b bg-amber-50 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-amber-900">
-            {VIEW_OPTIONS.find(option => option.value === view)?.label || 'Outstanding Report'}
+            {VIEW_OPTIONS.find(option => option.value === view)?.label || 'Days Wise Outstanding'}
             {' · '}As on {formatDate(asOnDate)}
             {' · '}Click any bill to open entry
           </div>
@@ -283,14 +319,14 @@ export const OutstandingPaymentReportPage: React.FC<Props> = ({ onBack, erpSessi
                       </td>
                     </tr>
                   )}
-                  {!loading && parties.length === 0 && (
+                  {!loading && shownParties.length === 0 && (
                     <tr>
                       <td colSpan={SUMMARY_COL_COUNT} className={`${tdClass} p-10 text-center font-bold text-gray-400`}>
                         No outstanding bills found.
                       </td>
                     </tr>
                   )}
-                  {!loading && parties.map(party => (
+                  {!loading && shownParties.map(party => (
                     <React.Fragment key={party.partyName}>
                       <tr className="bg-amber-50/80">
                         <td className={`${tdClass} font-black text-amber-950`}>{party.partyName}</td>
@@ -341,14 +377,14 @@ export const OutstandingPaymentReportPage: React.FC<Props> = ({ onBack, erpSessi
                 <tfoot>
                   <tr className="bg-amber-900 text-white">
                     <td className={`${tdClass} border-amber-800 text-right font-black`}>Grand Total</td>
-                    <td className={`${tdNum} border-amber-800 font-black`}>{rows.length}</td>
-                    <td className={`${tdNum} border-amber-800 font-black`}>{money(totals.billAmount)}</td>
-                    <td className={`${tdNum} border-amber-800 font-black`}>{money(totals.paidAmount)}</td>
-                    <td className={`${tdNum} border-amber-800 font-black`}>{money(totals.pendingAmount)}</td>
-                    <td className={`${tdNum} border-amber-800 font-black`}>{money(totals.interestAmount)}</td>
+                    <td className={`${tdNum} border-amber-800 font-black`}>{shownRows.length}</td>
+                    <td className={`${tdNum} border-amber-800 font-black`}>{money(shownTotals.billAmount)}</td>
+                    <td className={`${tdNum} border-amber-800 font-black`}>{money(shownTotals.paidAmount)}</td>
+                    <td className={`${tdNum} border-amber-800 font-black`}>{money(shownTotals.pendingAmount)}</td>
+                    <td className={`${tdNum} border-amber-800 font-black`}>{money(shownTotals.interestAmount)}</td>
                     {bucketHeaders.map(bucket => (
                       <td key={bucket} className={`${tdBucket} border-amber-800 font-black`}>
-                        {money(totals[bucket])}
+                        {money(shownTotals[bucket])}
                       </td>
                     ))}
                   </tr>
@@ -399,7 +435,7 @@ export const OutstandingPaymentReportPage: React.FC<Props> = ({ onBack, erpSessi
                       </td>
                     </tr>
                   )}
-                  {!loading && rows.length === 0 && (
+                  {!loading && shownRows.length === 0 && (
                     <tr>
                       <td colSpan={DETAIL_COL_COUNT} className={`${tdClass} p-10 text-center font-bold text-gray-400`}>
                         No outstanding bills found.
@@ -459,13 +495,13 @@ export const OutstandingPaymentReportPage: React.FC<Props> = ({ onBack, erpSessi
                 <tfoot>
                   <tr className="bg-amber-900 text-white">
                     <td colSpan={7} className={`${tdClass} border-amber-800 text-right font-black`}>Grand Total</td>
-                    <td className={`${tdNum} border-amber-800 font-black`}>{money(totals.billAmount)}</td>
-                    <td className={`${tdNum} border-amber-800 font-black`}>{money(totals.paidAmount)}</td>
-                    <td className={`${tdNum} border-amber-800 font-black`}>{money(totals.pendingAmount)}</td>
-                    <td className={`${tdNum} border-amber-800 font-black`}>{money(totals.interestAmount)}</td>
+                    <td className={`${tdNum} border-amber-800 font-black`}>{money(shownTotals.billAmount)}</td>
+                    <td className={`${tdNum} border-amber-800 font-black`}>{money(shownTotals.paidAmount)}</td>
+                    <td className={`${tdNum} border-amber-800 font-black`}>{money(shownTotals.pendingAmount)}</td>
+                    <td className={`${tdNum} border-amber-800 font-black`}>{money(shownTotals.interestAmount)}</td>
                     {bucketHeaders.map(bucket => (
                       <td key={bucket} className={`${tdBucket} border-amber-800 font-black`}>
-                        {money(totals[bucket])}
+                        {money(shownTotals[bucket])}
                       </td>
                     ))}
                     <td className={`${tdClass} border-amber-800`} />

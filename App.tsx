@@ -52,6 +52,7 @@ import { ExpensesReportPage } from './components/ExpensesReportPage';
 import { FinalAccountsReportPage } from './components/FinalAccountsReportPage';
 import { AccountsInformationManagerPage } from './components/AccountsInformationManagerPage';
 import { OutstandingPaymentReportPage } from './components/OutstandingPaymentReportPage';
+import { BillWiseOutstandingPage } from './components/BillWiseOutstandingPage';
 import { ErpExpensesPage } from './components/ErpExpensesPage';
 import { CreditDebitNotePage } from './components/CreditDebitNotePage';
 import { JournalVoucherPage } from './components/JournalVoucherPage';
@@ -166,6 +167,7 @@ const App: React.FC = () => {
   const erpFinalAccountsReportMatch = pathname.match(/^\/erp\/reports\/final-accounts\/?$/);
   const erpAccountsMasterMatch = pathname.match(/^\/erp\/masters\/accounts\/?$/);
   const erpOutstandingReportMatch = pathname.match(/^\/erp\/reports\/outstanding\/?$/);
+  const erpBillOutstandingReportMatch = pathname.match(/^\/erp\/reports\/outstanding-bills\/?$/);
   const erpNotesHubMatch = pathname.match(/^\/erp\/notes\/?$/);
   const erpNotesMatch = pathname.match(/^\/erp\/notes\/([^/]+)\/?$/);
   const erpJournalMatch = pathname.match(/^\/erp\/journal\/?$/);
@@ -183,6 +185,7 @@ const App: React.FC = () => {
     || erpFinishPurchaseReportMatch || erpExpensesReportMatch || erpFinalAccountsReportMatch
     || erpAccountsMasterMatch
     || erpOutstandingReportMatch
+    || erpBillOutstandingReportMatch
     || erpNotesHubMatch || erpNotesMatch || erpJournalMatch || erpEwayMatch || erpEinvoiceMatch || erpLrEntryMatch || erpCommissionMatch || erpCommissionReportMatch || supplierLedgerMatch
   );
   const shareStatsMatch = pathname.match(/^\/share-stats\/?$/);
@@ -1242,6 +1245,15 @@ const App: React.FC = () => {
   if (erpFinalAccountsReportMatch) {
     return (
       <FinalAccountsReportPage
+        erpSession={erpSession}
+        onBack={() => { window.location.href = '/erp'; }}
+      />
+    );
+  }
+
+  if (erpBillOutstandingReportMatch) {
+    return (
+      <BillWiseOutstandingPage
         erpSession={erpSession}
         onBack={() => { window.location.href = '/erp'; }}
       />

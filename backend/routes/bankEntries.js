@@ -28,7 +28,7 @@ import {
   DEFAULT_PURCHASE_TRANSACTION_TYPE,
   isExpensePurchaseType
 } from '../constants/erpTransactionTypes.js';
-import { postingSaleOrPurchaseAccount } from '../constants/erpTransactionPostingRules.js';
+import { getPostingRule, postingSaleOrPurchaseAccount } from '../constants/erpTransactionPostingRules.js';
 import {
   bankCashEntryType,
   bankCashPaymentMode,
@@ -638,6 +638,97 @@ router.get('/pending-bills', authenticateToken, requireActiveSubscription, async
   }
 });
 
+function outstandingBillNo(transactionType, billNumber) {
+  const text = String(billNumber || '').trim();
+  if (!text || text.includes('/')) return text;
+  const suffix = getPostingRule(transactionType)?.billSuffix;
+  return suffix ? `${text}/${suffix}` : text;
+}
+
+function partyTokensMatch(query, name) {
+  const norm = (value) => String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const q = norm(query);
+  const n = norm(name);
+  if (!q) return true;
+  if (n.includes(q)) return true;
+  const distance = (a, b) => {
+    const rows = Array.from({ length: a.length + 1 }, (_, i) => [i]);
+    for (let j = 0; j <= b.length; j += 1) rows[0][j] = j;
+    for (let i = 1; i <= a.length; i += 1) {
+      for (let j = 1; j <= b.length; j += 1) {
+        const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+        rows[i][j] = Math.min(rows[i - 1][j] + 1, rows[i][j - 1] + 1, rows[i - 1][j - 1] + cost);
+      }
+    }
+    return rows[a.length][b.length];
+  };
+  const qTokens = q.split(' ').filter(Boolean);
+  const nTokens = n.split(' ').filter(Boolean);
+  return qTokens.every(token => nTokens.some(part => {
+    if (token.length >= 3 && (part.includes(token) || token.includes(part))) return true;
+    if (part.startsWith(token) || token.startsWith(part)) return true;
+    const limit = Math.min(token.length, part.length) >= 5 ? 2 : 1;
+    return distance(token, part) <= limit;
+  }));
+}
+
+async function outstandingUnadjRows(userId, partyType, asOf) {
+  const entryType = partyType === 'supplier' ? 'payment' : 'receipt';
+  const entries = await prisma.bankEntry.findMany({
+    where: { userId, entryType },
+    orderBy: [{ entryDate: 'asc' }, { createdAt: 'asc' }]
+  });
+  const partyEntries = entries.filter(entry => {
+    if (entry.partyType && entry.partyType !== 'other' && entry.partyType !== partyType) return false;
+    return true;
+  });
+  const consumed = new Map();
+  forEachUniqueBillAllocation(partyEntries, allocation => {
+    if (!isUnadjAllocation(allocation)) return;
+    const adj = roundMoney(allocation.adjustAmount);
+    if (adj <= 0) return;
+    const key = String(allocation.billId);
+    consumed.set(key, roundMoney((consumed.get(key) || 0) + adj));
+  });
+  const rows = [];
+  for (const entry of partyEntries) {
+    if (entry.entryDate && new Date(entry.entryDate) > asOf) continue;
+    const created = unadjAmountCreated(entry);
+    if (created <= 0) continue;
+    const pending = roundMoney(Math.max(created - (consumed.get(entry.id) || 0), 0));
+    if (pending <= 0.001) continue;
+    const cheque = String(entry.chequeNumber || '').trim();
+    const billNumber = cheque
+      ? `CHQ ${cheque}`
+      : (/cheque|chq/i.test(String(entry.paymentMode || '')) ? 'CHQ' : displayUnadjBillNumber(entry));
+    const days = daysSince(entry.entryDate, asOf);
+    rows.push(applyInterestFields({
+      billId: entry.id,
+      billType: UNADJ_BILL_TYPE,
+      billNumber,
+      voucherNumber: entry.voucherNumber || null,
+      billDate: entry.entryDate,
+      days,
+      agingBucket: agingBucket(days),
+      grace: 0,
+      billAmount: 0,
+      paidAmount: pending,
+      pendingAmount: -pending,
+      goodsReturnAmount: 0,
+      rowKind: 'unadj',
+      taxableAmount: 0,
+      partyName: entry.partyName,
+      brokerName: '',
+      station: '',
+      haste: '',
+      transportName: '',
+      transactionType: 'UNADJ PAYMENT',
+      editPath: `/erp/bank?edit=${entry.id}`
+    }, {}));
+  }
+  return rows;
+}
+
 router.get('/outstanding-report', authenticateToken, requireActiveSubscription, async (req, res, next) => {
   try {
     const userId = req.user.userId;
@@ -689,6 +780,8 @@ router.get('/outstanding-report', authenticateToken, requireActiveSubscription, 
             billAmount: -amount,
             paidAmount: 0,
             pendingAmount: -amount,
+            goodsReturnAmount: -amount,
+            rowKind: 'return',
             transactionType: bill.transactionType || 'FINISH PURCHASE RETURN'
           };
         })
@@ -720,6 +813,8 @@ router.get('/outstanding-report', authenticateToken, requireActiveSubscription, 
             billAmount: -amount,
             paidAmount: 0,
             pendingAmount: -amount,
+            goodsReturnAmount: -amount,
+            rowKind: 'return',
             transactionType: 'SALES GOODS RETURN'
           };
         })
@@ -781,12 +876,14 @@ router.get('/outstanding-report', authenticateToken, requireActiveSubscription, 
       .map(row => ({
         ...row,
         billAmount: row.adjustDirection === 'deduct' ? -row.billAmount : row.billAmount,
-        pendingAmount: row.adjustDirection === 'deduct' ? -row.pendingAmount : row.pendingAmount
+        pendingAmount: row.adjustDirection === 'deduct' ? -row.pendingAmount : row.pendingAmount,
+        rowKind: row.adjustDirection === 'deduct' ? 'credit' : 'bill'
       }));
-    rows = [...rows, ...journalRows];
+    const unadjRows = await outstandingUnadjRows(userId, partyType, asOf);
+    rows = [...rows, ...journalRows, ...unadjRows];
 
     rows = rows.filter(row => {
-      if (partyName && !contains(row.partyName, partyName)) return false;
+      if (partyName && !partyTokensMatch(partyName, row.partyName)) return false;
       if (brokerName && !contains(row.brokerName, brokerName)) return false;
       if (station && !contains(row.station, station)) return false;
       if (haste && !contains(row.haste, haste)) return false;
@@ -820,14 +917,68 @@ router.get('/outstanding-report', authenticateToken, requireActiveSubscription, 
       return String(b.billNumber || '').localeCompare(String(a.billNumber || ''), undefined, { numeric: true });
     });
 
+    const [customers, suppliers] = await Promise.all([
+      prisma.customer.findMany({
+        where: { userId },
+        select: {
+          organizationName: true,
+          mobileNumber: true,
+          address: true,
+          addressLine2: true,
+          city: true,
+          state: true,
+          agentName: true
+        }
+      }),
+      prisma.supplier.findMany({
+        where: { userId },
+        select: {
+          name: true,
+          mobileNumber: true,
+          address: true,
+          addressLine2: true,
+          city: true,
+          state: true,
+          brokerName: true
+        }
+      })
+    ]);
+    const contactByName = new Map();
+    const rememberContact = (name, contact) => {
+      const key = String(name || '').trim().toLowerCase();
+      if (!key || contactByName.has(key)) return;
+      contactByName.set(key, contact);
+    };
+    for (const row of customers) {
+      rememberContact(row.organizationName, {
+        phone: row.mobileNumber || '',
+        address: [row.address, row.addressLine2, row.city, row.state].filter(Boolean).join(', '),
+        broker: row.agentName || ''
+      });
+    }
+    for (const row of suppliers) {
+      rememberContact(row.name, {
+        phone: row.mobileNumber || '',
+        address: [row.address, row.addressLine2, row.city, row.state].filter(Boolean).join(', '),
+        broker: row.brokerName || ''
+      });
+    }
+
     const enriched = rows.map(row => {
       const pending = roundMoneyLocal(row.pendingAmount);
       const buckets = emptyBucketTotals();
       buckets[row.agingBucket] = pending;
+      const contact = contactByName.get(String(row.partyName || '').trim().toLowerCase()) || {};
       return {
         ...row,
         id: `${row.billType}-${row.billId}`,
         buckets,
+        displayBillNumber: outstandingBillNo(row.transactionType, row.billNumber),
+        goodsReturnAmount: roundMoneyLocal(row.goodsReturnAmount || 0),
+        rowKind: row.rowKind || (pending < 0 ? 'credit' : 'bill'),
+        partyPhone: contact.phone || '',
+        partyAddress: contact.address || '',
+        brokerName: row.brokerName || contact.broker || '',
         editPath: row.editPath
           || (row.billType === 'order' ? `/erp/sales?edit=${row.billId}&kind=bill` : undefined)
       };
