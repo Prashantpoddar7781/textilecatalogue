@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { customersApi, journalVouchersApi, purchasesApi } from '../services/api';
 import {
@@ -8,8 +8,9 @@ import {
   warnsOnManualEntry
 } from '../constants/erpTransactionPostingRules';
 import { JOURNAL_TYPE } from '../constants/bankCashSeries';
-import { getAccountType } from '../constants/accountTypes';
-import { Customer, ErpSession, JournalVoucher, Supplier } from '../types';
+import { defaultAccountTypeForRole, getAccountType, partyRoleForAccountType } from '../constants/accountTypes';
+import { AccountParty, Customer, ErpSession, JournalVoucher, Supplier } from '../types';
+import { AccountsInformationDialog, AddPartyConfirmDialog } from './AccountsInformationDialog';
 import { DeleteEntryButton } from './DeleteEntryButton';
 import { ErpFormShell } from './ErpFormShell';
 import { ErpSaveButton } from './ErpSaveButton';
@@ -71,6 +72,11 @@ export const JournalVoucherPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [vouchers, setVouchers] = useState<JournalVoucher[]>([]);
+  const [pendingNewParty, setPendingNewParty] = useState('');
+  const [showAddConfirm, setShowAddConfirm] = useState(false);
+  const [showAccountsDialog, setShowAccountsDialog] = useState(false);
+  const [partiesReady, setPartiesReady] = useState(false);
+  const dismissedParty = useRef('');
 
   const voucherJump = useVoucherJump({
     module: 'journal',
@@ -122,9 +128,13 @@ export const JournalVoucherPage: React.FC<Props> = ({ onBack, erpSession }) => {
   }, []);
 
   useEffect(() => {
-    void customersApi.getAll().then(r => setCustomers(r.customers || [])).catch(() => setCustomers([]));
-    void purchasesApi.getSuppliers().then(r => setSuppliers(r.suppliers || [])).catch(() => setSuppliers([]));
+    let cancelled = false;
+    void Promise.all([
+      customersApi.getAll().then(r => { if (!cancelled) setCustomers(r.customers || []); }).catch(() => { if (!cancelled) setCustomers([]); }),
+      purchasesApi.getSuppliers().then(r => { if (!cancelled) setSuppliers(r.suppliers || []); }).catch(() => { if (!cancelled) setSuppliers([]); })
+    ]).finally(() => { if (!cancelled) setPartiesReady(true); });
     void loadList();
+    return () => { cancelled = true; };
   }, [loadList]);
 
   useEffect(() => {
@@ -209,9 +219,82 @@ export const JournalVoucherPage: React.FC<Props> = ({ onBack, erpSession }) => {
     else setSupplierId(supplier?.id || '');
   };
 
+  const partyIsKnown = (name: string) => {
+    const key = name.trim().toLowerCase();
+    if (!key) return true;
+    return customers.some(row => row.organizationName.trim().toLowerCase() === key)
+      || suppliers.some(row => row.name.trim().toLowerCase() === key);
+  };
+
+  const promptNewParty = (name: string) => {
+    const trimmed = name.trim();
+    if (!partiesReady || !trimmed || partyIsKnown(trimmed)) return;
+    if (dismissedParty.current === trimmed.toLowerCase()) return;
+    setPendingNewParty(trimmed);
+    setShowAddConfirm(true);
+  };
+
+  const onPartySaved = (party: AccountParty) => {
+    const asCustomer = party.role === 'customer' || partyRoleForAccountType(party.accountType) === 'customer';
+    if (asCustomer) {
+      setCustomers(prev => (prev.some(row => row.id === party.id) ? prev : [...prev, {
+        id: party.id,
+        organizationName: party.name,
+        gstNumber: party.gstNumber,
+        panNumber: party.panNumber,
+        contactPersonName: party.contactPersonName,
+        mobileNumber: party.mobileNumber,
+        agentName: party.brokerName || party.agentName,
+        accountType: party.accountType,
+        accountGroup: party.accountGroup,
+        state: party.state,
+        city: party.city,
+        pincode: party.pincode,
+        dhara: party.dhara,
+        discountRate: party.discountRate ?? party.dhara,
+        graceDays: party.graceDays,
+        interestRate: party.interestRate
+      }]));
+      setPartyType('customer');
+      setCustomerId(party.id);
+      setSupplierId('');
+    } else {
+      setSuppliers(prev => (prev.some(row => row.id === party.id) ? prev : [...prev, {
+        id: party.id,
+        userId: '',
+        name: party.name,
+        gstNumber: party.gstNumber,
+        panNumber: party.panNumber,
+        mobileNumber: party.mobileNumber,
+        address: party.address,
+        city: party.city,
+        state: party.state,
+        pincode: party.pincode,
+        msmeType: party.msmeType,
+        accountType: party.accountType,
+        accountGroup: party.accountGroup,
+        dhara: party.dhara,
+        graceDays: party.graceDays,
+        interestRate: party.interestRate,
+        createdAt: '',
+        updatedAt: ''
+      }]));
+      setPartyType('supplier');
+      setSupplierId(party.id);
+      setCustomerId('');
+    }
+    setPartyName(party.name);
+    dismissedParty.current = '';
+    setShowAccountsDialog(false);
+  };
+
   const save = async () => {
     if (!partyName.trim()) {
       setError('Party name is required.');
+      return;
+    }
+    if (partiesReady && !partyIsKnown(partyName) && dismissedParty.current !== partyName.trim().toLowerCase()) {
+      promptNewParty(partyName);
       return;
     }
     if (!oppositeAccount.trim()) {
@@ -350,6 +433,7 @@ export const JournalVoucherPage: React.FC<Props> = ({ onBack, erpSession }) => {
                       list="journal-parties"
                       value={partyName}
                       onChange={e => applyPartyName(e.target.value)}
+                      onBlur={e => promptNewParty(e.target.value)}
                       placeholder={partyType === 'customer' ? 'Customer name' : 'Supplier / employee'}
                     />
                     <datalist id="journal-parties">
@@ -453,6 +537,26 @@ export const JournalVoucherPage: React.FC<Props> = ({ onBack, erpSession }) => {
           </>
         )}
       </main>
+      <AddPartyConfirmDialog
+        open={showAddConfirm}
+        partyName={pendingNewParty}
+        onNo={() => {
+          dismissedParty.current = pendingNewParty.trim().toLowerCase();
+          setShowAddConfirm(false);
+        }}
+        onYes={() => {
+          setShowAddConfirm(false);
+          setShowAccountsDialog(true);
+        }}
+      />
+      <AccountsInformationDialog
+        open={showAccountsDialog}
+        initialName={pendingNewParty}
+        context={partyType === 'customer' ? 'sales' : 'purchase'}
+        suggestedAccountType={defaultAccountTypeForRole(partyType)}
+        onClose={() => setShowAccountsDialog(false)}
+        onSaved={onPartySaved}
+      />
     </div>
   );
 };
