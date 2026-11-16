@@ -286,6 +286,37 @@ async function main() {
     });
     allocByVoucher.set(key, list);
   }
+  const vnoByLabel = new Map();
+  for (const bill of bills) {
+    const label = text(bill.BILL, 40).replace(/\*/g, '').replace(/\s+/g, '').toUpperCase();
+    if (!label) continue;
+    vnoByLabel.set(`${text(bill.TYPE, 12)}|${label}`, String(int(bill.VNO)));
+  }
+  const postedDiscount = new Map();
+  for (const row of fas) {
+    if (text(row.TYPE, 12) !== 'V1') continue;
+    if (/DISCOUNT/i.test(text(row.code, 80))) continue;
+    const amount = round(Math.max(num(row.CRAMT), num(row.DRAMT)));
+    if (amount <= 0) continue;
+    const label = text(row.BILLNO, 40).replace(/\*/g, '').replace(/\s+/g, '').toUpperCase();
+    const vno = vnoByLabel.get(`${text(row.BILLTYPE, 12)}|${label}`);
+    if (!vno) continue;
+    const key = `${text(row.BILLTYPE, 12)}|${vno}`;
+    postedDiscount.set(key, round((postedDiscount.get(key) || 0) + amount));
+  }
+  const discountTarget = new Map();
+  for (const list of allocByVoucher.values()) {
+    for (const item of list) {
+      if (!(item.amount > 0)) continue;
+      const key = `${item.billType}|${int(item.billNo)}`;
+      const current = discountTarget.get(key);
+      if (!current || item.amount > current.amount) discountTarget.set(key, item);
+    }
+  }
+  for (const [key, item] of discountTarget) {
+    const posted = postedDiscount.get(key) || 0;
+    if (posted > (item.discountAmount || 0) + 0.05) item.discountAmount = posted;
+  }
 
   const hashed = await bcrypt.hash(password, 10);
   let user = await prisma.user.findUnique({ where: { email: EMAIL } });

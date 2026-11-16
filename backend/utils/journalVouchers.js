@@ -4,6 +4,17 @@ import { daysSince, forEachUniqueBillAllocation, loadAllocationEntries, matchesP
 export const JOURNAL_TRANSACTION_TYPE = 'JOURNAL';
 export const JOURNAL_BILL_TYPE = 'journal_voucher';
 
+/** Opening balance is the brought-forward figure. A VATAV tagged to a bill is that bill's discount. */
+export function countsOnBillOutstanding(voucher) {
+  const type = String(voucher?.transactionType || '').trim().toUpperCase();
+  if (type === 'OPENING BALANCE') return false;
+  if (type === 'VATAV') {
+    const text = `${voucher?.remarks || ''} ${voucher?.narration || ''}`;
+    if (/\[E:V1:|BILL NO\./i.test(text)) return false;
+  }
+  return true;
+}
+
 export function journalAdjustDirection(partySide, partyType) {
   const side = String(partySide || '').toLowerCase() === 'debit' ? 'debit' : 'credit';
   if (partyType === 'supplier') {
@@ -87,6 +98,7 @@ export async function getPendingJournalVouchers(prismaClient, userId, partyName,
   ]);
 
   return vouchers
+    .filter(voucher => countsOnBillOutstanding(voucher))
     .filter(voucher => matchesJournalParty(voucher, partyName, partyType))
     .map(voucher => mapJournalVoucherToPendingItem(voucher, paidById, partyType))
     .filter(item => item.pendingAmount > 0)

@@ -46,6 +46,7 @@ import { allocateNextTypeBillNumber } from '../utils/transactionBilling.js';
 import { ensurePartyMaster } from '../utils/partyMaster.js';
 import { getPendingCreditDebitNotes } from '../utils/creditDebitNotes.js';
 import {
+  countsOnBillOutstanding,
   getPaidAmountsByJournalId,
   getPendingJournalVouchers,
   mapJournalVoucherToPendingItem
@@ -358,6 +359,39 @@ async function getPurchaseBillParties(userId) {
  * Prior bank entries for this party whose cash was not fully applied to bills.
  * Returned as UNADJ PAYMENT rows (Empire: type "U", bill no "4 B").
  */
+function unadjLabel(value) {
+  return String(value || '').replace(/\*/g, '').replace(/\s+/g, '').toLowerCase();
+}
+
+/** A receipt can settle an unadjusted voucher by its printed number when the stored id is a different row. */
+function consumedUnadjByEntryId(entries) {
+  const byId = new Map((entries || []).map(entry => [entry.id, entry]));
+  const consumed = new Map();
+  const add = (id, amount) => {
+    if (!id || amount <= 0) return;
+    consumed.set(id, roundMoney((consumed.get(id) || 0) + amount));
+  };
+  forEachUniqueBillAllocation(entries, (allocation, source) => {
+    if (!isUnadjAllocation(allocation)) return;
+    const amount = roundMoney(allocation.adjustAmount);
+    if (amount <= 0) return;
+    const direct = byId.get(allocation.billId);
+    if (direct && unadjAmountCreated(direct) > 0) {
+      add(direct.id, amount);
+      return;
+    }
+    const label = unadjLabel(allocation.billNumber || allocation.voucherNumber);
+    const party = String(source?.partyName || '').trim().toLowerCase();
+    const match = (entries || []).find(entry =>
+      unadjAmountCreated(entry) > 0
+      && String(entry.partyName || '').trim().toLowerCase() === party
+      && unadjLabel(displayUnadjBillNumber(entry)) === label
+    );
+    add(match?.id || allocation.billId, amount);
+  });
+  return consumed;
+}
+
 async function getPendingUnadjPayments(userId, partyName, partyType, excludeEntryId = null) {
   // Supplier part payments use payment vouchers; customer part receipts use receipt vouchers.
   const entryType = partyType === 'supplier' ? 'payment' : 'receipt';
@@ -407,14 +441,7 @@ async function getPendingUnadjPayments(userId, partyName, partyType, excludeEntr
     return true;
   });
 
-  const consumedByUnadjId = new Map();
-  forEachUniqueBillAllocation(partyEntries, allocation => {
-    if (!isUnadjAllocation(allocation)) return;
-    const adj = roundMoney(allocation.adjustAmount);
-    if (adj <= 0) return;
-    const key = String(allocation.billId);
-    consumedByUnadjId.set(key, roundMoney((consumedByUnadjId.get(key) || 0) + adj));
-  });
+  const consumedByUnadjId = consumedUnadjByEntryId(partyEntries);
 
   const rows = [];
   for (const entry of partyEntries) {
@@ -682,14 +709,7 @@ async function outstandingUnadjRows(userId, partyType, asOf) {
     if (entry.partyType && entry.partyType !== 'other' && entry.partyType !== partyType) return false;
     return true;
   });
-  const consumed = new Map();
-  forEachUniqueBillAllocation(partyEntries, allocation => {
-    if (!isUnadjAllocation(allocation)) return;
-    const adj = roundMoney(allocation.adjustAmount);
-    if (adj <= 0) return;
-    const key = String(allocation.billId);
-    consumed.set(key, roundMoney((consumed.get(key) || 0) + adj));
-  });
+  const consumed = consumedUnadjByEntryId(partyEntries);
   const rows = [];
   for (const entry of partyEntries) {
     if (entry.entryDate && new Date(entry.entryDate) > asOf) continue;
@@ -773,19 +793,20 @@ router.get('/outstanding-report', authenticateToken, requireActiveSubscription, 
       const purchaseReturnRows = bills
         .filter(bill => isPurchaseReturn(bill.transactionType))
         .map(bill => {
-          const mapped = mapPurchaseBillToPendingBill(bill, new Map(), asOf);
-          const amount = roundMoney(mapped.billAmount);
+          const mapped = mapPurchaseBillToPendingBill(bill, paidByBillId, asOf);
+          const open = roundMoney(mapped.pendingAmount);
+          if (open <= 0.05) return null;
           return {
             ...mapped,
-            billAmount: -amount,
-            paidAmount: 0,
-            pendingAmount: -amount,
-            goodsReturnAmount: -amount,
+            billAmount: -roundMoney(mapped.billAmount),
+            paidAmount: roundMoney(mapped.paidAmount),
+            pendingAmount: -open,
+            goodsReturnAmount: -open,
             rowKind: 'return',
             transactionType: bill.transactionType || 'FINISH PURCHASE RETURN'
           };
         })
-        .filter(bill => Math.abs(bill.pendingAmount) > 0.001);
+        .filter(Boolean);
 
       rows = [...purchaseRows, ...purchaseReturnRows];
     } else {
@@ -806,19 +827,20 @@ router.get('/outstanding-report', authenticateToken, requireActiveSubscription, 
       const returnRows = orders
         .filter(order => isSalesGoodsReturn(order.transactionType))
         .map(order => {
-          const mapped = mapOrderToPendingBill(order, new Map(), asOf);
-          const amount = roundMoney(mapped.billAmount);
+          const mapped = mapOrderToPendingBill(order, paidByOrderId, asOf);
+          const open = roundMoney(mapped.pendingAmount);
+          if (open <= 0.05) return null;
           return {
             ...mapped,
-            billAmount: -amount,
-            paidAmount: 0,
-            pendingAmount: -amount,
-            goodsReturnAmount: -amount,
+            billAmount: -roundMoney(mapped.billAmount),
+            paidAmount: roundMoney(mapped.paidAmount),
+            pendingAmount: -open,
+            goodsReturnAmount: -open,
             rowKind: 'return',
             transactionType: 'SALES GOODS RETURN'
           };
         })
-        .filter(bill => Math.abs(bill.pendingAmount) > 0.001);
+        .filter(Boolean);
 
       const coveredOrderIds = new Set(orders.map(order => order.id));
       const invoices = await prisma.salesInvoice.findMany({
@@ -871,6 +893,7 @@ router.get('/outstanding-report', authenticateToken, requireActiveSubscription, 
       getPaidAmountsByJournalId(prisma, userId)
     ]);
     const journalRows = journals
+      .filter(voucher => countsOnBillOutstanding(voucher))
       .map(voucher => mapJournalVoucherToPendingItem(voucher, paidByJournalId, partyType, asOf))
       .filter(row => includeSettled || Math.abs(row.pendingAmount) > 0.001)
       .map(row => ({
