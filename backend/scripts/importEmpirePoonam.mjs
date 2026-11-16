@@ -1223,7 +1223,9 @@ async function main() {
       partyName,
       customerId: customer?.id || null,
       supplierId: supplierByName.get(norm(partyName))?.id || null,
-      oppositeAccount: text(oppositeLine?.code, 180) || 'SUSPENSE',
+      oppositeAccount: code === '00'
+        ? 'OPENING BALANCE'
+        : (text(oppositeLine?.code, 180) || 'SUSPENSE'),
       partySide: debits.length ? 'debit' : 'credit',
       amount,
       narration: rows.map(row => `${text(row.code, 60)} Dr ${round(num(row.DRAMT))} Cr ${round(num(row.CRAMT))} ${text(row.RMK, 80)}`).join(' | ').slice(0, 4000),

@@ -126,16 +126,21 @@ function pushJournalLedgerRows(rawEntries, vouchers, { partyName, paidByBill } =
     const paidInfo = paidByBill?.get(voucher.id);
     const paidOn = paidInfo && paidInfo.amount + 0.001 >= amount ? formatPaidOnRemark(paidInfo.date) : '';
     const narration = voucher.narration || voucher.remarks || '';
+    const isOpeningBalance = String(voucher.transactionType || '').trim().toUpperCase() === 'OPENING BALANCE';
+    if (asOpposite && isOpeningBalance) continue;
     if (asParty) {
       rawEntries.push({
         id: `journal-${voucher.id}`,
         sourceType: 'journal_voucher',
         sourceId: voucher.id,
+        isOpeningBalance,
         date: voucher.voucherDate || voucher.createdAt,
         voucherNumber: billNo,
         billNumber: billNo,
-        account: voucher.oppositeAccount || JOURNAL_TRANSACTION_TYPE,
-        particulars: paidOn || `Journal ${billNo} · ${voucher.oppositeAccount || ''}${narration ? ` · ${narration}` : ''}`,
+        account: isOpeningBalance ? 'OPENING BALANCE' : (voucher.oppositeAccount || JOURNAL_TRANSACTION_TYPE),
+        particulars: isOpeningBalance
+          ? 'Opening balance'
+          : (paidOn || `Journal ${billNo} · ${voucher.oppositeAccount || ''}${narration ? ` · ${narration}` : ''}`),
         remarks: paidOn || narration,
         debitAmount: partyCredit ? 0 : amount,
         creditAmount: partyCredit ? amount : 0
@@ -603,15 +608,74 @@ function toDayEnd(value) {
   return d;
 }
 
+/** Calendar day in India, so an opening dated 1 Apr is the same day as the FY start. */
+function calendarDay(value) {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '';
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).format(d);
+}
+
+/**
+ * Series 00 OPENING BALANCE is the brought-forward figure.
+ * Bills dated before that day are the previous year and already sit inside it,
+ * so they must not be added again.
+ */
+function partitionLedgerRows(rawEntries, { fromDate, toDate } = {}) {
+  const rows = Array.isArray(rawEntries) ? rawEntries : [];
+  const openings = rows.filter(row => row?.isOpeningBalance);
+  const openingDay = openings.map(row => calendarDay(row.date)).filter(Boolean).sort()[0] || '';
+  const activity = rows.filter(row => {
+    if (row?.isOpeningBalance) return false;
+    if (openingDay && calendarDay(row.date) < openingDay) return false;
+    return true;
+  });
+  const fromDay = fromDate ? calendarDay(fromDate) : '';
+  const toDay = toDate ? calendarDay(toDate) : '';
+
+  let openingDebit = 0;
+  let openingCredit = 0;
+  const addOpening = (row) => {
+    openingDebit = roundMoney(openingDebit + (row.debitAmount || 0));
+    openingCredit = roundMoney(openingCredit + (row.creditAmount || 0));
+  };
+  const body = [];
+  for (const row of openings) {
+    const day = calendarDay(row.date);
+    if (!fromDay || day <= fromDay) addOpening(row);
+    else body.push(row);
+  }
+  for (const row of activity) {
+    const day = calendarDay(row.date);
+    if (fromDay && day < fromDay) addOpening(row);
+    else if (!toDay || day <= toDay) body.push(row);
+  }
+  return { rows: body, openingDebit, openingCredit };
+}
+
 /** Ledger for our bank / cash A/C (deposit = debit, withdraw = credit). */
 export async function buildBankAccountLedger(prisma, userId, bankName) {
   const name = String(bankName || '').trim();
   if (!name) return null;
-  const entries = await prisma.bankEntry.findMany({
-    where: { userId, bankName: { equals: name, mode: 'insensitive' } },
-    orderBy: [{ entryDate: 'asc' }, { createdAt: 'asc' }]
-  });
-  if (!entries.length) return null;
+  const [entries, openingJournals] = await Promise.all([
+    prisma.bankEntry.findMany({
+      where: { userId, bankName: { equals: name, mode: 'insensitive' } },
+      orderBy: [{ entryDate: 'asc' }, { createdAt: 'asc' }]
+    }),
+    prisma.journalVoucher.findMany({
+      where: {
+        userId,
+        status: { not: 'cancelled' },
+        transactionType: { equals: 'OPENING BALANCE', mode: 'insensitive' },
+        partyName: { equals: name, mode: 'insensitive' }
+      }
+    })
+  ]);
+  if (!entries.length && !openingJournals.length) return null;
 
   const settlementByUnadjId = unadjSettlementInfo(entries);
   const rawEntries = entries.map(entry => {
@@ -634,15 +698,40 @@ export async function buildBankAccountLedger(prisma, userId, bankName) {
     };
   }).filter(row => (row.debitAmount || 0) + (row.creditAmount || 0) > 0);
 
+  for (const voucher of openingJournals) {
+    const amount = roundMoney(voucher.amount);
+    if (amount <= 0) continue;
+    const credit = String(voucher.partySide || '').toLowerCase() === 'credit';
+    rawEntries.push({
+      id: `journal-${voucher.id}`,
+      sourceType: 'journal_voucher',
+      sourceId: voucher.id,
+      isOpeningBalance: true,
+      date: voucher.voucherDate || voucher.createdAt,
+      voucherNumber: voucher.voucherNumber || '-',
+      billNumber: voucher.voucherNumber || '-',
+      account: 'OPENING BALANCE',
+      particulars: 'Opening balance',
+      remarks: '',
+      debitAmount: credit ? 0 : amount,
+      creditAmount: credit ? amount : 0
+    });
+  }
+
   if (!rawEntries.length) return null;
-  const ledger = withRunningBalance(rawEntries, 'customer');
+  const partitioned = partitionLedgerRows(rawEntries);
+  const openingRunning = roundMoney(partitioned.openingDebit - partitioned.openingCredit);
+  const ledger = withRunningBalance(partitioned.rows, 'customer', openingRunning);
   const last = ledger[ledger.length - 1];
   return {
     partyType: 'bank',
     partyName: name,
     ledger,
-    runningBalance: last ? last.runningBalance : 0,
-    balanceType: last ? last.balanceType : 'DR',
+    sourceRows: rawEntries,
+    openingDebit: partitioned.openingDebit,
+    openingCredit: partitioned.openingCredit,
+    runningBalance: last ? last.runningBalance : Math.abs(openingRunning),
+    balanceType: last ? last.balanceType : (openingRunning >= 0 ? 'DR' : 'CR'),
     totalDebit: roundMoney(ledger.reduce((sum, row) => sum + row.debitAmount, 0)),
     totalCredit: roundMoney(ledger.reduce((sum, row) => sum + row.creditAmount, 0))
   };
@@ -750,7 +839,7 @@ export async function buildUnifiedPartyLedger(prisma, userId, { partyName, suppl
     || Boolean(bankBook?.ledger?.length);
 
   const chunks = [];
-  if (bankBook?.ledger?.length) {
+  if (bankBook?.ledger?.length || bankBook?.sourceRows?.length) {
     chunks.push(bankBook);
   }
 
@@ -758,10 +847,10 @@ export async function buildUnifiedPartyLedger(prisma, userId, { partyName, suppl
   if (!isBankCashAccount) {
     if (resolvedSupplierId) {
       const supplierLedger = await buildSupplierLedger(prisma, userId, resolvedSupplierId);
-      if (supplierLedger?.ledger?.length) chunks.push(supplierLedger);
+      if (supplierLedger?.ledger?.length || supplierLedger?.sourceRows?.length) chunks.push(supplierLedger);
     }
     const customerLedger = await buildCustomerLedger(prisma, userId, name);
-    if (customerLedger?.ledger?.length) chunks.push(customerLedger);
+    if (customerLedger?.ledger?.length || customerLedger?.sourceRows?.length) chunks.push(customerLedger);
   }
 
   const nominal = await buildCommissionNominalLedger(prisma, userId, name);
@@ -791,11 +880,12 @@ export async function buildUnifiedPartyLedger(prisma, userId, { partyName, suppl
 
   const byId = new Map();
   for (const chunk of chunks) {
-    for (const row of chunk.ledger || []) {
+    for (const row of chunk.sourceRows || chunk.ledger || []) {
       byId.set(row.id, {
         id: row.id,
         sourceType: row.sourceType,
         sourceId: row.sourceId,
+        isOpeningBalance: Boolean(row.isOpeningBalance),
         date: row.date,
         voucherNumber: row.voucherNumber,
         billNumber: row.billNumber,
@@ -808,32 +898,16 @@ export async function buildUnifiedPartyLedger(prisma, userId, { partyName, suppl
     }
   }
 
-  const allRows = Array.from(byId.values());
-  const from = toDayStart(fromDate);
-  const to = toDayEnd(toDate);
+  const partitioned = partitionLedgerRows(Array.from(byId.values()), { fromDate, toDate });
+  const filtered = partitioned.rows;
+  const openingDebit = partitioned.openingDebit;
+  const openingCredit = partitioned.openingCredit;
 
-  let openingDebit = 0;
-  let openingCredit = 0;
-  if (from) {
-    for (const row of allRows) {
-      const d = new Date(row.date);
-      if (d < from) {
-        openingDebit = roundMoney(openingDebit + (row.debitAmount || 0));
-        openingCredit = roundMoney(openingCredit + (row.creditAmount || 0));
-      }
-    }
-  }
-
-  const filtered = allRows.filter(row => {
-    const d = new Date(row.date);
-    if (from && d < from) return false;
-    if (to && d > to) return false;
-    return true;
-  });
-
-  const partyType = resolvedSupplierId && (customerId || chunks.length > 1)
-    ? 'both'
-    : (resolvedSupplierId ? 'supplier' : 'customer');
+  const partyType = isBankCashAccount
+    ? 'bank'
+    : (resolvedSupplierId && (customerId || chunks.length > 1)
+      ? 'both'
+      : (resolvedSupplierId ? 'supplier' : 'customer'));
 
   return finalizeLedgerRows(
     filtered,
@@ -1418,14 +1492,19 @@ export async function buildCustomerLedger(prisma, userId, partyName) {
   }
 
   rawEntries.sort(sortByDate);
-  const ledger = withRunningBalance(rawEntries, 'customer');
-  const runningBalance = ledger.length ? ledger[ledger.length - 1].runningBalance : 0;
-  const balanceType = ledger.length ? ledger[ledger.length - 1].balanceType : 'DR';
+  const partitioned = partitionLedgerRows(rawEntries);
+  const openingRunning = roundMoney(partitioned.openingDebit - partitioned.openingCredit);
+  const ledger = withRunningBalance(partitioned.rows, 'customer', openingRunning);
+  const runningBalance = ledger.length ? ledger[ledger.length - 1].runningBalance : openingRunning;
+  const balanceType = ledger.length ? ledger[ledger.length - 1].balanceType : (openingRunning >= 0 ? 'DR' : 'CR');
 
   return {
     partyType: 'customer',
     partyName,
     ledger,
+    sourceRows: rawEntries,
+    openingDebit: partitioned.openingDebit,
+    openingCredit: partitioned.openingCredit,
     runningBalance,
     balanceType,
     totalDebit: roundMoney(ledger.reduce((sum, row) => sum + row.debitAmount, 0)),
@@ -1794,9 +1873,11 @@ export async function buildSupplierLedger(prisma, userId, supplierId) {
   }
 
   rawEntries.sort(sortByDate);
-  const ledger = withRunningBalance(rawEntries, 'supplier');
-  const runningBalance = ledger.length ? ledger[ledger.length - 1].runningBalance : 0;
-  const balanceType = ledger.length ? ledger[ledger.length - 1].balanceType : 'CR';
+  const partitioned = partitionLedgerRows(rawEntries);
+  const openingRunning = roundMoney(partitioned.openingCredit - partitioned.openingDebit);
+  const ledger = withRunningBalance(partitioned.rows, 'supplier', openingRunning);
+  const runningBalance = ledger.length ? ledger[ledger.length - 1].runningBalance : openingRunning;
+  const balanceType = ledger.length ? ledger[ledger.length - 1].balanceType : (openingRunning >= 0 ? 'CR' : 'DR');
 
   return {
     partyType: 'supplier',
@@ -1804,6 +1885,9 @@ export async function buildSupplierLedger(prisma, userId, supplierId) {
     supplierId: supplier.id,
     supplier,
     ledger,
+    sourceRows: rawEntries,
+    openingDebit: partitioned.openingDebit,
+    openingCredit: partitioned.openingCredit,
     runningBalance,
     balanceType,
     totalDebit: roundMoney(ledger.reduce((sum, row) => sum + row.debitAmount, 0)),
