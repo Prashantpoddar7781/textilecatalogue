@@ -26,3 +26,5 @@ When a new hole is found, add it here in the same sitting as the code change, wi
 8. **Work-bill discount and line amount.** DISCOUNT and billdis can be 0 while VAT was charged on a lower base. Bhagwati job bills are 12% off; recover that percent from gross and tax (`impliedDiscountPercent`) and do not also invent a second discount journal. Keep the imported line amount when it is not pieces × rate (P7 19, 120 pcs, rate 255, Empire amount 30090).
 
 9. **Company-named series** stay out of general pick lists. COMPULSORY LINK stays optional. The pending quantity still has to fall when a receipt was adjusted against a challan.
+
+10. **Cheque return.** FAS remark `CHEQUE RETN. ON` on a bank receipt (B1) means that receipt no longer pays its bills. The bounce is a separate bank payment (B2) dated the return date, remark `CHQ RETURN`. Re-presenting the cheque adds a new bank receipt with the same bills. The remark is already on the imported row, so the books that are already there release those bills without another import.

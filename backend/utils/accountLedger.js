@@ -19,6 +19,7 @@ import {
   formatAdjustedOnRemark,
   formatBillNosRemark,
   formatPaidOnRemark,
+  isChequeReturnedEntry,
   isUnadjAllocation,
   unadjAmountCreated
 } from '../constants/bankCashSeries.js';
@@ -70,6 +71,10 @@ function unadjSettlementInfo(bankEntries) {
 }
 
 function bankEntryLedgerRemark(entry, settlementByUnadjId) {
+  if (isChequeReturnedEntry(entry)) {
+    const visible = String(entry.remarks || '').replace(/^\[E:[^\]]+\]\s*/, '').trim();
+    return visible || formatBillNosRemark(entry.billAllocations);
+  }
   const billNos = formatBillNosRemark(entry.billAllocations);
   if (billNos) return billNos;
   const created = unadjAmountCreated(entry);

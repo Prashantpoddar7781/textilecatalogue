@@ -106,6 +106,23 @@ export function formatBillNosRemark(allocations) {
   return `BILL NOS. ${nos.join(', ')}`;
 }
 
+/** Empire marks a bounced receipt in FAS.RMK. Those bill picks no longer count as paid. */
+export function isChequeReturnedEntry(entry) {
+  return /CHEQUE RETN\. ON\b/i.test(String(entry?.remarks || ''));
+}
+
+export function chequeReturnedRemark(dateValue, billNosRemark) {
+  const stamp = formatLedgerDate(dateValue);
+  const head = stamp ? `CHEQUE RETN. ON ${stamp}` : 'CHEQUE RETN. ON';
+  const bills = String(billNosRemark || '').trim();
+  return bills ? `${head} / ${bills}` : head;
+}
+
+export function chequeReturnVoucherRemark(billNosRemark) {
+  const bills = String(billNosRemark || '').trim();
+  return bills ? `CHQ RETURN - ${bills}` : 'CHQ RETURN -';
+}
+
 function formatLedgerDate(dateValue) {
   if (!dateValue) return '';
   const date = dateValue instanceof Date ? dateValue : new Date(dateValue);

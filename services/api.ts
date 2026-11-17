@@ -1376,6 +1376,12 @@ export const bankEntriesApi = {
       method: 'DELETE'
     });
   },
+  chequeReturn: async (id: string, body: { returnDate: string; represent: boolean }) => {
+    return request<{ entry: BankEntry; payment: BankEntry; deposit: BankEntry | null }>(`/bank-entries/${id}/cheque-return`, {
+      method: 'POST',
+      body: JSON.stringify(body)
+    });
+  },
 };
 
 export const creditDebitNotesApi = {

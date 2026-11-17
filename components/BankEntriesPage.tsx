@@ -21,6 +21,7 @@ import {
   isUnadjAllocation,
   matchBankSettlementTypes,
   normalizeBankCashSeries,
+  isChequeReturnedEntry,
   slipNumberFromDate,
   JOURNAL_TYPE,
   UNADJ_BILL_TYPE,
@@ -138,6 +139,10 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
   const editingIdRef = useRef<string | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [chequeReturnStep, setChequeReturnStep] = useState<null | 'confirm' | 'date' | 'represent'>(null);
+  const [chequeReturnDate, setChequeReturnDate] = useState(today);
+  const [returningCheque, setReturningCheque] = useState(false);
   const seriesRef = useRef(form.series);
   const defaultBankRef = useRef('');
   seriesRef.current = form.series;
@@ -1108,6 +1113,31 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
     }
   };
 
+  const passChequeReturn = async (represent: boolean) => {
+    if (!editingId || returningCheque) return;
+    setReturningCheque(true);
+    setError('');
+    setNotice('');
+    try {
+      const result = await bankEntriesApi.chequeReturn(editingId, {
+        returnDate: chequeReturnDate,
+        represent
+      });
+      setForm(current => ({ ...current, remarks: result.entry.remarks || current.remarks }));
+      const when = new Date(chequeReturnDate).toLocaleDateString('en-IN');
+      const depositNote = result.deposit
+        ? ` Deposited again as bank receipt ${result.deposit.voucherNumber}.`
+        : '';
+      setNotice(`Cheque return passed on ${when} as bank payment ${result.payment.voucherNumber}.${depositNote}`);
+      setChequeReturnStep(null);
+    } catch (err: any) {
+      setError(err.message || 'Could not pass the cheque return.');
+      setChequeReturnStep(null);
+    } finally {
+      setReturningCheque(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#F6F7FB]">
       <header className="sticky top-0 z-30 border-b bg-white/95 px-4 py-3 shadow-sm backdrop-blur-xl">
@@ -1150,6 +1180,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
 
       <main className="mx-auto max-w-[1400px] px-4 py-6">
         {error && <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{error}</div>}
+        {notice && <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">{notice}</div>}
 
         {viewMode === 'entry' ? (
           <ErpFormShell onSave={saveEntry} saving={saving} className="space-y-4">
@@ -1724,6 +1755,21 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                 >
                   Clear
                 </button>
+                {editingId && form.series === 'BANK RECEIPT' && !isChequeReturnedEntry(form) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const now = new Date();
+                      const dd = String(now.getDate()).padStart(2, '0');
+                      const mm = String(now.getMonth() + 1).padStart(2, '0');
+                      setChequeReturnDate(`${now.getFullYear()}-${mm}-${dd}`);
+                      setChequeReturnStep('confirm');
+                    }}
+                    className="rounded-xl border border-amber-300 bg-amber-50 px-5 py-3 text-sm font-black uppercase tracking-wide text-amber-900"
+                  >
+                    Chq Return
+                  </button>
+                )}
               </div>
             </section>
           </ErpFormShell>
@@ -1841,6 +1887,53 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
         }}
         onSaved={onBankAccountSaved}
       />
+
+      {chequeReturnStep && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
+            {chequeReturnStep === 'confirm' && (
+              <>
+                <h2 className="text-sm font-black uppercase tracking-wide text-gray-900">Please be sure</h2>
+                <p className="mt-3 text-sm font-semibold text-gray-700">
+                  Are you sure you want to pass return cheque entry for this cheque?
+                </p>
+                <div className="mt-5 flex justify-end gap-2">
+                  <button type="button" onClick={() => setChequeReturnStep('date')} className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-black text-white">Yes</button>
+                  <button type="button" onClick={() => setChequeReturnStep(null)} className="rounded-xl border px-4 py-2 text-sm font-black text-gray-700">No</button>
+                </div>
+              </>
+            )}
+            {chequeReturnStep === 'date' && (
+              <>
+                <h2 className="text-sm font-black uppercase tracking-wide text-gray-900">Cheque return entry</h2>
+                <label className="mt-3 block text-sm font-semibold text-gray-700">
+                  Please enter return date
+                  <input
+                    type="date"
+                    className="mt-2 w-full rounded-xl border px-3 py-2 font-semibold"
+                    value={chequeReturnDate}
+                    onChange={event => setChequeReturnDate(event.target.value)}
+                  />
+                </label>
+                <div className="mt-5 flex justify-end gap-2">
+                  <button type="button" onClick={() => setChequeReturnStep('represent')} className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-black text-white">OK</button>
+                  <button type="button" onClick={() => setChequeReturnStep(null)} className="rounded-xl border px-4 py-2 text-sm font-black text-gray-700">Cancel</button>
+                </div>
+              </>
+            )}
+            {chequeReturnStep === 'represent' && (
+              <>
+                <h2 className="text-sm font-black uppercase tracking-wide text-gray-900">Please select option</h2>
+                <p className="mt-3 text-sm font-semibold text-gray-700">Re-present this cheque in bank?</p>
+                <div className="mt-5 flex justify-end gap-2">
+                  <button type="button" disabled={returningCheque} onClick={() => void passChequeReturn(true)} className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-black text-white disabled:opacity-60">Yes</button>
+                  <button type="button" disabled={returningCheque} onClick={() => void passChequeReturn(false)} className="rounded-xl border px-4 py-2 text-sm font-black text-gray-700 disabled:opacity-60">No</button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

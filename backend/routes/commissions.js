@@ -255,7 +255,7 @@ router.get('/report', authenticateToken, requireActiveSubscription, async (req, 
     });
     const payments = await prisma.bankEntry.findMany({
       where: { userId, entryType: 'payment' },
-      select: { id: true, transactionType: true, voucherNumber: true, billAllocations: true }
+      select: { id: true, transactionType: true, voucherNumber: true, billAllocations: true, remarks: true }
     });
     const paidByBillId = new Map();
     forEachUniqueBillAllocation(payments, allocation => {

@@ -172,6 +172,11 @@ export function formatBillNosRemark(allocations?: Array<{ billNumber?: string | 
   return `BILL NOS. ${nos.join(', ')}`;
 }
 
+/** Empire marks a bounced receipt in the voucher remark. Those bill picks no longer count as paid. */
+export function isChequeReturnedEntry(entry?: { remarks?: string | null } | null): boolean {
+  return /CHEQUE RETN\. ON\b/i.test(String(entry?.remarks || ''));
+}
+
 function formatLedgerDate(dateValue?: string | Date | null): string {
   if (!dateValue) return '';
   const date = dateValue instanceof Date ? dateValue : new Date(dateValue);

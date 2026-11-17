@@ -1,4 +1,5 @@
 import { isExpensePurchaseType } from '../constants/erpTransactionTypes.js';
+import { isChequeReturnedEntry } from '../constants/bankCashSeries.js';
 import { applyInterestFields } from './interestCalculation.js';
 
 export const OPENING_BANK_BALANCE = 1000000;
@@ -196,6 +197,7 @@ export function normalizeBillAllocations(value) {
 export function forEachUniqueBillAllocation(entries, visit) {
   const seen = new Set();
   for (const entry of entries || []) {
+    if (isChequeReturnedEntry(entry)) continue;
     const voucherKey = entry?.voucherNumber
       ? `${entry.transactionType || ''}|${entry.voucherNumber}`
       : `id:${entry?.id || ''}`;
@@ -220,7 +222,8 @@ export async function loadAllocationEntries(prismaClient, userId, options = {}) 
       transactionType: true,
       voucherNumber: true,
       entryDate: true,
-      billAllocations: true
+      billAllocations: true,
+      remarks: true
     }
   });
   if (!excludeEntryId) return entries;

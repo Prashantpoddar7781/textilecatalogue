@@ -32,9 +32,12 @@ import { getPostingRule, postingSaleOrPurchaseAccount } from '../constants/erpTr
 import {
   bankCashEntryType,
   bankCashPaymentMode,
+  chequeReturnedRemark,
+  chequeReturnVoucherRemark,
   displayUnadjBillNumber,
   formatBillNosRemark,
   isBankCashSeries,
+  isChequeReturnedEntry,
   isUnadjAllocation,
   nextNumberFromVoucherList,
   normalizeBankCashSeries,
@@ -1264,6 +1267,99 @@ router.put('/:id', authenticateToken, requireActiveSubscription, [
     });
 
     res.json({ entry });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/:id/cheque-return', authenticateToken, requireActiveSubscription, async (req, res, next) => {
+  try {
+    const userId = req.user.userId;
+    const existing = await prisma.bankEntry.findFirst({
+      where: { id: req.params.id, userId }
+    });
+    if (!existing) return res.status(404).json({ error: 'Bank entry not found' });
+    if (existing.entryType !== 'receipt' || bankCashPaymentMode(existing.transactionType) !== 'bank') {
+      return res.status(400).json({ error: 'Cheque return is for a bank receipt.' });
+    }
+    if (isChequeReturnedEntry(existing)) {
+      return res.status(400).json({ error: 'This cheque is already returned.' });
+    }
+
+    const returnDate = optionalEntryDate(req.body.returnDate);
+    const represent = Boolean(req.body.represent);
+    const billNos = formatBillNosRemark(existing.billAllocations);
+    const returnedRemark = chequeReturnedRemark(returnDate, billNos);
+    const paymentRemark = chequeReturnVoucherRemark(billNos);
+
+    const nextVoucher = async (tx, series) => {
+      const rows = await tx.bankEntry.findMany({
+        where: { userId, transactionType: series },
+        select: { voucherNumber: true }
+      });
+      return nextNumberFromVoucherList(rows.map(row => row.voucherNumber));
+    };
+
+    const result = await prisma.$transaction(async (tx) => {
+      const entry = await tx.bankEntry.update({
+        where: { id: existing.id },
+        data: { remarks: returnedRemark }
+      });
+      const payment = await tx.bankEntry.create({
+        data: {
+          userId,
+          entryType: 'payment',
+          transactionType: 'BANK PAYMENT',
+          entryDate: returnDate,
+          voucherNumber: await nextVoucher(tx, 'BANK PAYMENT'),
+          companyName: existing.companyName,
+          bankName: existing.bankName,
+          accountName: existing.accountName,
+          partyType: existing.partyType,
+          partyName: existing.partyName,
+          amount: existing.amount,
+          paymentMode: 'bank',
+          chequeNumber: existing.chequeNumber,
+          chequeDate: existing.chequeDate,
+          slipNumber: slipNumberFromDate(returnDate),
+          remarks: paymentRemark,
+          billAllocations: []
+        }
+      });
+      let deposit = null;
+      if (represent) {
+        deposit = await tx.bankEntry.create({
+          data: {
+            userId,
+            entryType: 'receipt',
+            transactionType: 'BANK RECEIPT',
+            entryDate: returnDate,
+            voucherNumber: await nextVoucher(tx, 'BANK RECEIPT'),
+            companyName: existing.companyName,
+            bankName: existing.bankName,
+            accountName: existing.accountName,
+            partyType: existing.partyType,
+            partyName: existing.partyName,
+            amount: existing.amount,
+            paymentMode: 'bank',
+            chequeNumber: existing.chequeNumber,
+            chequeDate: existing.chequeDate,
+            slipNumber: slipNumberFromDate(returnDate),
+            billNumber: existing.billNumber,
+            billAllocations: existing.billAllocations || [],
+            grossAmount: existing.grossAmount,
+            adjustPending: existing.adjustPending,
+            netBillAmount: existing.netBillAmount,
+            adjustAdd: existing.adjustAdd,
+            taxableValuePaidBills: existing.taxableValuePaidBills,
+            remarks: billNos || null
+          }
+        });
+      }
+      return { entry, payment, deposit };
+    });
+
+    res.json(result);
   } catch (error) {
     next(error);
   }
