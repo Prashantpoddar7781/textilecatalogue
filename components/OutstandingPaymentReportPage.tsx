@@ -1,8 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { bankEntriesApi } from '../services/api';
 import { ErpSession } from '../types';
 import { partyNameMatches } from '../utils/partyNameMatch';
+import { rememberErpReturn, replaceErpSearch } from '../utils/erpBack';
+import { ErpPageBack } from './ErpPageBack';
 import { ErpTopMenu } from './ErpTopMenu';
 import { PartyNameField } from './PartyNameField';
 
@@ -49,7 +51,7 @@ export const OutstandingPaymentReportPage: React.FC<Props> = ({ onBack, erpSessi
   const [asOnDate, setAsOnDate] = useState(params.get('asOnDate') || todayIso());
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
-  const [partyName, setPartyName] = useState('');
+  const [partyName, setPartyName] = useState(params.get('party') || '');
   const [brokerName, setBrokerName] = useState('');
   const [station, setStation] = useState('');
   const [haste, setHaste] = useState('');
@@ -88,8 +90,18 @@ export const OutstandingPaymentReportPage: React.FC<Props> = ({ onBack, erpSessi
 
   useEffect(() => { void load(); }, [view, partyType]);
 
+  useEffect(() => {
+    const next = new URLSearchParams();
+    if (view) next.set('view', view);
+    next.set('partyType', partyType);
+    if (asOnDate) next.set('asOnDate', asOnDate);
+    if (partyName.trim()) next.set('party', partyName.trim());
+    replaceErpSearch(next);
+  }, [view, partyType, asOnDate, partyName]);
+
   const openBill = (row: Record<string, any>) => {
     if (!row?.editPath) return;
+    rememberErpReturn();
     window.location.href = row.editPath;
   };
 
@@ -176,9 +188,7 @@ export const OutstandingPaymentReportPage: React.FC<Props> = ({ onBack, erpSessi
       <ErpTopMenu title="Days Wise Outstanding" erpSession={erpSession} showSessionActions onBackToCatalogue={onBack} />
       <main className="mx-auto max-w-[1500px] px-4 py-6">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <button type="button" onClick={onBack} className="inline-flex items-center gap-2 text-sm font-bold text-gray-600">
-            <ArrowLeft className="h-4 w-4" /> Back to ERP
-          </button>
+          <ErpPageBack onBack={onBack} />
           <div className="flex flex-wrap gap-2">
             <button
               type="button"

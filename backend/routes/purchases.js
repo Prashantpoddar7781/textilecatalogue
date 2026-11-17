@@ -13,7 +13,7 @@ import {
 import { findOrCreateSupplier, resolveSupplierForEntry } from '../utils/partyMaster.js';
 import { allocateNextTypeBillNumber } from '../utils/transactionBilling.js';
 import { buildSupplierLedger } from '../utils/accountLedger.js';
-import { roundMoney } from '../utils/orderBilling.js';
+import { postedBillRupee, roundMoney } from '../utils/orderBilling.js';
 import { aggregateErpLines, normalizeErpLines } from '../utils/erpLineItems.js';
 import { rememberItemRateAndCut } from '../utils/itemMasterRates.js';
 import { getStateFromGstin, isInterStateSupply } from '../utils/gstCalculation.js';
@@ -454,7 +454,7 @@ function buildManualBillData(req, supplier, ctx, lines, totals, typeBillNumber) 
     sgstAmount: totals.sgstAmount,
     igstAmount: totals.igstAmount,
     totalTaxAmount: totals.totalTaxAmount,
-    grandTotal: totals.netAmount,
+    grandTotal: postedBillRupee(totals.netAmount, { remarks: req.body.remarks }),
     status: 'posted'
   };
 }

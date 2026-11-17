@@ -35,6 +35,7 @@ import { PhotoPartyDetails, matchPhotoParty, photoPartyDetails, photoPartyState,
 import { ErpTopMenu } from './ErpTopMenu';
 import { gstTypeLabel, isInterStateSupply } from '../utils/gstState';
 import { partyDhara, partyGraceDays } from '../utils/partyBillingTerms';
+import { roundRupee } from '../utils/rupeeRound';
 import { useVoucherJump } from '../hooks/useVoucherJump';
 
 interface Props {
@@ -234,6 +235,8 @@ export const ErpExpensesPage: React.FC<Props> = ({ onBack, erpSession }) => {
     sgst: round2(acc.sgst + toNum(line.sgstAmount)),
     igst: round2(acc.igst + toNum(line.igstAmount))
   }), { pcs: 0, mts: 0, amount: 0, taxable: 0, tax: 0, net: 0, cgst: 0, sgst: 0, igst: 0 }), [lineItems]);
+  const billNet = roundRupee(totals.net);
+  const roundOff = Math.round((billNet - totals.net) * 100) / 100;
 
   const applyBillDoc = (bill: PurchaseBill, companyState: string, gstRate: number, hsn: string) => {
     setTransactionType(bill.transactionType || DEFAULT_EXPENSE_TRANSACTION_TYPE);
@@ -865,7 +868,7 @@ export const ErpExpensesPage: React.FC<Props> = ({ onBack, erpSession }) => {
                     <td />
                     <td className="px-2 py-2 text-right">{totals.amount.toFixed(2)}</td>
                     <td colSpan={4} className="px-2 py-2 text-right">Taxable {totals.taxable.toFixed(2)}</td>
-                    <td className="px-2 py-2 text-right text-violet-800">{totals.net.toFixed(2)}</td>
+                    <td className="px-2 py-2 text-right text-violet-800">{billNet.toFixed(2)}</td>
                     <td />
                   </tr>
                 </tfoot>
@@ -880,8 +883,11 @@ export const ErpExpensesPage: React.FC<Props> = ({ onBack, erpSession }) => {
             <label><span className={labelClass}>CGST</span><input className={readonlyClass} value={totals.cgst.toFixed(2)} readOnly /></label>
             <label><span className={labelClass}>SGST</span><input className={readonlyClass} value={totals.sgst.toFixed(2)} readOnly /></label>
             <label><span className={labelClass}>IGST</span><input className={readonlyClass} value={totals.igst.toFixed(2)} readOnly /></label>
-            <label><span className={labelClass}>Bill Amt</span><input className={readonlyClass} value={totals.net.toFixed(2)} readOnly /></label>
-            <label><span className={labelClass}>Net</span><input className={`${readonlyClass} font-black text-violet-800`} value={totals.net.toFixed(2)} readOnly /></label>
+            {Math.abs(roundOff) >= 0.005 && (
+              <label><span className={labelClass}>Round Off</span><input className={readonlyClass} value={roundOff.toFixed(2)} readOnly /></label>
+            )}
+            <label><span className={labelClass}>Bill Amt</span><input className={readonlyClass} value={billNet.toFixed(2)} readOnly /></label>
+            <label><span className={labelClass}>Net</span><input className={`${readonlyClass} font-black text-violet-800`} value={billNet.toFixed(2)} readOnly /></label>
           </section>
 
           <ErpSaveButton

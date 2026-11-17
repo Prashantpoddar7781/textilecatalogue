@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, ArrowLeft, CheckCheck, ChevronDown, ChevronRight, Download, FileSpreadsheet, Loader2, Pencil, RefreshCw, Save, Trash2, Undo2, Upload } from 'lucide-react';
+import { AlertTriangle, CheckCheck, ChevronDown, ChevronRight, Download, FileSpreadsheet, Loader2, Pencil, RefreshCw, Save, Trash2, Undo2, Upload } from 'lucide-react';
 import {
   GstDocRef,
   GstPortalStatementInfo,
@@ -10,6 +10,8 @@ import {
   gstApi
 } from '../services/api';
 import { ErpSession } from '../types';
+import { rememberErpReturn } from '../utils/erpBack';
+import { ErpPageBack } from './ErpPageBack';
 import { ErpTopMenu } from './ErpTopMenu';
 
 interface Props {
@@ -65,7 +67,11 @@ const formatDate = (v?: string | null) => {
   const m = String(v).match(/^(\d{4})-(\d{2})-(\d{2})/);
   return m ? `${m[3]}-${m[2]}-${m[1]}` : v;
 };
-const openEdit = (path?: string) => { if (path) window.location.href = path; };
+const openEdit = (path?: string) => {
+  if (!path) return;
+  rememberErpReturn();
+  window.location.href = path;
+};
 
 const thClass = 'border border-indigo-200 bg-indigo-50 px-2 py-2 text-center text-[10px] font-black uppercase tracking-wide text-indigo-950';
 const tdClass = 'border border-slate-200 px-2 py-1.5 align-middle';
@@ -964,9 +970,7 @@ export const GstReportsPage: React.FC<Props> = ({ onBack, erpSession }) => {
       <ErpTopMenu title="GST Reports" erpSession={erpSession} showSessionActions onBackToCatalogue={onBack} />
       <main className="mx-auto max-w-[1500px] px-4 py-6">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <button type="button" onClick={onBack} className="inline-flex items-center gap-2 text-sm font-bold text-gray-600">
-            <ArrowLeft className="h-4 w-4" /> Back to ERP
-          </button>
+          <ErpPageBack onBack={onBack} />
           <div className="flex flex-wrap items-end gap-2">
             <label className="block">
               <span className="mb-1 block text-[10px] font-black uppercase tracking-wide text-gray-500">Return month</span>

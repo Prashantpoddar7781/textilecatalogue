@@ -339,6 +339,34 @@ router.put('/items/:id', authenticateToken, requireActiveSubscription, async (re
   }
 });
 
+router.get('/by-challan', authenticateToken, requireActiveSubscription, async (req, res, next) => {
+  try {
+    const raw = optionalString(req.query.no);
+    if (!raw) return res.json({ entries: [] });
+    const digits = raw.replace(/[^\d]/g, '');
+    const asNumber = Number(digits);
+    const or = [
+      { challanNo: { equals: raw, mode: 'insensitive' } }
+    ];
+    if (Number.isFinite(asNumber) && asNumber > 0 && String(asNumber) === digits) {
+      or.push({ orderNo: asNumber });
+      if (String(asNumber) !== raw) {
+        or.push({ challanNo: { equals: String(asNumber), mode: 'insensitive' } });
+      }
+    }
+    const orders = await prisma.salesOrder.findMany({
+      where: { userId: req.user.userId, OR: or },
+      orderBy: [{ orderDate: 'desc' }, { createdAt: 'desc' }],
+      take: 20
+    });
+    const entries = [];
+    for (const order of orders) entries.push(await buildPending(order));
+    res.json({ entries });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.get('/pending', authenticateToken, requireActiveSubscription, async (req, res, next) => {
   try {
     const partyName = optionalString(req.query.partyName);

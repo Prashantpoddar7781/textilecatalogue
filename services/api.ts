@@ -816,6 +816,11 @@ export const salesOrdersApi = {
   delete: async (id: string) => {
     return request<{ success: boolean }>(`/sales-orders/${id}`, { method: 'DELETE' });
   },
+  getByChallan: async (no: string) => {
+    const query = new URLSearchParams();
+    query.set('no', no);
+    return request<{ entries: import('../types').SalesOrder[] }>(`/sales-orders/by-challan?${query.toString()}`);
+  },
   getPending: async (params: { partyName?: string; customerId?: string; excludeId?: string }) => {
     const query = new URLSearchParams();
     if (params.customerId) query.set('customerId', params.customerId);

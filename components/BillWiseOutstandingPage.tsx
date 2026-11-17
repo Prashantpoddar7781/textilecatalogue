@@ -1,8 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { bankEntriesApi } from '../services/api';
 import { ErpSession } from '../types';
 import { partyNameMatches } from '../utils/partyNameMatch';
+import { rememberErpReturn, replaceErpSearch } from '../utils/erpBack';
+import { ErpPageBack } from './ErpPageBack';
 import { ErpTopMenu } from './ErpTopMenu';
 import { PartyNameField } from './PartyNameField';
 
@@ -44,11 +46,14 @@ function lineAmounts(row: BillRow) {
 }
 
 export const BillWiseOutstandingPage: React.FC<Props> = ({ onBack, erpSession }) => {
+  const opened = useMemo(() => new URLSearchParams(window.location.search), []);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [partyType, setPartyType] = useState<'customer' | 'supplier'>('customer');
-  const [asOnDate, setAsOnDate] = useState(todayIso());
-  const [partyName, setPartyName] = useState('');
+  const [partyType, setPartyType] = useState<'customer' | 'supplier'>(
+    opened.get('partyType') === 'supplier' ? 'supplier' : 'customer'
+  );
+  const [asOnDate, setAsOnDate] = useState(opened.get('asOnDate') || todayIso());
+  const [partyName, setPartyName] = useState(opened.get('party') || '');
   const [rows, setRows] = useState<BillRow[]>([]);
 
   const load = async () => {
@@ -69,6 +74,14 @@ export const BillWiseOutstandingPage: React.FC<Props> = ({ onBack, erpSession })
   };
 
   useEffect(() => { void load(); }, [partyType, asOnDate]);
+
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (partyName.trim()) params.set('party', partyName.trim());
+    params.set('partyType', partyType);
+    if (asOnDate) params.set('asOnDate', asOnDate);
+    replaceErpSearch(params);
+  }, [partyName, partyType, asOnDate]);
 
   const partyIndex = useMemo(() => {
     const map = new Map<string, { name: string; phone: string; address: string; bills: number; pending: number }>();
@@ -129,6 +142,7 @@ export const BillWiseOutstandingPage: React.FC<Props> = ({ onBack, erpSession })
 
   const openBill = (row: BillRow) => {
     if (!row?.editPath) return;
+    rememberErpReturn();
     window.location.href = row.editPath;
   };
 
@@ -136,9 +150,9 @@ export const BillWiseOutstandingPage: React.FC<Props> = ({ onBack, erpSession })
     <div className="min-h-screen bg-[#F6F7FB]">
       <ErpTopMenu title="Bill Wise Outstanding" erpSession={erpSession} showSessionActions onBackToCatalogue={onBack} />
       <main className="mx-auto max-w-[1200px] px-4 py-6">
-        <button type="button" onClick={onBack} className="mb-4 inline-flex items-center gap-2 text-sm font-bold text-gray-600">
-          <ArrowLeft className="h-4 w-4" /> Back to ERP
-        </button>
+        <div className="mb-4">
+          <ErpPageBack onBack={onBack} />
+        </div>
 
         <section className="mb-4 rounded-2xl border bg-white p-4 shadow-sm">
           <p className="text-[10px] font-black uppercase tracking-widest text-sky-700">Sales / purchase outstanding bills</p>

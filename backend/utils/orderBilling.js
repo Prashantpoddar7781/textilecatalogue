@@ -6,6 +6,49 @@ export const OPENING_BANK_BALANCE = 1000000;
 
 export const roundMoney = (value) => Math.round((Number(value) || 0) * 100) / 100;
 
+/** Nearest rupee. 1000.40 → 1000, 1000.50 → 1001. Journals are not passed through this. */
+export function roundRupee(value) {
+  const n = roundMoney(value);
+  if (!Number.isFinite(n) || n === 0) return 0;
+  return Math.round(n + Math.sign(n) * 1e-9);
+}
+
+/** TDS always goes to the next rupee. 541.01 → 542. An exact rupee stays. */
+export function roundTdsRupee(value) {
+  const n = roundMoney(value);
+  if (!(n > 0)) return 0;
+  return Math.ceil(n - 1e-9);
+}
+
+export function isEmpireTagged(row) {
+  return /\[E:/i.test(String(row?.remarks || ''));
+}
+
+function isRoundableSaleBill(order) {
+  if (isEmpireTagged(order)) return false;
+  const type = String(order?.transactionType || '').trim().toUpperCase();
+  if (!type || type === 'SALES ORDERS') return false;
+  return true;
+}
+
+/** Sale, purchase, and note nets. Empire imports and journals keep their paise. */
+export function postedBillRupee(amount, row) {
+  const exact = roundMoney(amount);
+  if (isEmpireTagged(row)) return exact;
+  return roundRupee(exact);
+}
+
+export function postedPurchaseAmount(bill) {
+  return postedBillRupee(bill?.grandTotal, bill);
+}
+
+export function postedNoteAmount(note) {
+  return postedBillRupee(
+    note?.netAmountAfterTds || note?.netAmount || note?.grossAmount,
+    note
+  );
+}
+
 export const normalizeOrderLines = (orderLines) => {
   if (!Array.isArray(orderLines)) return [];
   return orderLines.map((line) => ({
@@ -83,9 +126,9 @@ export function calculateOrderGrandTotal(order) {
  * are the full invoice. That discount is already a DISCOUNT A/C voucher, so
  * the party is posted at the line total and no second discount is added.
  */
-export function resolvePostedSaleAmount(order) {
+function exactPostedSaleAmount(order) {
   const grand = calculateOrderGrandTotal(order);
-  const bill = resolveBillAmount(order);
+  const bill = exactBillAmount(order);
   const discount = calculateOrderDiscountAmount(order);
   if (discount > 0.001) {
     return { amount: roundMoney(grand + discount), discount };
@@ -94,6 +137,12 @@ export function resolvePostedSaleAmount(order) {
     return { amount: bill, discount: 0 };
   }
   return { amount: grand, discount: 0 };
+}
+
+export function resolvePostedSaleAmount(order) {
+  const posted = exactPostedSaleAmount(order);
+  if (!isRoundableSaleBill(order)) return posted;
+  return { amount: roundRupee(posted.amount), discount: posted.discount };
 }
 
 /** Bill discounts typed on a receipt. These settle the bill, same as cash. */
@@ -159,11 +208,11 @@ export function orderTaxableAmount(order) {
     return sum;
   }, 0);
   if (taxable > 0) return roundMoney(taxable);
-  return resolveBillAmount(order);
+  return exactBillAmount(order);
 }
 
 /** Prefer ERP line totals when present; fall back to catalogue order formula. */
-export function resolveBillAmount(order) {
+function exactBillAmount(order) {
   const lines = normalizeOrderLines(order.orderLines);
   const lineTotal = lines.reduce((sum, line) => {
     const total = Number(line.totalAmount);
@@ -175,6 +224,13 @@ export function resolveBillAmount(order) {
   }, 0);
   if (lineTotal > 0) return roundMoney(lineTotal);
   return calculateOrderGrandTotal(order);
+}
+
+/** Sale / purchase / note bills round to the nearest rupee. Empire imports stay as posted. */
+export function resolveBillAmount(order) {
+  const exact = exactBillAmount(order);
+  if (!isRoundableSaleBill(order)) return exact;
+  return roundRupee(exact);
 }
 
 export async function allocateNextInvoiceNumber(tx, userId) {
@@ -283,7 +339,7 @@ function printedBillLabel(value) {
 }
 
 export function mapPurchaseBillToPendingBill(bill, paidByBillId, asOfValue = Date.now()) {
-  const billAmount = roundMoney(bill.grandTotal);
+  const billAmount = postedPurchaseAmount(bill);
   const paidAmount = paidByBillId.get(bill.id) || 0;
   const pendingAmount = roundMoney(Math.max(billAmount - paidAmount, 0));
   const billDate = bill.billDate || bill.createdAt;

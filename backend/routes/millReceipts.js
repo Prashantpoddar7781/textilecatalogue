@@ -644,13 +644,13 @@ router.get('/:id', authenticateToken, requireActiveSubscription, async (req, res
     // Repair display when older rows saved TDS % with On Amt / Amt stuck at 0
     const tdsPercent = Number(entry.tdsPercent) || 0;
     let tdsOnAmt = roundMoney(entry.tdsOnAmt || 0);
-    let tdsAmount = roundMoney(entry.tdsAmount || 0);
+    let tdsAmount = roundTdsRupee(entry.tdsAmount || 0);
     if (tdsPercent > 0 && (tdsOnAmt <= 0 || tdsAmount <= 0)) {
       if (tdsOnAmt <= 0) {
         tdsOnAmt = roundMoney(entry.taxableAmount || entry.jobAmount || 0);
       }
       if (tdsAmount <= 0) {
-        tdsAmount = roundMoney(tdsOnAmt * tdsPercent / 100);
+        tdsAmount = roundTdsRupee(tdsOnAmt * tdsPercent / 100);
       }
     }
     const invoiceValue = roundMoney(entry.invoiceValue || 0);

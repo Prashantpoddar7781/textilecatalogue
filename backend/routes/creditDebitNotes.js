@@ -7,7 +7,7 @@ import { CREDIT_DEBIT_NOTE_TYPES, formatNoteNumber, parseNoteType } from '../con
 import { postingSaleOrPurchaseAccount } from '../constants/erpTransactionPostingRules.js';
 import { resolveCustomerForEntry, resolveSupplierForEntry } from '../utils/partyMaster.js';
 import { calculateNoteTotals } from '../utils/gstCalculation.js';
-import { roundMoney } from '../utils/orderBilling.js';
+import { postedBillRupee, roundMoney } from '../utils/orderBilling.js';
 import { bankAdjustmentBlock } from '../utils/voucherDelete.js';
 
 const router = express.Router();
@@ -172,7 +172,10 @@ function normalizePayload(body, businessState) {
     tcsRate: totals.tcsRate,
     tcsAmount: totals.tcsAmount,
     netAmount: totals.netAmount,
-    netAmountAfterTds: optionalNumber(body.netAmountAfterTds) || totals.netAmountAfterTds,
+    netAmountAfterTds: postedBillRupee(
+      optionalNumber(body.netAmountAfterTds) || totals.netAmountAfterTds,
+      { remarks: body.remarks }
+    ),
     paidAmount: optionalNumber(body.paidAmount),
     isPaid: Boolean(body.isPaid),
     adjustBillNumber: optionalString(body.adjustBillNumber),

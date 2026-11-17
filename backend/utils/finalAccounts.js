@@ -7,6 +7,7 @@ import {
   isPurchaseReturn,
   isSalesGoodsReturn,
   OPENING_BANK_BALANCE,
+  postedPurchaseAmount,
   roundMoney
 } from './orderBilling.js';
 import {
@@ -1274,7 +1275,7 @@ export async function buildFinalAccountsDrill(prisma, userId, {
       const isRet = isPurchaseReturn(bill.transactionType);
       if (key === 'trading_purchases' && isRet) continue;
       if (key === 'trading_purchase_return' && !isRet) continue;
-      const amount = roundMoney(bill.grandTotal);
+      const amount = postedPurchaseAmount(bill);
       if (amount <= 0) continue;
       tradingBillRows.push({
         id: bill.id,

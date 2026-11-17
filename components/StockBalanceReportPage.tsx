@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowLeft, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { stockApi } from '../services/api';
 import { ErpSession } from '../types';
+import { rememberErpReturn } from '../utils/erpBack';
+import { ErpPageBack } from './ErpPageBack';
 import { ErpTopMenu } from './ErpTopMenu';
 
 interface Props {
@@ -96,9 +98,7 @@ export const StockBalanceReportPage: React.FC<Props> = ({ onBack, erpSession }) 
       <ErpTopMenu title="Stock Balances / Stock Report" erpSession={erpSession} showSessionActions onBackToCatalogue={onBack} />
       <main className="mx-auto max-w-[1400px] px-4 py-6">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <button type="button" onClick={onBack} className="inline-flex items-center gap-2 text-sm font-bold text-gray-600">
-            <ArrowLeft className="h-4 w-4" /> Back to ERP
-          </button>
+          <ErpPageBack onBack={onBack} />
         </div>
 
         <section className="mb-4 rounded-2xl border bg-white p-4 shadow-sm">
@@ -246,7 +246,7 @@ export const StockBalanceReportPage: React.FC<Props> = ({ onBack, erpSession }) 
                 {!loading && movements.map(row => (
                   <tr
                     key={`${row.source}-${row.id}`}
-                    onClick={() => { window.location.href = row.editPath; }}
+                    onClick={() => { rememberErpReturn(); window.location.href = row.editPath; }}
                     className="cursor-pointer hover:bg-emerald-50"
                   >
                     <td className={tdCenter}>{formatDate(row.date)}</td>

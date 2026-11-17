@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { CommissionBill, commissionsApi } from '../services/api';
 import { ErpSession } from '../types';
+import { rememberErpReturn } from '../utils/erpBack';
+import { ErpPageBack } from './ErpPageBack';
 import { ErpTopMenu } from './ErpTopMenu';
 
 interface Props {
@@ -49,7 +51,7 @@ export const CommissionReportPage: React.FC<Props> = ({ onBack, erpSession }) =>
       <ErpTopMenu title="Commission Payable" erpSession={erpSession} showSessionActions onBackToCatalogue={onBack} />
       <div className="mx-auto max-w-6xl px-4 py-4">
         <div className="mb-3 flex items-center justify-between">
-          <button type="button" onClick={onBack} className="text-sm font-bold text-indigo-700">Back</button>
+          <ErpPageBack onBack={onBack} />
           <h1 className="text-lg font-black text-slate-900">Commission Payable</h1>
         </div>
         <div className="mb-3 grid gap-2 rounded-2xl bg-white p-3 shadow-sm md:grid-cols-4">
@@ -87,7 +89,7 @@ export const CommissionReportPage: React.FC<Props> = ({ onBack, erpSession }) =>
                   <tr
                     key={row.id}
                     className="cursor-pointer hover:bg-indigo-50"
-                    onClick={() => { window.location.href = `/erp/commission?edit=${row.id}`; }}
+                    onClick={() => { rememberErpReturn(); window.location.href = `/erp/commission?edit=${row.id}`; }}
                   >
                     <td className={tdClass}>{formatDate(row.billDate)}</td>
                     <td className={`${tdClass} text-center font-black text-indigo-700`}>{row.billNumber || '-'}</td>

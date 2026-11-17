@@ -1,4 +1,4 @@
-import { roundMoney } from './orderBilling.js';
+import { postedPurchaseAmount, roundMoney, roundTdsRupee } from './orderBilling.js';
 import { getPostingRule } from '../constants/erpTransactionPostingRules.js';
 
 export const COMMISSION_SERIES = 'PURCHASE (COMM)';
@@ -39,7 +39,7 @@ export function commissionFigures(bill) {
   const invoiceValue = roundRupee(
     meta.invoiceValue != null ? meta.invoiceValue : ((Number(bill.taxableAmount) || 0) + gst)
   );
-  const tdsAmount = roundRupee(meta.tdsAmount || 0);
+  const tdsAmount = roundTdsRupee(meta.tdsAmount || 0);
   const expenseAmount = roundMoney(invoiceValue - gst);
   const netPayable = roundMoney(
     bill.grandTotal != null && Number(bill.grandTotal) > 0
@@ -64,18 +64,18 @@ export function commissionFigures(bill) {
 export function purchasePartyAmount(bill) {
   const comm = commissionFigures(bill);
   if (comm) return comm.netPayable;
-  return roundMoney(bill?.grandTotal);
+  return postedPurchaseAmount(bill);
 }
 
 export function purchaseExpenseAmount(bill) {
   const comm = commissionFigures(bill);
   if (comm) return comm.expenseAmount;
-  return roundMoney(bill?.grandTotal);
+  return postedPurchaseAmount(bill);
 }
 
 /**
  * Gross is the commission before GST.
- * Invoice (gross + GST) and TDS are rounded to the nearest rupee, matching the commission bill.
+ * Invoice (gross + GST) rounds to the nearest rupee. TDS always goes to the next rupee.
  */
 export function computeCommissionAmounts(gross, { interstate = false, tdsPercent = 5, cgstPercent = 2.5, sgstPercent = 2.5 } = {}) {
   const grossAmount = roundMoney(gross);
@@ -87,7 +87,7 @@ export function computeCommissionAmounts(gross, { interstate = false, tdsPercent
   const sgstAmount = interstate ? 0 : roundMoney(grossAmount * sgstRate / 100);
   const totalTaxAmount = roundMoney(igstAmount + cgstAmount + sgstAmount);
   const invoiceValue = roundRupee(grossAmount + totalTaxAmount);
-  const tds = roundRupee(grossAmount * (Number(tdsPercent) || 0) / 100);
+  const tds = roundTdsRupee(grossAmount * (Number(tdsPercent) || 0) / 100);
   const netPayable = invoiceValue - tds;
   return {
     taxableAmount: grossAmount,

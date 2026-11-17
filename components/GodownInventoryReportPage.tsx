@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { ArrowLeft, Loader2, Package, RefreshCw } from 'lucide-react';
 import { greyPurchasesApi } from '../services/api';
 import { ErpSession } from '../types';
+import { rememberErpReturn } from '../utils/erpBack';
 import { ErpTopMenu } from './ErpTopMenu';
 import { GreyPurchaseDetailPanel } from './GreyPurchaseDetailPanel';
 
@@ -165,6 +166,7 @@ export const GodownInventoryReportPage: React.FC<Props> = ({ onBack, erpSession 
   }, [filter]);
 
   const handleEdit = (id: string) => {
+    rememberErpReturn();
     window.location.href = `/erp/grey-purchase?edit=${id}`;
   };
 

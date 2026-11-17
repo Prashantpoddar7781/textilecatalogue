@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { workReceiptsApi } from '../services/api';
 import { ErpSession } from '../types';
+import { rememberErpReturn, replaceErpSearch } from '../utils/erpBack';
+import { ErpPageBack } from './ErpPageBack';
 import { ErpTopMenu } from './ErpTopMenu';
 
 interface Props {
@@ -21,9 +23,10 @@ export const WorkReceiptReportPage: React.FC<Props> = ({ onBack, erpSession }) =
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [companyName, setCompanyName] = useState('');
-  const [fromDate, setFromDate] = useState('');
-  const [toDate, setToDate] = useState('');
-  const [partyName, setPartyName] = useState('');
+  const params = new URLSearchParams(window.location.search);
+  const [fromDate, setFromDate] = useState(params.get('fromDate') || '');
+  const [toDate, setToDate] = useState(params.get('toDate') || '');
+  const [partyName, setPartyName] = useState(params.get('party') || '');
   const [rows, setRows] = useState<Array<Record<string, any>>>([]);
   const [totals, setTotals] = useState(emptyTotals());
 
@@ -47,6 +50,14 @@ export const WorkReceiptReportPage: React.FC<Props> = ({ onBack, erpSession }) =
   };
 
   useEffect(() => { void load(); }, []);
+
+  useEffect(() => {
+    const next = new URLSearchParams();
+    if (fromDate) next.set('fromDate', fromDate);
+    if (toDate) next.set('toDate', toDate);
+    if (partyName.trim()) next.set('party', partyName.trim());
+    replaceErpSearch(next);
+  }, [fromDate, toDate, partyName]);
 
   const grouped = useMemo(() => {
     const map = new Map<string, { party: string; rows: Array<Record<string, any>>; sub: ReturnType<typeof emptyTotals> }>();
@@ -82,6 +93,7 @@ export const WorkReceiptReportPage: React.FC<Props> = ({ onBack, erpSession }) =
   const openEntry = (row: Record<string, any>) => {
     const id = row.receiptId;
     if (!id) return;
+    rememberErpReturn();
     window.location.href = `/erp/work-receipt?edit=${id}`;
   };
 
@@ -90,9 +102,7 @@ export const WorkReceiptReportPage: React.FC<Props> = ({ onBack, erpSession }) =
       <ErpTopMenu title="Work Receipt Report" erpSession={erpSession} showSessionActions onBackToCatalogue={onBack} />
       <main className="mx-auto max-w-[1400px] px-4 py-6">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <button type="button" onClick={onBack} className="inline-flex items-center gap-2 text-sm font-bold text-gray-600">
-            <ArrowLeft className="h-4 w-4" /> Back to ERP
-          </button>
+          <ErpPageBack onBack={onBack} />
           <button type="button" onClick={() => { window.location.href = '/erp/work-receipt'; }} className="rounded-xl bg-fuchsia-700 px-3 py-2 text-xs font-black uppercase text-white">
             New Work Receipt
           </button>

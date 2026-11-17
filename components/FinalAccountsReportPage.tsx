@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowLeft, ChevronRight, Loader2 } from 'lucide-react';
+import { ChevronRight, Loader2 } from 'lucide-react';
 import { ledgerApi } from '../services/api';
 import { ErpSession } from '../types';
+import { rememberErpReturn } from '../utils/erpBack';
+import { ErpPageBack } from './ErpPageBack';
 import { ErpTopMenu } from './ErpTopMenu';
 
 interface Props {
@@ -163,6 +165,7 @@ export const FinalAccountsReportPage: React.FC<Props> = ({ onBack, erpSession })
 
   const openBill = (row: Record<string, any>) => {
     if (row.editPath) {
+      rememberErpReturn();
       window.location.href = row.editPath;
     }
   };
@@ -430,9 +433,7 @@ export const FinalAccountsReportPage: React.FC<Props> = ({ onBack, erpSession })
       <ErpTopMenu title="Final Accounts Report" erpSession={erpSession} showSessionActions onBackToCatalogue={onBack} />
       <main className="mx-auto max-w-[1200px] px-4 py-6">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <button type="button" onClick={onBack} className="inline-flex items-center gap-2 text-sm font-bold text-gray-600">
-            <ArrowLeft className="h-4 w-4" /> Back to ERP
-          </button>
+          <ErpPageBack onBack={onBack} />
           <button type="button" onClick={() => { window.location.href = '/erp/ledger'; }} className="rounded-xl border bg-white px-3 py-2 text-xs font-black uppercase text-slate-800">
             Account Ledger
           </button>

@@ -1,4 +1,4 @@
-import { roundMoney } from './orderBilling.js';
+import { roundMoney, roundRupee } from './orderBilling.js';
 
 export const INDIAN_STATES = [
   'Andaman and Nicobar Islands', 'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar',
@@ -324,7 +324,7 @@ export function calculateNoteTotals(input) {
     businessState: input.businessState
   });
   const tcsAmount = roundMoney(taxableAmount * (Number(input.tcsRate) || 0) / 100);
-  const netAmount = roundMoney(taxableAmount + gst.totalTaxAmount + tcsAmount);
+  const netAmount = roundRupee(taxableAmount + gst.totalTaxAmount + tcsAmount);
   return {
     grossAmount,
     discountAmount,

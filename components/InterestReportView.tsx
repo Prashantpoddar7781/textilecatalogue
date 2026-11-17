@@ -1,6 +1,7 @@
 import React from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { InterestReport } from '../utils/interestCalculation';
+import { rememberErpReturn } from '../utils/erpBack';
 
 interface Props {
   report: InterestReport;
@@ -25,6 +26,7 @@ const formatDate = (value?: string | null) => {
 
 const openRow = (editPath?: string | null) => {
   if (!editPath) return;
+  rememberErpReturn();
   window.location.href = editPath;
 };
 

@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { purchasesApi } from '../services/api';
 import { ErpSession } from '../types';
+import { rememberErpReturn, replaceErpSearch } from '../utils/erpBack';
+import { ErpPageBack } from './ErpPageBack';
 import { ErpTopMenu } from './ErpTopMenu';
 
 interface Props {
@@ -42,14 +44,14 @@ export const FinishPurchaseReportPage: React.FC<Props> = ({ onBack, erpSession }
   const [docType, setDocType] = useState(
     params.get('docType') || (params.get('type') === 'return' ? 'return' : 'both')
   );
-  const [fromDate, setFromDate] = useState('');
-  const [toDate, setToDate] = useState('');
-  const [partyName, setPartyName] = useState('');
-  const [brokerName, setBrokerName] = useState('');
-  const [transportName, setTransportName] = useState('');
-  const [station, setStation] = useState('');
-  const [haste, setHaste] = useState('');
-  const [mainScreen, setMainScreen] = useState('');
+  const [fromDate, setFromDate] = useState(params.get('fromDate') || '');
+  const [toDate, setToDate] = useState(params.get('toDate') || '');
+  const [partyName, setPartyName] = useState(params.get('party') || '');
+  const [brokerName, setBrokerName] = useState(params.get('broker') || '');
+  const [transportName, setTransportName] = useState(params.get('transport') || '');
+  const [station, setStation] = useState(params.get('station') || '');
+  const [haste, setHaste] = useState(params.get('haste') || '');
+  const [mainScreen, setMainScreen] = useState(params.get('item') || '');
   const [rows, setRows] = useState<Array<Record<string, any>>>([]);
   const [totals, setTotals] = useState<Record<string, number>>({});
 
@@ -82,6 +84,21 @@ export const FinishPurchaseReportPage: React.FC<Props> = ({ onBack, erpSession }
 
   useEffect(() => { void load(); }, [view, docType]);
 
+  useEffect(() => {
+    const next = new URLSearchParams();
+    if (view) next.set('view', view);
+    if (docType) next.set('docType', docType);
+    if (fromDate) next.set('fromDate', fromDate);
+    if (toDate) next.set('toDate', toDate);
+    if (partyName.trim()) next.set('party', partyName.trim());
+    if (brokerName.trim()) next.set('broker', brokerName.trim());
+    if (transportName.trim()) next.set('transport', transportName.trim());
+    if (station.trim()) next.set('station', station.trim());
+    if (haste.trim()) next.set('haste', haste.trim());
+    if (mainScreen.trim()) next.set('item', mainScreen.trim());
+    replaceErpSearch(next);
+  }, [view, docType, fromDate, toDate, partyName, brokerName, transportName, station, haste, mainScreen]);
+
   const grouped = useMemo(() => {
     const keyFn = (row: Record<string, any>) => {
       if (view === 'date') return formatDate(row.date);
@@ -110,9 +127,7 @@ export const FinishPurchaseReportPage: React.FC<Props> = ({ onBack, erpSession }
       <ErpTopMenu title="Finish Purchase / Purchase Return Report" erpSession={erpSession} showSessionActions onBackToCatalogue={onBack} />
       <main className="mx-auto max-w-[1400px] px-4 py-6">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <button type="button" onClick={onBack} className="inline-flex items-center gap-2 text-sm font-bold text-gray-600">
-            <ArrowLeft className="h-4 w-4" /> Back to ERP
-          </button>
+          <ErpPageBack onBack={onBack} />
           <div className="flex flex-wrap gap-2">
             <button type="button" onClick={() => { window.location.href = '/erp/purchase?type=FINISH%20PURCHASE%20RETURN'; }} className="rounded-xl bg-amber-700 px-3 py-2 text-xs font-black uppercase text-white">
               New Purchase Return
@@ -245,7 +260,7 @@ export const FinishPurchaseReportPage: React.FC<Props> = ({ onBack, erpSession }
                       {groupRows.map(row => (
                         <tr
                           key={row.id}
-                          onClick={() => { window.location.href = `/erp/purchase?edit=${row.billId}`; }}
+                          onClick={() => { rememberErpReturn(); window.location.href = `/erp/purchase?edit=${row.billId}`; }}
                           className="cursor-pointer hover:bg-emerald-50"
                         >
                           <td className={`${tdClass} font-bold`}>{row.partyName}</td>
@@ -335,7 +350,7 @@ export const FinishPurchaseReportPage: React.FC<Props> = ({ onBack, erpSession }
                       {groupRows.map(row => (
                         <tr
                           key={row.id}
-                          onClick={() => { window.location.href = `/erp/purchase?edit=${row.billId || row.id}`; }}
+                          onClick={() => { rememberErpReturn(); window.location.href = `/erp/purchase?edit=${row.billId || row.id}`; }}
                           className="cursor-pointer hover:bg-emerald-50"
                         >
                           <td className={`${tdClass} font-bold`}>{row.partyName}</td>

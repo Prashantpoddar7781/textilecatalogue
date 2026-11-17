@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowLeft, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { workDespatchesApi } from '../services/api';
 import { ErpSession } from '../types';
+import { rememberErpReturn, replaceErpSearch } from '../utils/erpBack';
+import { ErpPageBack } from './ErpPageBack';
 import { ErpTopMenu } from './ErpTopMenu';
 
 interface Props {
@@ -16,9 +18,10 @@ export const WorkDespatchReportPage: React.FC<Props> = ({ onBack, erpSession }) 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [companyName, setCompanyName] = useState('');
-  const [fromDate, setFromDate] = useState('');
-  const [toDate, setToDate] = useState('');
-  const [partyName, setPartyName] = useState('');
+  const params = new URLSearchParams(window.location.search);
+  const [fromDate, setFromDate] = useState(params.get('fromDate') || '');
+  const [toDate, setToDate] = useState(params.get('toDate') || '');
+  const [partyName, setPartyName] = useState(params.get('party') || '');
   const [rows, setRows] = useState<Array<Record<string, any>>>([]);
   const [totals, setTotals] = useState({ desPcs: 0, desMts: 0, pendingPcs: 0, pendingMts: 0 });
 
@@ -43,14 +46,20 @@ export const WorkDespatchReportPage: React.FC<Props> = ({ onBack, erpSession }) 
 
   useEffect(() => { void load(); }, []);
 
+  useEffect(() => {
+    const next = new URLSearchParams();
+    if (fromDate) next.set('fromDate', fromDate);
+    if (toDate) next.set('toDate', toDate);
+    if (partyName.trim()) next.set('party', partyName.trim());
+    replaceErpSearch(next);
+  }, [fromDate, toDate, partyName]);
+
   return (
     <div className="min-h-screen bg-[#F6F7FB]">
       <ErpTopMenu title="Work Despatch Report" erpSession={erpSession} showSessionActions onBackToCatalogue={onBack} />
       <main className="mx-auto max-w-7xl px-4 py-6">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <button type="button" onClick={onBack} className="inline-flex items-center gap-2 text-sm font-bold text-gray-600">
-            <ArrowLeft className="h-4 w-4" /> Back to ERP
-          </button>
+          <ErpPageBack onBack={onBack} />
           <button type="button" onClick={() => { window.location.href = '/erp/work-despatch'; }} className="rounded-xl bg-violet-700 px-3 py-2 text-xs font-black uppercase text-white">
             New Work Despatch
           </button>
@@ -94,7 +103,7 @@ export const WorkDespatchReportPage: React.FC<Props> = ({ onBack, erpSession }) 
                     className="cursor-pointer border-b hover:bg-violet-50/50"
                     onClick={() => {
                       const id = row.despatchId || row.id;
-                      if (id) window.location.href = `/erp/work-despatch?edit=${id}`;
+                      if (id) { rememberErpReturn(); window.location.href = `/erp/work-despatch?edit=${id}`; }
                     }}
                     title="Open entry to edit"
                   >

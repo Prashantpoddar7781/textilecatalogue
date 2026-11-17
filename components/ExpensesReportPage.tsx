@@ -1,8 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { purchasesApi } from '../services/api';
 import { ErpSession } from '../types';
 import { EXPENSE_TRANSACTION_TYPES } from '../constants/erpTransactionTypes';
+import { rememberErpReturn } from '../utils/erpBack';
+import { ErpPageBack } from './ErpPageBack';
 import { ErpTopMenu } from './ErpTopMenu';
 
 interface Props {
@@ -112,6 +114,7 @@ export const ExpensesReportPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const registerCols = 16;
 
   const openEdit = (row: Record<string, any>) => {
+    rememberErpReturn();
     window.location.href = `/erp/expenses?edit=${row.billId || row.id}`;
   };
 
@@ -120,9 +123,7 @@ export const ExpensesReportPage: React.FC<Props> = ({ onBack, erpSession }) => {
       <ErpTopMenu title="Expenses Report" erpSession={erpSession} showSessionActions onBackToCatalogue={onBack} />
       <main className="mx-auto max-w-[1400px] px-4 py-6">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <button type="button" onClick={onBack} className="inline-flex items-center gap-2 text-sm font-bold text-gray-600">
-            <ArrowLeft className="h-4 w-4" /> Back to ERP
-          </button>
+          <ErpPageBack onBack={onBack} />
           <div className="flex flex-wrap gap-2">
             <button type="button" onClick={() => { window.location.href = '/erp/expenses'; }} className="rounded-xl bg-violet-700 px-3 py-2 text-xs font-black uppercase text-white">
               New Expense

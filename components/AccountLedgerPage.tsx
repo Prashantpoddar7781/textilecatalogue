@@ -1,9 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, BookOpen, Building2, Loader2, RefreshCw, Search, X } from 'lucide-react';
+import { BookOpen, Building2, Loader2, RefreshCw, Search, X } from 'lucide-react';
 import { ledgerApi } from '../services/api';
 import { AccountLedgerEntry, AccountLedgerParty, ErpSession, LedgerEntryDetail } from '../types';
 import { InterestReport } from '../utils/interestCalculation';
+import { ErpPageBack } from './ErpPageBack';
 import { ErpTopMenu } from './ErpTopMenu';
+import { rememberErpReturn, replaceErpSearch } from '../utils/erpBack';
 import { InterestReportOptionsDialog } from './InterestReportOptionsDialog';
 import { InterestReportView } from './InterestReportView';
 
@@ -61,12 +63,24 @@ const partyKey = (party: AccountLedgerParty) =>
     ? `${party.partyName}::company::`
     : `${party.partyName}::${party.supplierId || ''}::${party.customerId || ''}`;
 
+function ledgerQuery() {
+  const params = new URLSearchParams(window.location.search);
+  return {
+    party: params.get('party') || '',
+    q: params.get('q') || '',
+    from: params.get('from') || '',
+    to: params.get('to') || '',
+    type: params.get('type') || ''
+  };
+}
+
 export const AccountLedgerPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const fy = useMemo(() => defaultFyRange(), []);
+  const opened = useMemo(() => ledgerQuery(), []);
   const [parties, setParties] = useState<AccountLedgerParty[]>([]);
   const [selectedKey, setSelectedKey] = useState('');
-  const [fromDate, setFromDate] = useState(fy.from);
-  const [toDate, setToDate] = useState(fy.to);
+  const [fromDate, setFromDate] = useState(opened.from || fy.from);
+  const [toDate, setToDate] = useState(opened.to || fy.to);
   const [ledger, setLedger] = useState<AccountLedgerEntry[]>([]);
   const [runningBalance, setRunningBalance] = useState(0);
   const [balanceType, setBalanceType] = useState<'DR' | 'CR'>('DR');
@@ -81,7 +95,7 @@ export const AccountLedgerPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [detailLoading, setDetailLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [ledgerLoading, setLedgerLoading] = useState(false);
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState(opened.q);
   const [error, setError] = useState('');
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [interestReport, setInterestReport] = useState<InterestReport | null>(null);
@@ -97,9 +111,17 @@ export const AccountLedgerPage: React.FC<Props> = ({ onBack, erpSession }) => {
     try {
       const { parties: fetched } = await ledgerApi.getParties('all');
       setParties(fetched || []);
-      if (fetched?.length && !selectedKey) {
-        const first = fetched.find(party => party.partyType !== 'company') || fetched[0];
-        setSelectedKey(partyKey(first));
+      if (fetched?.length) {
+        const wanted = opened.party.trim().toLowerCase();
+        const match = wanted
+          ? fetched.find(party => party.partyName.trim().toLowerCase() === wanted && (!opened.type || party.partyType === opened.type))
+            || fetched.find(party => party.partyName.trim().toLowerCase() === wanted)
+          : null;
+        if (match) setSelectedKey(partyKey(match));
+        else if (!selectedKey) {
+          const first = fetched.find(party => party.partyType !== 'company') || fetched[0];
+          setSelectedKey(partyKey(first));
+        }
       }
     } catch (err: any) {
       setError(err.message || 'Could not load accounts.');
@@ -171,6 +193,27 @@ export const AccountLedgerPage: React.FC<Props> = ({ onBack, erpSession }) => {
     ];
   }, [parties, query]);
 
+  useEffect(() => {
+    if (!selectedParty?.partyName) return;
+    const params = new URLSearchParams();
+    params.set('party', selectedParty.partyName);
+    if (selectedParty.partyType) params.set('type', selectedParty.partyType);
+    if (fromDate) params.set('from', fromDate);
+    if (toDate) params.set('to', toDate);
+    if (query.trim()) params.set('q', query.trim());
+    replaceErpSearch(params);
+  }, [selectedParty, fromDate, toDate, query]);
+
+  const openOutstanding = () => {
+    if (!selectedParty?.partyName || selectedParty.partyType === 'company') return;
+    rememberErpReturn();
+    const params = new URLSearchParams();
+    params.set('party', selectedParty.partyName);
+    params.set('partyType', selectedParty.partyType === 'supplier' ? 'supplier' : 'customer');
+    if (toDate) params.set('asOnDate', toDate);
+    window.location.href = `/erp/reports/outstanding-bills?${params.toString()}`;
+  };
+
   const openEntryDetail = async (entry: AccountLedgerEntry) => {
     setSelectedEntry(entry);
     setEntryDetail(null);
@@ -178,6 +221,11 @@ export const AccountLedgerPage: React.FC<Props> = ({ onBack, erpSession }) => {
     setError('');
     try {
       const { detail } = await ledgerApi.getEntryDetail(entry.sourceType, entry.sourceId);
+      if (detail?.canEdit && detail.editPath) {
+        rememberErpReturn();
+        window.location.href = detail.editPath;
+        return;
+      }
       setEntryDetail(detail);
     } catch (err: any) {
       setError(err.message || 'Could not load entry details.');
@@ -193,9 +241,7 @@ export const AccountLedgerPage: React.FC<Props> = ({ onBack, erpSession }) => {
 
       <main className="mx-auto max-w-7xl px-4 py-6">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <button type="button" onClick={onBack} className="inline-flex items-center gap-2 text-sm font-bold text-gray-600 hover:text-gray-900">
-            <ArrowLeft className="h-4 w-4" /> Back to ERP
-          </button>
+          <ErpPageBack onBack={onBack} />
           <button type="button" onClick={() => void loadParties()} className="flex items-center gap-2 rounded-xl border bg-white px-3 py-2 text-xs font-bold">
             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
             Refresh
@@ -302,6 +348,15 @@ export const AccountLedgerPage: React.FC<Props> = ({ onBack, erpSession }) => {
                       >
                         Apply
                       </button>
+                      {selectedParty.partyType !== 'company' && (
+                        <button
+                          type="button"
+                          onClick={openOutstanding}
+                          className="rounded-xl bg-sky-700 px-3 py-2 text-xs font-black uppercase text-white"
+                        >
+                          O/S
+                        </button>
+                      )}
                       {selectedParty.partyType !== 'company' && (
                         <button
                           type="button"

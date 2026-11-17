@@ -29,6 +29,7 @@ import { PhotoExtraction } from '../services/api';
 import { matchPhotoParty, photoPartyState } from '../utils/photoEntry';
 import { isInterStateSupply } from '../utils/gstState';
 import { partyDhara } from '../utils/partyBillingTerms';
+import { roundRupee } from '../utils/rupeeRound';
 import { useVoucherJump } from '../hooks/useVoucherJump';
 
 interface Props {
@@ -213,8 +214,13 @@ export const CreditDebitNotePage: React.FC<Props> = ({ noteType: initialNoteType
     setTaxableAmount(note.taxableAmount ? String(note.taxableAmount) : '');
     setGstRate(note.gstRate ? String(note.gstRate) : String(postingGstRate(type.series) || ''));
     setTcsRate(note.tcsRate ? String(note.tcsRate) : '');
-    setNetAmount(note.netAmount ? String(note.netAmount) : '');
-    setNetAmountAfterTds(note.netAmountAfterTds ? String(note.netAmountAfterTds) : '');
+    const keepPaise = /\[E:/i.test(String(note.remarks || ''));
+    const shownNet = note.netAmount ? (keepPaise ? note.netAmount : roundRupee(note.netAmount)) : '';
+    const shownAfter = note.netAmountAfterTds
+      ? (keepPaise ? note.netAmountAfterTds : roundRupee(note.netAmountAfterTds))
+      : shownNet;
+    setNetAmount(shownNet === '' ? '' : String(shownNet));
+    setNetAmountAfterTds(shownAfter === '' ? '' : String(shownAfter));
     setPaidAmount(note.paidAmount ? String(note.paidAmount) : '');
     setIsPaid(Boolean(note.isPaid));
     setAdjustBillNumber(note.adjustBillNumber || note.refBillNumber || '');

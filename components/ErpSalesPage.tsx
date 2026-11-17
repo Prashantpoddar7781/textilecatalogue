@@ -32,6 +32,7 @@ import { PhotoPartyDetails, matchPhotoParty, photoPartyDetails, photoPartyState,
 import { ErpTopMenu } from './ErpTopMenu';
 import { gstTypeLabel, isInterStateSupply } from '../utils/gstState';
 import { partyDhara, partyGraceDays } from '../utils/partyBillingTerms';
+import { roundRupee } from '../utils/rupeeRound';
 import { useVoucherJump } from '../hooks/useVoucherJump';
 
 interface Props {
@@ -285,6 +286,9 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [items, setItems] = useState<SalesItemMaster[]>([]);
   const [pendingOrders, setPendingOrders] = useState<SalesOrder[]>([]);
+  const [challanHits, setChallanHits] = useState<SalesOrder[]>([]);
+  const [challanQuery, setChallanQuery] = useState('');
+  const [challanLoading, setChallanLoading] = useState(false);
   const [pendingLoading, setPendingLoading] = useState(false);
   const [selectedSources, setSelectedSources] = useState<SalesOrder[]>([]);
   const [checked, setChecked] = useState<Record<string, boolean>>({});
@@ -390,6 +394,8 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
     sgst: round2(acc.sgst + toNum(line.sgstAmount)),
     igst: round2(acc.igst + toNum(line.igstAmount))
   }), { pcs: 0, mts: 0, amount: 0, taxable: 0, tax: 0, net: 0, cgst: 0, sgst: 0, igst: 0 }), [lineItems]);
+  const billNet = isSalesOrder ? totals.net : roundRupee(totals.net);
+  const roundOff = round2(billNet - totals.net);
 
   useEffect(() => {
     let cancelled = false;
@@ -582,23 +588,55 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
 
   const pickerRows = useMemo(() => {
     const byId = new Map(pendingOrders.map(order => [order.id, order]));
+    for (const hit of challanHits) {
+      if (!byId.has(hit.id)) byId.set(hit.id, hit);
+    }
     for (const source of selectedSources) {
       if (!byId.has(source.id)) byId.set(source.id, source);
     }
     return Array.from(byId.values());
-  }, [pendingOrders, selectedSources]);
+  }, [pendingOrders, challanHits, selectedSources]);
 
   const checkedCount = useMemo(() => Object.values(checked).filter(Boolean).length, [checked]);
 
   const openOrderPicker = () => {
-    if (!partyName.trim()) {
-      setError('Select Party first, then pick Sales Orders.');
+    if (!partyName.trim() && !challanHits.length) {
+      setError('Type a challan / SO number, or select the party.');
       return;
     }
     setChecked(Object.fromEntries(selectedSources.map(source => [source.id, true])));
     setPickerOpen(true);
-    if (!pendingLoading && !pickerRows.length) {
+    if (!pendingLoading && !pickerRows.length && partyName.trim()) {
       setError(`No pending Sales Orders for ${partyName.trim()}. You can still add bill lines.`);
+    }
+  };
+
+  const loadByChallan = async () => {
+    const no = challanQuery.trim();
+    if (!no || isSalesOrder || isGoodsReturn) return;
+    setChallanLoading(true);
+    setError('');
+    try {
+      const { entries } = await salesOrdersApi.getByChallan(no);
+      const hits = entries || [];
+      if (!hits.length) {
+        setError(`No Sales Order for challan ${no}.`);
+        return;
+      }
+      const open = hits.filter(order => toNum(order.pendingPcs) > 0.001 || toNum(order.pendingMts) > 0.001);
+      const usable = open.length ? open : hits;
+      setChallanHits(usable);
+      if (usable.length === 1) {
+        applyOrders(usable);
+        setPickerOpen(false);
+        return;
+      }
+      setChecked(Object.fromEntries(usable.map(order => [order.id, true])));
+      setPickerOpen(true);
+    } catch (err: any) {
+      setError(err.message || 'Could not find that challan.');
+    } finally {
+      setChallanLoading(false);
     }
   };
 
@@ -606,16 +644,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
     setChecked(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
-  const applySelectedOrders = () => {
-    const ids = Object.entries(checked).filter(([, on]) => on).map(([id]) => id);
-    if (!ids.length) {
-      clearLinkedOrder();
-      setPickerOpen(false);
-      return;
-    }
-    const orders = ids
-      .map(id => pickerRows.find(row => row.id === id))
-      .filter((row): row is SalesOrder => Boolean(row));
+  const applyOrders = (orders: SalesOrder[]) => {
     if (!orders.length) return;
     const primary = orders[0];
     setSelectedSources(orders);
@@ -671,6 +700,19 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
         : `${orders.length} Sales Orders loaded. Same item names are merged and quantities added.`
     );
     setPickerOpen(false);
+  };
+
+  const applySelectedOrders = () => {
+    const ids = Object.entries(checked).filter(([, on]) => on).map(([id]) => id);
+    if (!ids.length) {
+      clearLinkedOrder();
+      setPickerOpen(false);
+      return;
+    }
+    const orders = ids
+      .map(id => pickerRows.find(row => row.id === id))
+      .filter((row): row is SalesOrder => Boolean(row));
+    applyOrders(orders);
   };
 
   const copyOrderForm = async (formId: string) => {
@@ -1185,7 +1227,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
       cgst: totals.cgst,
       sgst: totals.sgst,
       igst: totals.igst,
-      netAmount: totals.net,
+      netAmount: isSalesOrder ? totals.net : billNet,
       bankName: profile?.bankName || '',
       bankAccount: profile?.bankAccount || '',
       bankIfsc: profile?.bankIfsc || '',
@@ -1414,22 +1456,43 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
               {isBillEntry && !isGoodsReturn && (
                 <label className="md:col-span-2">
                   <span className={labelClass}>
-                    2. Ord / Ref (optional — pick one or more Sales Orders)
+                    2. Challan / SO no. — loads the order and the party
                     {selectedSources.length > 1 ? ` · ${selectedSources.length}` : ''}
                   </span>
+                  <div className="flex gap-2">
+                    <input
+                      className={inputClass}
+                      value={challanQuery}
+                      placeholder="Challan or SO number"
+                      onChange={e => setChallanQuery(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key !== 'Enter') return;
+                        e.preventDefault();
+                        void loadByChallan();
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => void loadByChallan()}
+                      disabled={challanLoading || !challanQuery.trim()}
+                      className="shrink-0 rounded-lg bg-indigo-700 px-3 text-xs font-black uppercase text-white disabled:bg-gray-300"
+                    >
+                      {challanLoading ? '…' : 'Load'}
+                    </button>
+                  </div>
                   <button
                     type="button"
                     onClick={openOrderPicker}
-                    disabled={!partyName.trim() || pendingLoading}
-                    className={`${inputClass} truncate text-left text-indigo-800 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400`}
+                    disabled={(!partyName.trim() && !challanHits.length) || pendingLoading}
+                    className={`${inputClass} mt-2 truncate text-left text-indigo-800 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400`}
                   >
-                    {!partyName.trim()
-                      ? 'Select Party first…'
-                      : pendingLoading
-                        ? 'Loading party orders…'
-                        : orderNo
-                          ? `SO ${orderNo}`
-                          : 'Optional — pick to prefill, or add lines below'}
+                    {pendingLoading
+                      ? 'Loading party orders…'
+                      : orderNo
+                        ? `SO ${orderNo}`
+                        : partyName.trim()
+                          ? 'Or pick from this party’s pending orders'
+                          : 'Or pick after the challan is found'}
                   </button>
                 </label>
               )}
@@ -1639,7 +1702,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
                     <td />
                     <td className="px-2 py-2 text-right">{totals.amount.toFixed(2)}</td>
                     <td colSpan={isSalesOrder ? 5 : 4} className="px-2 py-2 text-right">Taxable {totals.taxable.toFixed(2)}</td>
-                    <td className="px-2 py-2 text-right text-indigo-800">{(isSalesOrder ? totals.tax : totals.net).toFixed(2)}</td>
+                    <td className="px-2 py-2 text-right text-indigo-800">{(isSalesOrder ? totals.tax : billNet).toFixed(2)}</td>
                     <td />
                   </tr>
                 </tfoot>
@@ -1664,8 +1727,11 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
             <label><span className={labelClass}>CGST Amt</span><input className={readonlyClass} value={totals.cgst.toFixed(2)} readOnly /></label>
             <label><span className={labelClass}>SGST Amt</span><input className={readonlyClass} value={totals.sgst.toFixed(2)} readOnly /></label>
             <label><span className={labelClass}>IGST Amt</span><input className={readonlyClass} value={totals.igst.toFixed(2)} readOnly /></label>
-            <label><span className={labelClass}>Bill Amt</span><input className={readonlyClass} value={totals.net.toFixed(2)} readOnly /></label>
-            <label><span className={labelClass}>Net Amt</span><input className={`${readonlyClass} font-black text-indigo-800`} value={totals.net.toFixed(2)} readOnly /></label>
+            {!isSalesOrder && Math.abs(roundOff) >= 0.005 && (
+              <label><span className={labelClass}>Round Off</span><input className={readonlyClass} value={roundOff.toFixed(2)} readOnly /></label>
+            )}
+            <label><span className={labelClass}>Bill Amt</span><input className={readonlyClass} value={(isSalesOrder ? totals.net : billNet).toFixed(2)} readOnly /></label>
+            <label><span className={labelClass}>Net Amt</span><input className={`${readonlyClass} font-black text-indigo-800`} value={(isSalesOrder ? totals.net : billNet).toFixed(2)} readOnly /></label>
             {ewayBill && (
               <label className="md:col-span-2">
                 <span className={labelClass}>E-Way Bill No.</span>

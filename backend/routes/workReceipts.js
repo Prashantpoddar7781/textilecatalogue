@@ -12,7 +12,7 @@ import {
 } from '../utils/gstCalculation.js';
 import { ensureMillParty, resolveSupplierForEntry } from '../utils/partyMaster.js';
 import { bankAdjustmentBlock } from '../utils/voucherDelete.js';
-import { roundMoney } from '../utils/orderBilling.js';
+import { roundMoney, roundTdsRupee } from '../utils/orderBilling.js';
 import { resolvePartyPan, suggestTdsPercentFromPan } from '../utils/tds.js';
 import { normalizeWorkLines } from './workDespatches.js';
 import { getGstDefaultsForTransactionType } from '../constants/erpTransactionTypes.js';
@@ -88,7 +88,7 @@ function resolveTdsFields({ tdsOnAmtInput, tdsPercentInput, taxableAmount, invoi
   const tdsOnAmt = (rawOnAmt != null && rawOnAmt > 0)
     ? rawOnAmt
     : roundMoney(taxableAmount || 0);
-  const tdsAmount = roundMoney(tdsOnAmt * tdsPercent / 100);
+  const tdsAmount = roundTdsRupee(tdsOnAmt * tdsPercent / 100);
   const netAfterTds = roundMoney((optionalNumber(invoiceValue) || 0) - tdsAmount);
   return { tdsOnAmt, tdsPercent, tdsAmount, netAfterTds };
 }
@@ -332,11 +332,11 @@ router.get('/report', authenticateToken, requireActiveSubscription, async (req, 
     for (const receipt of receipts) {
       const lines = Array.isArray(receipt.lineItems) ? receipt.lineItems : [];
       const invoiceValue = roundMoney(receipt.invoiceValue || 0);
-      let tdsAmount = roundMoney(receipt.tdsAmount || 0);
+      let tdsAmount = roundTdsRupee(receipt.tdsAmount || 0);
       const tdsPercent = Number(receipt.tdsPercent) || 0;
       if (tdsAmount <= 0 && tdsPercent > 0) {
         const base = roundMoney(receipt.tdsOnAmt || receipt.taxableAmount || receipt.grossAmount || 0);
-        tdsAmount = roundMoney(base * tdsPercent / 100);
+        tdsAmount = roundTdsRupee(base * tdsPercent / 100);
       }
       const netAfterTds = roundMoney(
         receipt.netAfterTds != null && receipt.netAfterTds !== ''

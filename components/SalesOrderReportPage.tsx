@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { salesOrdersApi } from '../services/api';
 import { ErpSession } from '../types';
+import { rememberErpReturn, replaceErpSearch } from '../utils/erpBack';
+import { ErpPageBack } from './ErpPageBack';
 import { ErpTopMenu } from './ErpTopMenu';
 
 interface Props {
@@ -16,13 +18,14 @@ const emptyTotals = () => ({
 });
 
 export const SalesOrderReportPage: React.FC<Props> = ({ onBack, erpSession }) => {
+  const params = new URLSearchParams(window.location.search);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [fromDate, setFromDate] = useState('');
-  const [toDate, setToDate] = useState('');
-  const [partyName, setPartyName] = useState('');
-  const [mainScreen, setMainScreen] = useState('');
-  const [status, setStatus] = useState('pending');
+  const [fromDate, setFromDate] = useState(params.get('fromDate') || '');
+  const [toDate, setToDate] = useState(params.get('toDate') || '');
+  const [partyName, setPartyName] = useState(params.get('party') || '');
+  const [mainScreen, setMainScreen] = useState(params.get('item') || '');
+  const [status, setStatus] = useState(params.get('status') || 'pending');
   const [rows, setRows] = useState<Array<Record<string, any>>>([]);
   const [totals, setTotals] = useState(emptyTotals());
 
@@ -48,6 +51,16 @@ export const SalesOrderReportPage: React.FC<Props> = ({ onBack, erpSession }) =>
 
   useEffect(() => { void load(); }, []);
 
+  useEffect(() => {
+    const next = new URLSearchParams();
+    if (fromDate) next.set('fromDate', fromDate);
+    if (toDate) next.set('toDate', toDate);
+    if (partyName.trim()) next.set('party', partyName.trim());
+    if (mainScreen.trim()) next.set('item', mainScreen.trim());
+    if (status) next.set('status', status);
+    replaceErpSearch(next);
+  }, [fromDate, toDate, partyName, mainScreen, status]);
+
   const grouped = useMemo(() => {
     const map = new Map<string, { party: string; rows: Array<Record<string, any>>; sub: ReturnType<typeof emptyTotals> }>();
     for (const row of rows) {
@@ -71,9 +84,7 @@ export const SalesOrderReportPage: React.FC<Props> = ({ onBack, erpSession }) =>
       <ErpTopMenu title="Sales Order Report" erpSession={erpSession} showSessionActions onBackToCatalogue={onBack} />
       <main className="mx-auto max-w-[1400px] px-4 py-6">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <button type="button" onClick={onBack} className="inline-flex items-center gap-2 text-sm font-bold text-gray-600">
-            <ArrowLeft className="h-4 w-4" /> Back to ERP
-          </button>
+          <ErpPageBack onBack={onBack} />
           <button type="button" onClick={() => { window.location.href = '/erp/sales?type=SALES%20ORDERS'; }} className="rounded-xl bg-indigo-700 px-3 py-2 text-xs font-black uppercase text-white">
             New Sales Order
           </button>
@@ -134,7 +145,7 @@ export const SalesOrderReportPage: React.FC<Props> = ({ onBack, erpSession }) =>
                     {group.rows.map(row => (
                       <tr
                         key={row.id}
-                        onClick={() => { window.location.href = `/erp/sales?edit=${row.salesOrderId}&kind=order`; }}
+                        onClick={() => { rememberErpReturn(); window.location.href = `/erp/sales?edit=${row.salesOrderId}&kind=order`; }}
                         className="cursor-pointer border-b hover:bg-indigo-50"
                       >
                         <td className="px-2 py-2">{formatDate(row.date)}</td>
