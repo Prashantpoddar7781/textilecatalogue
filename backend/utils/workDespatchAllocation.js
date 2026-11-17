@@ -50,26 +50,19 @@ function sameLine(our, empire) {
  * Empire line of the same quality and pieces, in SRNO order.
  */
 export function attachEmpirePicks(lines, empireLines) {
-  const ours = (Array.isArray(lines) ? lines : []).map(line => ({ ...line }));
-  const picks = [...(empireLines || [])].sort((a, b) => (Number(a.srNo) || 0) - (Number(b.srNo) || 0));
-  const zipped = ours.length === picks.length && ours.every((line, index) => sameLine(line, picks[index]));
-  const unused = picks.map(row => ({ ...row, used: false }));
-  return ours.map((line, index) => {
-    let pick = zipped ? picks[index] : null;
-    if (!pick) {
-      pick = unused.find(row => !row.used && sameLine(line, row));
-      if (pick) pick.used = true;
-    }
-    const type = String(pick?.ordType || '').trim();
-    const vno = Number(pick?.ordVno) || 0;
+  return zipEmpireLines(lines, empireLines).map(({ line, empire }) => {
+    const type = String(empire?.ordType || '').trim();
+    const vno = Number(empire?.ordVno) || 0;
+    const category = String(empire?.category || line.category || '').trim() || null;
     if (!type || !vno) {
-      return { ...line, empirePickType: null, empirePickVno: null, empirePickBill: null };
+      return { ...line, category, empirePickType: null, empirePickVno: null, empirePickBill: null };
     }
     return {
       ...line,
+      category,
       empirePickType: type,
       empirePickVno: vno,
-      empirePickBill: pick.ordBill || null
+      empirePickBill: empire.ordBill || null
     };
   });
 }
@@ -84,11 +77,73 @@ function clearLink(line) {
   };
 }
 
-function despatchLineNo(despatch, itemName) {
+function zipEmpireLines(lines, empireLines) {
+  const ours = (Array.isArray(lines) ? lines : []).map(line => ({ ...line }));
+  const picks = [...(empireLines || [])].sort((a, b) => (Number(a.srNo) || 0) - (Number(b.srNo) || 0));
+  const zipped = ours.length === picks.length && ours.every((line, index) => sameLine(line, picks[index]));
+  const unused = picks.map(row => ({ ...row, used: false }));
+  return ours.map((line, index) => {
+    let empire = zipped ? picks[index] : null;
+    if (!empire) {
+      empire = unused.find(row => !row.used && sameLine(line, row));
+      if (empire) empire.used = true;
+    }
+    return { line, empire };
+  });
+}
+
+/** BILLDET.CATEGORY is the design on a despatch line (DARK BHAYA), not the quality. */
+export function attachCategories(lines, empireLines) {
+  return zipEmpireLines(lines, empireLines).map(({ line, empire }) => ({
+    ...line,
+    category: String(empire?.category || line.category || '').trim() || null
+  }));
+}
+
+function despatchPool(despatch, line) {
   const lines = Array.isArray(despatch?.lineItems) ? despatch.lineItems : [];
-  const match = lines.find(row => normItem(row?.itemName) === normItem(itemName));
-  const line = match || lines[0];
-  return Number(line?.lineNo) || 1;
+  const item = normItem(line?.itemName);
+  const category = normItem(line?.category);
+  let pool = lines.filter(row => normItem(row?.itemName) === item);
+  if (category) {
+    const byCategory = pool.filter(row => normItem(row?.category) === category);
+    if (byCategory.length) pool = byCategory;
+  }
+  if (!pool.length) pool = lines;
+  return { lines, pool, category };
+}
+
+/**
+ * The despatch line this receipt line was picked from.
+ * Same quality and category stay on that design. An exact piece match is taken
+ * before a smaller receipt is parked on a larger line of the same design, so
+ * 53 pcs of COCO MILL closes the 53-pc line and leaves the 120-pc line open.
+ * Without a category, every line of that quality stays on the first matching
+ * despatch line.
+ */
+function matchDespatchLine(despatch, line, usedLineNos, { exactOnly = false } = {}) {
+  const { lines, pool, category } = despatchPool(despatch, line);
+  if (!category) {
+    if (exactOnly) return 0;
+    return Number(pool[0]?.lineNo || lines[0]?.lineNo) || 1;
+  }
+  const pcs = Number(line?.pcs) || 0;
+  const free = pool.filter(row => !usedLineNos.has(Number(row?.lineNo) || 0));
+  const candidates = free.length ? free : pool;
+  const exact = candidates.find(row => Math.abs((Number(row?.pcs) || 0) - pcs) < 0.05);
+  if (exactOnly) {
+    if (!exact) return 0;
+    const lineNo = Number(exact.lineNo) || 1;
+    usedLineNos.add(lineNo);
+    return lineNo;
+  }
+  const fits = candidates
+    .filter(row => (Number(row?.pcs) || 0) + 0.05 >= pcs)
+    .sort((a, b) => (Number(a.pcs) || 0) - (Number(b.pcs) || 0));
+  const chosen = exact || (candidates.length === 1 ? candidates[0] : null) || fits[0] || candidates[0] || lines[0];
+  const lineNo = Number(chosen?.lineNo) || 1;
+  if (chosen) usedLineNos.add(lineNo);
+  return lineNo;
 }
 
 /**
@@ -109,10 +164,24 @@ export function allocateWorkReceipts({ despatches, receipts }) {
     if (!receipt || receipt.status === 'cancelled') continue;
     if (!/\[E:[^\]]+\]/.test(String(receipt.remarks || ''))) continue;
     const ids = [];
-    const lines = (Array.isArray(receipt.lineItems) ? receipt.lineItems : []).map(line => {
-      const despatch = byPick.get(pickKey(line?.empirePickType, line?.empirePickVno));
+    const usedByDespatch = new Map();
+    const rawLines = Array.isArray(receipt.lineItems) ? receipt.lineItems : [];
+    const sourceLineNos = new Array(rawLines.length).fill(0);
+    const despatchFor = (line) => byPick.get(pickKey(line?.empirePickType, line?.empirePickVno));
+    for (const exactOnly of [true, false]) {
+      rawLines.forEach((line, index) => {
+        if (sourceLineNos[index]) return;
+        const despatch = despatchFor(line);
+        if (!despatch) return;
+        const used = usedByDespatch.get(despatch.id) || new Set();
+        usedByDespatch.set(despatch.id, used);
+        sourceLineNos[index] = matchDespatchLine(despatch, line, used, { exactOnly });
+      });
+    }
+    const lines = rawLines.map((line, index) => {
+      const despatch = despatchFor(line);
       if (!despatch) return clearLink(line);
-      const sourceLineNo = despatchLineNo(despatch, line.itemName);
+      const sourceLineNo = sourceLineNos[index] || 1;
       if (!ids.includes(despatch.id)) ids.push(despatch.id);
       return {
         ...line,

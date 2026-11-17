@@ -448,8 +448,12 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
         excludeId: editId || undefined
       });
       setPending(sources || []);
-      // Pre-tick whatever this bill already covers so editing is additive.
-      setChecked(Object.fromEntries(selectedSources.map(source => [source.sourceId, true])));
+      // Pre-tick the designs already on this bill so editing is additive.
+      setChecked(Object.fromEntries(
+        lines
+          .filter(line => line.sourceDespatchId)
+          .map(line => [`${line.sourceDespatchId}:${line.sourceLineNo || 0}`, true])
+      ));
       setPickerOpen(true);
       if (!sources?.length) {
         setError(`No pending work desp challans for ${partyName.trim()}. You can still add bill lines without a challan.`);
@@ -461,19 +465,41 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
     }
   };
 
-  const toggleChecked = (sourceId: string) => {
-    setChecked(prev => ({ ...prev, [sourceId]: !prev[sourceId] }));
+  const toggleChecked = (key: string) => {
+    setChecked(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
   const checkedCount = useMemo(() => Object.values(checked).filter(Boolean).length, [checked]);
 
-  /** Pulls the pending lines of every ticked challan into one bill. */
+  const formatPickDate = (value?: string) => {
+    if (!value) return '-';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '-';
+    const dd = String(date.getDate()).padStart(2, '0');
+    const mm = String(date.getMonth() + 1).padStart(2, '0');
+    const yy = String(date.getFullYear()).slice(-2);
+    return `${dd}/${mm}/${yy}`;
+  };
+
+  const pickerRows = useMemo(() => pending.flatMap(source =>
+    (source.pendingLines || []).map(line => ({
+      source,
+      line,
+      key: `${source.sourceId}:${line.lineNo || 0}`,
+      pendPcs: Number(line.pendingPcs ?? line.pcs) || 0,
+      pendMts: Number(line.pendingMts ?? line.mtsQty) || 0
+    }))
+  ), [pending]);
+
+  /** Pulls each ticked despatch line into this bill. One design on a challan can be picked on its own. */
   const applySelectedSources = async () => {
-    const ids = Object.entries(checked).filter(([, on]) => on).map(([id]) => id);
-    if (!ids.length) {
-      setError('Tick at least one challan.');
+    const keys = Object.entries(checked).filter(([, on]) => on).map(([key]) => key);
+    if (!keys.length) {
+      setError('Tick at least one line.');
       return;
     }
+    const wanted = new Set(keys);
+    const ids = [...new Set(keys.map(key => key.slice(0, key.lastIndexOf(':'))))];
     setPendingLoading(true);
     try {
       const { sources, lineItems } = await workReceiptsApi.seedFromSources({
@@ -481,8 +507,9 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
         sourceDespatchIds: ids,
         excludeId: editId || undefined
       });
+      const picked = lineItems.filter(row => wanted.has(`${row.sourceDespatchId}:${row.sourceLineNo}`));
       const primary = sources[0];
-      setSelectedSources(sources);
+      setSelectedSources(sources.filter(source => ids.includes(source.sourceId)));
       if (primary) {
         setPartyName(primary.partyName || '');
         setPartyGstin(primary.partyGstin || '');
@@ -494,7 +521,7 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
         });
       }
       setChallanNo(sources.map(source => source.documentNo).filter(Boolean).join(', '));
-      setLines(lineItems.map(row => {
+      setLines(picked.map((row, index) => {
         const pcs = toNum(row.pcs);
         const cut = toNum(row.cut) || DEFAULT_CUT;
         const mtsQty = toNum(row.mtsQty) || round2(pcs * cut);
@@ -502,13 +529,14 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
         const fresh = pcs;
         const amount = round2(fresh * rate);
         return {
-          lineNo: row.lineNo,
+          lineNo: index + 1,
           sourceDespatchId: row.sourceDespatchId,
           sourceChallanNo: row.sourceChallanNo,
           sourceLineNo: row.sourceLineNo,
           itemName: row.itemName,
+          category: row.category || null,
           bundles: row.bundles || 0,
-          jobType: row.jobType || 'HAND WORK',
+          jobType: row.jobType || '',
           unit: row.unit || 'PCS',
           pcs,
           cut,
@@ -920,6 +948,7 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
                   <tr>
                     <th className="px-2 py-2">Challan</th>
                     <th className="px-2 py-2">Ref / Item</th>
+                    <th className="px-2 py-2">Category</th>
                     <th className="px-2 py-2">Job Type</th>
                     <th className="px-2 py-2 text-right">Pcs</th>
                     <th className="px-2 py-2 text-right">Cut</th>
@@ -936,13 +965,16 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
                 </thead>
                 <tbody>
                   {!lines.length && (
-                    <tr><td colSpan={14} className="px-4 py-8 text-center text-sm text-gray-500">Add lines, or pick a work desp challan to load pcs / rate / cut / mts.</td></tr>
+                    <tr><td colSpan={15} className="px-4 py-8 text-center text-sm text-gray-500">Add lines, or pick a work desp challan to load pcs / rate / cut / mts.</td></tr>
                   )}
                   {lines.map((line, index) => (
                     <tr key={index} className="border-b">
                       <td className="px-2 py-2 text-[11px] font-bold text-fuchsia-800">{line.sourceChallanNo || '-'}</td>
                       <td className="px-2 py-2">
                         <input className={inputClass} value={line.itemName} onChange={e => updateLine(index, { itemName: e.target.value })} placeholder="Item / design" />
+                      </td>
+                      <td className="px-2 py-2">
+                        <input className={inputClass} value={line.category || ''} onChange={e => updateLine(index, { category: e.target.value })} placeholder="Category" />
                       </td>
                       <td className="px-2 py-2">
                         <input className={inputClass} value={line.jobType || ''} onChange={e => updateLine(index, { jobType: e.target.value })} />
@@ -1058,12 +1090,12 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
 
       {pickerOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
-          <div className="max-h-[85vh] w-full max-w-3xl overflow-hidden rounded-2xl bg-white shadow-2xl">
+          <div className="max-h-[85vh] w-full max-w-5xl overflow-hidden rounded-2xl bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b px-4 py-3">
               <div>
-                <h3 className="text-sm font-black uppercase">Work Desp Challans · {partyName || 'All'}</h3>
+                <h3 className="text-sm font-black uppercase">Work Desp Lines · {partyName || 'All'}</h3>
                 <p className="text-[11px] font-semibold text-gray-500">
-                  Optional. Tick challans to prefill this bill, or close and type lines by hand.
+                  Each design is its own row. Tick the lines this bill received.
                 </p>
               </div>
               <button type="button" onClick={() => setPickerOpen(false)} className="rounded-lg border px-3 py-1 text-xs font-bold">Close</button>
@@ -1078,47 +1110,53 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
                       <th className="p-2">
                         <input
                           type="checkbox"
-                          checked={pending.length > 0 && checkedCount === pending.length}
+                          checked={pickerRows.length > 0 && checkedCount === pickerRows.length}
                           onChange={e => setChecked(
                             e.target.checked
-                              ? Object.fromEntries(pending.map(row => [row.sourceId, true]))
+                              ? Object.fromEntries(pickerRows.map(row => [row.key, true]))
                               : {}
                           )}
                         />
                       </th>
                       <th className="p-2">Chal</th>
-                      <th className="p-2">Date</th>
-                      <th className="p-2">Type</th>
-                      <th className="p-2">Work</th>
+                      <th className="p-2">Quality</th>
+                      <th className="p-2 text-right">Cut</th>
+                      <th className="p-2 text-right">Rate</th>
+                      <th className="p-2 text-right">Ref</th>
+                      <th className="p-2">Category</th>
                       <th className="p-2 text-right">Pend Pcs</th>
+                      <th className="p-2">Date</th>
                       <th className="p-2 text-right">Pend Mts</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {pending.map(row => (
+                    {pickerRows.map(row => (
                       <tr
-                        key={row.sourceId}
-                        className={`cursor-pointer border-b hover:bg-fuchsia-50 ${checked[row.sourceId] ? 'bg-fuchsia-50' : ''}`}
-                        onClick={() => toggleChecked(row.sourceId)}
+                        key={row.key}
+                        className={`cursor-pointer border-b hover:bg-fuchsia-50 ${checked[row.key] ? 'bg-fuchsia-50' : ''}`}
+                        onClick={() => toggleChecked(row.key)}
                       >
                         <td className="p-2">
                           <input
                             type="checkbox"
-                            checked={Boolean(checked[row.sourceId])}
-                            onChange={() => toggleChecked(row.sourceId)}
+                            checked={Boolean(checked[row.key])}
+                            onChange={() => toggleChecked(row.key)}
                             onClick={e => e.stopPropagation()}
                           />
                         </td>
-                        <td className="p-2 font-bold">{row.documentNo}</td>
-                        <td className="p-2 text-xs">{row.documentDate ? String(row.documentDate).slice(0, 10) : '-'}</td>
-                        <td className="p-2 text-xs">{row.sourceSeries || 'WORK DESP CHALLAN'}</td>
-                        <td className="p-2">{row.workType || '-'}</td>
-                        <td className="p-2 text-right font-bold text-fuchsia-800">{row.pendingPcs}</td>
-                        <td className="p-2 text-right font-bold text-fuchsia-800">{row.pendingMts.toFixed(2)}</td>
+                        <td className="p-2 font-bold text-fuchsia-800">{row.source.documentNo || '-'}</td>
+                        <td className="p-2">{row.line.itemName || '-'}</td>
+                        <td className="p-2 text-right">{Number(row.line.cut || 0).toFixed(2)}</td>
+                        <td className="p-2 text-right">{Number(row.line.rate || 0).toFixed(2)}</td>
+                        <td className="p-2 text-right">{row.source.refNo || '-'}</td>
+                        <td className="p-2 font-bold">{row.line.category || '-'}</td>
+                        <td className="p-2 text-right font-bold text-fuchsia-800">{row.pendPcs}</td>
+                        <td className="p-2 text-xs">{formatPickDate(row.source.documentDate)}</td>
+                        <td className="p-2 text-right font-bold text-fuchsia-800">{row.pendMts.toFixed(2)}</td>
                       </tr>
                     ))}
-                    {!pending.length && (
-                      <tr><td colSpan={7} className="p-8 text-center text-gray-500">No pending despatches for this party.</td></tr>
+                    {!pickerRows.length && (
+                      <tr><td colSpan={10} className="p-8 text-center text-gray-500">No pending lines for this party.</td></tr>
                     )}
                   </tbody>
                 </table>
@@ -1126,8 +1164,8 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
             </div>
             <div className="flex items-center justify-between border-t bg-gray-50 px-4 py-3">
               <span className="text-xs font-bold text-gray-600">
-                {checkedCount} challan{checkedCount === 1 ? '' : 's'} ticked ·{' '}
-                {round2(pending.filter(row => checked[row.sourceId]).reduce((sum, row) => sum + toNum(row.pendingPcs), 0))} pcs pending
+                {checkedCount} line{checkedCount === 1 ? '' : 's'} ticked ·{' '}
+                {round2(pickerRows.filter(row => checked[row.key]).reduce((sum, row) => sum + row.pendPcs, 0))} pcs pending
               </span>
               <button
                 type="button"

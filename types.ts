@@ -1239,6 +1239,8 @@ export interface WorkLineItem {
   sourceLineNo?: number | null;
   sourceAllocations?: { sourceDespatchId?: string | null; sourceChallanNo?: string | null; sourceLineNo?: number | null; pcs?: number; mtsQty?: number }[];
   itemName: string;
+  /** Design on the despatch line, Empire CATEGORY (DARK BHAYA, BHAVYA COCO). */
+  category?: string | null;
   bundles?: number;
   jobType?: string | null;
   unit?: string | null;
@@ -1293,6 +1295,7 @@ export interface LinkedSourceDocument {
   gstType?: string | null;
   brokerName?: string | null;
   workType?: string | null;
+  refNo?: number | null;
   companyName?: string | null;
   totalPcs: number;
   totalMts: number;

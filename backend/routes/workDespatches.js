@@ -85,6 +85,8 @@ export function normalizeWorkLines(raw, options = {}) {
         sourceChallanNo: optionalString(row.sourceChallanNo),
         sourceLineNo: optionalNumber(row.sourceLineNo),
         itemName: String(row.itemName || '').trim(),
+        category: String(row.category || '').trim() || null,
+        ...(Array.isArray(row.sourceAllocations) ? { sourceAllocations: row.sourceAllocations } : {}),
         bundles: roundMoney(row.bundles ?? 0),
         jobType: String(row.jobType || '').trim() || null,
         unit: String(row.unit || 'PCS').trim() || 'PCS',
@@ -159,8 +161,7 @@ export async function buildDespatchPending(despatch, excludeReceiptId = null) {
   const received = await getReceivedByDespatch(despatch.id, excludeReceiptId);
   const pendingLines = lines.map((row, index) => {
     const key = Number(row.lineNo) || index + 1;
-    const altKey = String(row.itemName || '').toLowerCase();
-    const taken = received.byLine.get(key) || received.byLine.get(altKey) || { pcs: 0, mts: 0 };
+    const taken = received.byLine.get(key) || { pcs: 0, mts: 0 };
     const pcs = roundMoney(Math.max(0, (Number(row.pcs) || 0) - taken.pcs));
     const mts = roundMoney(Math.max(0, (Number(row.mtsQty) || 0) - taken.mts));
     return { ...row, lineNo: key, pendingPcs: pcs, pendingMts: mts };

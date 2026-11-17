@@ -314,6 +314,76 @@ test('Empire pick leaves 712 pcs on challans 5, 6 and 7, and voucher 20 uses 6 a
   assert.strictEqual(open, 712);
 });
 
+test('a lace challan with three designs links each receipt line to that design', () => {
+  const despatch = {
+    id: 'd232',
+    remarks: '[E:O11:232]',
+    status: 'posted',
+    challanNo: '232/L',
+    lineItems: [
+      { lineNo: 1, itemName: 'FRANDY FABRIC', category: 'DARK BHAYA', pcs: 240, mtsQty: 1440 },
+      { lineNo: 2, itemName: 'FRANDY FABRIC', category: 'BHAVYA DUSTY', pcs: 300, mtsQty: 1800 },
+      { lineNo: 3, itemName: 'FRANDY FABRIC', category: 'BHAVYA COCO', pcs: 180, mtsQty: 1080 }
+    ]
+  };
+  const receipt = {
+    id: 'r275',
+    voucherNo: 275,
+    billNo: '65656',
+    status: 'posted',
+    remarks: '[E:P31:275]',
+    lineItems: [
+      { itemName: 'FRANDY FABRIC', category: 'BHAVYA COCO', pcs: 31, mtsQty: 186, empirePickType: 'O11', empirePickVno: 232, empirePickBill: '232/L' },
+      { itemName: 'FRANDY FABRIC', category: 'DARK BHAYA', pcs: 240, mtsQty: 1440, empirePickType: 'O11', empirePickVno: 232, empirePickBill: '232/L' }
+    ]
+  };
+  const [update] = allocateWorkReceipts({ despatches: [despatch], receipts: [receipt] });
+  assert.strictEqual(update.lineItems[0].sourceLineNo, 3);
+  assert.strictEqual(update.lineItems[1].sourceLineNo, 1);
+  const taken = new Map();
+  for (const row of update.lineItems) {
+    taken.set(row.sourceLineNo, (taken.get(row.sourceLineNo) || 0) + row.pcs);
+  }
+  const left = (lineNo) => {
+    const line = despatch.lineItems.find(item => item.lineNo === lineNo);
+    return line.pcs - (taken.get(lineNo) || 0);
+  };
+  assert.strictEqual(left(3), 149);
+  assert.strictEqual(left(1), 0);
+  assert.strictEqual(left(2), 300);
+});
+
+test('same design on two lines keeps the exact piece match for the smaller line', () => {
+  const despatch = {
+    id: 'd208',
+    remarks: '[E:O11:208]',
+    status: 'posted',
+    challanNo: '208/L',
+    lineItems: [
+      { lineNo: 1, itemName: 'FRANDY FABRIC', category: 'COCO MILL', pcs: 120 },
+      { lineNo: 2, itemName: 'FRANDY FABRIC', category: 'COCO MILL', pcs: 53 },
+      { lineNo: 3, itemName: 'FRANDY FABRIC', category: 'DUSTY', pcs: 120 },
+      { lineNo: 4, itemName: 'FRANDY FABRIC', category: 'DUSTY', pcs: 56 },
+      { lineNo: 5, itemName: 'KUNDAN', pcs: 240 }
+    ]
+  };
+  const receipt = {
+    id: 'r240',
+    voucherNo: 240,
+    status: 'posted',
+    remarks: '[E:P31:240]',
+    lineItems: [
+      { itemName: 'FRANDY FABRIC', category: 'DUSTY', pcs: 4, empirePickType: 'O11', empirePickVno: 208 },
+      { itemName: 'FRANDY FABRIC', category: 'COCO MILL', pcs: 53, empirePickType: 'O11', empirePickVno: 208 },
+      { itemName: 'FRANDY FABRIC', category: 'DUSTY', pcs: 56, empirePickType: 'O11', empirePickVno: 208 }
+    ]
+  };
+  const [update] = allocateWorkReceipts({ despatches: [despatch], receipts: [receipt] });
+  assert.strictEqual(update.lineItems[0].sourceLineNo, 3);
+  assert.strictEqual(update.lineItems[1].sourceLineNo, 2);
+  assert.strictEqual(update.lineItems[2].sourceLineNo, 4);
+});
+
 test('a city in the state field is not treated as another state', () => {
   assert.strictEqual(isInterStateSupply('SURAT', 'GUJARAT'), false);
   assert.strictEqual(isInterStateSupply('GUJARAT', 'GUJARAT'), false);

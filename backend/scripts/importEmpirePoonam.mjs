@@ -615,6 +615,7 @@ async function main() {
       return {
         lineNo: index + 1,
         itemName,
+        category: text(line.CATEGORY, 80) || null,
         description: itemName,
         designName: itemName,
         screenName: itemName,

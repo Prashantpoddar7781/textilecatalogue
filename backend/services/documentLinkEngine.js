@@ -57,6 +57,7 @@ function toWorkDespatchSource(pending, despatch) {
     gstType: despatch.gstType,
     brokerName: despatch.brokerName,
     workType: despatch.workType,
+    refNo: despatch.srNo || null,
     companyName: despatch.companyName,
     totalPcs: pending.totalPcs,
     totalMts: pending.totalMts,
@@ -82,8 +83,7 @@ const WORK_DESPATCH_ADAPTER = {
         ...(partyName ? { partyName: { equals: partyName, mode: 'insensitive' } } : {}),
         ...(seriesNames && seriesNames.length ? { transactionType: { in: seriesNames } } : {})
       },
-      orderBy: [{ despatchDate: 'asc' }, { createdAt: 'asc' }],
-      take: 300
+      orderBy: [{ despatchDate: 'asc' }, { createdAt: 'asc' }]
     });
     const sources = [];
     for (const despatch of despatches) {
@@ -283,6 +283,7 @@ export function seedLinesFromSources(sources) {
         sourceChallanNo: source.documentNo,
         sourceLineNo: pendingLine.lineNo,
         itemName: pendingLine.itemName,
+        category: pendingLine.category || null,
         bundles: pendingLine.bundles,
         jobType: pendingLine.jobType,
         unit: pendingLine.unit,
