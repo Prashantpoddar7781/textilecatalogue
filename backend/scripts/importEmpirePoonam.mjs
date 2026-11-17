@@ -643,6 +643,9 @@ async function main() {
         taxAmount: index === 0 ? gst.totalTax : 0,
         totalAmount: round(amount + (index === 0 ? gst.totalTax : 0)),
         hsnCode: text(line.hsn_code || bill.BILLS_HSN_CODE, 20) || '5407',
+        empirePickBill: text(line.ORDBILL, 40) || null,
+        empirePickType: text(line.ORDTYPE, 12) || null,
+        empirePickVno: int(line.orderno) || null,
         completed: true,
         completedAt: new Date().toISOString()
       };

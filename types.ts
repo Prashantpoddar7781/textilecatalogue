@@ -1237,6 +1237,7 @@ export interface WorkLineItem {
   sourceDespatchId?: string | null;
   sourceChallanNo?: string | null;
   sourceLineNo?: number | null;
+  sourceAllocations?: { sourceDespatchId?: string | null; sourceChallanNo?: string | null; sourceLineNo?: number | null; pcs?: number; mtsQty?: number }[];
   itemName: string;
   bundles?: number;
   jobType?: string | null;

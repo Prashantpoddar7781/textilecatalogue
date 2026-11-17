@@ -8,17 +8,58 @@
  * is touched. Does not wipe vouchers.
  */
 import dotenv from 'dotenv';
+import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { PrismaClient } from '@prisma/client';
-import { getSourceSeriesFor } from '../constants/erpTransactionPostingRules.js';
 import { getStateCodeFromName, getStateFromGstin } from '../utils/gstCalculation.js';
-import { allocateWorkReceipts, impliedDiscountPercent } from '../utils/workDespatchAllocation.js';
+import { allocateWorkReceipts, attachEmpirePicks, impliedDiscountPercent } from '../utils/workDespatchAllocation.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.join(here, '..', '.env') });
 
 const round2 = (value) => Math.round((Number(value) || 0) * 100) / 100;
+
+function loadPickMap() {
+  const file = process.env.EMPIRE_PICKS
+    || path.join(os.tmpdir(), 'poonam-empire-08nov', 'billdet-picks.tsv');
+  if (!fs.existsSync(file)) return null;
+  const lines = fs.readFileSync(file, 'utf8').split(/\r?\n/).filter(line => line.length);
+  if (lines.length < 2) return null;
+  const headers = lines[0].split('\t');
+  const map = new Map();
+  for (const line of lines.slice(1)) {
+    const cols = line.split('\t');
+    const row = {};
+    headers.forEach((header, index) => { row[header] = cols[index] ?? ''; });
+    const key = `${String(row.TYPE || '').trim().toUpperCase()}|${Number(row.VNO) || 0}`;
+    if (!key.endsWith('|0')) {
+      const list = map.get(key) || [];
+      list.push({
+        srNo: Number(row.SRNO) || 0,
+        qual: row.qual || '',
+        pcs: Number(row.PCS) || 0,
+        ordBill: row.ORDBILL || '',
+        ordType: row.ORDTYPE || '',
+        ordVno: Number(row.orderno) || 0
+      });
+      map.set(key, list);
+    }
+  }
+  return map;
+}
+
+function stampPicks(receipts, pickMap) {
+  if (!pickMap) return receipts;
+  return receipts.map(receipt => {
+    const tag = String(receipt.remarks || '').match(/\[E:([^:\]]+):(\d+)\]/);
+    if (!tag) return receipt;
+    const empire = pickMap.get(`${tag[1].toUpperCase()}|${Number(tag[2])}`);
+    if (!empire || !empire.length) return receipt;
+    return { ...receipt, lineItems: attachEmpirePicks(receipt.lineItems, empire) };
+  });
+}
 
 export async function repairWorkDespatchLinks(prisma, userId) {
   const [despatches, receipts] = await Promise.all([
@@ -27,10 +68,9 @@ export async function repairWorkDespatchLinks(prisma, userId) {
   ]);
   const updates = allocateWorkReceipts({
     despatches,
-    receipts,
-    sourceSeriesFor: getSourceSeriesFor
+    receipts: stampPicks(receipts, loadPickMap())
   });
-  const linkedIds = new Set(updates.map(update => update.id));
+  const linkedIds = new Set(updates.filter(update => update.workDespatchId).map(update => update.id));
   let discounts = 0;
   for (const receipt of receipts) {
     const update = updates.find(row => row.id === receipt.id);

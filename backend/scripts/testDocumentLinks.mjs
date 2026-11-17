@@ -6,7 +6,7 @@
 import assert from 'assert';
 import { linesForSource, hasPerLineSources, sourceLineKey, qtySlicesForSalesOrder } from '../utils/documentLinkAttribution.js';
 import { attributeLinesToSources } from '../services/documentLinkEngine.js';
-import { allocateWorkReceipts, impliedDiscountPercent, isPriorYearEmpireCopy } from '../utils/workDespatchAllocation.js';
+import { allocateWorkReceipts, impliedDiscountPercent } from '../utils/workDespatchAllocation.js';
 import { isInterStateSupply } from '../utils/gstCalculation.js';
 
 let passed = 0;
@@ -227,11 +227,12 @@ test('a line split across two challans counts only its own pieces on each', () =
 
 console.log('\nBhagwati work pending');
 
-test('current-year receipts leave 712 pcs pending and the March copy does not close the challan twice', () => {
-  const desp = (id, challan, date, item, pcs, mts) => ({
+test('Empire pick leaves 712 pcs on challans 5, 6 and 7, and voucher 20 uses 6 and 7', () => {
+  const desp = (id, vno, challan, item, pcs, mts) => ({
     id,
     challanNo: challan,
-    despatchDate: date,
+    srNo: vno,
+    remarks: `[E:O5:${vno}]`,
     partyName: 'BHAGWATI FASHION',
     transactionType: 'WORK DESP CHALLAN',
     status: 'posted',
@@ -239,12 +240,18 @@ test('current-year receipts leave 712 pcs pending and the March copy does not cl
     totalMts: mts,
     lineItems: [{ lineNo: 1, itemName: item, pcs, mtsQty: mts }]
   });
-  const line = (item, pcs, mts) => ({ itemName: item, pcs, mtsQty: mts });
-  const rec = (id, voucher, bill, date, lines) => ({
+  const line = (item, pcs, mts, vno) => ({
+    itemName: item,
+    pcs,
+    mtsQty: mts,
+    empirePickType: 'O5',
+    empirePickVno: vno,
+    empirePickBill: String(vno === 100099 ? '99*' : vno)
+  });
+  const rec = (id, voucher, bill, lines) => ({
     id,
     voucherNo: voucher,
     billNo: bill,
-    receiptDate: date,
     partyName: 'BHAGWATI FASHION',
     transactionType: 'WORK REC. BILLS',
     status: 'posted',
@@ -252,30 +259,30 @@ test('current-year receipts leave 712 pcs pending and the March copy does not cl
     lineItems: lines
   });
   const despatches = [
-    desp('d99', '99*', '2026-03-10', 'FRANDY FABRIC', 480, 3024),
-    desp('d4', '4', '2026-09-10', 'SATIN FRANDY', 480, 2976),
-    desp('d5', '5', '2026-09-24', 'FRANDY FABRIC', 480, 2976),
-    desp('d6', '6', '2026-09-28', 'SATIN FRANDY', 360, 2232),
-    desp('d7', '7', '2026-10-03', 'FRANDY FABRIC', 480, 2976)
+    desp('d99', 100099, '99*', 'FRANDY FABRIC', 480, 3024),
+    desp('d4', 4, '4', 'SATIN FRANDY', 480, 2976),
+    desp('d5', 5, '5', 'FRANDY FABRIC', 480, 2976),
+    desp('d6', 6, '6', 'SATIN FRANDY', 360, 2232),
+    desp('d7', 7, '7', 'FRANDY FABRIC', 480, 2976)
   ];
   const receipts = [
-    rec('r105', 100116, '105*', '2026-03-31', [line('FRANDY FABRIC', 480, 3024)]),
-    rec('r3', 3, '13', '2026-04-13', [line('FRANDY FABRIC', 120, 756), line('FRANDY FABRIC', 120, 756), line('FRANDY FABRIC', 120, 756)]),
-    rec('r4', 4, '16', '2026-04-16', [line('FRANDY FABRIC', 120, 756)]),
-    rec('r15', 15, '42', '2026-10-03', [line('SATIN FRANDY', 120, 744), line('SATIN FRANDY', 120, 744), line('SATIN FRANDY', 120, 744), line('SATIN FRANDY', 120, 744)]),
-    rec('r17', 17, '51', '2026-10-17', [line('FRANDY FABRIC', 120, 744)]),
-    rec('r18', 18, '53', '2026-10-20', [line('FRANDY FABRIC', 120, 744)]),
-    rec('r19', 19, '54', '2026-10-29', [line('FRANDY FABRIC', 120, 744), line('FRANDY FABRIC', 4, 24.8), line('FRANDY FABRIC', 3, 18.6), line('FRANDY FABRIC', 1, 6.2)]),
-    rec('r20', 20, '57', '2026-11-05', [line('SATIN FRANDY', 120, 744), line('FRANDY FABRIC', 120, 744)])
+    rec('r105', 100116, '105*', [line('FRANDY FABRIC', 480, 3024, 0)]),
+    rec('r3', 3, '13', [line('FRANDY FABRIC', 120, 756, 100099), line('FRANDY FABRIC', 120, 756, 100099), line('FRANDY FABRIC', 120, 756, 100099)]),
+    rec('r4', 4, '16', [line('FRANDY FABRIC', 120, 756, 100099)]),
+    rec('r15', 15, '42', [line('SATIN FRANDY', 120, 744, 4), line('SATIN FRANDY', 120, 744, 4), line('SATIN FRANDY', 120, 744, 4), line('SATIN FRANDY', 120, 744, 4)]),
+    rec('r17', 17, '51', [line('FRANDY FABRIC', 120, 744, 5)]),
+    rec('r18', 18, '53', [line('FRANDY FABRIC', 120, 744, 5)]),
+    rec('r19', 19, '54', [line('FRANDY FABRIC', 120, 744, 5), line('FRANDY FABRIC', 4, 24.8, 5), line('FRANDY FABRIC', 3, 18.6, 5), line('FRANDY FABRIC', 1, 6.2, 5)]),
+    rec('r20', 20, '57', [line('SATIN FRANDY', 120, 744, 6), line('FRANDY FABRIC', 120, 744, 7)])
   ];
-  assert.strictEqual(isPriorYearEmpireCopy(receipts[0]), true);
-  const updates = allocateWorkReceipts({
-    despatches,
-    receipts,
-    sourceSeriesFor: () => ['WORK DESP CHALLAN']
-  });
-  assert.strictEqual(updates.some(row => row.id === 'r105'), false);
+  receipts[0].lineItems[0].empirePickType = null;
+  receipts[0].lineItems[0].empirePickVno = null;
+  const updates = allocateWorkReceipts({ despatches, receipts });
   const byId = new Map(updates.map(row => [row.id, row]));
+  const bill20 = byId.get('r20');
+  assert.deepStrictEqual(bill20.sourceDespatchIds, ['d6', 'd7']);
+  assert.strictEqual(bill20.lineItems[0].sourceChallanNo, '6');
+  assert.strictEqual(bill20.lineItems[1].sourceChallanNo, '7');
   const pendingOf = (despatchId) => {
     const despatch = despatches.find(row => row.id === despatchId);
     let taken = 0;
@@ -287,11 +294,11 @@ test('current-year receipts leave 712 pcs pending and the March copy does not cl
   };
   assert.strictEqual(pendingOf('d99'), 0);
   assert.strictEqual(pendingOf('d4'), 0);
-  assert.strictEqual(pendingOf('d5'), 0);
+  assert.strictEqual(pendingOf('d5'), 112);
   assert.strictEqual(pendingOf('d6'), 240);
-  assert.strictEqual(pendingOf('d7'), 472);
-  const total = ['d99', 'd4', 'd5', 'd6', 'd7'].reduce((sum, id) => sum + pendingOf(id), 0);
-  assert.strictEqual(total, 712);
+  assert.strictEqual(pendingOf('d7'), 360);
+  const open = ['d5', 'd6', 'd7'].reduce((sum, id) => sum + pendingOf(id), 0);
+  assert.strictEqual(open, 712);
 });
 
 test('a city in the state field is not treated as another state', () => {

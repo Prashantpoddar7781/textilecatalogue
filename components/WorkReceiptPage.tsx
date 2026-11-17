@@ -769,9 +769,11 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
                 <p className={labelClass}>This bill covers {selectedSources.length} desp challans</p>
                 <div className="flex flex-wrap gap-2">
                   {selectedSources.map(source => {
-                    const billed = lines
-                      .filter(line => line.sourceDespatchId === source.sourceId)
-                      .reduce((sum, line) => sum + toNum(line.pcs), 0);
+                    const billed = lines.reduce((sum, line) => {
+                      const allocs = (line.sourceAllocations || []).filter(alloc => alloc?.sourceDespatchId === source.sourceId);
+                      if (allocs.length) return sum + allocs.reduce((part, alloc) => part + toNum(alloc.pcs), 0);
+                      return line.sourceDespatchId === source.sourceId ? sum + toNum(line.pcs) : sum;
+                    }, 0);
                     return (
                       <span
                         key={source.sourceId}
