@@ -7,6 +7,7 @@ import {
   calculateGreyPurchaseTotals,
   getStateCodeFromName,
   getStateFromGstin,
+  knownStateCode,
   INDIAN_STATES
 } from '../utils/gstCalculation.js';
 import { ensureMillParty, resolveSupplierForEntry } from '../utils/partyMaster.js';
@@ -71,14 +72,13 @@ function typeGstDefaults(transactionType, ctx) {
 }
 
 function resolvePlaceOfSupply({ partyGstin, placeOfSupply, stateCode }) {
-  if (optionalString(placeOfSupply)) return optionalString(placeOfSupply);
+  const fromPlace = knownStateCode(placeOfSupply);
+  if (fromPlace) return getStateFromGstin(fromPlace).stateName;
+  const fromCode = knownStateCode(stateCode);
+  if (fromCode) return getStateFromGstin(fromCode).stateName;
   const fromGst = getStateFromGstin(partyGstin);
   if (fromGst.stateName) return fromGst.stateName;
-  if (optionalString(stateCode)) {
-    const mapped = getStateFromGstin(String(stateCode).padStart(2, '0'));
-    return mapped.stateName || null;
-  }
-  return null;
+  return optionalString(placeOfSupply);
 }
 
 function resolveTdsFields({ tdsOnAmtInput, tdsPercentInput, taxableAmount, invoiceValue }) {

@@ -1,0 +1,28 @@
+---
+description: Gaps found in Empire backups, and the repair the next import of any company must run
+alwaysApply: true
+---
+
+# Empire backup lessons (locked)
+
+Every correction below was a hole in an Empire import. The next backup, for this company or any other, must come in already corrected. Do not wipe a live company to retest. Apply the repair to the books that are already there, and keep the same repair on the import path.
+
+When a new hole is found, add it here in the same sitting as the code change, with the series and the column it came from.
+
+1. **Work despatch pending.** WORK REC. BILLS (P7) and every other series whose previous link is a work despatch must consume that challan. Empire stores no challan id. The receipt's CHALLAN column is the job worker's bill number, not our despatch number. Allocate oldest challan first, same party, same quality, only onto the series named by the Transaction Types master. A line that crosses two challans keeps the split in `sourceAllocations`. Previous-year copies (voucher ≥ 100000, or a bill number containing `*`) must not be applied again; the new year's vouchers already bill that work. Check: Bhagwati Fashion pending is **712 pcs** (challan 6 leaves 240 satin, challan 7 leaves 472 frandy). Repair: `repairWorkDespatchLinks`.
+
+2. **State is the GSTIN, not the city.** Empire STATE1 is often the city (SURAT, JAUNPUR). GST state is the first two digits of the GSTIN. A place that is not a real state must not be treated as interstate. City stays in the city field. Repair: `repairPartyStatesFromGstin`.
+
+3. **Sale amount.** Post the full invoice (BILLAMT). `finalamt` is after the bill discount. Do not store `finalamt − taxable` in `shippingCharge` and then post that as the sale. The imported discount is the V1 journal, credited once. A bank-receipt discount credits DISCOUNT A/C only when no same-day V1 already covers it (within ₹1).
+
+4. **Opening balance** (series 00) is the brought-forward figure. Vouchers before 1 April are already inside it. Do not add them again. A March bill's April discount journal stays; the March sale does not.
+
+5. **Outstanding** hides opening journals, bill-tagged VATAV, settled returns, and unadjusted balances that a later receipt already used. O57 sales challans are not invoices.
+
+6. **Bank and cash.** Voucher numbers are per series. Bills, discounts, and unadjusted picks on a receipt must be imported onto that voucher. Do not auto-pick unadjusted payments. Disc % fills Disc Amt from the bill amount. The default bank is the most-used account.
+
+7. **Journals.** The opposite account list must include the imported P&L, trading, and asset heads. A journal whose party is a debtor posts on the customer when the supplier is missing. A new journal party asks to add the account.
+
+8. **Work-bill discount and line amount.** DISCOUNT and billdis can be 0 while VAT was charged on a lower base. Bhagwati job bills are 12% off; recover that percent from gross and tax (`impliedDiscountPercent`) and do not also invent a second discount journal. Keep the imported line amount when it is not pieces × rate (P7 19, 120 pcs, rate 255, Empire amount 30090).
+
+9. **Company-named series** stay out of general pick lists. COMPULSORY LINK stays optional. The pending quantity still has to fall when a receipt was adjusted against a challan.

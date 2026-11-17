@@ -214,7 +214,8 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
             const lace = toNum(row.lace);
             const fresh = row.fresh != null ? toNum(row.fresh) : calcFresh(pcs, plain, sec, lost, lace);
             const rate = toNum(row.rate);
-            const amount = round2(fresh * rate);
+            const storedAmount = toNum(row.amount);
+            const amount = storedAmount > 0 ? round2(storedAmount) : round2(fresh * rate);
             return {
               ...row,
               pcs,

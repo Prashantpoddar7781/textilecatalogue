@@ -147,9 +147,21 @@ export function getStateCodeFromName(stateName) {
   return '';
 }
 
+/** GST state code, or '' when the text is a city or anything else that is not a state. */
+export function knownStateCode(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const digits = raw.replace(/\D/g, '');
+  if (/^\d{1,2}$/.test(raw) || (/^\d{1,2}$/.test(digits) && raw.length <= 3)) {
+    const code = digits.padStart(2, '0').slice(-2);
+    if (GST_STATE_CODES[code]) return code;
+  }
+  return getStateCodeFromName(raw) || '';
+}
+
 export function isInterStateSupply(placeOfSupply, businessState) {
-  const supply = resolveStateKey(placeOfSupply);
-  const business = resolveStateKey(businessState);
+  const supply = knownStateCode(placeOfSupply);
+  const business = knownStateCode(businessState);
   if (!supply || !business) return false;
   return supply !== business;
 }

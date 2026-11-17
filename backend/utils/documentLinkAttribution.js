@@ -18,9 +18,43 @@ export function linesForSource(target, sourceId, {
   linesField = 'lineItems'
 } = {}) {
   const lines = Array.isArray(target?.[linesField]) ? target[linesField] : [];
+  const slices = allocationSlices(lines, lineSourceField, sourceId);
+  if (slices) return slices;
   const tagged = lines.some(line => line && line[lineSourceField]);
   if (tagged) return lines.filter(line => line && line[lineSourceField] === sourceId);
   return target?.[primaryIdField] === sourceId ? lines : [];
+}
+
+/**
+ * A receipt line can cover two challans (112 pcs on one, 8 on the next).
+ * sourceAllocations holds that split. Returns null when this document does not
+ * use allocations, so the single-link path below stays unchanged.
+ */
+function allocationSlices(lines, sourceField, sourceId) {
+  const usesAllocations = lines.some(line =>
+    Array.isArray(line?.sourceAllocations) && line.sourceAllocations.some(alloc => alloc && alloc[sourceField])
+  );
+  if (!usesAllocations) return null;
+  const out = [];
+  for (const line of lines) {
+    const allocs = (Array.isArray(line?.sourceAllocations) ? line.sourceAllocations : [])
+      .filter(alloc => alloc && alloc[sourceField]);
+    if (allocs.length) {
+      for (const alloc of allocs) {
+        if (alloc[sourceField] !== sourceId) continue;
+        out.push({
+          ...line,
+          pcs: Number(alloc.pcs) || 0,
+          mtsQty: Number(alloc.mtsQty) || 0,
+          sourceLineNo: alloc.sourceLineNo,
+          [sourceField]: sourceId
+        });
+      }
+    } else if (line && line[sourceField] === sourceId) {
+      out.push(line);
+    }
+  }
+  return out;
 }
 
 /** True when the document uses per-line source tags rather than the legacy single link. */

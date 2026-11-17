@@ -17,6 +17,8 @@ import { fileURLToPath } from 'url';
 import bcrypt from 'bcryptjs';
 import { PrismaClient } from '@prisma/client';
 import { repairEmpireBankAllocations } from './repairEmpireBankAllocations.mjs';
+import { repairPartyStatesFromGstin, repairWorkDespatchLinks } from './repairEmpireWorkLinks.mjs';
+import { getStateCodeFromName, getStateFromGstin } from '../utils/gstCalculation.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.join(here, '..', '.env') });
@@ -158,6 +160,13 @@ function orderRefOf(bill, simple) {
   const leading = ref.match(/^(\d+)/);
   if (!ref || ref === '0' || (leading && leading[1] === String(simple || ''))) return null;
   return ref.replace(/\*/g, '');
+}
+
+function resolvedPartyState(state, gstin) {
+  const raw = text(state, 80);
+  if (raw && getStateCodeFromName(raw)) return raw;
+  const fromGst = getStateFromGstin(gstin);
+  return fromGst.stateName || raw || null;
 }
 
 function billAmounts(row, lineSum) {
@@ -406,7 +415,7 @@ async function main() {
       email: text(row.EMAIL, 120) || null,
       address: text([row.ADDRESS1, row.ADDRESS2, row.ADDRESS3].filter(Boolean).join(', '), 240) || null,
       city: text(row.CITY1, 80) || null,
-      state: text(row.STATE1 || row.STATION, 80) || null,
+      state: resolvedPartyState(row.STATE1 || row.STATION, gst),
       pincode: text(row.PINNO, 10) || null,
       contact: text(row.CONTACT, 80) || null,
       dhara: num(row.dhara) || null,
@@ -1268,6 +1277,10 @@ async function main() {
   await batches(journals, 80, (rows) => prisma.journalVoucher.createMany({ data: rows }));
   const billLinks = await repairEmpireBankAllocations(prisma, userId, bills);
   console.log(`Bank bill links: ${billLinks.updated} vouchers, ${billLinks.linked} bills linked, ${billLinks.unmatched} without a matching bill`);
+  const partyStates = await repairPartyStatesFromGstin(prisma, userId);
+  const workLinks = await repairWorkDespatchLinks(prisma, userId);
+  console.log(`Party state from GSTIN: ${partyStates.customers} customers, ${partyStates.suppliers} suppliers`);
+  console.log(`Work despatch links: ${workLinks.linked} receipts, ${workLinks.discounts} discounts filled`);
 
   const counts = {
     customers: await prisma.customer.count({ where: { userId } }),

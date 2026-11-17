@@ -6,6 +6,8 @@
 import assert from 'assert';
 import { linesForSource, hasPerLineSources, sourceLineKey, qtySlicesForSalesOrder } from '../utils/documentLinkAttribution.js';
 import { attributeLinesToSources } from '../services/documentLinkEngine.js';
+import { allocateWorkReceipts, impliedDiscountPercent, isPriorYearEmpireCopy } from '../utils/workDespatchAllocation.js';
+import { isInterStateSupply } from '../utils/gstCalculation.js';
 
 let passed = 0;
 function test(name, fn) {
@@ -198,6 +200,116 @@ test('merged same-name line splits pending across both Sales Orders', () => {
   assert.strictEqual(so1.length, 1);
   assert.strictEqual(so1[0].pcs, 8);
   assert.strictEqual(so2[0].pcs, 4);
+});
+
+test('a line split across two challans counts only its own pieces on each', () => {
+  const receipt = {
+    workDespatchId: 'd5',
+    sourceDespatchIds: ['d5', 'd7'],
+    lineItems: [{
+      lineNo: 1,
+      itemName: 'FRANDY FABRIC',
+      pcs: 120,
+      mtsQty: 744,
+      sourceDespatchId: 'd5',
+      sourceAllocations: [
+        { sourceDespatchId: 'd5', sourceLineNo: 1, pcs: 112, mtsQty: 694.4 },
+        { sourceDespatchId: 'd7', sourceLineNo: 1, pcs: 8, mtsQty: 49.6 }
+      ]
+    }]
+  };
+  const on5 = linesForSource(receipt, 'd5');
+  const on7 = linesForSource(receipt, 'd7');
+  assert.strictEqual(on5.length, 1);
+  assert.strictEqual(on5[0].pcs, 112);
+  assert.strictEqual(on7[0].pcs, 8);
+});
+
+console.log('\nBhagwati work pending');
+
+test('current-year receipts leave 712 pcs pending and the March copy does not close the challan twice', () => {
+  const desp = (id, challan, date, item, pcs, mts) => ({
+    id,
+    challanNo: challan,
+    despatchDate: date,
+    partyName: 'BHAGWATI FASHION',
+    transactionType: 'WORK DESP CHALLAN',
+    status: 'posted',
+    totalPcs: pcs,
+    totalMts: mts,
+    lineItems: [{ lineNo: 1, itemName: item, pcs, mtsQty: mts }]
+  });
+  const line = (item, pcs, mts) => ({ itemName: item, pcs, mtsQty: mts });
+  const rec = (id, voucher, bill, date, lines) => ({
+    id,
+    voucherNo: voucher,
+    billNo: bill,
+    receiptDate: date,
+    partyName: 'BHAGWATI FASHION',
+    transactionType: 'WORK REC. BILLS',
+    status: 'posted',
+    remarks: `[E:P7:${voucher}]`,
+    lineItems: lines
+  });
+  const despatches = [
+    desp('d99', '99*', '2026-03-10', 'FRANDY FABRIC', 480, 3024),
+    desp('d4', '4', '2026-09-10', 'SATIN FRANDY', 480, 2976),
+    desp('d5', '5', '2026-09-24', 'FRANDY FABRIC', 480, 2976),
+    desp('d6', '6', '2026-09-28', 'SATIN FRANDY', 360, 2232),
+    desp('d7', '7', '2026-10-03', 'FRANDY FABRIC', 480, 2976)
+  ];
+  const receipts = [
+    rec('r105', 100116, '105*', '2026-03-31', [line('FRANDY FABRIC', 480, 3024)]),
+    rec('r3', 3, '13', '2026-04-13', [line('FRANDY FABRIC', 120, 756), line('FRANDY FABRIC', 120, 756), line('FRANDY FABRIC', 120, 756)]),
+    rec('r4', 4, '16', '2026-04-16', [line('FRANDY FABRIC', 120, 756)]),
+    rec('r15', 15, '42', '2026-10-03', [line('SATIN FRANDY', 120, 744), line('SATIN FRANDY', 120, 744), line('SATIN FRANDY', 120, 744), line('SATIN FRANDY', 120, 744)]),
+    rec('r17', 17, '51', '2026-10-17', [line('FRANDY FABRIC', 120, 744)]),
+    rec('r18', 18, '53', '2026-10-20', [line('FRANDY FABRIC', 120, 744)]),
+    rec('r19', 19, '54', '2026-10-29', [line('FRANDY FABRIC', 120, 744), line('FRANDY FABRIC', 4, 24.8), line('FRANDY FABRIC', 3, 18.6), line('FRANDY FABRIC', 1, 6.2)]),
+    rec('r20', 20, '57', '2026-11-05', [line('SATIN FRANDY', 120, 744), line('FRANDY FABRIC', 120, 744)])
+  ];
+  assert.strictEqual(isPriorYearEmpireCopy(receipts[0]), true);
+  const updates = allocateWorkReceipts({
+    despatches,
+    receipts,
+    sourceSeriesFor: () => ['WORK DESP CHALLAN']
+  });
+  assert.strictEqual(updates.some(row => row.id === 'r105'), false);
+  const byId = new Map(updates.map(row => [row.id, row]));
+  const pendingOf = (despatchId) => {
+    const despatch = despatches.find(row => row.id === despatchId);
+    let taken = 0;
+    for (const receipt of receipts) {
+      const linked = byId.get(receipt.id) || receipt;
+      for (const row of linesForSource(linked, despatchId)) taken += Number(row.pcs) || 0;
+    }
+    return Math.max(0, despatch.totalPcs - taken);
+  };
+  assert.strictEqual(pendingOf('d99'), 0);
+  assert.strictEqual(pendingOf('d4'), 0);
+  assert.strictEqual(pendingOf('d5'), 0);
+  assert.strictEqual(pendingOf('d6'), 240);
+  assert.strictEqual(pendingOf('d7'), 472);
+  const total = ['d99', 'd4', 'd5', 'd6', 'd7'].reduce((sum, id) => sum + pendingOf(id), 0);
+  assert.strictEqual(total, 712);
+});
+
+test('a city in the state field is not treated as another state', () => {
+  assert.strictEqual(isInterStateSupply('SURAT', 'GUJARAT'), false);
+  assert.strictEqual(isInterStateSupply('GUJARAT', 'GUJARAT'), false);
+  assert.strictEqual(isInterStateSupply('UTTAR PRADESH', 'GUJARAT'), true);
+});
+
+test('job-bill tax on a lower base recovers the 12 percent discount', () => {
+  const pct = impliedDiscountPercent({
+    grossAmount: 61200,
+    gstRate: 5,
+    cgstAmount: 1346.4,
+    sgstAmount: 1346.4,
+    igstAmount: 0,
+    discountPercent: 0
+  });
+  assert.strictEqual(pct, 12);
 });
 
 console.log(`\n${passed} checks passed${process.exitCode ? ' (with failures)' : ''}`);
