@@ -166,6 +166,26 @@ export function isInterStateSupply(placeOfSupply, businessState) {
   return supply !== business;
 }
 
+/** Local GST, Interstate GST, or Non GST. Empty when the voucher has not chosen. */
+export function canonicalGstChoice(value) {
+  const text = String(value || '').trim().toLowerCase();
+  if (!text || text === 'none' || text === '-') return '';
+  if (text.includes('non')) return 'non';
+  if (text.includes('inter') || text.includes('central') || text === 'igst') return 'inter';
+  if (text.includes('local') || text.includes('cgst') || text.includes('sgst')) return 'local';
+  return '';
+}
+
+/** Place used only for the tax split. The saved place of supply stays the party's own state. */
+function taxPlaceForChoice(choice, placeOfSupply, businessState) {
+  if (choice === 'local') return businessState || placeOfSupply;
+  if (choice === 'inter' && !isInterStateSupply(placeOfSupply, businessState)) {
+    const business = knownStateCode(businessState);
+    return business === '27' ? 'Gujarat' : 'Maharashtra';
+  }
+  return placeOfSupply;
+}
+
 export function calculateGstBreakup({
   taxableAmount,
   gstRate,
@@ -242,10 +262,11 @@ export function calculateGreyPurchaseTotals(input) {
   const otherLessBefore = roundMoney(input.otherLessBefore);
   const taxableAmount = roundMoney(taxableBeforeOther + otherAddBefore - otherLessBefore);
 
+  const choice = canonicalGstChoice(input.gstType);
   const gst = calculateGstBreakup({
     taxableAmount,
-    gstRate: input.gstRate,
-    placeOfSupply: input.placeOfSupply,
+    gstRate: choice === 'non' ? 0 : input.gstRate,
+    placeOfSupply: taxPlaceForChoice(choice, input.placeOfSupply, input.businessState),
     businessState: input.businessState
   });
 
@@ -257,11 +278,17 @@ export function calculateGreyPurchaseTotals(input) {
   const fromGstin = getStateFromGstin(input.partyGstin);
   let stateCode = String(input.stateCode || fromGstin.stateCode || getStateCodeFromName(input.placeOfSupply) || '');
   if (stateCode) stateCode = stateCode.padStart(2, '0').slice(-2);
-  const displayGstType = gst.gstType === 'CGST+SGST'
-    ? 'Local Tax'
-    : gst.gstType === 'IGST'
-      ? 'Central Tax'
-      : gst.gstType;
+  const displayGstType = choice === 'non'
+    ? 'Non GST'
+    : choice === 'local'
+      ? 'Local GST'
+      : choice === 'inter'
+        ? 'Interstate GST'
+        : gst.gstType === 'CGST+SGST'
+          ? 'Local Tax'
+          : gst.gstType === 'IGST'
+            ? 'Central Tax'
+            : gst.gstType;
 
   return {
     grossAmount,

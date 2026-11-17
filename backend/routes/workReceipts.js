@@ -113,6 +113,7 @@ function computeReceiptTotals(reqBody, lineItems, ctx, despatch = null) {
     otherAddAfter: 0,
     otherLessAfter: 0,
     gstRate: reqBody.gstRate ?? typeGstDefaults(optionalString(reqBody.transactionType), ctx).gstRate,
+    gstType: reqBody.gstType,
     placeOfSupply,
     businessState: ctx.businessState,
     partyGstin,

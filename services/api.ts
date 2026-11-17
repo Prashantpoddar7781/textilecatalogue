@@ -2203,6 +2203,7 @@ export const workDespatchesApi = {
   getMeta: async () => {
     return request<{
       companyName: string;
+      businessState?: string | null;
       nextChallanNo: number;
       nextSrNo: number;
       nextByType?: Record<string, number>;

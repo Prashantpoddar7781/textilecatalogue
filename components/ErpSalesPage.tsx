@@ -16,6 +16,8 @@ import {
   postingDiscountAccount
 } from '../constants/erpTransactionPostingRules';
 import { AccountsInformationDialog, AddPartyConfirmDialog } from './AccountsInformationDialog';
+import { GstTypeSelect, useMissingGstPrompt } from './GstTypeField';
+import { gstModeFromType, gstTypeFromGstin, isNonGstType } from '../utils/partyGst';
 import { DeleteEntryButton } from './DeleteEntryButton';
 import { ErpFormShell } from './ErpFormShell';
 import { EwayBillDialog } from './EwayBillDialog';
@@ -81,6 +83,8 @@ function plainBillNo(counter?: number | string | null) {
   return Number.isFinite(numeric) && numeric > 0 ? String(Math.trunc(numeric)) : String(counter);
 }
 
+let salesGstMode: 'auto' | 'local' | 'interstate' | 'none' = 'auto';
+
 function calcLine(input: SalesLineItem, businessState: string, partyState: string): SalesLineItem {
   const pcs = toNum(input.pcs);
   const cut = toNum(input.cut);
@@ -94,9 +98,13 @@ function calcLine(input: SalesLineItem, businessState: string, partyState: strin
   const amount = computed !== 0 ? computed : stored;
   const discountAmount = round2(amount * toNum(input.discountPercent) / 100);
   const taxableAmount = round2(amount - discountAmount + toNum(input.manualAddLess));
-  const gstRate = toNum(input.gstRate);
+  const gstRate = salesGstMode === 'none' ? 0 : toNum(input.gstRate);
   const taxAmount = round2(taxableAmount * gstRate / 100);
-  const interState = isInterStateSupply(partyState, businessState);
+  const interState = salesGstMode === 'interstate'
+    ? true
+    : salesGstMode === 'local'
+      ? false
+      : isInterStateSupply(partyState, businessState);
   return {
     ...input,
     pcs,
@@ -107,6 +115,7 @@ function calcLine(input: SalesLineItem, businessState: string, partyState: strin
     discountAmount,
     taxableAmount,
     taxAmount,
+    gstRate,
     cgstRate: interState ? 0 : gstRate / 2,
     sgstRate: interState ? 0 : gstRate / 2,
     igstRate: interState ? gstRate : 0,
@@ -256,6 +265,9 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [success, setSuccess] = useState('');
   const [companyName, setCompanyName] = useState('');
   const [businessState, setBusinessState] = useState('');
+  const [gstChoice, setGstChoice] = useState('');
+  const [gstTouched, setGstTouched] = useState(false);
+  const { askIfMissing, dialog: missingGstDialog } = useMissingGstPrompt();
   const [companyHsnCode, setCompanyHsnCode] = useState('5407');
   const [companyGstRate, setCompanyGstRate] = useState(5);
   const [defaultHsnCode, setDefaultHsnCode] = useState(
@@ -342,7 +354,9 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
     return d;
   };
 
-  const gstType = gstTypeLabel(state, businessState);
+  const autoGstType = gstTypeFromGstin(partyGstin, businessState);
+  const gstType = gstTouched ? gstChoice : (autoGstType || gstTypeLabel(state, businessState));
+  salesGstMode = gstModeFromType(gstTouched ? gstChoice : autoGstType);
   const gstDocumentType = getGstDocumentType(transactionType);
   // E-way applies to GST documents that move goods, per the Transaction Types master.
   const canGenerateEway = isBillEntry && Boolean(gstDocumentType);
@@ -730,6 +744,10 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
     const customer = customers.find(row => row.id === id);
     if (!customer) return;
     const partyChanged = customer.organizationName.trim().toLowerCase() !== partyName.trim().toLowerCase();
+    const auto = gstTypeFromGstin(customer.gstNumber, businessState);
+    salesGstMode = gstModeFromType(auto);
+    setGstTouched(false);
+    setGstChoice(auto);
     setCustomerId(id);
     setPartyName(customer.organizationName);
     setPartyGstin(customer.gstNumber || '');
@@ -756,6 +774,17 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
     }
     const customer = customers.find(row => row.organizationName.toLowerCase() === trimmed.toLowerCase());
     if (customer) {
+      if (!String(customer.gstNumber || '').trim()) {
+        askIfMissing(
+          { name: customer.organizationName, gstNumber: customer.gstNumber },
+          () => chooseCustomer(customer.id),
+          () => {
+            setPartyName('');
+            setCustomerId('');
+          }
+        );
+        return;
+      }
       chooseCustomer(customer.id);
       return;
     }
@@ -1312,7 +1341,23 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
                 />
               </label>
               <label><span className={labelClass}>Date</span><input type="date" className={inputClass} value={orderDate} readOnly={invoiceLocked} onChange={e => setOrderDate(e.target.value)} /></label>
-              <label><span className={labelClass}>GST Type</span><input className={readonlyClass} value={gstType} readOnly /></label>
+              <label>
+                <span className={labelClass}>GST Type</span>
+                <GstTypeSelect
+                  className={inputClass}
+                  value={gstType}
+                  onChange={value => {
+                    setGstTouched(true);
+                    setGstChoice(value);
+                    salesGstMode = gstModeFromType(value);
+                    const seriesRate = getGstDefaultsForTransactionType(transactionType, companyGstRate, companyHsnCode).gstRate;
+                    setLineItems(prev => prev.map(line => calcLine({
+                      ...line,
+                      gstRate: isNonGstType(value) ? 0 : (toNum(line.gstRate) || seriesRate)
+                    }, businessState, state)));
+                  }}
+                />
+              </label>
               <label className="md:col-span-2">
                 <span className={labelClass}>GST Document{gstReturn !== 'NONE' ? ` · ${gstReturn}` : ''}</span>
                 <input className={readonlyClass} value={gstDocumentType || '—'} readOnly />
@@ -1863,6 +1908,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
         </div>
       )}
 
+      {missingGstDialog}
       <AddPartyConfirmDialog
         open={showAddConfirm}
         partyName={pendingNewParty}

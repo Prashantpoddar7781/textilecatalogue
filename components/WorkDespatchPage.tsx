@@ -5,6 +5,8 @@ import { getGstDefaultsForTransactionType } from '../constants/erpTransactionTyp
 import { workDespatchesApi } from '../services/api';
 import { AccountParty, ErpSession, WorkLineItem } from '../types';
 import { AccountsInformationDialog, AddPartyConfirmDialog } from './AccountsInformationDialog';
+import { GstTypeSelect, useMissingGstPrompt } from './GstTypeField';
+import { gstTypeFromGstin, isNonGstType } from '../utils/partyGst';
 import { DeleteEntryButton } from './DeleteEntryButton';
 import { ErpFormShell } from './ErpFormShell';
 import { ErpSaveButton } from './ErpSaveButton';
@@ -53,6 +55,9 @@ export const WorkDespatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [showAccountsDialog, setShowAccountsDialog] = useState(false);
   const [allowUnknownParty, setAllowUnknownParty] = useState(false);
   const [companyName, setCompanyName] = useState('');
+  const [businessState, setBusinessState] = useState('');
+  const gstTouched = useRef(false);
+  const { askIfMissing, dialog: missingGstDialog } = useMissingGstPrompt();
   const [transactionTypes, setTransactionTypes] = useState<string[]>([]);
   const [workTypes, setWorkTypes] = useState<string[]>([]);
   const [units, setUnits] = useState<string[]>(['PCS', 'MTS']);
@@ -108,6 +113,7 @@ export const WorkDespatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
         const meta = await workDespatchesApi.getMeta();
         if (cancelled) return;
         setCompanyName(meta.companyName || '');
+        setBusinessState(meta.businessState || '');
         const seriesNext = meta.nextByType || {};
         setNextByType(seriesNext);
         setTransactionTypes(meta.transactionTypes || []);
@@ -137,17 +143,42 @@ export const WorkDespatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
     return () => { cancelled = true; };
   }, [urlEditId]);
 
-  const applyParty = (name: string) => {
-    setPartyName(name);
-    setAllowUnknownParty(false);
-    const match = parties.find(p => p.name.toLowerCase() === name.trim().toLowerCase());
-    if (!match) return;
-    if (match.gstNumber) setPartyGstin(match.gstNumber);
+  const applyGstFromNumber = (gstin: string, force = false) => {
+    if (!force && gstTouched.current && isNonGstType(gstType)) return;
+    const next = gstTypeFromGstin(gstin, businessState);
+    if (!next) {
+      if (force) setGstType('');
+      return;
+    }
+    gstTouched.current = false;
+    setGstType(next);
+  };
+
+  const fillParty = (match: { gstNumber?: string | null; state?: string | null; brokerName?: string | null }) => {
+    setPartyGstin(match.gstNumber || '');
     if (match.state) {
       setPlaceOfSupply(match.state);
       setStateCode(match.state);
     }
     if (match.brokerName) setBrokerName(match.brokerName);
+    applyGstFromNumber(match.gstNumber || '', true);
+  };
+
+  const applyParty = (name: string) => {
+    setPartyName(name);
+    setAllowUnknownParty(false);
+    const match = parties.find(p => p.name.toLowerCase() === name.trim().toLowerCase());
+    if (!match) return;
+    if (!String(match.gstNumber || '').trim()) {
+      askIfMissing(match, () => fillParty(match), () => {
+        setPartyName('');
+        setPartyGstin('');
+        setGstType('');
+        gstTouched.current = false;
+      });
+      return;
+    }
+    fillParty(match);
   };
 
   const promptIfNewParty = (name: string) => {
@@ -433,7 +464,17 @@ export const WorkDespatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
                 <datalist id="work-desp-parties">{parties.map(p => <option key={p.name} value={p.name} />)}</datalist>
               </label>
               <label><span className={labelClass}>State</span><input className={inputClass} value={stateCode} onChange={e => setStateCode(e.target.value)} /></label>
-              <label><span className={labelClass}>GST Type</span><input className={inputClass} value={gstType} onChange={e => setGstType(e.target.value)} /></label>
+              <label>
+                <span className={labelClass}>GST Type</span>
+                <GstTypeSelect
+                  className={inputClass}
+                  value={gstType}
+                  onChange={value => {
+                    gstTouched.current = true;
+                    setGstType(value);
+                  }}
+                />
+              </label>
               <label>
                 <span className={labelClass}>Broker</span>
                 <MasterNameInput
@@ -452,7 +493,18 @@ export const WorkDespatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
                   {workTypes.map(t => <option key={t} value={t}>{t}</option>)}
                 </select>
               </label>
-              <label><span className={labelClass}>Party GSTIN</span><input className={inputClass} value={partyGstin} onChange={e => setPartyGstin(e.target.value)} /></label>
+              <label>
+                <span className={labelClass}>Party GSTIN</span>
+                <input
+                  className={inputClass}
+                  value={partyGstin}
+                  onChange={e => {
+                    const next = e.target.value;
+                    setPartyGstin(next);
+                    applyGstFromNumber(next);
+                  }}
+                />
+              </label>
               <label><span className={labelClass}>HSN</span><input className={inputClass} value={hsnCode} onChange={e => setHsnCode(e.target.value)} /></label>
               <label><span className={labelClass}>LR / AWB</span><input className={inputClass} value={lrNo} onChange={e => setLrNo(e.target.value)} /></label>
               <label><span className={labelClass}>E-Way Bill</span><input className={inputClass} value={ewayBillNo} onChange={e => setEwayBillNo(e.target.value)} /></label>
@@ -540,6 +592,7 @@ export const WorkDespatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
         </ErpFormShell>
       </main>
 
+      {missingGstDialog}
       <AddPartyConfirmDialog
         open={showAddConfirm}
         partyName={pendingNewParty}

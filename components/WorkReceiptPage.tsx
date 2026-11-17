@@ -6,6 +6,8 @@ import { workReceiptsApi } from '../services/api';
 import { resolvePartyPan, suggestTdsPercentFromPan } from '../utils/tds';
 import { AccountParty, ErpSession, LinkedSourceDocument, WorkLineItem } from '../types';
 import { AccountsInformationDialog, AddPartyConfirmDialog } from './AccountsInformationDialog';
+import { GstTypeSelect, useMissingGstPrompt } from './GstTypeField';
+import { gstTypeFromGstin, isNonGstType } from '../utils/partyGst';
 import { DeleteEntryButton } from './DeleteEntryButton';
 import { ErpFormShell } from './ErpFormShell';
 import { ErpSaveButton } from './ErpSaveButton';
@@ -100,6 +102,9 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [allowUnknownParty, setAllowUnknownParty] = useState(false);
   const [newPartyDetails, setNewPartyDetails] = useState<PhotoPartyDetails | null>(null);
   const [companyName, setCompanyName] = useState('');
+  const [businessState, setBusinessState] = useState('');
+  const gstTouched = useRef(false);
+  const { askIfMissing, dialog: missingGstDialog } = useMissingGstPrompt();
   const [transactionTypes, setTransactionTypes] = useState<string[]>([]);
   const [parties, setParties] = useState<Array<{ name: string; gstNumber?: string | null; state?: string | null; brokerName?: string | null; suggestedTdsPercent?: number | null; dhara?: number | null; graceDays?: number | null; interestRate?: number | null }>>([]);
   const [transactionType, setTransactionType] = useState('WORK REC. BILL');
@@ -189,6 +194,7 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
         const meta = await workReceiptsApi.getMeta();
         if (cancelled) return;
         setCompanyName(meta.companyName || '');
+        setBusinessState(meta.businessState || '');
         const seriesNext = meta.nextByType || {};
         setNextByType(seriesNext);
         setTransactionTypes(meta.transactionTypes || []);
@@ -242,14 +248,42 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
     setTdsPercent(pct != null ? String(pct) : '');
   };
 
-  const applyPartyDefaults = (name: string) => {
-    const match = parties.find(p => p.name.toLowerCase() === name.trim().toLowerCase());
-    if (!match) return;
-    if (match.gstNumber) setPartyGstin(match.gstNumber);
+  const applyGstFromNumber = (gstin: string, force = false) => {
+    if (!force && gstTouched.current && isNonGstType(gstType)) return;
+    const next = gstTypeFromGstin(gstin, businessState);
+    if (!next) {
+      if (force) setGstType('');
+      return;
+    }
+    gstTouched.current = false;
+    setGstType(next);
+    if (toNum(gstRate) === 0) {
+      setGstRate(String(getGstDefaultsForTransactionType(transactionType, companyGstRate, companyHsnCode).gstRate));
+    }
+  };
+
+  const fillPartyDefaults = (match: { name: string; gstNumber?: string | null; state?: string | null; brokerName?: string | null }) => {
+    setPartyGstin(match.gstNumber || '');
     if (match.brokerName) setBrokerName(match.brokerName);
     if (match.state) setPlaceOfSupply(match.state);
     if (!isEditMode) setDiscountPercent(String(partyDhara(match) || ''));
-    applyTdsDefaults(transactionType, { party: name, gstin: match.gstNumber });
+    applyTdsDefaults(transactionType, { party: match.name, gstin: match.gstNumber });
+    applyGstFromNumber(match.gstNumber || '', true);
+  };
+
+  const applyPartyDefaults = (name: string) => {
+    const match = parties.find(p => p.name.toLowerCase() === name.trim().toLowerCase());
+    if (!match) return;
+    if (!String(match.gstNumber || '').trim()) {
+      askIfMissing(match, () => fillPartyDefaults(match), () => {
+        setPartyName('');
+        setPartyGstin('');
+        setGstType('');
+        gstTouched.current = false;
+      });
+      return;
+    }
+    fillPartyDefaults(match);
   };
 
   const promptIfNewParty = (name: string) => {
@@ -307,6 +341,7 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
     setPlaceOfSupply('');
     setStateCode('');
     setGstType('');
+    gstTouched.current = false;
     setChallanNo('');
     setReceiptDate(today());
     setBrokerName('');
@@ -357,6 +392,7 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
     setPlaceOfSupply(entry.placeOfSupply || '');
     setStateCode(entry.stateCode || '');
     setGstType(entry.gstType || '');
+    gstTouched.current = isNonGstType(entry.gstType);
     setChallanNo(entry.challanNo || entry.workDespatch?.challanNo || '');
     setReceiptDate(entry.receiptDate ? String(entry.receiptDate).slice(0, 10) : today());
     setBrokerName(entry.brokerName || '');
@@ -629,6 +665,7 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
           const { totals } = await workReceiptsApi.calculate({
             lineItems: lines,
             gstRate: toNum(gstRate),
+            gstType,
             partyGstin,
             placeOfSupply,
             stateCode,
@@ -654,7 +691,10 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
           if (!tdsOnAmtTouched && Number(totals.taxableAmount) > 0) {
             setTdsOnAmt(String(totals.tdsOnAmt ?? totals.taxableAmount));
           }
-          setGstType(String(totals.gstTypeLabel || totals.gstType || ''));
+          if (!gstTouched.current) {
+            const auto = gstTypeFromGstin(partyGstin, businessState);
+            if (auto) setGstType(auto);
+          }
           if (totals.placeOfSupply) setPlaceOfSupply(String(totals.placeOfSupply));
           if (totals.stateCode) setStateCode(String(totals.stateCode));
         } catch {
@@ -667,7 +707,7 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
       })();
     }, 300);
     return () => clearTimeout(timer);
-  }, [lines, gstRate, partyGstin, placeOfSupply, stateCode, discountPercent, otherLess, otherAdd, tdsPercent, tdsOnAmt, tdsOnAmtTouched]);
+  }, [lines, gstRate, gstType, partyGstin, placeOfSupply, stateCode, discountPercent, otherLess, otherAdd, tdsPercent, tdsOnAmt, tdsOnAmtTouched, businessState]);
 
   // Instant TDS when On Amt / % / bill change (same as mill receipt)
   useEffect(() => {
@@ -708,6 +748,7 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
     remarks: remarks || undefined,
     billNo: billNo || undefined,
     gstRate: toNum(gstRate),
+    gstType: gstType || undefined,
     discountPercent: toNum(discountPercent),
     otherLess: toNum(otherLess),
     otherAdd: toNum(otherAdd),
@@ -891,8 +932,33 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
                 />
               </label>
               <label><span className={labelClass}>Vehicle No.</span><input className={inputClass} value={vehicleNo} onChange={e => setVehicleNo(e.target.value)} /></label>
-              <label><span className={labelClass}>Party GSTIN</span><input className={inputClass} value={partyGstin} onChange={e => setPartyGstin(e.target.value)} /></label>
-              <label><span className={labelClass}>GST Type</span><input className={readonlyClass} value={gstType || '-'} readOnly /></label>
+              <label>
+                <span className={labelClass}>Party GSTIN</span>
+                <input
+                  className={inputClass}
+                  value={partyGstin}
+                  onChange={e => {
+                    const next = e.target.value;
+                    setPartyGstin(next);
+                    applyGstFromNumber(next);
+                  }}
+                />
+              </label>
+              <label>
+                <span className={labelClass}>GST Type</span>
+                <GstTypeSelect
+                  className={inputClass}
+                  value={gstType}
+                  onChange={value => {
+                    gstTouched.current = true;
+                    setGstType(value);
+                    if (isNonGstType(value)) setGstRate('0');
+                    else if (toNum(gstRate) === 0) {
+                      setGstRate(String(getGstDefaultsForTransactionType(transactionType, companyGstRate, companyHsnCode).gstRate));
+                    }
+                  }}
+                />
+              </label>
               <label className="md:col-span-2">
                 <span className={labelClass}>GST Document{gstReturn !== 'NONE' ? ` · ${gstReturn}` : ''}{itcEligibility ? ` · ITC ${itcEligibility}` : ''}</span>
                 <input className={readonlyClass} value={gstDocumentType || '—'} readOnly />
@@ -1180,6 +1246,7 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
         </div>
       )}
 
+      {missingGstDialog}
       <AddPartyConfirmDialog
         open={showAddConfirm}
         partyName={pendingNewParty}

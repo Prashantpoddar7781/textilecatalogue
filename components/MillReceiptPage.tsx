@@ -5,6 +5,8 @@ import { getGstDocumentType, getItcEligibility, gstReturnSection, postingDiscoun
 import { getGstDefaultsForTransactionType } from '../constants/erpTransactionTypes';
 import { AccountParty, ErpSession, MillPendingDispatch, MillReceipt, MillReceiptTakaRow } from '../types';
 import { AccountsInformationDialog, AddPartyConfirmDialog } from './AccountsInformationDialog';
+import { GstTypeSelect, useMissingGstPrompt } from './GstTypeField';
+import { isNonGstType } from '../utils/partyGst';
 import { DeleteEntryButton } from './DeleteEntryButton';
 import { ErpFormShell } from './ErpFormShell';
 import { ErpSaveButton } from './ErpSaveButton';
@@ -292,6 +294,7 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
         otherLess: toNum(otherLess),
         otherAdd: toNum(otherAdd),
         gstRate: toNum(gstRate),
+        gstType: gstTypeLabel,
         millGstin,
         placeOfSupply,
         stateCode,
@@ -317,7 +320,7 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
     } catch {
       // keep local values
     }
-  }, [lines.length, lineTotals.job, lineTotals.rec, recMts, jobRate, jobAmount, rdLessAddAmt, grossAmount, discountPercent, otherLess, otherAdd, gstRate, millGstin, placeOfSupply, stateCode, tdsOnAmt, tdsPercent, tdsOnAmtTouched, isReturn]);
+  }, [lines.length, lineTotals.job, lineTotals.rec, recMts, jobRate, jobAmount, rdLessAddAmt, grossAmount, discountPercent, otherLess, otherAdd, gstRate, gstTypeLabel, millGstin, placeOfSupply, stateCode, tdsOnAmt, tdsPercent, tdsOnAmtTouched, isReturn]);
 
   useEffect(() => {
     const timer = setTimeout(() => { void recalcGst(); }, 300);
@@ -456,6 +459,7 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
   }, [editId, isEditMode]);
 
   const [pendingNewParty, setPendingNewParty] = useState('');
+  const { askIfMissing, dialog: missingGstDialog } = useMissingGstPrompt();
   const [showAddConfirm, setShowAddConfirm] = useState(false);
   const [showAccountsDialog, setShowAccountsDialog] = useState(false);
   const [newPartyDetails, setNewPartyDetails] = useState<PhotoPartyDetails | null>(null);
@@ -507,11 +511,18 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
     if (!trimmed) return;
     const match = millParties.find(m => m.name.toLowerCase() === trimmed.toLowerCase());
     if (match) {
-      if (match.gstNumber && !millGstin) setMillGstin(match.gstNumber);
-      if (!tdsPercentTouched) {
-        const pct = resolveDefaultTdsPercent(entryType, match.suggestedTdsPercent);
-        setTdsPercent(pct != null ? String(pct) : '');
+      const applyMatch = () => {
+        if (match.gstNumber && !millGstin) setMillGstin(match.gstNumber);
+        if (!tdsPercentTouched) {
+          const pct = resolveDefaultTdsPercent(entryType, match.suggestedTdsPercent);
+          setTdsPercent(pct != null ? String(pct) : '');
+        }
+      };
+      if (!String(match.gstNumber || '').trim()) {
+        askIfMissing(match, applyMatch, () => setMillName(''));
+        return;
       }
+      applyMatch();
       return;
     }
     setPendingNewParty(trimmed);
@@ -715,6 +726,7 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
         otherLess: isReturn ? 0 : toNum(otherLess),
         otherAdd: isReturn ? 0 : toNum(otherAdd),
         gstRate: toNum(gstRate),
+        gstType: gstTypeLabel || undefined,
         tdsOnAmt: effectiveTdsOn,
         tdsOnAmtManual: tdsOnAmtTouched,
         tdsPercent: effectiveTdsPct,
@@ -901,7 +913,17 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
               </div>
               <div>
                 <label className={labelClass}>GST Type</label>
-                <input className={readonlyClass} value={gstTypeLabel || '-'} readOnly />
+                <GstTypeSelect
+                  className={inputClass}
+                  value={gstTypeLabel}
+                  onChange={value => {
+                    setGstTypeLabel(value);
+                    if (isNonGstType(value)) setGstRate('0');
+                    else if (toNum(gstRate) === 0) {
+                      setGstRate(String(getGstDefaultsForTransactionType(entryType).gstRate));
+                    }
+                  }}
+                />
               </div>
               <div>
                 <label className={labelClass}>GST Document{gstReturn !== 'NONE' ? ` · ${gstReturn}` : ''}{itcEligibility ? ` · ITC ${itcEligibility}` : ''}</label>
@@ -1405,6 +1427,7 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
         onApply={applyTakas}
       />
 
+      {missingGstDialog}
       <AddPartyConfirmDialog
         open={showAddConfirm}
         partyName={pendingNewParty}

@@ -7,6 +7,8 @@ import { greyPurchasesApi, purchasesApi, salesOrdersApi } from '../services/api'
 import { isWrongGstNumber, normalizeGstNumber } from '../services/gstValidation';
 import { AccountParty, ErpSession, GreyPurchaseLine, GreyTakaDetailRow, SalesItemMaster, Supplier } from '../types';
 import { AccountsInformationDialog, AddPartyConfirmDialog } from './AccountsInformationDialog';
+import { GstTypeSelect, useMissingGstPrompt } from './GstTypeField';
+import { gstTypeFromGstin, isNonGstType } from '../utils/partyGst';
 import { ErpPageBack } from './ErpPageBack';
 import { PhotoEntryButton } from './PhotoEntryButton';
 import { PhotoExtraction } from '../services/api';
@@ -59,6 +61,7 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [partyGstin, setPartyGstin] = useState('');
   const [partyMsme, setPartyMsme] = useState('');
   const [gstFromMaster, setGstFromMaster] = useState(false);
+  const { askIfMissing, dialog: missingGstDialog } = useMissingGstPrompt();
   const [quality, setQuality] = useState('');
   const [srNo, setSrNo] = useState('1');
   const [typeBillNumber, setTypeBillNumber] = useState<number | null>(null);
@@ -266,18 +269,14 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
     setShowAddConfirm(true);
   };
 
-  const applyParty = (supplier: Supplier | null) => {
-    if (!supplier) {
-      setSupplierId('');
-      setGstFromMaster(false);
-      return;
-    }
+  const commitParty = (supplier: Supplier) => {
     setSupplierId(supplier.id);
     setPartyName(supplier.name);
     if (supplier.gstNumber) {
       setPartyGstin(supplier.gstNumber);
       setGstFromMaster(true);
       const code = supplier.gstNumber.replace(/[^0-9A-Za-z]/g, '').slice(0, 2);
+      setGstTypeLabel(gstTypeFromGstin(supplier.gstNumber, businessState));
       setStateCode(code);
       const matched = stateCodes.find(s => s.code === code);
       if (matched) setPlaceOfSupply(matched.name);
@@ -292,6 +291,24 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
     }
     if (supplier.msmeType) setPartyMsme(supplier.msmeType);
     if (!isEditMode) setDiscountPercent(String(partyDhara(supplier) || ''));
+  };
+
+  const applyParty = (supplier: Supplier | null) => {
+    if (!supplier) {
+      setSupplierId('');
+      setGstFromMaster(false);
+      return;
+    }
+    if (!String(supplier.gstNumber || '').trim()) {
+      askIfMissing(supplier, () => commitParty(supplier), () => {
+        setPartyName('');
+        setSupplierId('');
+        setPartyGstin('');
+        setGstFromMaster(false);
+      });
+      return;
+    }
+    commitParty(supplier);
   };
 
   const applyPhoto = (x: PhotoExtraction) => {
@@ -380,6 +397,7 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
         otherAddAfter: toNum(otherAddAfter),
         otherLessAfter: toNum(otherLessAfter),
         gstRate: toNum(gstRate),
+        gstType: gstTypeLabel,
         placeOfSupply,
         stateCode,
         partyGstin,
@@ -403,7 +421,7 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
     }
   }, [
     discountAmount, discountPercent, grossAmount, gstRate, otherAddAfter, otherAddBefore,
-    otherLessAfter, otherLessBefore, partyGstin, placeOfSupply, stateCode
+    otherLessAfter, otherLessBefore, partyGstin, placeOfSupply, stateCode, gstTypeLabel
   ]);
 
   useEffect(() => {
@@ -473,6 +491,7 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
         placeOfSupply,
         stateCode,
         gstRate: toNum(gstRate),
+        gstType: gstTypeLabel || undefined,
         paid,
         paidDate: paidDate || undefined,
         despatchMts: toNum(despatchMts),
@@ -521,7 +540,7 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
     }
   };
 
-  const isLocal = gstTypeLabel === 'Local Tax' || gstTypeLabel === 'CGST+SGST';
+  const isLocal = !/inter|central|igst/i.test(gstTypeLabel);
 
   return (
     <div className="min-h-screen bg-[#F6F7FB]">
@@ -789,7 +808,17 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
                 </label>
                 <label>
                   <span className={labelClass}>5. GST Type</span>
-                  <input className={calcInputClass} readOnly value={gstTypeLabel || '-'} />
+                  <GstTypeSelect
+                    className={calcInputClass}
+                    value={gstTypeLabel}
+                    onChange={value => {
+                      setGstTypeLabel(value);
+                      if (isNonGstType(value)) setGstRate('0');
+                      else if (toNum(gstRate) === 0) {
+                        setGstRate(String(getGstDefaultsForTransactionType(GREY_TYPE, 5, '5407').gstRate || 5));
+                      }
+                    }}
+                  />
                 </label>
                 <label>
                   <span className={labelClass}>GST %</span>
@@ -922,6 +951,7 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
         )}
       </main>
 
+      {missingGstDialog}
       <AddPartyConfirmDialog
         open={showAddConfirm}
         partyName={pendingNewParty}
