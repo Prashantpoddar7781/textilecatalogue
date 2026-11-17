@@ -1,5 +1,5 @@
 import { getAdjustDirection, parseNoteType } from '../constants/creditDebitNoteTypes.js';
-import { daysSince, forEachUniqueBillAllocation, loadAllocationEntries, matchesPartyName, matchesSupplierName, postedNoteAmount, roundMoney } from './orderBilling.js';
+import { applyBillRoundOff, daysSince, forEachUniqueBillAllocation, loadAllocationEntries, matchesPartyName, matchesSupplierName, roundMoney } from './orderBilling.js';
 
 export async function getPaidAmountsByCreditDebitNoteId(prismaClient, userId, options = {}) {
   const entries = await loadAllocationEntries(prismaClient, userId, {
@@ -15,11 +15,17 @@ export async function getPaidAmountsByCreditDebitNoteId(prismaClient, userId, op
 }
 
 export function mapCreditDebitNoteToPendingItem(note, paidByNoteId) {
-  const billAmount = postedNoteAmount(note);
   const bankPaid = paidByNoteId.get(note.id) || 0;
-  const directPaid = note.isPaid ? roundMoney(note.paidAmount || billAmount) : roundMoney(note.paidAmount || 0);
-  const paidAmount = roundMoney(Math.max(bankPaid, directPaid));
-  const pendingAmount = roundMoney(Math.max(billAmount - paidAmount, 0));
+  const directPaid = note.isPaid
+    ? roundMoney(note.paidAmount || note.netAmount || 0)
+    : roundMoney(note.paidAmount || 0);
+  const rounded = applyBillRoundOff(
+    note.netAmountAfterTds || note.netAmount || note.grossAmount,
+    Math.max(bankPaid, directPaid)
+  );
+  const billAmount = rounded.billAmount;
+  const paidAmount = rounded.paidAmount;
+  const pendingAmount = rounded.pendingAmount;
   const noteType = parseNoteType(`${note.noteKind} note (${note.noteSide})`);
   const adjustDirection = getAdjustDirection(note.noteKind, note.noteSide);
   const typeLabel = noteType?.value

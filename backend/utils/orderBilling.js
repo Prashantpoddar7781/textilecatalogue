@@ -25,17 +25,39 @@ export function isEmpireTagged(row) {
 }
 
 function isRoundableSaleBill(order) {
-  if (isEmpireTagged(order)) return false;
   const type = String(order?.transactionType || '').trim().toUpperCase();
   if (!type || type === 'SALES ORDERS') return false;
   return true;
 }
 
-/** Sale, purchase, and note nets. Empire imports and journals keep their paise. */
-export function postedBillRupee(amount, row) {
-  const exact = roundMoney(amount);
-  if (isEmpireTagged(row)) return exact;
-  return roundRupee(exact);
+/** Sale, purchase, and note nets. Journals are not passed through this. */
+export function postedBillRupee(amount) {
+  return roundRupee(amount);
+}
+
+/**
+ * Nearest-rupee bill, and a difference under ₹1 against what was received is
+ * the round-off. That bill is settled. A real balance of ₹1 or more stays.
+ */
+export function applyBillRoundOff(exactAmount, paidAmount) {
+  const exact = roundMoney(exactAmount);
+  const billAmount = roundRupee(exact);
+  const paid = roundMoney(paidAmount);
+  const shortOfExact = roundMoney(exact - paid);
+  const shortOfRounded = roundMoney(billAmount - paid);
+  const settled = Math.abs(shortOfExact) < 1 || Math.abs(shortOfRounded) < 1;
+  if (settled) {
+    return { billAmount, paidAmount: billAmount, pendingAmount: 0 };
+  }
+  return {
+    billAmount,
+    paidAmount: paid,
+    pendingAmount: roundMoney(Math.max(shortOfRounded, 0))
+  };
+}
+
+export function coversRoundedBill(billAmount, paidAmount) {
+  return roundMoney(paidAmount) + 0.999 >= roundMoney(billAmount);
 }
 
 export function postedPurchaseAmount(bill) {
@@ -339,9 +361,10 @@ function printedBillLabel(value) {
 }
 
 export function mapPurchaseBillToPendingBill(bill, paidByBillId, asOfValue = Date.now()) {
-  const billAmount = postedPurchaseAmount(bill);
-  const paidAmount = paidByBillId.get(bill.id) || 0;
-  const pendingAmount = roundMoney(Math.max(billAmount - paidAmount, 0));
+  const rounded = applyBillRoundOff(bill.grandTotal, paidByBillId.get(bill.id) || 0);
+  const billAmount = rounded.billAmount;
+  const paidAmount = rounded.paidAmount;
+  const pendingAmount = rounded.pendingAmount;
   const billDate = bill.billDate || bill.createdAt;
   const printed = printedBillLabel(bill.supplierBillNo) || printedBillLabel(bill.billNumber);
   const displayNumber = printed
@@ -363,7 +386,7 @@ export function mapPurchaseBillToPendingBill(bill, paidByBillId, asOfValue = Dat
     grace: bill.grace,
     adatDisc: roundMoney(bill.discountAmount),
     billAmount,
-    paidAmount: roundMoney(paidAmount),
+    paidAmount,
     pendingAmount,
     taxableAmount: roundMoney(bill.taxableAmount),
     adjustAmount: 0,
@@ -389,9 +412,10 @@ export function mapOrderToPendingBill(order, paidByOrderId, asOfValue = Date.now
     : 0;
   const discountRate = Number(order.discountRate) || 0;
   const discountAmount = subtotal * (discountRate / 100);
-  const billAmount = resolveBillAmount(order);
-  const paidAmount = paidByOrderId.get(order.id) || 0;
-  const pendingAmount = roundMoney(Math.max(billAmount - paidAmount, 0));
+  const rounded = applyBillRoundOff(exactBillAmount(order), paidByOrderId.get(order.id) || 0);
+  const billAmount = rounded.billAmount;
+  const paidAmount = rounded.paidAmount;
+  const pendingAmount = rounded.pendingAmount;
   const billDate = order.orderDate || order.createdAt;
   const displayNumber = order.typeBillNumber != null
     ? String(order.typeBillNumber)
@@ -411,7 +435,7 @@ export function mapOrderToPendingBill(order, paidByOrderId, asOfValue = Date.now
     grace: order.grace,
     adatDisc: roundMoney(discountAmount),
     billAmount,
-    paidAmount: roundMoney(paidAmount),
+    paidAmount,
     pendingAmount,
     taxableAmount: orderTaxableAmount(order),
     adjustAmount: 0,

@@ -214,10 +214,9 @@ export const CreditDebitNotePage: React.FC<Props> = ({ noteType: initialNoteType
     setTaxableAmount(note.taxableAmount ? String(note.taxableAmount) : '');
     setGstRate(note.gstRate ? String(note.gstRate) : String(postingGstRate(type.series) || ''));
     setTcsRate(note.tcsRate ? String(note.tcsRate) : '');
-    const keepPaise = /\[E:/i.test(String(note.remarks || ''));
-    const shownNet = note.netAmount ? (keepPaise ? note.netAmount : roundRupee(note.netAmount)) : '';
+    const shownNet = note.netAmount ? roundRupee(note.netAmount) : '';
     const shownAfter = note.netAmountAfterTds
-      ? (keepPaise ? note.netAmountAfterTds : roundRupee(note.netAmountAfterTds))
+      ? roundRupee(note.netAmountAfterTds)
       : shownNet;
     setNetAmount(shownNet === '' ? '' : String(shownNet));
     setNetAmountAfterTds(shownAfter === '' ? '' : String(shownAfter));

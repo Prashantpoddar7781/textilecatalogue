@@ -9,6 +9,7 @@ import {
   forEachUniqueBillAllocation,
   normalizeBillAllocations,
   normalizeOrderLines,
+  coversRoundedBill,
   postedBillRupee,
   postedNoteAmount,
   postedPurchaseAmount,
@@ -180,7 +181,7 @@ function pushJournalLedgerRows(rawEntries, vouchers, { partyName, paidByBill } =
     const asOpposite = namesMatch(voucher.oppositeAccount, target);
     if (!asParty && !asOpposite) continue;
     const paidInfo = paidByBill?.get(voucher.id);
-    const paidOn = paidInfo && paidInfo.amount + 0.001 >= amount ? formatPaidOnRemark(paidInfo.date) : '';
+    const paidOn = paidInfo && coversRoundedBill(amount, paidInfo.amount) ? formatPaidOnRemark(paidInfo.date) : '';
     const narration = voucher.narration || voucher.remarks || '';
     const isOpeningBalance = String(voucher.transactionType || '').trim().toUpperCase() === 'OPENING BALANCE';
     if (asOpposite && isOpeningBalance) continue;
@@ -990,7 +991,7 @@ function pushCommissionBillRows(rawEntries, bill, paidByBill, partyName, { asCom
   if (!comm) return false;
   const billNo = bill.billNumber || String(bill.typeBillNumber || '-');
   const paidInfo = paidByBill.get(bill.id);
-  const paidOn = paidInfo && paidInfo.amount + 0.001 >= comm.netPayable
+  const paidOn = paidInfo && coversRoundedBill(comm.netPayable, paidInfo.amount)
     ? formatPaidOnRemark(paidInfo.date)
     : '';
   const creditRow = {
@@ -1107,7 +1108,7 @@ export async function buildCompanySelfLedger(prisma, userId, { fromDate, toDate 
     const mainAmount = posted.amount;
     const paidInfo = paidByBill.get(order.id);
     const settled = roundMoney((paidInfo?.amount || 0) + (disc?.amount || 0));
-    const paidOn = paidInfo && settled + 0.001 >= mainAmount ? formatPaidOnRemark(paidInfo.date) : '';
+    const paidOn = paidInfo && coversRoundedBill(mainAmount, settled) ? formatPaidOnRemark(paidInfo.date) : '';
     const party = getOrderPartyName(order);
     rawEntries.push(companyRow({
       id: `order-${order.id}`,
@@ -1127,10 +1128,10 @@ export async function buildCompanySelfLedger(prisma, userId, { fromDate, toDate 
   for (const invoice of invoices) {
     const buyerSnapshot = invoice.buyerSnapshot && typeof invoice.buyerSnapshot === 'object' ? invoice.buyerSnapshot : {};
     const customerName = invoice.customer?.organizationName || buyerSnapshot.name || '';
-    const amount = roundMoney(invoice.grandTotal);
+    const amount = postedBillRupee(invoice.grandTotal);
     if (amount <= 0) continue;
     const paidInfo = paidByBill.get(invoice.id) || (invoice.orderId ? paidByBill.get(invoice.orderId) : null);
-    const paidOn = paidInfo && paidInfo.amount + 0.001 >= amount ? formatPaidOnRemark(paidInfo.date) : '';
+    const paidOn = paidInfo && coversRoundedBill(amount, paidInfo.amount) ? formatPaidOnRemark(paidInfo.date) : '';
     rawEntries.push(companyRow({
       id: `invoice-${invoice.id}`,
       sourceType: 'sales_invoice',
@@ -1154,7 +1155,7 @@ export async function buildCompanySelfLedger(prisma, userId, { fromDate, toDate 
     const disc = resolveDiscountJournal(bill.transactionType, bill.discountAmount);
     const mainAmount = disc ? roundMoney(amount + disc.amount) : amount;
     const paidInfo = paidByBill.get(bill.id);
-    const paidOn = !purchaseReturn && paidInfo && paidInfo.amount + 0.001 >= amount
+    const paidOn = !purchaseReturn && paidInfo && coversRoundedBill(amount, paidInfo.amount)
       ? formatPaidOnRemark(paidInfo.date)
       : '';
     rawEntries.push(companyRow({
@@ -1447,7 +1448,7 @@ export async function buildCustomerLedger(prisma, userId, partyName) {
     const mainAmount = posted.amount;
     const paidInfo = paidByBill.get(order.id);
     const settled = roundMoney((paidInfo?.amount || 0) + (disc?.amount || 0));
-    const paidOn = paidInfo && settled + 0.001 >= mainAmount ? formatPaidOnRemark(paidInfo.date) : '';
+    const paidOn = paidInfo && coversRoundedBill(mainAmount, settled) ? formatPaidOnRemark(paidInfo.date) : '';
     rawEntries.push({
       id: `order-${order.id}`,
       sourceType: 'order',
@@ -1481,12 +1482,12 @@ export async function buildCustomerLedger(prisma, userId, partyName) {
     const buyerSnapshot = invoice.buyerSnapshot && typeof invoice.buyerSnapshot === 'object' ? invoice.buyerSnapshot : {};
     const customerName = invoice.customer?.organizationName || buyerSnapshot.name || '';
     if (!matchesPartyName({ buyerName: customerName, customer: invoice.customer }, partyName)) continue;
-    const amount = roundMoney(invoice.grandTotal);
-    if (amount <= 0) continue;
+    const exact = roundMoney(invoice.grandTotal);
+    if (exact <= 0) continue;
     const disc = resolveDiscountJournal(invoice.order?.transactionType, invoice.discountAmount);
-    const mainAmount = disc ? roundMoney(amount + disc.amount) : amount;
+    const mainAmount = postedBillRupee(disc ? roundMoney(exact + disc.amount) : exact);
     const paidInfo = paidByBill.get(invoice.id) || (invoice.orderId ? paidByBill.get(invoice.orderId) : null);
-    const paidOn = paidInfo && paidInfo.amount + 0.001 >= amount ? formatPaidOnRemark(paidInfo.date) : '';
+    const paidOn = paidInfo && coversRoundedBill(mainAmount, paidInfo.amount) ? formatPaidOnRemark(paidInfo.date) : '';
     rawEntries.push({
       id: `invoice-${invoice.id}`,
       sourceType: 'sales_invoice',
@@ -1605,7 +1606,7 @@ export async function buildSupplierLedger(prisma, userId, supplierId) {
     const disc = resolveDiscountJournal(bill.transactionType, bill.discountAmount);
     const mainAmount = disc ? roundMoney(amount + disc.amount) : amount;
     const paidInfo = paidByBill.get(bill.id);
-    const paidOn = !purchaseReturn && paidInfo && paidInfo.amount + 0.001 >= amount
+    const paidOn = !purchaseReturn && paidInfo && coversRoundedBill(amount, paidInfo.amount)
       ? formatPaidOnRemark(paidInfo.date)
       : '';
     rawEntries.push({

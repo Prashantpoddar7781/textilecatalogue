@@ -13,6 +13,7 @@ import {
   getPaidAmountsByOrderId,
   isSalesGoodsReturn,
   isPurchaseReturn,
+  applyBillRoundOff,
   mapOrderToPendingBill,
   mapPurchaseBillToPendingBill,
   forEachUniqueBillAllocation,
@@ -209,8 +210,10 @@ async function getCompletedOrderParties(userId) {
       : {};
     const name = String(invoice.customer?.organizationName || buyerSnapshot.name || '').trim();
     if (!name) continue;
-    const paidAmount = (invoice.amountPaid || 0) + (paidByInvoiceId.get(invoice.id) || 0);
-    const pendingAmount = roundMoney(Math.max(invoice.grandTotal - paidAmount, 0));
+    const pendingAmount = applyBillRoundOff(
+      invoice.grandTotal,
+      (invoice.amountPaid || 0) + (paidByInvoiceId.get(invoice.id) || 0)
+    ).pendingAmount;
     const current = partyMap.get(name.toLowerCase()) || {
       name,
       orderCount: 0,
@@ -280,9 +283,10 @@ async function getPendingOrderBills(userId, partyName, transactionType, excludeE
       return matchesPartyName({ buyerName: customerName, customer: invoice.customer }, partyName);
     })
     .map(invoice => {
-      const paidAmount = (invoice.amountPaid || 0) + (paidByInvoiceId.get(invoice.id) || 0);
-      const billAmount = roundMoney(invoice.grandTotal);
-      const pendingAmount = roundMoney(Math.max(billAmount - paidAmount, 0));
+      const rounded = applyBillRoundOff(
+        invoice.grandTotal,
+        (invoice.amountPaid || 0) + (paidByInvoiceId.get(invoice.id) || 0)
+      );
       const billDate = invoice.invoiceDate;
       return applyInterestFields({
         billId: invoice.id,
@@ -293,8 +297,8 @@ async function getPendingOrderBills(userId, partyName, transactionType, excludeE
         days: daysSince(billDate),
         grace: invoice.customer?.graceDays,
         adatDisc: roundMoney(invoice.discountAmount),
-        billAmount,
-        pendingAmount,
+        billAmount: rounded.billAmount,
+        pendingAmount: rounded.pendingAmount,
         taxableAmount: roundMoney(invoice.taxableAmount),
         adjustAmount: 0
       }, invoice.customer || {});
@@ -854,9 +858,10 @@ router.get('/outstanding-report', authenticateToken, requireActiveSubscription, 
       const invoiceRows = invoices
         .filter(invoice => !coveredOrderIds.has(invoice.orderId))
         .map(invoice => {
-          const paidAmount = (invoice.amountPaid || 0) + (paidByInvoiceId.get(invoice.id) || 0);
-          const billAmount = roundMoney(invoice.grandTotal);
-          const pendingAmount = roundMoney(Math.max(billAmount - paidAmount, 0));
+          const rounded = applyBillRoundOff(
+            invoice.grandTotal,
+            (invoice.amountPaid || 0) + (paidByInvoiceId.get(invoice.id) || 0)
+          );
           const billDate = invoice.invoiceDate || invoice.createdAt;
           const days = daysSince(billDate, asOf);
           const buyerSnapshot = invoice.buyerSnapshot && typeof invoice.buyerSnapshot === 'object'
@@ -871,9 +876,9 @@ router.get('/outstanding-report', authenticateToken, requireActiveSubscription, 
             days,
             agingBucket: agingBucket(days),
             grace: invoice.customer?.graceDays,
-            billAmount,
-            paidAmount: roundMoney(paidAmount),
-            pendingAmount,
+            billAmount: rounded.billAmount,
+            paidAmount: rounded.paidAmount,
+            pendingAmount: rounded.pendingAmount,
             taxableAmount: roundMoney(invoice.taxableAmount),
             partyName: invoice.customer?.organizationName || buyerSnapshot.name || '',
             brokerName: buyerSnapshot.agentName || '',
