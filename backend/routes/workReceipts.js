@@ -23,6 +23,7 @@ import {
   loadSourcesByIds,
   seedLinesFromSources
 } from '../services/documentLinkEngine.js';
+import { nextNumberByType } from '../utils/seriesVoucherNumbers.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -151,7 +152,11 @@ router.get('/meta', authenticateToken, requireActiveSubscription, async (req, re
   try {
     const userId = req.user.userId;
     const ctx = await getCompanyContext(userId);
-    const count = await prisma.workReceipt.count({ where: { userId } });
+    const numberRows = await prisma.workReceipt.findMany({
+      where: { userId, status: { not: 'cancelled' } },
+      select: { transactionType: true, voucherNo: true }
+    });
+    const nextByType = nextNumberByType(numberRows, REC_TYPES, row => row.voucherNo);
     const [customers, suppliers] = await Promise.all([
       prisma.customer.findMany({ where: { userId }, orderBy: { organizationName: 'asc' }, take: 300 }),
       prisma.supplier.findMany({ where: { userId }, orderBy: { name: 'asc' }, take: 300 })
@@ -187,7 +192,8 @@ router.get('/meta', authenticateToken, requireActiveSubscription, async (req, re
 
     res.json({
       ...ctx,
-      nextVoucherNo: count + 1,
+      nextVoucherNo: nextByType[REC_TYPES[0]] || 1,
+      nextByType,
       transactionTypes: REC_TYPES,
       states: INDIAN_STATES,
       parties,
@@ -564,11 +570,18 @@ async function saveReceipt(req, res, existing = null) {
     return res.json({ entry });
   }
 
-  const count = await prisma.workReceipt.count({ where: { userId } });
+  let voucherNo = optionalNumber(req.body.voucherNo);
+  if (voucherNo == null) {
+    const numberRows = await prisma.workReceipt.findMany({
+      where: { userId, status: { not: 'cancelled' } },
+      select: { transactionType: true, voucherNo: true }
+    });
+    voucherNo = nextNumberByType(numberRows, [transactionType], row => row.voucherNo)[transactionType] || 1;
+  }
   const entry = await prisma.workReceipt.create({
     data: {
       userId,
-      voucherNo: optionalNumber(req.body.voucherNo) ?? (count + 1),
+      voucherNo,
       ...data
     },
     include: { workDespatch: true }

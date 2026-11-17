@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ListOrdered, Loader2, Plus, Trash2 } from 'lucide-react';
 import { getGstDocumentType, getItcEligibility, gstReturnSection, postingTdsAccount, postingTdsPercent, resolveDefaultTdsPercent, postingPartyAccountType, postingDiscountAccount } from '../constants/erpTransactionPostingRules';
 import { getGstDefaultsForTransactionType } from '../constants/erpTransactionTypes';
@@ -86,7 +86,8 @@ const blankLine = (lineNo: number): WorkLineItem => ({
 });
 
 export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
-  const editId = useMemo(() => new URLSearchParams(window.location.search).get('edit'), []);
+  const urlEditId = useMemo(() => new URLSearchParams(window.location.search).get('edit'), []);
+  const [editId, setEditId] = useState<string | null>(urlEditId);
   const isEditMode = Boolean(editId);
 
   const [loading, setLoading] = useState(true);
@@ -111,11 +112,28 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [companyGstRate, setCompanyGstRate] = useState(5);
   const [companyHsnCode, setCompanyHsnCode] = useState('');
   const [voucherNo, setVoucherNo] = useState('1');
+  const [committedNo, setCommittedNo] = useState('1');
+  const [nextByType, setNextByType] = useState<Record<string, number>>({});
+  const companyGstRef = useRef(companyGstRate);
+  const companyHsnRef = useRef(companyHsnCode);
+  const jumpEpoch = useRef(0);
+  const fillReceiptRef = useRef<(entry: any, sources?: any[]) => void>(() => {});
+  const openReceiptRef = useRef<(found: { id: string; editPath: string }) => Promise<void>>(async () => {});
+  const missingReceiptRef = useRef<(voucher: number) => void>(() => {});
+  companyGstRef.current = companyGstRate;
+  companyHsnRef.current = companyHsnCode;
+  const onOpenReceipt = useCallback(
+    (found: { id: string; editPath: string }) => openReceiptRef.current(found),
+    []
+  );
+  const onMissingReceipt = useCallback((voucher: number) => missingReceiptRef.current(voucher), []);
   const workReceiptVoucherJump = useVoucherJump({
     module: 'work-receipt',
     transactionType,
-    currentId: isEditMode ? editId : null,
-    shownNumber: voucherNo,
+    currentId: editId,
+    shownNumber: committedNo,
+    onOpen: onOpenReceipt,
+    onMissing: onMissingReceipt,
     onError: setError
   });
   const [gstRate, setGstRate] = useState(
@@ -171,90 +189,30 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
         const meta = await workReceiptsApi.getMeta();
         if (cancelled) return;
         setCompanyName(meta.companyName || '');
-        if (!isEditMode) setVoucherNo(String(meta.nextVoucherNo || 1));
+        const seriesNext = meta.nextByType || {};
+        setNextByType(seriesNext);
         setTransactionTypes(meta.transactionTypes || []);
         const companyGst = Number(meta.companyGstRate) || 5;
         const companyHsn = meta.companyHsnCode || '';
+        companyGstRef.current = companyGst;
+        companyHsnRef.current = companyHsn;
         setCompanyGstRate(companyGst);
         setCompanyHsnCode(companyHsn);
-        const startType = (!isEditMode && meta.transactionTypes?.[0]) || transactionType;
-        if (!isEditMode && meta.transactionTypes?.[0]) setTransactionType(meta.transactionTypes[0]);
-        const startDefaults = getGstDefaultsForTransactionType(startType, companyGst, companyHsn);
-        setGstRate(String(startDefaults.gstRate));
-        setHsnCode(startDefaults.hsnCode);
         setParties(meta.parties || []);
 
-        if (isEditMode && editId) {
-          const { entry, sources } = await workReceiptsApi.getById(editId);
+        if (urlEditId) {
+          const { entry, sources } = await workReceiptsApi.getById(urlEditId);
           if (cancelled) return;
-          setSelectedSources(sources || []);
-          setCompanyName(entry.companyName || meta.companyName || '');
-          const savedType = entry.transactionType || 'WORK REC. BILL';
-          const savedDefaults = getGstDefaultsForTransactionType(savedType, companyGst, companyHsn);
-          setTransactionType(savedType);
-          setVoucherNo(String(entry.voucherNo ?? ''));
-          setGstRate(String(entry.gstRate ?? savedDefaults.gstRate));
-          setPartyName(entry.partyName || '');
-          setPartyGstin(entry.partyGstin || '');
-          setPlaceOfSupply(entry.placeOfSupply || '');
-          setStateCode(entry.stateCode || '');
-          setGstType(entry.gstType || '');
-          setChallanNo(entry.challanNo || entry.workDespatch?.challanNo || '');
-          setReceiptDate(entry.receiptDate ? entry.receiptDate.slice(0, 10) : today());
-          setBrokerName(entry.brokerName || '');
-          setWorkType(entry.workType || '');
-          setHsnCode(entry.hsnCode || savedDefaults.hsnCode);
-          setRemarks(entry.remarks || '');
-          setBillNo(entry.billNo || '');
-          setLines((entry.lineItems || []).map(row => {
-            const pcs = toNum(row.pcs);
-            const plain = toNum(row.plain);
-            const sec = toNum(row.sec);
-            const lost = toNum(row.lost);
-            const lace = toNum(row.lace);
-            const fresh = row.fresh != null ? toNum(row.fresh) : calcFresh(pcs, plain, sec, lost, lace);
-            const rate = toNum(row.rate);
-            const storedAmount = toNum(row.amount);
-            const amount = storedAmount > 0 ? round2(storedAmount) : round2(fresh * rate);
-            return {
-              ...row,
-              pcs,
-              cut: toNum(row.cut) || DEFAULT_CUT,
-              mtsQty: toNum(row.mtsQty),
-              plain,
-              sec,
-              lost,
-              lace,
-              fresh,
-              rate,
-              amount,
-              taxableValue: amount,
-              fabricRate: toNum(row.fabricRate)
-            };
-          }));
-          setDiscountPercent(String(entry.discountPercent || ''));
-          setDiscountAmount(Number(entry.discountAmount) || 0);
-          setOtherLess(String(entry.otherLess || ''));
-          setOtherAdd(String(entry.otherAdd || ''));
-          setGrossAmount(Number(entry.grossAmount) || 0);
-          setTaxableAmount(Number(entry.taxableAmount) || 0);
-          setInvoiceValue(Number(entry.invoiceValue) || 0);
-          setCgstAmount(String(entry.cgstAmount ?? 0));
-          setSgstAmount(String(entry.sgstAmount ?? 0));
-          setIgstAmount(String(entry.igstAmount ?? 0));
-          setCgstRate(String(entry.cgstRate ?? 0));
-          setSgstRate(String(entry.sgstRate ?? 0));
-          setIgstRate(String(entry.igstRate ?? 0));
-          setTdsPercent(entry.tdsPercent ? String(entry.tdsPercent) : '');
-          setTdsPercentTouched(Boolean(Number(entry.tdsPercent) > 0));
-          const taxable = Number(entry.taxableAmount) || 0;
-          const pct = Number(entry.tdsPercent) || 0;
-          // Default On Amt = taxable (same as mill). Manual override only after user edits the field.
-          setTdsOnAmt(taxable > 0 ? String(taxable) : '');
-          setTdsOnAmtTouched(false);
-          const tdsAmt = round2(taxable * pct / 100);
-          setTdsAmount(String(tdsAmt));
-          setNetAfterTds(round2((Number(entry.invoiceValue) || 0) - tdsAmt));
+          fillReceiptRef.current(entry, sources);
+        } else {
+          const startType = meta.transactionTypes?.[0] || 'WORK REC. BILL';
+          const nextNo = String(seriesNext[startType] || meta.nextVoucherNo || 1);
+          setTransactionType(startType);
+          setVoucherNo(nextNo);
+          setCommittedNo(nextNo);
+          const startDefaults = getGstDefaultsForTransactionType(startType, companyGst, companyHsn);
+          setGstRate(String(startDefaults.gstRate));
+          setHsnCode(startDefaults.hsnCode);
         }
       } catch (err: any) {
         if (!cancelled) setError(err.message || 'Could not load work receipt.');
@@ -264,7 +222,7 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
     };
     void load();
     return () => { cancelled = true; };
-  }, [editId, isEditMode]);
+  }, [urlEditId]);
 
   const applyTdsDefaults = (
     type: string,
@@ -329,6 +287,151 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
       gstin: party.gstNumber,
       panNumber: party.panNumber
     });
+  };
+
+  const startBlankReceipt = (type: string, voucherOverride?: string) => {
+    workReceiptVoucherJump.cancelPendingJump();
+    jumpEpoch.current += 1;
+    setEditId(null);
+    setError('');
+    setSuccess('');
+    setTransactionType(type);
+    const nextNo = voucherOverride || String(nextByType[type] || 1);
+    setVoucherNo(nextNo);
+    setCommittedNo(nextNo);
+    const defaults = getGstDefaultsForTransactionType(type, companyGstRate, companyHsnCode);
+    setGstRate(String(defaults.gstRate));
+    setHsnCode(defaults.hsnCode);
+    setPartyName('');
+    setPartyGstin('');
+    setPlaceOfSupply('');
+    setStateCode('');
+    setGstType('');
+    setChallanNo('');
+    setReceiptDate(today());
+    setBrokerName('');
+    setVehicleNo('');
+    setWorkType('');
+    setRemarks('');
+    setBillNo('');
+    setSelectedSources([]);
+    setPending([]);
+    setChecked({});
+    setPickerOpen(false);
+    setLines([]);
+    setDiscountPercent('');
+    setDiscountAmount(0);
+    setOtherLess('');
+    setOtherAdd('');
+    setTdsPercent('');
+    setTdsPercentTouched(false);
+    setTdsOnAmt('');
+    setTdsAmount('0');
+    setTdsOnAmtTouched(false);
+    setGrossAmount(0);
+    setInvoiceValue(0);
+    setTaxableAmount(0);
+    setNetAfterTds(0);
+    setCgstAmount('0');
+    setSgstAmount('0');
+    setIgstAmount('0');
+    setCgstRate('0');
+    setSgstRate('0');
+    setIgstRate('0');
+    if (window.location.search) window.history.replaceState(null, '', '/erp/work-receipt');
+  };
+
+  fillReceiptRef.current = (entry, sources) => {
+    setSelectedSources(sources || []);
+    setEditId(entry.id);
+    if (entry.companyName) setCompanyName(entry.companyName);
+    const savedType = entry.transactionType || 'WORK REC. BILL';
+    const savedDefaults = getGstDefaultsForTransactionType(savedType, companyGstRef.current, companyHsnRef.current);
+    setTransactionType(savedType);
+    const number = String(entry.voucherNo ?? '');
+    setVoucherNo(number);
+    setCommittedNo(number);
+    setGstRate(String(entry.gstRate ?? savedDefaults.gstRate));
+    setPartyName(entry.partyName || '');
+    setPartyGstin(entry.partyGstin || '');
+    setPlaceOfSupply(entry.placeOfSupply || '');
+    setStateCode(entry.stateCode || '');
+    setGstType(entry.gstType || '');
+    setChallanNo(entry.challanNo || entry.workDespatch?.challanNo || '');
+    setReceiptDate(entry.receiptDate ? String(entry.receiptDate).slice(0, 10) : today());
+    setBrokerName(entry.brokerName || '');
+    setVehicleNo(entry.vehicleNo || '');
+    setWorkType(entry.workType || '');
+    setHsnCode(entry.hsnCode || savedDefaults.hsnCode);
+    setRemarks(entry.remarks || '');
+    setBillNo(entry.billNo || '');
+    setLines((entry.lineItems || []).map((row: WorkLineItem) => {
+      const pcs = toNum(row.pcs);
+      const plain = toNum(row.plain);
+      const sec = toNum(row.sec);
+      const lost = toNum(row.lost);
+      const lace = toNum(row.lace);
+      const fresh = row.fresh != null ? toNum(row.fresh) : calcFresh(pcs, plain, sec, lost, lace);
+      const rate = toNum(row.rate);
+      const storedAmount = toNum(row.amount);
+      const amount = storedAmount > 0 ? round2(storedAmount) : round2(fresh * rate);
+      return {
+        ...row,
+        pcs,
+        cut: toNum(row.cut) || DEFAULT_CUT,
+        mtsQty: toNum(row.mtsQty),
+        plain,
+        sec,
+        lost,
+        lace,
+        fresh,
+        rate,
+        amount,
+        taxableValue: amount,
+        fabricRate: toNum(row.fabricRate)
+      };
+    }));
+    setDiscountPercent(String(entry.discountPercent || ''));
+    setDiscountAmount(Number(entry.discountAmount) || 0);
+    setOtherLess(String(entry.otherLess || ''));
+    setOtherAdd(String(entry.otherAdd || ''));
+    setGrossAmount(Number(entry.grossAmount) || 0);
+    setTaxableAmount(Number(entry.taxableAmount) || 0);
+    setInvoiceValue(Number(entry.invoiceValue) || 0);
+    setCgstAmount(String(entry.cgstAmount ?? 0));
+    setSgstAmount(String(entry.sgstAmount ?? 0));
+    setIgstAmount(String(entry.igstAmount ?? 0));
+    setCgstRate(String(entry.cgstRate ?? 0));
+    setSgstRate(String(entry.sgstRate ?? 0));
+    setIgstRate(String(entry.igstRate ?? 0));
+    setTdsPercent(entry.tdsPercent ? String(entry.tdsPercent) : '');
+    setTdsPercentTouched(Boolean(Number(entry.tdsPercent) > 0));
+    const taxable = Number(entry.taxableAmount) || 0;
+    const pct = Number(entry.tdsPercent) || 0;
+    setTdsOnAmt(taxable > 0 ? String(taxable) : '');
+    setTdsOnAmtTouched(false);
+    const tdsAmt = round2(taxable * pct / 100);
+    setTdsAmount(String(tdsAmt));
+    setNetAfterTds(round2((Number(entry.invoiceValue) || 0) - tdsAmt));
+    setError('');
+  };
+
+  openReceiptRef.current = async (found) => {
+    const epoch = ++jumpEpoch.current;
+    setError('');
+    try {
+      const { entry, sources } = await workReceiptsApi.getById(found.id);
+      if (jumpEpoch.current !== epoch) return;
+      fillReceiptRef.current(entry, sources);
+      window.history.replaceState(null, '', found.editPath || `/erp/work-receipt?edit=${entry.id}`);
+    } catch (err: any) {
+      if (jumpEpoch.current !== epoch) return;
+      setError(err.message || 'Could not open that voucher.');
+    }
+  };
+
+  missingReceiptRef.current = (voucher) => {
+    startBlankReceipt(transactionType, String(voucher));
   };
 
   const loadPending = async () => {
@@ -607,7 +710,11 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
         await workReceiptsApi.create(buildPayload());
         setSuccess('Work receipt saved. Ledger posted as EMB JOB CHARGES.');
         const meta = await workReceiptsApi.getMeta();
-        setVoucherNo(String(meta.nextVoucherNo || 1));
+        const seriesNext = meta.nextByType || {};
+        setNextByType(seriesNext);
+        const nextNo = String(seriesNext[transactionType] || meta.nextVoucherNo || 1);
+        setVoucherNo(nextNo);
+        setCommittedNo(nextNo);
         setSelectedSources([]);
         setChecked({});
         setChallanNo('');
@@ -692,9 +799,12 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
                   value={transactionType}
                   onChange={e => {
                     const next = e.target.value;
+                    if (!editId) {
+                      startBlankReceipt(next);
+                      return;
+                    }
                     setTransactionType(next);
                     applyTdsDefaults(next, { party: partyName, gstin: partyGstin });
-                    // Challans carry no tax in the master; bills carry 5%.
                     const d = getGstDefaultsForTransactionType(next, companyGstRate, companyHsnCode);
                     setGstRate(String(d.gstRate));
                     setHsnCode(d.hsnCode);

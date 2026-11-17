@@ -5,6 +5,7 @@ import { requireActiveSubscription } from '../middleware/subscription.js';
 import { isExpensePurchaseType } from '../constants/erpTransactionTypes.js';
 import { parseNoteType } from '../constants/creditDebitNoteTypes.js';
 import { parseVoucherNumber, parseVoucherText } from '../utils/parseVoucherNumber.js';
+import { sameSeriesNames } from '../constants/erpTransactionPostingRules.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -132,29 +133,45 @@ router.get('/lookup', authenticateToken, requireActiveSubscription, async (req, 
       if (entry) found = hit(entry.id, `/erp/mill-receipt?edit=${entry.id}`);
     } else if (module === 'work-receipt') {
       if (!numeric) return res.status(404).json({ error: 'No work receipt with that voucher number.' });
+      const names = sameSeriesNames(transactionType);
       const entry = await prisma.workReceipt.findFirst({
         where: {
           userId,
           voucherNo: numeric,
-          ...(transactionType ? { transactionType } : {})
+          status: { not: 'cancelled' },
+          ...(names.length ? { transactionType: { in: names } } : {})
         },
         select: { id: true },
-        orderBy: { createdAt: 'desc' }
+        orderBy: { receiptDate: 'desc' }
       });
       if (entry) found = hit(entry.id, `/erp/work-receipt?edit=${entry.id}`);
     } else if (module === 'work-despatch') {
-      const entry = await prisma.workDespatch.findFirst({
+      const names = sameSeriesNames(transactionType);
+      const rows = await prisma.workDespatch.findMany({
         where: {
           userId,
           status: { not: 'cancelled' },
+          ...(names.length ? { transactionType: { in: names } } : {}),
           OR: [
             ...(asText ? [{ challanNo: asText }] : []),
-            ...(numeric ? [{ challanNo: String(numeric) }] : [])
+            ...(numeric ? [{ challanNo: String(numeric) }, { srNo: numeric }] : [])
           ]
         },
-        select: { id: true },
-        orderBy: { createdAt: 'desc' }
+        select: { id: true, challanNo: true, srNo: true },
+        orderBy: { despatchDate: 'desc' },
+        take: 20
       });
+      const wanted = asText.toUpperCase();
+      const challanNumber = (value) => {
+        const rawChallan = text(value);
+        if (!rawChallan || rawChallan.includes('*')) return null;
+        const parsed = parseInt(rawChallan, 10);
+        return Number.isFinite(parsed) ? parsed : null;
+      };
+      const entry = rows.find(row => text(row.challanNo).toUpperCase() === wanted)
+        || rows.find(row => numeric != null && challanNumber(row.challanNo) === numeric)
+        || rows.find(row => numeric != null && row.srNo === numeric)
+        || null;
       if (entry) found = hit(entry.id, `/erp/work-despatch?edit=${entry.id}`);
     } else if (module === 'bank') {
       const entry = await prisma.bankEntry.findFirst({

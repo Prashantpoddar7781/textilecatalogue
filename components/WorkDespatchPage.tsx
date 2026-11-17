@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
 import { postingPartyAccountType } from '../constants/erpTransactionPostingRules';
 import { getGstDefaultsForTransactionType } from '../constants/erpTransactionTypes';
@@ -40,7 +40,8 @@ const emptyLine = (): WorkLineItem => ({
 });
 
 export const WorkDespatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
-  const editId = useMemo(() => new URLSearchParams(window.location.search).get('edit'), []);
+  const urlEditId = useMemo(() => new URLSearchParams(window.location.search).get('edit'), []);
+  const [editId, setEditId] = useState<string | null>(urlEditId);
   const isEditMode = Boolean(editId);
 
   const [loading, setLoading] = useState(true);
@@ -63,11 +64,24 @@ export const WorkDespatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [placeOfSupply, setPlaceOfSupply] = useState('');
   const [gstType, setGstType] = useState('');
   const [challanNo, setChallanNo] = useState('1');
+  const [committedNo, setCommittedNo] = useState('1');
+  const [nextByType, setNextByType] = useState<Record<string, number>>({});
+  const jumpEpoch = useRef(0);
+  const fillDespatchRef = useRef<(entry: any) => void>(() => {});
+  const openDespatchRef = useRef<(found: { id: string; editPath: string }) => Promise<void>>(async () => {});
+  const missingDespatchRef = useRef<(voucher: number) => void>(() => {});
+  const onOpenDespatch = useCallback(
+    (found: { id: string; editPath: string }) => openDespatchRef.current(found),
+    []
+  );
+  const onMissingDespatch = useCallback((voucher: number) => missingDespatchRef.current(voucher), []);
   const workDespatchVoucherJump = useVoucherJump({
     module: 'work-despatch',
     transactionType,
-    currentId: isEditMode ? editId : null,
-    shownNumber: challanNo,
+    currentId: editId,
+    shownNumber: committedNo,
+    onOpen: onOpenDespatch,
+    onMissing: onMissingDespatch,
     onError: setError
   });
   const [despatchDate, setDespatchDate] = useState(today());
@@ -94,39 +108,24 @@ export const WorkDespatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
         const meta = await workDespatchesApi.getMeta();
         if (cancelled) return;
         setCompanyName(meta.companyName || '');
-        if (!isEditMode) setChallanNo(String(meta.nextChallanNo || 1));
+        const seriesNext = meta.nextByType || {};
+        setNextByType(seriesNext);
         setTransactionTypes(meta.transactionTypes || []);
-        if (!isEditMode && meta.transactionTypes?.[0]) setTransactionType(meta.transactionTypes[0]);
         setWorkTypes(meta.workTypes || []);
-        if (!isEditMode && meta.workTypes?.[0]) setWorkType(meta.workTypes[0]);
         setUnits(meta.units || ['PCS']);
         setParties(meta.parties || []);
 
-        if (isEditMode && editId) {
-          const { entry } = await workDespatchesApi.getById(editId);
+        if (urlEditId) {
+          const { entry } = await workDespatchesApi.getById(urlEditId);
           if (cancelled) return;
-          setCompanyName(entry.companyName || meta.companyName || '');
-          const savedType = entry.transactionType || 'WORK DESP CHALLAN';
-          setTransactionType(savedType);
-          setPartyName(entry.partyName || '');
-          setPartyGstin(entry.partyGstin || '');
-          setStateCode(entry.stateCode || '');
-          setPlaceOfSupply(entry.placeOfSupply || '');
-          setGstType(entry.gstType || '');
-          setChallanNo(entry.challanNo || '');
-          setDespatchDate(entry.despatchDate ? entry.despatchDate.slice(0, 10) : today());
-          setBrokerName(entry.brokerName || '');
-          setVehicleNo(entry.vehicleNo || '');
-          setWorkType(entry.workType || 'EMB WORK');
-          setHsnCode(entry.hsnCode || getGstDefaultsForTransactionType(savedType).hsnCode);
-          setRemarks(entry.remarks || '');
-          setReceivedBy(entry.receivedBy || '');
-          setDeliveryDays(String(entry.deliveryDays ?? 0));
-          setDeliveryDueDate(entry.deliveryDueDate ? entry.deliveryDueDate.slice(0, 10) : today());
-          setLrNo(entry.lrNo || '');
-          setEwayBillNo(entry.ewayBillNo || '');
-          setRateInChallan(Boolean(entry.rateInChallan));
-          setLines((entry.lineItems || []).length ? entry.lineItems : [emptyLine()]);
+          fillDespatchRef.current(entry);
+        } else {
+          const startType = meta.transactionTypes?.[0] || 'WORK DESP CHALLAN';
+          const nextNo = String(seriesNext[startType] || meta.nextChallanNo || 1);
+          setTransactionType(startType);
+          setChallanNo(nextNo);
+          setCommittedNo(nextNo);
+          if (meta.workTypes?.[0]) setWorkType(meta.workTypes[0]);
         }
       } catch (err: any) {
         if (!cancelled) setError(err.message || 'Could not load work despatch.');
@@ -136,7 +135,7 @@ export const WorkDespatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
     };
     void load();
     return () => { cancelled = true; };
-  }, [editId, isEditMode]);
+  }, [urlEditId]);
 
   const applyParty = (name: string) => {
     setPartyName(name);
@@ -177,6 +176,83 @@ export const WorkDespatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
         brokerName: party.brokerName
       }];
     });
+  };
+
+  const startBlankDespatch = (type: string, challanOverride?: string) => {
+    workDespatchVoucherJump.cancelPendingJump();
+    jumpEpoch.current += 1;
+    setEditId(null);
+    setError('');
+    setSuccess('');
+    setTransactionType(type);
+    const nextNo = challanOverride || String(nextByType[type] || 1);
+    setChallanNo(nextNo);
+    setCommittedNo(nextNo);
+    setHsnCode(getGstDefaultsForTransactionType(type).hsnCode);
+    setPartyName('');
+    setPartyGstin('');
+    setStateCode('');
+    setPlaceOfSupply('');
+    setGstType('');
+    setDespatchDate(today());
+    setBrokerName('');
+    setVehicleNo('');
+    setRemarks('');
+    setReceivedBy('');
+    setDeliveryDays('0');
+    setDeliveryDueDate(today());
+    setLrNo('');
+    setEwayBillNo('');
+    setRateInChallan(false);
+    setLines([emptyLine()]);
+    if (window.location.search) window.history.replaceState(null, '', '/erp/work-despatch');
+  };
+
+  fillDespatchRef.current = (entry) => {
+    setEditId(entry.id);
+    if (entry.companyName) setCompanyName(entry.companyName);
+    const savedType = entry.transactionType || 'WORK DESP CHALLAN';
+    setTransactionType(savedType);
+    const number = String(entry.challanNo || entry.srNo || '');
+    setChallanNo(number);
+    setCommittedNo(number);
+    setPartyName(entry.partyName || '');
+    setPartyGstin(entry.partyGstin || '');
+    setStateCode(entry.stateCode || '');
+    setPlaceOfSupply(entry.placeOfSupply || '');
+    setGstType(entry.gstType || '');
+    setDespatchDate(entry.despatchDate ? String(entry.despatchDate).slice(0, 10) : today());
+    setBrokerName(entry.brokerName || '');
+    setVehicleNo(entry.vehicleNo || '');
+    setWorkType(entry.workType || 'EMB WORK');
+    setHsnCode(entry.hsnCode || getGstDefaultsForTransactionType(savedType).hsnCode);
+    setRemarks(entry.remarks || '');
+    setReceivedBy(entry.receivedBy || '');
+    setDeliveryDays(String(entry.deliveryDays ?? 0));
+    setDeliveryDueDate(entry.deliveryDueDate ? String(entry.deliveryDueDate).slice(0, 10) : today());
+    setLrNo(entry.lrNo || '');
+    setEwayBillNo(entry.ewayBillNo || '');
+    setRateInChallan(Boolean(entry.rateInChallan));
+    setLines((entry.lineItems || []).length ? entry.lineItems : [emptyLine()]);
+    setError('');
+  };
+
+  openDespatchRef.current = async (found) => {
+    const epoch = ++jumpEpoch.current;
+    setError('');
+    try {
+      const { entry } = await workDespatchesApi.getById(found.id);
+      if (jumpEpoch.current !== epoch) return;
+      fillDespatchRef.current(entry);
+      window.history.replaceState(null, '', found.editPath || `/erp/work-despatch?edit=${entry.id}`);
+    } catch (err: any) {
+      if (jumpEpoch.current !== epoch) return;
+      setError(err.message || 'Could not open that challan.');
+    }
+  };
+
+  missingDespatchRef.current = (voucher) => {
+    startBlankDespatch(transactionType, String(voucher));
   };
 
   const updateLine = (index: number, patch: Partial<WorkLineItem>) => {
@@ -251,7 +327,11 @@ export const WorkDespatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
         await workDespatchesApi.create(payload);
         setSuccess('Work despatch saved. No ledger posting (despatch only).');
         const meta = await workDespatchesApi.getMeta();
-        setChallanNo(String(meta.nextChallanNo || 1));
+        const seriesNext = meta.nextByType || {};
+        setNextByType(seriesNext);
+        const nextNo = String(seriesNext[transactionType] || meta.nextChallanNo || 1);
+        setChallanNo(nextNo);
+        setCommittedNo(nextNo);
         setLines([emptyLine()]);
         setRemarks('');
         setVehicleNo('');
@@ -319,6 +399,10 @@ export const WorkDespatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
                   value={transactionType}
                   onChange={e => {
                     const next = e.target.value;
+                    if (!editId) {
+                      startBlankDespatch(next);
+                      return;
+                    }
                     setTransactionType(next);
                     setHsnCode(getGstDefaultsForTransactionType(next).hsnCode);
                   }}

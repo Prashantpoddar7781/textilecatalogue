@@ -2787,6 +2787,23 @@ const SERIES_ALIASES = {
   'WORK REC. BILL': 'WORK REC. BILLS'
 };
 
+export function canonicalSeriesName(transactionType) {
+  const upper = String(transactionType || '').trim().toUpperCase();
+  if (!upper) return '';
+  return SERIES_ALIASES[upper] || upper;
+}
+
+/** Every stored name that means this series, including screen aliases such as WORK REC. BILL. */
+export function sameSeriesNames(transactionType) {
+  const canonical = canonicalSeriesName(transactionType);
+  if (!canonical) return [];
+  const names = new Set([canonical]);
+  for (const [alias, target] of Object.entries(SERIES_ALIASES)) {
+    if (String(target).toUpperCase() === canonical) names.add(alias);
+  }
+  return [...names];
+}
+
 export function getPostingRule(transactionType) {
   const upper = String(transactionType || '').trim().toUpperCase();
   if (!upper) return undefined;

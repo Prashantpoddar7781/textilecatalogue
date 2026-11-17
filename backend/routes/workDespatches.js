@@ -8,6 +8,7 @@ import { roundMoney } from '../utils/orderBilling.js';
 import { linesForSource, sourceLineKey } from '../utils/documentLinkAttribution.js';
 import { getGstDefaultsForTransactionType } from '../constants/erpTransactionTypes.js';
 import { bankAdjustmentBlock } from '../utils/voucherDelete.js';
+import { nextNumberByType } from '../utils/seriesVoucherNumbers.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -192,7 +193,11 @@ router.get('/meta', authenticateToken, requireActiveSubscription, async (req, re
   try {
     const userId = req.user.userId;
     const ctx = await getCompanyContext(userId);
-    const count = await prisma.workDespatch.count({ where: { userId } });
+    const numberRows = await prisma.workDespatch.findMany({
+      where: { userId, status: { not: 'cancelled' } },
+      select: { transactionType: true, challanNo: true }
+    });
+    const nextByType = nextNumberByType(numberRows, DESP_TYPES, row => row.challanNo);
     const [customers, suppliers] = await Promise.all([
       prisma.customer.findMany({ where: { userId }, orderBy: { organizationName: 'asc' }, take: 300 }),
       prisma.supplier.findMany({ where: { userId }, orderBy: { name: 'asc' }, take: 300 })
@@ -220,8 +225,9 @@ router.get('/meta', authenticateToken, requireActiveSubscription, async (req, re
 
     res.json({
       ...ctx,
-      nextChallanNo: count + 1,
-      nextSrNo: count + 1,
+      nextChallanNo: nextByType[DESP_TYPES[0]] || 1,
+      nextSrNo: nextByType[DESP_TYPES[0]] || 1,
+      nextByType,
       transactionTypes: DESP_TYPES,
       workTypes: WORK_TYPES,
       units: UNITS,
@@ -387,7 +393,12 @@ router.post('/', authenticateToken, requireActiveSubscription, [
     }
     const totals = lineTotals(lineItems);
     const partyName = optionalString(req.body.partyName);
-    const count = await prisma.workDespatch.count({ where: { userId } });
+    const series = optionalString(req.body.transactionType) || DESP_TYPES[0];
+    const numberRows = await prisma.workDespatch.findMany({
+      where: { userId, status: { not: 'cancelled' } },
+      select: { transactionType: true, challanNo: true }
+    });
+    const nextNo = nextNumberByType(numberRows, [series], row => row.challanNo)[series] || 1;
 
     await ensureMillParty(prisma, userId, partyName);
     await resolveSupplierForEntry(prisma, userId, {
@@ -401,13 +412,13 @@ router.post('/', authenticateToken, requireActiveSubscription, [
       data: {
         userId,
         companyName: optionalString(req.body.companyName) || ctx.companyName,
-        transactionType: optionalString(req.body.transactionType) || DESP_TYPES[0],
+        transactionType: series,
         partyName,
         partyGstin: optionalString(req.body.partyGstin),
         placeOfSupply: optionalString(req.body.placeOfSupply),
         stateCode: optionalString(req.body.stateCode),
         gstType: optionalString(req.body.gstType),
-        challanNo: optionalString(req.body.challanNo) || String(count + 1),
+        challanNo: optionalString(req.body.challanNo) || String(nextNo),
         despatchDate: req.body.despatchDate ? new Date(req.body.despatchDate) : new Date(),
         brokerName: optionalString(req.body.brokerName),
         vehicleNo: optionalString(req.body.vehicleNo),
@@ -423,7 +434,7 @@ router.post('/', authenticateToken, requireActiveSubscription, [
         dhara: optionalNumber(req.body.dhara) || 0,
         grace: optionalNumber(req.body.grace) || 0,
         rateInChallan: Boolean(req.body.rateInChallan),
-        srNo: optionalNumber(req.body.srNo) ?? (count + 1),
+        srNo: optionalNumber(req.body.srNo) ?? nextNo,
         lineItems,
         ...totals
       }

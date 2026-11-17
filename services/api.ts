@@ -2199,6 +2199,7 @@ export const workDespatchesApi = {
       companyName: string;
       nextChallanNo: number;
       nextSrNo: number;
+      nextByType?: Record<string, number>;
       transactionTypes: string[];
       workTypes: string[];
       units: string[];
@@ -2261,6 +2262,7 @@ export const workReceiptsApi = {
       /** GST % and HSN per receipt series, from the Transaction Types master. */
       gstDefaultsByType?: Record<string, { gstRate: number; hsnCode: string; itcEligibility: string | null }>;
       nextVoucherNo: number;
+      nextByType?: Record<string, number>;
       transactionTypes: string[];
       states: string[];
       parties?: Array<{
