@@ -12,7 +12,8 @@ router.post('/extract', authenticateToken, requireActiveSubscription, async (req
       return res.status(400).json({ error: `Unknown entry type for photo: ${kind || '(none)'}` });
     }
     const images = Array.isArray(req.body?.images) ? req.body.images : [req.body?.imageDataUrl].filter(Boolean);
-    res.json(await extractPhotoEntry(kind, images));
+    const series = String(req.body?.series || '').trim().slice(0, 80);
+    res.json(await extractPhotoEntry(kind, images, series));
   } catch (error) {
     if (error.status) return res.status(error.status).json({ error: error.message });
     next(error);

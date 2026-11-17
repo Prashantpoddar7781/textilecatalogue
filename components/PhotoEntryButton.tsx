@@ -5,6 +5,8 @@ import { isTouchDevice, prepareBillImage, wantsPhotoOnOpen } from '../utils/phot
 
 interface Props {
   kind: PhotoEntryKind;
+  /** The type already chosen on the form, e.g. SALES GOODS RETURN. The photo fills that type. */
+  series?: string;
   /** Fill the screen's form. Return notes to show (e.g. "New party — add it"). */
   onApply: (extraction: PhotoExtraction) => string[] | void;
   label?: string;
@@ -23,7 +25,7 @@ const Field: React.FC<{ label: string; value: React.ReactNode }> = ({ label, val
   </div>
 );
 
-export const PhotoEntryButton: React.FC<Props> = ({ kind, onApply, label = 'Fill from bill photo', disabled }) => {
+export const PhotoEntryButton: React.FC<Props> = ({ kind, series, onApply, label = 'Fill from bill photo', disabled }) => {
   const touch = isTouchDevice();
   const fileRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
@@ -54,7 +56,7 @@ export const PhotoEntryButton: React.FC<Props> = ({ kind, onApply, label = 'Fill
     setStage('reading');
     setError('');
     try {
-      const { extraction, warnings: found } = await photoEntryApi.extract(kind, pages);
+      const { extraction, warnings: found } = await photoEntryApi.extract(kind, pages, series);
       setResult(extraction);
       setWarnings(found);
       setStage('review');
@@ -62,7 +64,7 @@ export const PhotoEntryButton: React.FC<Props> = ({ kind, onApply, label = 'Fill
       setError(err.message || 'Could not read the photo.');
       setStage('error');
     }
-  }, [kind]);
+  }, [kind, series]);
 
   const addFiles = useCallback(async (files: FileList | File[] | null | undefined, replace = false) => {
     const list = Array.from(files || []).filter(f => f.type.startsWith('image/') || f.type === 'application/pdf');
@@ -163,7 +165,8 @@ export const PhotoEntryButton: React.FC<Props> = ({ kind, onApply, label = 'Fill
         <div className="fixed inset-0 z-50 flex items-end bg-black/40" onClick={() => setChooserOpen(false)}>
           <div className="w-full rounded-t-3xl bg-white p-5 pb-8" onClick={e => e.stopPropagation()}>
             <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-slate-300" />
-            <p className="mb-4 text-center text-sm font-black text-slate-900">Fill this entry from a bill photo</p>
+            <p className={`text-center text-sm font-black text-slate-900 ${series ? 'mb-1' : 'mb-4'}`}>Fill this entry from a bill photo</p>
+            {series && <p className="mb-4 text-center text-xs font-bold text-indigo-700">Type stays {series}</p>}
             <div className="grid grid-cols-2 gap-3">
               <button type="button" onClick={() => cameraRef.current?.click()}
                 className="flex flex-col items-center gap-2 rounded-2xl bg-indigo-600 px-4 py-5 text-sm font-black text-white">
@@ -191,7 +194,9 @@ export const PhotoEntryButton: React.FC<Props> = ({ kind, onApply, label = 'Fill
             <header className="flex items-center justify-between border-b px-4 py-3">
               <div>
                 <p className="text-sm font-black text-slate-900">Bill photo</p>
-                <p className="text-[11px] text-slate-500">{touch ? 'Up to 4 pages of one bill' : 'Drop, paste (Ctrl+V) or add up to 4 pages'}</p>
+                <p className="text-[11px] text-slate-500">
+                  {series ? `Fills the ${series} you selected` : touch ? 'Up to 4 pages of one bill' : 'Drop, paste (Ctrl+V) or add up to 4 pages'}
+                </p>
               </div>
               <button type="button" onClick={() => setPanelOpen(false)} disabled={stage === 'reading'} className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100">
                 <X className="h-5 w-5" />

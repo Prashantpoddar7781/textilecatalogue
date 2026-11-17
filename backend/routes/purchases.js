@@ -18,6 +18,7 @@ import { aggregateErpLines, normalizeErpLines } from '../utils/erpLineItems.js';
 import { rememberItemRateAndCut } from '../utils/itemMasterRates.js';
 import { getStateFromGstin, isInterStateSupply } from '../utils/gstCalculation.js';
 import { bankAdjustmentBlock } from '../utils/voucherDelete.js';
+import { explainPhotoReaderError } from '../utils/photoEntry.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -203,7 +204,7 @@ Focus on supplier name, GST number, mobile, invoice/bill number, items, HSN, qua
 
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));
-    const error = new Error(payload?.error?.message || `Gemini extraction failed (${response.status})`);
+    const error = new Error(explainPhotoReaderError(response.status, payload?.error?.message));
     error.status = 502;
     throw error;
   }

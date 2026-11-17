@@ -2033,9 +2033,9 @@ export type PhotoExtraction = {
 };
 
 export const photoEntryApi = {
-  extract: (kind: PhotoEntryKind, images: string[]) => request<{ extraction: PhotoExtraction; warnings: string[] }>('/photo-entry/extract', {
+  extract: (kind: PhotoEntryKind, images: string[], series?: string) => request<{ extraction: PhotoExtraction; warnings: string[] }>('/photo-entry/extract', {
     method: 'POST',
-    body: JSON.stringify({ kind, images })
+    body: JSON.stringify({ kind, images, series: series || '' })
   })
 };
 

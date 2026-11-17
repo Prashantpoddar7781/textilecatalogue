@@ -364,7 +364,7 @@ export const ErpPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
   };
 
   const applyPhoto = (x: PhotoExtraction) => {
-    const notes: string[] = [];
+    const notes: string[] = [`Filled into ${transactionType}. Saving keeps this type.`];
     const match = matchPhotoParty<Supplier>(suppliers, x);
     const partyState = match?.state || photoPartyState(x);
     const pct = x.discountPercent || (match ? partyDhara(match) : toNum(dhara));
@@ -559,7 +559,7 @@ export const ErpPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
             <button type="button" onClick={() => { window.location.href = '/erp/reports/finish-purchase'; }} className="rounded-xl border bg-white px-3 py-2 text-xs font-black uppercase text-emerald-800">
               Purchase Report
             </button>
-            <PhotoEntryButton kind="purchase" onApply={applyPhoto} disabled={loading} />
+            <PhotoEntryButton kind="purchase" series={transactionType} onApply={applyPhoto} disabled={loading} />
           </div>
         </div>
 

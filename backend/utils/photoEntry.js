@@ -190,7 +190,19 @@ export function photoWarnings(x) {
   return out;
 }
 
-export async function extractPhotoEntry(kind, images) {
+/** Google's own wording when the photo-reader project is shut. */
+export function explainPhotoReaderError(status, message) {
+  const raw = text(message);
+  if (/suspended/i.test(raw)) {
+    return 'Bill photos cannot be read right now. Google has suspended the account that reads them, so a new photo-reader key is needed before this will work again.';
+  }
+  if (/API key not valid|API_KEY_INVALID|permission denied/i.test(raw)) {
+    return 'Bill photos cannot be read right now. Google rejected the photo-reader key.';
+  }
+  return raw || `Could not read the photo (${status}).`;
+}
+
+export async function extractPhotoEntry(kind, images, series = '') {
   const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || process.env.VITE_GEMINI_API_KEY;
   if (!apiKey) {
     throw Object.assign(new Error('Photo entry is not set up on the server (GEMINI_API_KEY missing).'), { status: 400 });
@@ -198,8 +210,11 @@ export async function extractPhotoEntry(kind, images) {
   const pages = (Array.isArray(images) ? images : [images]).filter(Boolean).slice(0, MAX_PAGES);
   if (!pages.length) throw Object.assign(new Error('Attach at least one photo.'), { status: 400 });
 
+  const chosen = text(series).slice(0, 80);
+  const returnDoc = /RETURN/i.test(chosen);
   const prompt = `You read Indian textile business documents for an ERP data entry screen.
 The photo${pages.length > 1 ? `s are ${pages.length} pages of ONE document` : ' is one document'}: ${KIND_HINTS[kind] || KIND_HINTS.purchase}
+${chosen ? `The user has already chosen the entry type "${chosen}". Read the photo into that type only. ${returnDoc ? 'It is a goods return: quantities and amounts are goods coming back, and the party is the customer who returned them.' : 'Do not treat it as a different voucher type.'}` : ''}
 Our own firm is the other side of the document; never return our firm as the party.
 Read printed and handwritten text. Numbers: no commas or currency symbols. Dates as YYYY-MM-DD (Indian dates are DD/MM/YY).
 Use 0 or "" when a value is not on the document — never guess. List every item line.
@@ -216,7 +231,7 @@ ${SCHEMA}`;
   });
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));
-    throw Object.assign(new Error(payload?.error?.message || `Could not read the photo (${response.status}).`), { status: 502 });
+    throw Object.assign(new Error(explainPhotoReaderError(response.status, payload?.error?.message)), { status: 502 });
   }
   const payload = await response.json();
   const raw = payload?.candidates?.[0]?.content?.parts?.map(part => part.text || '').join('\n') || '';

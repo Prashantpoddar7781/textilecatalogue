@@ -839,7 +839,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
   };
 
   const applyPhoto = (x: PhotoExtraction) => {
-    const notes: string[] = [];
+    const notes: string[] = [`Filled into ${transactionType}. Saving keeps this type.`];
     const pool: Array<Customer & { name: string }> = customers.map(c => ({ ...c, name: c.organizationName }));
     const match = matchPhotoParty(pool, x);
     const partyState = match?.state || photoPartyState(x);
@@ -1201,7 +1201,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
             <button type="button" onClick={() => { window.location.href = '/erp/reports/finish-sales'; }} className="rounded-xl border bg-white px-3 py-2 text-xs font-black uppercase text-fuchsia-800">
               Sales Register / Return
             </button>
-            <PhotoEntryButton kind="sales" onApply={applyPhoto} disabled={loading} />
+            <PhotoEntryButton kind="sales" series={transactionType} onApply={applyPhoto} disabled={loading} />
           </div>
         </div>
 
