@@ -158,8 +158,35 @@ router.get('/meta', authenticateToken, requireActiveSubscription, async (req, re
     });
     const nextByType = nextNumberByType(numberRows, REC_TYPES, row => row.voucherNo);
     const [customers, suppliers] = await Promise.all([
-      prisma.customer.findMany({ where: { userId }, orderBy: { organizationName: 'asc' }, take: 300 }),
-      prisma.supplier.findMany({ where: { userId }, orderBy: { name: 'asc' }, take: 300 })
+      prisma.customer.findMany({
+        where: { userId },
+        orderBy: { organizationName: 'asc' },
+        select: {
+          organizationName: true,
+          gstNumber: true,
+          state: true,
+          agentName: true,
+          dhara: true,
+          discountRate: true,
+          graceDays: true,
+          interestRate: true,
+          panNumber: true
+        }
+      }),
+      prisma.supplier.findMany({
+        where: { userId },
+        orderBy: { name: 'asc' },
+        select: {
+          name: true,
+          gstNumber: true,
+          state: true,
+          brokerName: true,
+          dhara: true,
+          graceDays: true,
+          interestRate: true,
+          panNumber: true
+        }
+      })
     ]);
     const parties = [
       ...customers.map(c => {
