@@ -97,6 +97,19 @@ test('untagged lines are rejected when several challans are picked', () => {
   assert.match(result.errors[0], /does not say which challan/);
 });
 
+test('a sample line with no challan is kept when the other lines already name theirs', () => {
+  const result = attributeLinesToSources({
+    lines: [
+      { lineNo: 1, itemName: 'SATIN', pcs: 112, sourceDespatchId: 'd1' },
+      { lineNo: 4, itemName: 'plain', pcs: 8 }
+    ],
+    sources: [source('d1', '5', 112), source('d2', '6', 240)]
+  });
+  assert.deepStrictEqual(result.errors, []);
+  assert.strictEqual(result.lines[1].sourceDespatchId, null);
+  assert.strictEqual(result.perSource.find(row => row.source.sourceId === 'd1').pcs, 112);
+});
+
 test('a line pointing at an unpicked challan is rejected', () => {
   const result = attributeLinesToSources({
     lines: [{ lineNo: 1, itemName: 'A', pcs: 5, sourceDespatchId: 'dX' }],

@@ -205,9 +205,10 @@ export async function loadSourcesByIds({ userId, targetSeries, ids, excludeTarge
  * Tags each line with the source document it belongs to and checks the totals per
  * source against that source's remaining quantity.
  *
- * Lines that already name a source keep it. Lines that don't are attributed to the
- * only selected source, which is what a single-challan payload from the old screen
- * looks like.
+ * Lines that already name a source keep it. When every line is blank and only one
+ * challan is selected, the whole bill belongs to that challan. An extra line with
+ * no challan, on a bill that already names its other lines, is a direct receipt
+ * (a sample that had no despatch). It is saved and it does not reduce pending.
  */
 export function attributeLinesToSources({ lines, sources }) {
   if (!sources.length) {
@@ -215,13 +216,21 @@ export function attributeLinesToSources({ lines, sources }) {
   }
   const byId = new Map(sources.map(source => [source.sourceId, source]));
   const errors = [];
+  const anyTagged = lines.some(line => line && line.sourceDespatchId);
 
   const tagged = lines.map(line => {
     const declared = line.sourceDespatchId ? String(line.sourceDespatchId) : null;
-    const resolvedId = declared || (sources.length === 1 ? sources[0].sourceId : null);
+    const resolvedId = declared || (!anyTagged && sources.length === 1 ? sources[0].sourceId : null);
     if (!resolvedId) {
-      errors.push(`Line ${line.lineNo} (${line.itemName || 'item'}) does not say which challan it came from.`);
-      return line;
+      if (!anyTagged) {
+        errors.push(`Line ${line.lineNo} (${line.itemName || 'item'}) does not say which challan it came from.`);
+      }
+      return {
+        ...line,
+        sourceDespatchId: null,
+        sourceChallanNo: null,
+        sourceLineNo: null
+      };
     }
     const source = byId.get(resolvedId);
     if (!source) {
