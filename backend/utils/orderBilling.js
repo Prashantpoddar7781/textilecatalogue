@@ -340,8 +340,21 @@ export async function getPaidAmountsByBillType(prismaClient, userId, billType, o
   return paidByBillId;
 }
 
-export async function getPaidAmountsByOrderId(prismaClient, userId) {
-  return getPaidAmountsByBillType(prismaClient, userId, 'order');
+/** Cash and the discount already stored on the receipt, kept apart so a bill discount is not added twice. */
+export async function getPaidAmountsByOrderId(prismaClient, userId, options = {}) {
+  const entries = await loadAllocationEntries(prismaClient, userId, {
+    entryType: 'receipt',
+    excludeEntryId: options?.excludeEntryId || null
+  });
+  const byId = new Map();
+  forEachUniqueBillAllocation(entries, allocation => {
+    if (allocation.billType !== 'order') return;
+    const current = byId.get(allocation.billId) || { cash: 0, discount: 0 };
+    current.cash = roundMoney(current.cash + (Number(allocation.adjustAmount) || 0));
+    current.discount = roundMoney(current.discount + (Number(allocation.discountAmount) || 0));
+    byId.set(allocation.billId, current);
+  });
+  return byId;
 }
 
 export function matchesSupplierName(supplierName, partyName) {
@@ -457,6 +470,24 @@ export function mapPurchaseBillToPendingBill(bill, paidByBillId, asOfValue = Dat
   }, bill.supplier || {});
 }
 
+/**
+ * Bill discount already allowed on the invoice. An imported bill stores
+ * finalamt − taxable in shippingCharge. When that is below the GST, the
+ * difference is the discount, and it is not still outstanding.
+ * A blank shipping charge is not a discount.
+ */
+export function saleBillDiscount(order) {
+  const lines = normalizeOrderLines(order?.orderLines);
+  const taxable = lines.reduce((sum, line) => sum + (Number(line.amount) || 0), 0);
+  const tax = lines.reduce((sum, line) => sum + (Number(line.taxAmount) || 0), 0);
+  const ship = Number(order?.shippingCharge) || 0;
+  if (!(ship > 0.5) || ship + 0.5 >= tax) return 0;
+  const invoice = isRoundableSaleBill(order) ? roundRupee(exactBillAmount(order)) : roundMoney(exactBillAmount(order));
+  const finalAmt = roundMoney(taxable + ship);
+  const gap = roundMoney(invoice - finalAmt);
+  return gap > 0.5 ? gap : 0;
+}
+
 export function mapOrderToPendingBill(order, paidByOrderId, asOfValue = Date.now()) {
   const lines = normalizeOrderLines(order.orderLines);
   const subtotal = lines.length > 0
@@ -468,10 +499,14 @@ export function mapOrderToPendingBill(order, paidByOrderId, asOfValue = Date.now
     : 0;
   const discountRate = Number(order.discountRate) || 0;
   const discountAmount = subtotal * (discountRate / 100);
-  const rounded = applyBillRoundOff(exactBillAmount(order), paidByOrderId.get(order.id) || 0);
+  const rawPaid = paidByOrderId.get(order.id);
+  const cashPaid = rawPaid && typeof rawPaid === 'object' ? (Number(rawPaid.cash) || 0) : (Number(rawPaid) || 0);
+  const allocationDiscount = rawPaid && typeof rawPaid === 'object' ? (Number(rawPaid.discount) || 0) : 0;
+  const billDiscount = Math.max(saleBillDiscount(order), roundMoney(discountAmount), allocationDiscount);
+  const rounded = applyBillRoundOff(exactBillAmount(order), cashPaid + billDiscount);
   const billAmount = rounded.billAmount;
-  const paidAmount = rounded.paidAmount;
   const pendingAmount = rounded.pendingAmount;
+  const paidAmount = pendingAmount === 0 ? rounded.paidAmount : roundMoney(cashPaid);
   const billDate = order.orderDate || order.createdAt;
   const displayNumber = order.typeBillNumber != null
     ? String(order.typeBillNumber)

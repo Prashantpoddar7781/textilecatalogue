@@ -252,7 +252,7 @@ async function getPendingOrderBills(userId, partyName, transactionType, excludeE
   const paidOpts = excludeEntryId ? { excludeEntryId } : {};
   const [orders, paidByOrderId, paidByInvoiceId] = await Promise.all([
     getCompletedOrders(userId),
-    getPaidAmountsByBillType(prisma, userId, 'order', paidOpts),
+    getPaidAmountsByOrderId(prisma, userId, paidOpts),
     getPaidAmountsByBillType(prisma, userId, 'sales_invoice', paidOpts)
   ]);
 
@@ -534,7 +534,7 @@ async function getPendingPurchaseBills(userId, partyName, transactionType, exclu
 async function getPendingSalesReturns(userId, partyName, excludeEntryId = null) {
   const [orders, paidByOrderId] = await Promise.all([
     getCompletedOrders(userId),
-    getPaidAmountsByBillType(prisma, userId, 'order', excludeEntryId ? { excludeEntryId } : {})
+    getPaidAmountsByOrderId(prisma, userId, excludeEntryId ? { excludeEntryId } : {})
   ]);
   return orders
     .filter(order => matchesPartyName(order, partyName))

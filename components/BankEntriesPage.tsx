@@ -440,11 +440,6 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
   }, [entryTypeFilter, viewMode]);
 
   useEffect(() => {
-    void refreshBalances(form.bankName, form.partyName, form.partyType);
-    void loadPendingBills(form.partyName, form.partyType, editingId);
-  }, [form.bankName, form.partyName, form.partyType, editingId, refreshBalances, loadPendingBills]);
-
-  useEffect(() => {
     setForm(f => {
       const nextSlip = slipNumberFromDate(f.entryDate);
       if (f.slipNumber === nextSlip) return f;
@@ -460,17 +455,36 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
     return Array.from(names).sort((a, b) => a.localeCompare(b));
   }, [accountParties, completedParties, purchaseParties]);
 
-  const partyTypeForName = (name: string) => {
+  const partyTypeForName = (name: string, entryType?: string) => {
     const key = name.trim().toLowerCase();
-    const party = accountParties.find(row => row.name.trim().toLowerCase() === key);
-    if (party) {
-      if (party.role === 'customer' || partyRoleForAccountType(party.accountType) === 'customer') return 'customer' as const;
-      return 'supplier' as const;
+    const matches = accountParties.filter(row => row.name.trim().toLowerCase() === key);
+    const isCustomer = (party: AccountParty) =>
+      party.role === 'customer' || partyRoleForAccountType(party.accountType) === 'customer';
+    const receipt = String(entryType || form.entryType).toLowerCase() !== 'payment';
+    if (receipt) {
+      if (matches.some(isCustomer)) return 'customer' as const;
+      if (completedParties.some(row => row.name.trim().toLowerCase() === key)) return 'customer' as const;
+      if (matches.length) return 'supplier' as const;
+    } else {
+      if (matches.some(party => !isCustomer(party))) return 'supplier' as const;
+      if (purchaseParties.some(row => row.name.trim().toLowerCase() === key)) return 'supplier' as const;
+      if (matches.some(isCustomer)) return 'customer' as const;
     }
-    if (completedParties.some(row => row.name.trim().toLowerCase() === key)) return 'customer' as const;
-    if (purchaseParties.some(row => row.name.trim().toLowerCase() === key)) return 'supplier' as const;
     return null;
   };
+
+  useEffect(() => {
+    const resolvedType = partyTypeForName(form.partyName, form.entryType) || form.partyType;
+    if (form.partyName.trim() && resolvedType && resolvedType !== form.partyType) {
+      setForm(current => (
+        current.partyName === form.partyName && current.partyType !== resolvedType
+          ? { ...current, partyType: resolvedType }
+          : current
+      ));
+    }
+    void refreshBalances(form.bankName, form.partyName, resolvedType);
+    void loadPendingBills(form.partyName, resolvedType, editingId);
+  }, [form.bankName, form.partyName, form.partyType, form.entryType, editingId, accountParties, completedParties, purchaseParties, refreshBalances, loadPendingBills]);
 
   const partyDhara = () => {
     const key = form.partyName.trim().toLowerCase();
@@ -1317,7 +1331,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                         setAllowOverAllocation(false);
                         const match = accountParties.find(party => party.name.trim().toLowerCase() === value.trim().toLowerCase());
                         const broker = Boolean(match && /broker|brok/i.test(match.accountType || ''));
-                        const partyType = partyTypeForName(value) || (broker ? 'supplier' : form.partyType);
+                        const partyType = partyTypeForName(value, form.entryType) || (broker ? 'supplier' : form.partyType);
                         if (broker && form.entryType === 'payment') {
                           setBillType('PURCHASE (COMM)');
                           setForm(f => ({ ...f, partyName: match?.name || value, partyType: 'supplier' }));
