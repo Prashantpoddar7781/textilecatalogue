@@ -16,6 +16,8 @@ import {
   applyBillRoundOff,
   mapOrderToPendingBill,
   mapPurchaseBillToPendingBill,
+  mapWorkReceiptToPendingBill,
+  isWorkReceiptBill,
   forEachUniqueBillAllocation,
   matchesPartyName,
   matchesSupplierName,
@@ -480,6 +482,38 @@ async function getPendingUnadjPayments(userId, partyName, partyType, excludeEntr
   return rows.sort((a, b) => String(a.billNumber).localeCompare(String(b.billNumber), undefined, { numeric: true }));
 }
 
+async function getPendingWorkReceiptBills(userId, partyName, excludeEntryId = null) {
+  const [receipts, paidByReceiptId] = await Promise.all([
+    prisma.workReceipt.findMany({
+      where: { userId, status: { not: 'cancelled' } },
+      select: {
+        id: true,
+        partyName: true,
+        transactionType: true,
+        billNo: true,
+        voucherNo: true,
+        receiptDate: true,
+        createdAt: true,
+        invoiceValue: true,
+        taxableAmount: true,
+        grossAmount: true,
+        tdsPercent: true,
+        tdsAmount: true,
+        netAfterTds: true,
+        discountAmount: true,
+        brokerName: true
+      }
+    }),
+    getPaidAmountsByBillType(prisma, userId, 'work_receipt', excludeEntryId ? { excludeEntryId } : {})
+  ]);
+  return receipts
+    .filter(receipt => isWorkReceiptBill(receipt.transactionType))
+    .filter(receipt => !partyName || matchesSupplierName(receipt.partyName, partyName))
+    .map(receipt => mapWorkReceiptToPendingBill(receipt, paidByReceiptId))
+    .filter(bill => bill.pendingAmount > 0)
+    .sort((a, b) => String(a.billNumber).localeCompare(String(b.billNumber), undefined, { numeric: true }));
+}
+
 async function getPendingPurchaseBills(userId, partyName, transactionType, excludeEntryId = null) {
   const [bills, paidByBillId] = await Promise.all([
     getPurchaseBillRecords(userId),
@@ -539,7 +573,7 @@ function signedPendingAmount(item) {
 async function getPartyBalance(userId, partyName, partyType) {
   if (!partyName) return 0;
   // Empire: Cur. Bal. = pending bills − unadj − deduct notes/returns + add notes.
-  const [bills, unadjusted, notes, returns, journals] = await Promise.all([
+  const [bills, unadjusted, notes, returns, journals, workBills] = await Promise.all([
     partyType === 'supplier'
       ? getPendingPurchaseBills(userId, partyName)
       : getPendingOrderBills(userId, partyName),
@@ -548,9 +582,10 @@ async function getPartyBalance(userId, partyName, partyType) {
     partyType === 'supplier'
       ? getPendingPurchaseReturns(userId, partyName)
       : getPendingSalesReturns(userId, partyName),
-    getPendingJournalVouchers(prisma, userId, partyName, partyType)
+    getPendingJournalVouchers(prisma, userId, partyName, partyType),
+    partyType === 'supplier' ? getPendingWorkReceiptBills(userId, partyName) : []
   ]);
-  const pending = [...bills, ...returns, ...notes, ...journals].reduce((sum, item) => sum + signedPendingAmount(item), 0);
+  const pending = [...bills, ...returns, ...notes, ...journals, ...workBills].reduce((sum, item) => sum + signedPendingAmount(item), 0);
   const unadjPending = unadjusted.reduce((sum, row) => sum + (row.pendingAmount || 0), 0);
   return roundMoneyLocal(pending - unadjPending);
 }
@@ -645,7 +680,7 @@ router.get('/pending-bills', authenticateToken, requireActiveSubscription, async
       return res.json({ bills: [], unadjusted: [], notes: [], noteCount: 0, billCount: 0, unadjCount: 0 });
     }
 
-    const [bills, unadjusted, notes, returns, journals] = await Promise.all([
+    const [bills, unadjusted, notes, returns, journals, workBills] = await Promise.all([
       partyType === 'supplier'
         ? getPendingPurchaseBills(userId, partyName, null, excludeEntryId)
         : getPendingOrderBills(userId, partyName, null, excludeEntryId),
@@ -654,16 +689,19 @@ router.get('/pending-bills', authenticateToken, requireActiveSubscription, async
       partyType === 'supplier'
         ? getPendingPurchaseReturns(userId, partyName, excludeEntryId)
         : getPendingSalesReturns(userId, partyName, excludeEntryId),
-      getPendingJournalVouchers(prisma, userId, partyName, partyType, excludeEntryId)
+      getPendingJournalVouchers(prisma, userId, partyName, partyType, excludeEntryId),
+      partyType === 'supplier'
+        ? getPendingWorkReceiptBills(userId, partyName, excludeEntryId)
+        : []
     ]);
 
     res.json({
-      bills: [...bills, ...returns, ...unadjusted, ...notes, ...journals],
+      bills: [...bills, ...returns, ...unadjusted, ...notes, ...journals, ...workBills],
       unadjusted,
       notes,
       journals,
       noteCount: notes.length,
-      billCount: bills.length + returns.length,
+      billCount: bills.length + returns.length + workBills.length,
       unadjCount: unadjusted.length,
       journalCount: journals.length
     });
@@ -815,7 +853,35 @@ router.get('/outstanding-report', authenticateToken, requireActiveSubscription, 
         })
         .filter(Boolean);
 
-      rows = [...purchaseRows, ...purchaseReturnRows];
+      const [workReceipts, paidByWorkReceipt] = await Promise.all([
+        prisma.workReceipt.findMany({
+          where: { userId, status: { not: 'cancelled' } },
+          select: {
+            id: true,
+            partyName: true,
+            transactionType: true,
+            billNo: true,
+            voucherNo: true,
+            receiptDate: true,
+            createdAt: true,
+            invoiceValue: true,
+            taxableAmount: true,
+            grossAmount: true,
+            tdsPercent: true,
+            tdsAmount: true,
+            netAfterTds: true,
+            discountAmount: true,
+            brokerName: true
+          }
+        }),
+        getPaidAmountsByBillType(prisma, userId, 'work_receipt')
+      ]);
+      const workRows = workReceipts
+        .filter(receipt => isWorkReceiptBill(receipt.transactionType))
+        .map(receipt => mapWorkReceiptToPendingBill(receipt, paidByWorkReceipt, asOf))
+        .filter(bill => includeSettled || bill.pendingAmount > 0.001);
+
+      rows = [...purchaseRows, ...purchaseReturnRows, ...workRows];
     } else {
       const [orders, paidByOrderId, paidByInvoiceId] = await Promise.all([
         getCompletedOrders(userId),

@@ -324,7 +324,7 @@ export async function loadAllocationEntries(prismaClient, userId, options = {}) 
 }
 
 export async function getPaidAmountsByBillType(prismaClient, userId, billType, options = {}) {
-  const entryType = billType === 'purchase_bill' ? 'payment' : 'receipt';
+  const entryType = billType === 'purchase_bill' || billType === 'work_receipt' ? 'payment' : 'receipt';
   const entries = await loadAllocationEntries(prismaClient, userId, {
     entryType,
     excludeEntryId: options?.excludeEntryId || null
@@ -358,6 +358,62 @@ function printedBillLabel(value) {
   const number = Number(match[1]);
   if (!Number.isFinite(number) || number <= 0 || number >= 100000) return '';
   return cleaned;
+}
+
+/** Work challans are not paid. Work rec bills (lace, suit, and the plain bill) are. */
+export function isWorkReceiptBill(transactionType) {
+  const type = String(transactionType || '').toUpperCase();
+  return type.includes('WORK REC') && type.includes('BILL');
+}
+
+/**
+ * What is still owed to the job worker: invoice minus TDS.
+ * TDS already on the bill is taken to the next rupee, the same way the ledger posts it.
+ */
+export function workReceiptAmountDue(receipt) {
+  const taxable = roundMoney(receipt?.taxableAmount || receipt?.grossAmount || 0);
+  const tdsPercent = Number(receipt?.tdsPercent) || 0;
+  const storedTds = roundMoney(receipt?.tdsAmount);
+  const tdsAmount = storedTds > 0
+    ? roundTdsRupee(storedTds)
+    : (tdsPercent > 0 ? roundTdsRupee(taxable * tdsPercent / 100) : 0);
+  const invoiceValue = roundMoney(
+    receipt?.invoiceValue
+    || (Number(receipt?.netAfterTds || 0) + tdsAmount)
+    || taxable
+  );
+  return Math.max(roundMoney(invoiceValue - tdsAmount), 0);
+}
+
+export function mapWorkReceiptToPendingBill(receipt, paidByReceiptId, asOfValue = Date.now()) {
+  const rounded = applyBillRoundOff(workReceiptAmountDue(receipt), paidByReceiptId.get(receipt.id) || 0);
+  const billDate = receipt.receiptDate || receipt.createdAt;
+  const billNumber = String(receipt.billNo || '').trim()
+    || (receipt.voucherNo != null ? String(receipt.voucherNo) : receipt.id.slice(-6).toUpperCase());
+  const days = daysSince(billDate, asOfValue);
+  return applyInterestFields({
+    billId: receipt.id,
+    billType: 'work_receipt',
+    billNumber,
+    transactionType: receipt.transactionType || 'WORK REC. BILLS',
+    voucherNumber: receipt.voucherNo != null ? String(receipt.voucherNo) : billNumber,
+    billDate,
+    days,
+    agingBucket: agingBucket(days),
+    grace: null,
+    adatDisc: roundMoney(receipt.discountAmount),
+    billAmount: rounded.billAmount,
+    paidAmount: rounded.paidAmount,
+    pendingAmount: rounded.pendingAmount,
+    taxableAmount: roundMoney(receipt.taxableAmount),
+    adjustAmount: 0,
+    partyName: receipt.partyName || '',
+    brokerName: receipt.brokerName || '',
+    station: '',
+    haste: '',
+    transportName: '',
+    editPath: `/erp/work-receipt?edit=${receipt.id}`
+  }, {});
 }
 
 export function mapPurchaseBillToPendingBill(bill, paidByBillId, asOfValue = Date.now()) {
