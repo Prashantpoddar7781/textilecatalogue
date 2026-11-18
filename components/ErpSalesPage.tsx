@@ -51,14 +51,24 @@ const labelClass = 'mb-1 block text-[10px] font-black uppercase tracking-wide te
 /** Broker accounts use the commission series row: CREDITORS FOR BROKERAGE. */
 const BROKER_ACCOUNT_TYPE = postingPartyAccountType('PURCHASE (COMM)') || 'CREDITORS FOR BROKERAGE';
 
-/** 30*24 in Bundles means 30 pieces, cut 24, and 720 metres. */
+/**
+ * 30*24 → 30 pieces, cut 24, 720 metres.
+ * 24.5+22+23.5 (no star) → 3 pieces, cut 0, metres are the sum.
+ */
 function parseBundleCut(value: string): { pcs: number; cut: number; mts: number } | null {
-  const match = String(value || '').trim().match(/^(\d+(?:\.\d+)?)\s*[*xX]\s*(\d+(?:\.\d+)?)$/);
-  if (!match) return null;
-  const pcs = round2(Number(match[1]));
-  const cut = round2(Number(match[2]));
-  if (!(pcs > 0) || !(cut > 0)) return null;
-  return { pcs, cut, mts: round2(pcs * cut) };
+  const text = String(value || '').trim();
+  const star = text.match(/^(\d+(?:\.\d+)?)\s*[*xX]\s*(\d+(?:\.\d+)?)$/);
+  if (star) {
+    const pcs = round2(Number(star[1]));
+    const cut = round2(Number(star[2]));
+    if (!(pcs > 0) || !(cut > 0)) return null;
+    return { pcs, cut, mts: round2(pcs * cut) };
+  }
+  if (!text.includes('+') || /[+\s]$/.test(text)) return null;
+  const parts = text.split('+').map(part => part.trim()).filter(Boolean);
+  if (parts.length < 2 || parts.some(part => !/^\d+(?:\.\d+)?$/.test(part))) return null;
+  const metres = parts.map(part => round2(Number(part)));
+  return { pcs: metres.length, cut: 0, mts: round2(metres.reduce((sum, part) => sum + part, 0)) };
 }
 
 const blankLine = (lineNo = 1, gstRate = 5, hsnCode = '5407', discountPercent = 0): SalesLineItem => ({
@@ -995,7 +1005,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
 
   const updateBundle = (index: number, raw: string) => {
     if (einvoice?.irn && einvoice.status !== 'cancelled') return;
-    const text = raw.replace(/[^0-9.*xX\s]/g, '');
+    const text = raw.replace(/[^0-9.*xX+\s]/g, '');
     const parsed = parseBundleCut(text);
     if (parsed) {
       const current = lineItems[index];
@@ -1037,8 +1047,10 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
       cut: toNum(item.cut),
       rate: toNum(item.sellingRate),
       gstRate: toNum(item.gstRate) || defaultGstRate,
-      hsnCode: item.hsnSac || defaultHsnCode
+      hsnCode: String(item.hsnSac || '').trim() || defaultHsnCode
     }, businessState, state) : line));
+    const masterHsn = String(item.hsnSac || '').trim();
+    if (masterHsn) setHsnCode(masterHsn);
   };
 
   const applyMasterIfKnown = (index: number, query: string) => {
@@ -1132,7 +1144,9 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
     orderDate,
     expectedDate: expectedDate || undefined,
     remarks,
-    hsnCode,
+    hsnCode: String(hsnCode || '').trim() && String(hsnCode || '').trim() !== defaultHsnCode
+      ? hsnCode
+      : (lineItems.map(line => String(line.hsnCode || '').trim()).find(code => code && code !== defaultHsnCode) || hsnCode),
     gstType,
     lineItems: lineItems
       .filter(line => (line.mainScreen || line.itemName).trim() && (toNum(line.pcs) > 0 || toNum(line.amount) > 0))

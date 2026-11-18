@@ -484,8 +484,10 @@ export const ErpPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
       cut: toNum(item.cut),
       rate: toNum(item.sellingRate),
       gstRate: toNum(item.gstRate) || defaultGstRate,
-      hsnCode: item.hsnSac || defaultHsnCode
+      hsnCode: String(item.hsnSac || '').trim() || defaultHsnCode
     }, businessState, state) : line));
+    const masterHsn = String(item.hsnSac || '').trim();
+    if (masterHsn) setHsnCode(masterHsn);
   };
 
   const sharedPayload = () => ({
@@ -513,7 +515,9 @@ export const ErpPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
     billDate,
     orderDate: billDate,
     remarks,
-    hsnCode,
+    hsnCode: String(hsnCode || '').trim() && String(hsnCode || '').trim() !== defaultHsnCode
+      ? hsnCode
+      : (lineItems.map(line => String(line.hsnCode || '').trim()).find(code => code && code !== defaultHsnCode) || hsnCode),
     gstType,
     lineItems: lineItems
       .filter(line => (line.mainScreen || line.itemName).trim() && (toNum(line.pcs) > 0 || toNum(line.amount) > 0))
