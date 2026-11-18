@@ -33,6 +33,7 @@ import { ErpTopMenu } from './ErpTopMenu';
 import { gstTypeLabel, isInterStateSupply } from '../utils/gstState';
 import { partyDhara, partyGraceDays } from '../utils/partyBillingTerms';
 import { roundRupee } from '../utils/rupeeRound';
+import { billedMetres, netMetres } from '../utils/lineMetres';
 import { AccountParty } from '../types';
 import { useVoucherJump } from '../hooks/useVoucherJump';
 
@@ -84,7 +85,8 @@ function calcLine(input: SalesLineItem, businessState: string, partyState: strin
     : round2(pcs * cut);
   const rate = toNum(input.rate);
   const metre = /^(MTS|MTR|METRE|METER|METERS)$/i.test(String(input.unit || '').trim());
-  const amount = round2((metre ? (mtsQty || pcs) : pcs) * rate);
+  const billedQty = metre ? billedMetres(mtsQty || pcs, input.lessFold) : pcs;
+  const amount = round2(billedQty * rate);
   const discountAmount = round2(amount * toNum(input.discountPercent) / 100);
   const taxableAmount = round2(amount - discountAmount + toNum(input.manualAddLess));
   const gstRate = purchaseGstMode === 'none' ? 0 : toNum(input.gstRate);
@@ -209,6 +211,7 @@ export const ErpPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
   const totals = useMemo(() => lineItems.reduce((acc, line) => ({
     pcs: round2(acc.pcs + toNum(line.pcs)),
     mts: round2(acc.mts + toNum(line.mtsQty)),
+    netMts: round2(acc.netMts + netMetres(line.mtsQty, line.lessFold)),
     amount: round2(acc.amount + toNum(line.amount)),
     taxable: round2(acc.taxable + toNum(line.taxableAmount)),
     tax: round2(acc.tax + toNum(line.taxAmount)),
@@ -216,7 +219,7 @@ export const ErpPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
     cgst: round2(acc.cgst + toNum(line.cgstAmount)),
     sgst: round2(acc.sgst + toNum(line.sgstAmount)),
     igst: round2(acc.igst + toNum(line.igstAmount))
-  }), { pcs: 0, mts: 0, amount: 0, taxable: 0, tax: 0, net: 0, cgst: 0, sgst: 0, igst: 0 }), [lineItems]);
+  }), { pcs: 0, mts: 0, netMts: 0, amount: 0, taxable: 0, tax: 0, net: 0, cgst: 0, sgst: 0, igst: 0 }), [lineItems]);
   const billNet = roundRupee(totals.net);
   const roundOff = Math.round((billNet - totals.net) * 100) / 100;
 
@@ -430,10 +433,11 @@ export const ErpPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
           itemName: line.description,
           mainScreen: line.description,
           screenName: line.description,
-          unit: basis.perMetre ? 'MTR' : 'PCS',
-          pcs: basis.qty,
+          unit: basis.perMetre || line.mts || line.lessFold ? 'MTR' : 'PCS',
+          pcs: line.pcs || (basis.perMetre ? 0 : basis.qty),
           cut: line.cut,
-          mtsQty: line.mts || 0,
+          mtsQty: line.mts || (basis.perMetre ? basis.qty : 0),
+          lessFold: line.lessFold || 0,
           rate: line.rate
         }, businessState, partyState);
       }));
@@ -787,7 +791,7 @@ export const ErpPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
               <table className="min-w-[1500px] w-full text-left text-xs">
                 <thead className="border-b bg-gray-50 text-[10px] uppercase text-gray-500">
                   <tr>
-                    {['#', 'Item Name', 'Bundles', 'Category / Main Screen', 'Packing', 'Unit', 'PCS', 'Cut', 'MTS', 'Rate', 'Amount', 'Less Fold', 'Disc %', 'Add/Less', 'GST %', 'Tax', 'Net', ''].map(head => (
+                    {['#', 'Item Name', 'Bundles', 'Category / Main Screen', 'Packing', 'Unit', 'PCS', 'Cut', 'MTS', 'Net Mtrs', 'Rate', 'Amount', 'Less Fold', 'Disc %', 'Add/Less', 'GST %', 'Tax', 'Net', ''].map(head => (
                       <th key={head} className="px-2 py-2 font-black">{head}</th>
                     ))}
                   </tr>
@@ -822,6 +826,7 @@ export const ErpPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
                       <td className="px-1 py-1.5"><input className={inputClass} type="number" value={line.pcs || ''} onChange={e => updateLine(index, 'pcs', toNum(e.target.value))} /></td>
                       <td className="px-1 py-1.5"><input className={inputClass} type="number" value={line.cut || ''} onChange={e => updateLine(index, 'cut', toNum(e.target.value))} /></td>
                       <td className="px-1 py-1.5"><input className={inputClass} type="number" value={line.mtsQty || ''} onChange={e => updateLine(index, 'mtsQty', toNum(e.target.value))} /></td>
+                      <td className="px-2 py-1.5 text-right font-semibold">{netMetres(line.mtsQty, line.lessFold).toFixed(2)}</td>
                       <td className="px-1 py-1.5"><input className={inputClass} type="number" value={line.rate || ''} onChange={e => updateLine(index, 'rate', toNum(e.target.value))} /></td>
                       <td className="px-2 py-1.5 text-right font-bold">{round2(toNum(line.amount)).toFixed(2)}</td>
                       <td className="px-1 py-1.5"><input className={inputClass} type="number" value={toNum(line.lessFold)} onChange={e => updateLine(index, 'lessFold', toNum(e.target.value))} /></td>
@@ -850,6 +855,7 @@ export const ErpPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
                     <td className="px-2 py-2 text-right">{totals.pcs.toFixed(2)}</td>
                     <td />
                     <td className="px-2 py-2 text-right">{totals.mts.toFixed(2)}</td>
+                    <td className="px-2 py-2 text-right">{totals.netMts.toFixed(2)}</td>
                     <td />
                     <td className="px-2 py-2 text-right">{totals.amount.toFixed(2)}</td>
                     <td colSpan={4} className="px-2 py-2 text-right">Taxable {totals.taxable.toFixed(2)}</td>

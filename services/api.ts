@@ -2004,7 +2004,7 @@ export type PhotoEntryKind = 'purchase' | 'expense' | 'grey_purchase' | 'mill_re
 
 export type PhotoExtractionLine = {
   description: string; hsn: string; takas: number; pcs: number; cut: number; mts: number; qty: number;
-  unit: string; rate: number; amount: number; gstRate: number;
+  unit: string; rate: number; amount: number; gstRate: number; lessFold?: number;
 };
 
 export type PhotoExtraction = {

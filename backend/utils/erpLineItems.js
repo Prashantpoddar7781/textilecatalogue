@@ -1,6 +1,16 @@
 import { roundMoney } from './orderBilling.js';
 import { calculateGstBreakup } from './gstCalculation.js';
 
+const round2 = (value) => Math.round((Number(value) || 0) * 100) / 100;
+
+function billedMetres(mts, lessFold) {
+  const metres = Number(mts) || 0;
+  const fold = Number(lessFold) || 0;
+  if (!(metres > 0)) return 0;
+  if (!(fold > 0) || fold >= 100) return metres;
+  return metres * (100 - fold) / 100;
+}
+
 const optionalString = (value) => {
   if (value === undefined || value === null) return null;
   const text = String(value).trim();
@@ -19,10 +29,13 @@ export function normalizeErpLines(raw, context = {}) {
         : pcs * cut
     );
     const rate = roundMoney(input.rate ?? input.retailPrice ?? 0);
+    const lessFold = roundMoney(input.lessFold ?? 0);
+    const unit = optionalString(input.unit) || 'PCS';
+    const metre = /^(MTS|MTR|METRE|METER|METERS)$/i.test(unit);
     const amount = roundMoney(
-      input.amount != null && input.amount !== ''
-        ? input.amount
-        : pcs * rate
+      metre && rate > 0
+        ? billedMetres(mtsQty, lessFold) * rate
+        : (input.amount != null && input.amount !== '' ? input.amount : pcs * rate)
     );
     const discountPercent = Number(input.discountPercent) || 0;
     const discountAmount = roundMoney(
@@ -50,10 +63,11 @@ export function normalizeErpLines(raw, context = {}) {
       screenName: optionalString(input.screenName) || optionalString(input.itemName || input.description) || '',
       category: optionalString(input.category) || optionalString(input.mainScreen) || '',
       packing: optionalString(input.packing) || 'NAKED',
-      unit: optionalString(input.unit) || 'PCS',
+      unit,
       pcs,
       quantity: pcs,
       cut,
+      lessFold,
       mtsQty,
       rate,
       amount,

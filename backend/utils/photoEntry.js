@@ -34,6 +34,7 @@ const SCHEMA = `{
       "description": "item / quality / design name",
       "hsn": "",
       "takas": number, "pcs": number, "cut": number, "mts": number, "qty": number,
+      "fold": number,
       "unit": "MTR|PCS|KG|NOS",
       "rate": number, "amount": number, "gstRate": number
     }
@@ -59,6 +60,13 @@ const num = (v) => {
   return Number.isFinite(n) ? n : 0;
 };
 const round2 = (v) => Math.round((Number(v) || 0) * 100) / 100;
+/** Printed FOLD 95 means 5% is cut from the metres. 5 is already that percent. */
+function lessFoldPercent(value) {
+  const n = num(value);
+  if (!(n > 0)) return 0;
+  if (n > 50 && n <= 100) return round2(100 - n);
+  return round2(n);
+}
 const gstinOf = (v) => text(v).toUpperCase().replace(/[^0-9A-Z]/g, '').slice(0, 15);
 
 function isoDate(value) {
@@ -90,6 +98,7 @@ export function normalizePhotoExtraction(raw) {
     const mts = num(line.mts) || (pcs && cut ? round2(pcs * cut) : 0);
     const rate = num(line.rate);
     const qty = num(line.qty) || mts || pcs;
+    const lessFold = lessFoldPercent(line.fold ?? line.lessFold);
     return {
       description: text(line.description),
       hsn: text(line.hsn),
@@ -98,6 +107,7 @@ export function normalizePhotoExtraction(raw) {
       cut,
       mts,
       qty,
+      lessFold,
       unit: text(line.unit).toUpperCase() || (mts ? 'MTR' : 'PCS'),
       rate,
       amount: num(line.amount) || round2(qty * rate),
@@ -218,6 +228,7 @@ ${chosen ? `The user has already chosen the entry type "${chosen}". Read the pho
 Our own firm is the other side of the document; never return our firm as the party.
 Read printed and handwritten text. Numbers: no commas or currency symbols. Dates as YYYY-MM-DD (Indian dates are DD/MM/YY).
 Use 0 or "" when a value is not on the document — never guess. List every item line.
+On a textile invoice, FOLD is out of 100 (95 means 5% less). Put that printed fold in fold. mts is the MTS column (gross metres), not NT.MTR. pcs is the PCS column, not the net metres.
 Return only JSON in this shape:
 ${SCHEMA}`;
 

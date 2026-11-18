@@ -12,8 +12,10 @@ export async function allocateNextTypeBillNumber(tx, userId, transactionType, so
   if (!type) return null;
 
   if (source === 'purchase_bill') {
+    // Prior-year Empire copies are stored at 100000 and above. The live series
+    // (Finish Purchase is around 226) must not continue from those.
     const result = await tx.purchaseBill.aggregate({
-      where: { userId, transactionType: type },
+      where: { userId, transactionType: type, typeBillNumber: { lt: 100000 } },
       _max: { typeBillNumber: true }
     });
     return (result._max.typeBillNumber ?? 0) + 1;
