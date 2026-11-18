@@ -36,3 +36,13 @@ When a new hole is found, add it here in the same sitting as the code change, wi
 13. **Note picked on a receipt.** RECPAY can settle a debit or credit note on the same voucher as the bills. That amount is applied, so it must not come back as an unadjusted balance. Laxmi receipt 56 on 21/04/2026 pays debit note 13/D of 4057 with bills 1791/F, 1792/F and 1796/F. The note's own pending is the bank allocation; once that allocation exists the note is off outstanding.
 
 14. **VATAV with one FAS line.** Series V1 usually has two lines: DISCOUNT A/C and the party. Nine vouchers (137, 138, 139, 140, 164, 165, 166, 168, 169) have only the party credit in FAS `code`, with the bill number in RMK. The missing side is DISCOUNT A/C, the account on every other V1. An empty opposite account must not become SUSPENSE for V1. The party credit stays. Repair: set that opposite account to DISCOUNT A/C. Suspense on these books was 4,766 DR from those nine.
+
+15. **Less fold.** BILLDET.LESSFOLD is the fold on that line, on sale and purchase. It is copied as entered. The sale bill prints it as what remains of 100. A later import must not leave the column blank.
+
+16. **Piece or metre.** BILLDET.AMT decides the unit. If the amount matches metres × rate, the line is MTS. If it matches pieces × rate, it stays PCS. The Empire voucher number is kept when that bill is opened again.
+
+17. **Printed bill number.** Finish sales uses the number on the bill (BILLS.BILL), the digits before any star or letter. A voucher stored at 100000 or above is the same printed number. The series suffix stays on the series, not glued into the number the user types.
+
+18. **Grey taka and mill receipt.** CHALTRN metres (WMTS, MMTS, RMTS, CMTS) are the taka rows of that mill dispatch, joined by CARDNO. Each MILLREC row keeps its voucher, mill, job rate, received pieces and metres, and the despatch it came from (CARDNO or DESPNO). TDS on that bill rounds up to the next rupee.
+
+19. **Account heads and brokers.** Every MASTER row is an account under its ATYPE name: debtors, creditors, expenses, trading, and assets. A head used on a voucher but missing from MASTER is still created. MASTER.commission is the broker percent. A broker stays a creditor. PINVTRN.BROKER_CODE is the broker on the mill dispatch. Expense heads such as Travelling must appear on a purchase bill and on the journal opposite list.
