@@ -1,13 +1,13 @@
 ---
-description: Gaps found in Empire backups, and the repair the next import of any company must run
+description: Every Empire backup repair and later ERP change, kept so the next backup and the next session already include it
 alwaysApply: true
 ---
 
 # Empire backup lessons (locked)
 
-Every correction below was a hole in an Empire import. The next backup, for this company or any other, must come in already corrected. Do not wipe a live company to retest. Apply the repair to the books that are already there, and keep the same repair on the import path.
+Every correction below was a hole in an Empire import, or a behavior locked after that import. The next backup, for this company or any other, must come in already corrected. Do not wipe a live company to retest. Apply the repair to the books that are already there, and keep the same repair on the import path.
 
-When a new hole is found, add it here in the same sitting as the code change, with the series and the column it came from.
+Keep noting. Whenever a change is made to how a backup is read, how a voucher posts, how a ledger or outstanding is calculated, or how an entry or report behaves, add the next number in this file in the same sitting as the code change. Name the series and the column when the change came from the backup. Do not leave the change only in the chat.
 
 1. **Work despatch pending.** The receipt's CHALLAN column is the job worker's bill number. The despatch it consumed is on each BILLDET line: ORDBILL (challan no), ORDTYPE (series code), orderno (despatch voucher). Link that line only to that despatch. Do not guess by quality, and do not spill a line onto the next challan. A line with no pick consumes nothing. On a new bill whose other lines already name their challans, an extra line with no challan (a sample received without a despatch) is saved and must not block the entry. The export must include those three columns. Check: Bhagwati voucher 20 (bill 57) is 120 pcs from challan 6 and 120 from challan 7. Pending before invoice 59 is **712 pcs on challans 5, 6 and 7** (112, 240 and 360). Repair: `repairWorkDespatchLinks`.
 
@@ -46,3 +46,15 @@ When a new hole is found, add it here in the same sitting as the code change, wi
 18. **Grey taka and mill receipt.** CHALTRN metres (WMTS, MMTS, RMTS, CMTS) are the taka rows of that mill dispatch, joined by CARDNO. Each MILLREC row keeps its voucher, mill, job rate, received pieces and metres, and the despatch it came from (CARDNO or DESPNO). TDS on that bill rounds up to the next rupee.
 
 19. **Account heads and brokers.** Every MASTER row is an account under its ATYPE name: debtors, creditors, expenses, trading, and assets. A head used on a voucher but missing from MASTER is still created. MASTER.commission is the broker percent. A broker stays a creditor. PINVTRN.BROKER_CODE is the broker on the mill dispatch. Expense heads such as Travelling must appear on a purchase bill and on the journal opposite list.
+
+These live in the software. A later backup does not replace them, and they are not rebuilt unless the user says that one is still wrong.
+
+20. **Keyboard entry.** Enter moves to the next field. Enter at the end of a filled line adds the next line and focuses its first field. Two Enters on that blank line ask to save. Down, then Enter, on a blank line also asks to save. F9 saves. The mouse Add Line button stays.
+
+21. **Sale bill print.** The bill prints as one full A4 tax invoice from its own page. The ERP screen is not what is sent to the printer.
+
+22. **Open the voucher from the row.** A ledger or report row opens that voucher in edit. Back returns one step and keeps the party search.
+
+23. **GST on entry.** A party with no GSTIN is asked before the entry continues. GST type can be Local, Interstate, or Non GST. Non GST sets the rate to 0. If the master has no GST and the user continues, the type follows the GSTIN.
+
+24. **LR, rate, and photo.** LR number and LR date can be entered on one sale bill or on many bills together. The rate and cut last typed for an item are remembered on the next bill. A photo fill follows the sales type already selected. E-way and e-invoice stay as built. Poonam and Sunita e-way mode are left as they are unless the user asks to change them.
