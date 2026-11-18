@@ -176,7 +176,20 @@ function mergeBillLines(lines: SalesLineItem[]): SalesLineItem[] {
   const order: string[] = [];
   lines.forEach((line, index) => {
     const name = itemKey(line.itemName || line.screenName);
-    const key = name || `__row_${index}`;
+    // One sales-order line stays one bill line. Order 7 is 20×24 and a
+    // separate 10-piece list, not one line whose cut is metres ÷ pieces.
+    const key = name
+      ? [
+        name,
+        itemKey(line.unit),
+        String(toNum(line.cut)),
+        String(toNum(line.rate)),
+        String(toNum(line.lessFold)),
+        itemKey(line.bundleEntry),
+        String(line.sourceSalesOrderId || ''),
+        String(line.sourceLineNo ?? index)
+      ].join('|')
+      : `__row_${index}`;
     if (!groups.has(key)) {
       groups.set(key, []);
       order.push(key);
@@ -212,7 +225,7 @@ function mergeBillLines(lines: SalesLineItem[]): SalesLineItem[] {
       pcs,
       mtsQty,
       bundles,
-      cut: pcs > 0 ? round2(mtsQty / pcs) : toNum(first.cut),
+      cut: toNum(first.cut),
       sourceSalesOrderId: first.sourceSalesOrderId,
       sourceOrderNo: orderNos.join(', '),
       sourceLineNo: first.sourceLineNo,
@@ -702,6 +715,8 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
           pcs: toNum(line.pendingPcs),
           mtsQty: toNum(line.pendingMts),
           cut: toNum(line.cut),
+          lessFold: toNum(line.lessFold),
+          bundleEntry: line.bundleEntry,
           rate: toNum(line.rate),
           bundles: toNum(line.bundles),
           packing: line.packing || 'NAKED',
@@ -719,7 +734,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
     setSuccess(
       orders.length === 1
         ? `Sales Order #${primary.orderNo} loaded. All items are editable.`
-        : `${orders.length} Sales Orders loaded. Same item names are merged and quantities added.`
+        : `${orders.length} Sales Orders loaded. Each order line stays on its own row.`
     );
     setPickerOpen(false);
   };
@@ -1153,8 +1168,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
       .map(line => ({
         ...line,
         itemName: line.itemName || line.mainScreen,
-        screenName: line.screenName || line.itemName || line.mainScreen,
-        bundleEntry: undefined
+        screenName: line.screenName || line.itemName || line.mainScreen
       }))
   });
 

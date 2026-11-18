@@ -94,6 +94,7 @@ function normalizeSalesLines(raw, context = {}) {
       itemMasterId: optionalString(input.itemMasterId),
       itemName: optionalString(input.itemName || input.description) || '',
       bundles: roundMoney(input.bundles ?? 0),
+      bundleEntry: optionalString(input.bundleEntry),
       mainScreen: optionalString(input.mainScreen) || '',
       screenName: optionalString(input.screenName) || optionalString(input.itemName || input.description) || '',
       packing: optionalString(input.packing) || 'NAKED',

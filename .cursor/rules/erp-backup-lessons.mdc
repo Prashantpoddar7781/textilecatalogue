@@ -66,3 +66,5 @@ These live in the software. A later backup does not replace them, and they are n
 27. **Sales order fold and bundle cut.** A sales order line has Less Fold and Net Mtrs, the same columns as a finish sale. Net metres = gross MTS × (100 − less fold) / 100, and a metre line is priced on that net. Bundles accepts `30*24`: 30 pieces, cut 24, 720 metres. A list with no star, such as `24.5+22+23.5`, is 3 pieces, cut 0, and metres are the sum. The typed text stays in Bundles. A later backup must keep less fold on the order line.
 
 28. **HSN from the item master.** Quality Information HSN is the bill HSN. Korean Silk stored as 540752 must not stay on the series default 5407. Picking the item fills the line and the bill HSN from `hsnSac`.
+
+29. **Sales order lines on a sale bill.** Picking a sales order copies each of its lines. Order 7 stays 20×24 (480 m, cut 24) and the 10-piece list (216 m, cut 0). It must not become one Korean Silk line of 30 pcs with cut 23. Cut is not rewritten as metres ÷ pieces. The bundle text of each line is kept.
