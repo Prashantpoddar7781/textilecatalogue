@@ -177,6 +177,11 @@ export function isChequeReturnedEntry(entry?: { remarks?: string | null } | null
   return /CHEQUE RETN\. ON\b/i.test(String(entry?.remarks || ''));
 }
 
+/** The bounced receipt, or the payment that reverses it. Neither is money still lying with the party. */
+export function isChequeReturnVoucher(entry?: { remarks?: string | null } | null): boolean {
+  return isChequeReturnedEntry(entry) || /\bCHQ RETURN\b/i.test(String(entry?.remarks || ''));
+}
+
 function formatLedgerDate(dateValue?: string | Date | null): string {
   if (!dateValue) return '';
   const date = dateValue instanceof Date ? dateValue : new Date(dateValue);
@@ -198,17 +203,21 @@ export function formatAdjustedOnRemark(dateValue?: string | Date | null): string
   return stamp ? `ADJUSTED ON : ${stamp}` : '';
 }
 
-/** Unadjusted surplus created by a bank entry (amount not applied to real bills). */
+/**
+ * Cash on this voucher that was not applied to a bill, note, or journal.
+ * A debit note picked on the receipt is applied money. A bounced cheque is not an unadjusted balance.
+ */
 export function unadjAmountCreated(entry?: {
   amount?: number | null;
-  billAllocations?: Array<{ billType?: string | null; entryKind?: string | null; adjustAmount?: number }> | null;
+  remarks?: string | null;
+  billAllocations?: Array<{ billType?: string | null; entryKind?: string | null; adjustDirection?: string | null; adjustAmount?: number }> | null;
 } | null): number {
-  if (!entry) return 0;
+  if (!entry || isChequeReturnVoucher(entry)) return 0;
   const amount = Math.round((Number(entry.amount) || 0) * 100) / 100;
   const allocations = Array.isArray(entry.billAllocations) ? entry.billAllocations : [];
   const billAdjusted = allocations.reduce((sum, item) => {
-    if (!item || item.billType === 'credit_debit_note' || isUnadjAllocation(item) || isDeductAllocation(item)) return sum;
+    if (!item || isUnadjAllocation(item) || isDeductAllocation(item)) return sum;
     return sum + (Math.round((Number(item.adjustAmount) || 0) * 100) / 100);
   }, 0);
-  return Math.round(Math.max(amount - billAdjusted, 0) * 100) / 100;
+  return Math.round(Math.max(amount - billAdjusted, 0) * 100) / 100);
 }

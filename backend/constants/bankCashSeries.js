@@ -111,6 +111,11 @@ export function isChequeReturnedEntry(entry) {
   return /CHEQUE RETN\. ON\b/i.test(String(entry?.remarks || ''));
 }
 
+/** The bounced receipt, or the payment that reverses it. Neither is money still lying with the party. */
+export function isChequeReturnVoucher(entry) {
+  return isChequeReturnedEntry(entry) || /\bCHQ RETURN\b/i.test(String(entry?.remarks || ''));
+}
+
 export function chequeReturnedRemark(dateValue, billNosRemark) {
   const stamp = formatLedgerDate(dateValue);
   const head = stamp ? `CHEQUE RETN. ON ${stamp}` : 'CHEQUE RETN. ON';
@@ -144,13 +149,18 @@ export function formatAdjustedOnRemark(dateValue) {
   return stamp ? `ADJUSTED ON : ${stamp}` : '';
 }
 
-/** Unadjusted surplus created by a bank entry (amount not applied to real bills). */
+/**
+ * Cash on this voucher that was not applied to a bill, note, or journal.
+ * A debit note picked on the receipt is applied money. A deduct (credit note
+ * or an older unadjusted voucher) is already netted out of the cash.
+ * A bounced cheque is not an unadjusted balance.
+ */
 export function unadjAmountCreated(entry) {
-  if (!entry) return 0;
+  if (!entry || isChequeReturnVoucher(entry)) return 0;
   const amount = Math.round((Number(entry.amount) || 0) * 100) / 100;
   const allocations = Array.isArray(entry.billAllocations) ? entry.billAllocations : [];
   const billAdjusted = allocations.reduce((sum, item) => {
-    if (!item || item.billType === 'credit_debit_note' || isUnadjAllocation(item) || isDeductAllocation(item)) return sum;
+    if (!item || isUnadjAllocation(item) || isDeductAllocation(item)) return sum;
     return sum + (Math.round((Number(item.adjustAmount) || 0) * 100) / 100);
   }, 0);
   return Math.round(Math.max(amount - billAdjusted, 0) * 100) / 100;
