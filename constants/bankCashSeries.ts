@@ -219,5 +219,5 @@ export function unadjAmountCreated(entry?: {
     if (!item || isUnadjAllocation(item) || isDeductAllocation(item)) return sum;
     return sum + (Math.round((Number(item.adjustAmount) || 0) * 100) / 100);
   }, 0);
-  return Math.round(Math.max(amount - billAdjusted, 0) * 100) / 100);
+  return Math.round(Math.max(amount - billAdjusted, 0) * 100) / 100;
 }

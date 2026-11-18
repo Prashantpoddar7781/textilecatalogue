@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react';
 
 const FIELD_SELECTOR = [
-  'input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([disabled]):not([data-erp-skip-nav])',
+  'input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([disabled]):not([readonly]):not([data-erp-skip-nav])',
   'select:not([disabled]):not([data-erp-skip-nav])',
-  'textarea:not([disabled]):not([data-erp-skip-nav])'
+  'textarea:not([disabled]):not([readonly]):not([data-erp-skip-nav])'
 ].join(', ');
 
 export function getNavigableFields(container: HTMLElement): HTMLElement[] {
@@ -163,15 +163,16 @@ export function useErpFormKeyboard(onSave: () => void | Promise<void>, options: 
       }
       saveArmed.current = false;
 
-      const atLineEnd = Boolean(lineRow) && lineFields[lineFields.length - 1] === target;
-      if (atLineEnd) {
-        if (!lineHasEntry(lineRow as Element)) {
+      const nextField = fields[currentIndex + 1];
+      const atLineEnd = Boolean(lineRow) && (!nextField || !lineRow.contains(nextField));
+      if (atLineEnd && lineRow) {
+        if (!lineHasEntry(lineRow)) {
           event.preventDefault();
           event.stopPropagation();
           requestSave();
           return;
         }
-        const grid = lineRow?.closest('[data-erp-line-grid]');
+        const grid = lineRow.closest('[data-erp-line-grid]');
         const control = grid?.querySelector<HTMLElement>('[data-erp-add-line]');
         if (control) {
           event.preventDefault();
@@ -179,15 +180,21 @@ export function useErpFormKeyboard(onSave: () => void | Promise<void>, options: 
           const before = grid?.querySelectorAll('[data-erp-line]').length || 0;
           if (control instanceof HTMLButtonElement) {
             control.click();
-            window.setTimeout(() => {
+            const focusNewLine = () => {
               const rows = grid?.querySelectorAll('[data-erp-line]');
               const last = rows && rows.length > before ? rows[rows.length - 1] : null;
               const first = last ? getNavigableFields(last as HTMLElement)[0] : null;
-              first?.focus();
+              if (!first) return false;
+              first.focus();
               if (first instanceof HTMLInputElement || first instanceof HTMLTextAreaElement) {
                 first.setSelectionRange?.(0, 0);
               }
-            }, 40);
+              return document.activeElement === first;
+            };
+            window.requestAnimationFrame(() => {
+              if (focusNewLine()) return;
+              window.setTimeout(focusNewLine, 60);
+            });
           } else {
             control.focus();
             if (control instanceof HTMLInputElement) control.select();
@@ -195,7 +202,7 @@ export function useErpFormKeyboard(onSave: () => void | Promise<void>, options: 
           return;
         }
         const rows = grid ? Array.from(grid.querySelectorAll('[data-erp-line]')) : [];
-        const rowIndex = lineRow ? rows.indexOf(lineRow) : -1;
+        const rowIndex = rows.indexOf(lineRow);
         if (rowIndex >= 0 && rowIndex < rows.length - 1) {
           event.preventDefault();
           event.stopPropagation();
