@@ -15,6 +15,7 @@ import {
   isPurchaseReturn,
   applyBillRoundOff,
   mapOrderToPendingBill,
+  saleBillDiscount,
   mapPurchaseBillToPendingBill,
   mapWorkReceiptToPendingBill,
   isWorkReceiptBill,
@@ -893,7 +894,15 @@ router.get('/outstanding-report', authenticateToken, requireActiveSubscription, 
         .filter(order => !isSalesGoodsReturn(order.transactionType))
         .filter(order => !normalizedType
           || normalizeTransactionType(order.transactionType, DEFAULT_SALES_TRANSACTION_TYPE) === normalizedType)
-        .map(order => mapOrderToPendingBill(order, paidByOrderId, asOf))
+        .map(order => {
+          const mapped = mapOrderToPendingBill(order, paidByOrderId, asOf);
+          const discount = saleBillDiscount(order);
+          if (!(discount > 0.5)) return mapped;
+          return {
+            ...mapped,
+            pendingAmount: roundMoney(Math.max((mapped.pendingAmount || 0) - discount, 0))
+          };
+        })
         .filter(bill => includeSettled || bill.pendingAmount > 0.001);
 
       // Goods returns credit the party — include as negative outstanding rows.
