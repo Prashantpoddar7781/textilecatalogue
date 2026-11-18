@@ -786,13 +786,14 @@ export const ErpExpensesPage: React.FC<Props> = ({ onBack, erpSession }) => {
             </div>
           </section>
 
-          <section className="mt-4 overflow-hidden rounded-2xl border bg-white shadow-sm">
+          <section data-erp-line-grid className="mt-4 overflow-hidden rounded-2xl border bg-white shadow-sm">
             <div className="flex items-center justify-between border-b bg-violet-50 px-4 py-3">
               <p className="text-[10px] font-black uppercase tracking-widest text-violet-800">
                 Particulars · Amount = (MTS if &gt; 0 else PCS) × Rate
               </p>
               <button
                 type="button"
+                data-erp-add-line
                 onClick={() => setLineItems(prev => [...prev, blankLine(Math.max(0, ...prev.map(line => toNum(line.lineNo))) + 1, defaultGstRate, defaultHsnCode, toNum(dhara))])}
                 className="inline-flex items-center gap-1 rounded-lg bg-violet-600 px-3 py-1.5 text-[10px] font-black uppercase text-white"
               >
@@ -810,7 +811,7 @@ export const ErpExpensesPage: React.FC<Props> = ({ onBack, erpSession }) => {
                 </thead>
                 <tbody>
                   {lineItems.map((line, index) => (
-                    <tr key={index} className="border-b odd:bg-white even:bg-slate-50">
+                    <tr key={index} data-erp-line className="border-b odd:bg-white even:bg-slate-50">
                       <td className="px-2 py-1.5 font-black">{index + 1}</td>
                       <td className="min-w-[140px] px-1 py-1.5">
                         <input
@@ -833,16 +834,16 @@ export const ErpExpensesPage: React.FC<Props> = ({ onBack, erpSession }) => {
                           onChange={e => updateLine(index, 'mainScreen', e.target.value)}
                         />
                       </td>
-                      <td className="px-1 py-1.5"><input className={inputClass} value={line.packing} onChange={e => updateLine(index, 'packing', e.target.value)} /></td>
-                      <td className="px-1 py-1.5"><input className={inputClass} value={line.unit} onChange={e => updateLine(index, 'unit', e.target.value)} /></td>
+                      <td className="px-1 py-1.5"><input data-erp-line-default className={inputClass} value={line.packing} onChange={e => updateLine(index, 'packing', e.target.value)} /></td>
+                      <td className="px-1 py-1.5"><input data-erp-line-default className={inputClass} value={line.unit} onChange={e => updateLine(index, 'unit', e.target.value)} /></td>
                       <td className="px-1 py-1.5"><input className={inputClass} type="number" value={line.pcs || ''} onChange={e => updateLine(index, 'pcs', toNum(e.target.value))} /></td>
                       <td className="px-1 py-1.5"><input className={inputClass} type="number" value={line.cut || ''} onChange={e => updateLine(index, 'cut', toNum(e.target.value))} /></td>
                       <td className="px-1 py-1.5"><input className={inputClass} type="number" value={line.mtsQty || ''} onChange={e => updateLine(index, 'mtsQty', toNum(e.target.value))} /></td>
                       <td className="px-1 py-1.5"><input className={inputClass} type="number" value={line.rate || ''} onChange={e => updateLine(index, 'rate', toNum(e.target.value))} /></td>
                       <td className="px-2 py-1.5 text-right font-bold">{round2(toNum(line.amount)).toFixed(2)}</td>
-                      <td className="px-1 py-1.5"><input className={inputClass} type="number" value={line.discountPercent || ''} onChange={e => updateLine(index, 'discountPercent', toNum(e.target.value))} /></td>
+                      <td className="px-1 py-1.5"><input data-erp-line-default className={inputClass} type="number" value={line.discountPercent || ''} onChange={e => updateLine(index, 'discountPercent', toNum(e.target.value))} /></td>
                       <td className="px-1 py-1.5"><input className={inputClass} type="number" value={line.manualAddLess || ''} onChange={e => updateLine(index, 'manualAddLess', toNum(e.target.value))} /></td>
-                      <td className="px-1 py-1.5"><input className={inputClass} type="number" value={line.gstRate || ''} onChange={e => updateLine(index, 'gstRate', toNum(e.target.value))} /></td>
+                      <td className="px-1 py-1.5"><input data-erp-line-default className={inputClass} type="number" value={line.gstRate || ''} onChange={e => updateLine(index, 'gstRate', toNum(e.target.value))} /></td>
                       <td className="px-2 py-1.5 text-right font-bold">{round2(toNum(line.taxAmount)).toFixed(2)}</td>
                       <td className="px-2 py-1.5 text-right font-black text-violet-800">{round2(toNum(line.totalAmount)).toFixed(2)}</td>
                       <td className="px-1 py-1.5">

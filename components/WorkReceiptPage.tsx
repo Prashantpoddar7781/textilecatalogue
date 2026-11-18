@@ -993,7 +993,7 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
             )}
           </section>
 
-          <section className="mt-4 overflow-hidden rounded-2xl border bg-white shadow-sm">
+          <section data-erp-line-grid className="mt-4 overflow-hidden rounded-2xl border bg-white shadow-sm">
             <div className="flex items-center justify-between border-b bg-fuchsia-50 px-4 py-3">
               <p className="text-[10px] font-black uppercase tracking-widest text-fuchsia-800">
                 {selectedSources.length
@@ -1002,6 +1002,7 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
               </p>
               <button
                 type="button"
+                data-erp-add-line
                 onClick={() => setLines(prev => [...prev, blankLine(Math.max(0, ...prev.map(line => toNum(line.lineNo))) + 1)])}
                 className="inline-flex items-center gap-1 rounded-lg bg-fuchsia-600 px-3 py-1.5 text-[10px] font-black uppercase text-white"
               >
@@ -1034,7 +1035,7 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
                     <tr><td colSpan={15} className="px-4 py-8 text-center text-sm text-gray-500">Add lines, or pick a work desp challan to load pcs / rate / cut / mts.</td></tr>
                   )}
                   {lines.map((line, index) => (
-                    <tr key={index} className="border-b">
+                    <tr key={index} data-erp-line className="border-b">
                       <td className="px-2 py-2 text-[11px] font-bold text-fuchsia-800">{line.sourceChallanNo || '-'}</td>
                       <td className="px-2 py-2">
                         <input className={inputClass} value={line.itemName} onChange={e => updateLine(index, { itemName: e.target.value })} placeholder="Item / design" />
@@ -1043,10 +1044,10 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
                         <input className={inputClass} value={line.category || ''} onChange={e => updateLine(index, { category: e.target.value })} placeholder="Category" />
                       </td>
                       <td className="px-2 py-2">
-                        <input className={inputClass} value={line.jobType || ''} onChange={e => updateLine(index, { jobType: e.target.value })} />
+                        <input data-erp-line-default className={inputClass} value={line.jobType || ''} onChange={e => updateLine(index, { jobType: e.target.value })} />
                       </td>
                       <td className="px-2 py-2"><input className={inputClass} type="number" value={line.pcs || ''} onChange={e => updateLine(index, { pcs: toNum(e.target.value) })} /></td>
-                      <td className="px-2 py-2"><input className={inputClass} type="number" step="0.01" value={line.cut} onChange={e => updateLine(index, { cut: toNum(e.target.value) })} /></td>
+                      <td className="px-2 py-2"><input data-erp-line-default className={inputClass} type="number" step="0.01" value={line.cut} onChange={e => updateLine(index, { cut: toNum(e.target.value) })} /></td>
                       <td className="px-2 py-2"><input className={inputClass} type="number" step="0.01" value={line.mtsQty || ''} onChange={e => updateLine(index, { mtsQty: toNum(e.target.value) })} /></td>
                       <td className="px-2 py-2"><input className={inputClass} type="number" step="0.01" value={line.plain || ''} onChange={e => updateLine(index, { plain: toNum(e.target.value) })} /></td>
                       <td className="px-2 py-2"><input className={inputClass} type="number" step="0.01" value={line.sec || ''} onChange={e => updateLine(index, { sec: toNum(e.target.value) })} /></td>

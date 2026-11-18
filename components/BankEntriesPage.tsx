@@ -1411,7 +1411,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
             </section>
 
             {/* Bill pick — Empire: Type + Bill No; list only after typing; show selected rows only */}
-            <section className="rounded-3xl border border-gray-100 bg-white shadow-sm">
+            <section data-erp-line-grid className="rounded-3xl border border-gray-100 bg-white shadow-sm">
               <div className="flex flex-wrap items-end justify-between gap-3 border-b px-5 py-4">
                 <div>
                   <h2 className="text-sm font-black uppercase tracking-wide text-gray-900">Bill allocation</h2>
@@ -1427,6 +1427,8 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                     <label className={labelClass}>Type</label>
                     <input
                       ref={billTypeRef}
+                      data-erp-arrow-custom
+                      data-erp-enter-custom
                       className="min-w-[200px] rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm font-semibold outline-none focus:border-indigo-400"
                       placeholder={form.entryType === 'payment' ? 'FINISH PURCHASE' : 'FINISH SALES'}
                       value={billType}
@@ -1494,6 +1496,8 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                     <label className={labelClass}>Bill No.</label>
                     <input
                       ref={billNoRef}
+                      data-erp-add-line
+                      data-erp-save-if-empty
                       className="min-w-[220px] rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm font-semibold outline-none focus:border-indigo-400"
                       placeholder={unadjMode ? 'Type to list unadj…' : (noteMode ? 'Type note no…' : 'Type bill no…')}
                       value={quickBillNo}
@@ -1627,6 +1631,8 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                         return (
                           <tr
                             key={bill.billId}
+                            data-erp-line
+                            data-erp-line-filled
                             className={`border-t ${deduct ? 'bg-violet-50/80' : 'bg-indigo-50/70'}`}
                           >
                             <td className={`px-3 py-2.5 font-black ${deduct ? 'text-violet-800' : 'text-gray-900'}`}>{bill.billNumber}</td>
@@ -1661,7 +1667,6 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                             <td className="px-3 py-2.5 text-right">
                               {deduct ? '—' : (
                                 <input
-                                  data-erp-skip-nav
                                   className="w-16 rounded-lg border border-amber-300 bg-white px-2 py-1.5 text-right text-sm font-bold"
                                   type="number"
                                   min="0"
@@ -1674,7 +1679,6 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                             <td className="px-3 py-2.5 text-right">
                               {deduct ? '—' : (
                                 <input
-                                  data-erp-skip-nav
                                   className="w-24 rounded-lg border border-amber-300 bg-white px-2 py-1.5 text-right text-sm font-bold"
                                   type="number"
                                   min="0"
@@ -1686,7 +1690,6 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                             </td>
                             <td className="px-3 py-2.5 text-right">
                               <input
-                                data-erp-skip-nav
                                 className={`w-28 rounded-lg border px-2 py-1.5 text-right text-sm font-bold ${
                                   deduct ? 'border-violet-300 bg-white' : 'border-indigo-300 bg-white'
                                 }`}

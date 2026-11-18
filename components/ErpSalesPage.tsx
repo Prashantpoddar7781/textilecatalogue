@@ -1566,7 +1566,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
             )}
           </section>
 
-          <section className="mt-4 overflow-hidden rounded-2xl border bg-white shadow-sm">
+          <section data-erp-line-grid className="mt-4 overflow-hidden rounded-2xl border bg-white shadow-sm">
             <div className="flex items-center justify-between border-b bg-indigo-50 px-4 py-3">
               <p className="text-[10px] font-black uppercase tracking-widest text-indigo-800">
                 {isSalesOrder
@@ -1581,6 +1581,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
               </p>
               <button
                 type="button"
+                data-erp-add-line
                 disabled={invoiceLocked}
                 onClick={() => setLineItems(prev => [...prev, blankLine(Math.max(0, ...prev.map(line => toNum(line.lineNo))) + 1, defaultGstRate, defaultHsnCode, toNum(dhara))])}
                 className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-3 py-1.5 text-[10px] font-black uppercase text-white"
@@ -1600,7 +1601,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
                 </thead>
                 <tbody>
                   {lineItems.map((line, index) => (
-                    <tr key={index} className="border-b odd:bg-white even:bg-slate-50">
+                    <tr key={index} data-erp-line className="border-b odd:bg-white even:bg-slate-50">
                       <td className="px-2 py-1.5 font-black">{index + 1}</td>
                       {!isSalesOrder && (
                         <td className="px-2 py-1.5 text-right font-semibold text-amber-800">
@@ -1651,8 +1652,8 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
                           </td>
                         </>
                       )}
-                      <td className="px-1 py-1.5"><input className={inputClass} value={line.packing} onChange={e => updateLine(index, 'packing', e.target.value)} /></td>
-                      <td className="px-1 py-1.5"><input className={inputClass} value={line.unit} onChange={e => updateLine(index, 'unit', e.target.value)} /></td>
+                      <td className="px-1 py-1.5"><input data-erp-line-default className={inputClass} value={line.packing} onChange={e => updateLine(index, 'packing', e.target.value)} /></td>
+                      <td className="px-1 py-1.5"><input data-erp-line-default className={inputClass} value={line.unit} onChange={e => updateLine(index, 'unit', e.target.value)} /></td>
                       <td className="px-1 py-1.5"><input className={inputClass} type="number" value={line.pcs || ''} onChange={e => updateLine(index, 'pcs', toNum(e.target.value))} /></td>
                       <td className="px-1 py-1.5"><input className={inputClass} type="number" value={line.cut || ''} onChange={e => updateLine(index, 'cut', toNum(e.target.value))} /></td>
                       <td className="px-1 py-1.5"><input className={inputClass} type="number" value={line.mtsQty || ''} onChange={e => updateLine(index, 'mtsQty', toNum(e.target.value))} /></td>
@@ -1664,7 +1665,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
                       {isSalesOrder ? (
                         <>
                           <td className="px-1 py-1.5"><input className={inputClass} type="number" value={line.rd || ''} onChange={e => updateLine(index, 'rd', toNum(e.target.value))} /></td>
-                          <td className="px-1 py-1.5"><input className={inputClass} type="number" value={line.discountPercent || ''} onChange={e => updateLine(index, 'discountPercent', toNum(e.target.value))} /></td>
+                          <td className="px-1 py-1.5"><input data-erp-line-default className={inputClass} type="number" value={line.discountPercent || ''} onChange={e => updateLine(index, 'discountPercent', toNum(e.target.value))} /></td>
                           <td className="px-1 py-1.5"><input className={inputClass} type="number" value={line.manualAddLess || ''} onChange={e => updateLine(index, 'manualAddLess', toNum(e.target.value))} /></td>
                           <td className="px-2 py-1.5 text-right font-bold">{round2(toNum(line.igstRate)).toFixed(2)}</td>
                           <td className="px-2 py-1.5 text-right font-bold">{round2(toNum(line.sgstRate)).toFixed(2)}</td>
@@ -1672,9 +1673,9 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
                         </>
                       ) : (
                         <>
-                          <td className="px-1 py-1.5"><input className={inputClass} type="number" value={line.discountPercent || ''} onChange={e => updateLine(index, 'discountPercent', toNum(e.target.value))} /></td>
+                          <td className="px-1 py-1.5"><input data-erp-line-default className={inputClass} type="number" value={line.discountPercent || ''} onChange={e => updateLine(index, 'discountPercent', toNum(e.target.value))} /></td>
                           <td className="px-1 py-1.5"><input className={inputClass} type="number" value={line.manualAddLess || ''} onChange={e => updateLine(index, 'manualAddLess', toNum(e.target.value))} /></td>
-                          <td className="px-1 py-1.5"><input className={inputClass} type="number" value={line.gstRate || ''} onChange={e => updateLine(index, 'gstRate', toNum(e.target.value))} /></td>
+                          <td className="px-1 py-1.5"><input data-erp-line-default className={inputClass} type="number" value={line.gstRate || ''} onChange={e => updateLine(index, 'gstRate', toNum(e.target.value))} /></td>
                           <td className="px-2 py-1.5 text-right font-bold">{round2(toNum(line.taxAmount)).toFixed(2)}</td>
                           <td className="px-2 py-1.5 text-right font-black text-indigo-800">{round2(toNum(line.totalAmount)).toFixed(2)}</td>
                         </>

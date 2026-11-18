@@ -1014,7 +1014,7 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
               </div>
             </div>
 
-            <div className="overflow-x-auto">
+            <div data-erp-line-grid className="overflow-x-auto">
               <table className="min-w-full text-left text-xs">
                 <thead className="border-b bg-gray-50 text-[10px] uppercase text-gray-500">
                   <tr>
@@ -1036,7 +1036,7 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
                 </thead>
                 <tbody>
                   {lines.map(line => (
-                    <tr key={line.key} className={`border-b ${line.key === activeLineKey ? 'bg-teal-50/60' : ''}`}>
+                    <tr key={line.key} data-erp-line data-erp-line-filled className={`border-b ${line.key === activeLineKey ? 'bg-teal-50/60' : ''}`}>
                       <td className="px-2 py-2 font-semibold">{line.lotNo || '-'}</td>
                       <td className="px-2 py-2 font-bold text-teal-800">{line.despNo || '-'}</td>
                       <td className="px-2 py-2">
