@@ -54,6 +54,7 @@ export function useErpFormKeyboard(onSave: () => void | Promise<void>, options: 
   }, []);
 
   const saveArmed = useRef(false);
+  const blankEnters = useRef(0);
 
   const handleKeyDown = useCallback((event: KeyboardEvent) => {
     if (disabled || saving || confirmOpen) return;
@@ -68,6 +69,7 @@ export function useErpFormKeyboard(onSave: () => void | Promise<void>, options: 
 
     if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
       saveArmed.current = false;
+      blankEnters.current = 0;
     }
 
     const fields = getNavigableFields(container);
@@ -154,14 +156,21 @@ export function useErpFormKeyboard(onSave: () => void | Promise<void>, options: 
       if (target.hasAttribute('data-erp-voucher-jump')) return;
       if (target.hasAttribute('data-erp-enter-custom')) return;
 
-      if (saveArmed.current && emptyForSave()) {
+      if (emptyForSave()) {
         event.preventDefault();
         event.stopPropagation();
-        saveArmed.current = false;
-        requestSave();
+        // Two Enters on a blank line ask to save. Down, then Enter, still does too.
+        if (saveArmed.current || blankEnters.current >= 1) {
+          saveArmed.current = false;
+          blankEnters.current = 0;
+          requestSave();
+          return;
+        }
+        blankEnters.current = 1;
         return;
       }
       saveArmed.current = false;
+      blankEnters.current = 0;
 
       const nextField = fields[currentIndex + 1];
       const atLineEnd = Boolean(lineRow) && (!nextField || !lineRow.contains(nextField));
