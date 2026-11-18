@@ -51,6 +51,16 @@ const labelClass = 'mb-1 block text-[10px] font-black uppercase tracking-wide te
 /** Broker accounts use the commission series row: CREDITORS FOR BROKERAGE. */
 const BROKER_ACCOUNT_TYPE = postingPartyAccountType('PURCHASE (COMM)') || 'CREDITORS FOR BROKERAGE';
 
+/** 30*24 in Bundles means 30 pieces, cut 24, and 720 metres. */
+function parseBundleCut(value: string): { pcs: number; cut: number; mts: number } | null {
+  const match = String(value || '').trim().match(/^(\d+(?:\.\d+)?)\s*[*xX]\s*(\d+(?:\.\d+)?)$/);
+  if (!match) return null;
+  const pcs = round2(Number(match[1]));
+  const cut = round2(Number(match[2]));
+  if (!(pcs > 0) || !(cut > 0)) return null;
+  return { pcs, cut, mts: round2(pcs * cut) };
+}
+
 const blankLine = (lineNo = 1, gstRate = 5, hsnCode = '5407', discountPercent = 0): SalesLineItem => ({
   lineNo,
   sourceLineNo: undefined,
@@ -975,9 +985,42 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
     setLineItems(prev => prev.map((line, row) => {
       if (row !== index) return line;
       const next = { ...line, [key]: value };
+      if (key === 'pcs' || key === 'cut' || key === 'mtsQty') delete next.bundleEntry;
       if (key === 'pcs' || key === 'cut') next.mtsQty = round2(toNum(next.pcs) * toNum(next.cut));
       if (key === 'mainScreen' && !next.itemName) next.itemName = String(value);
       if (key === 'itemName' && !next.screenName) next.screenName = String(value);
+      return calcLine(next, businessState, state);
+    }));
+  };
+
+  const updateBundle = (index: number, raw: string) => {
+    if (einvoice?.irn && einvoice.status !== 'cancelled') return;
+    const text = raw.replace(/[^0-9.*xX\s]/g, '');
+    const parsed = parseBundleCut(text);
+    if (parsed) {
+      const current = lineItems[index];
+      if (current && parsed.cut > 0) {
+        const name = String(current.itemName || '').trim().toLowerCase();
+        setItems(prev => prev.map(item => {
+          const match = (current.itemMasterId && item.id === current.itemMasterId)
+            || (name && item.name.trim().toLowerCase() === name);
+          return match ? { ...item, cut: parsed.cut } : item;
+        }));
+      }
+      setLineItems(prev => prev.map((line, row) => row === index ? calcLine({
+        ...line,
+        bundleEntry: text,
+        bundles: parsed.pcs,
+        pcs: parsed.pcs,
+        cut: parsed.cut,
+        mtsQty: parsed.mts,
+        unit: 'MTR'
+      }, businessState, state) : line));
+      return;
+    }
+    setLineItems(prev => prev.map((line, row) => {
+      if (row !== index) return line;
+      const next = { ...line, bundleEntry: text, bundles: toNum(text) };
       return calcLine(next, businessState, state);
     }));
   };
@@ -1096,7 +1139,8 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
       .map(line => ({
         ...line,
         itemName: line.itemName || line.mainScreen,
-        screenName: line.screenName || line.itemName || line.mainScreen
+        screenName: line.screenName || line.itemName || line.mainScreen,
+        bundleEntry: undefined
       }))
   });
 
@@ -1597,7 +1641,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
                 <thead className="border-b bg-gray-50 text-[10px] uppercase text-gray-500">
                   <tr>
                     {(isSalesOrder
-                      ? ['#', 'Main Screen', 'Bundles', 'Screen Name', 'Packing', 'Unit', 'PCS', 'Cut', 'MTS/Qty', 'Rate', 'Amount', 'R.D.', 'Disc %', 'Manual Add/Ls', 'IGST %', 'SGST %', 'CGST/IGST Amt', '']
+                      ? ['#', 'Main Screen', 'Bundles', 'Screen Name', 'Packing', 'Unit', 'PCS', 'Cut', 'MTS/Qty', 'Net Mtrs', 'Rate', 'Amount', 'Less Fold', 'R.D.', 'Disc %', 'Manual Add/Ls', 'IGST %', 'SGST %', 'CGST/IGST Amt', '']
                       : ['#', 'Ref', 'Item Name', 'Bundles', 'Design No', 'Packing', 'Unit', 'PCS', 'Cut', 'MTS/Qty', 'Net Mtrs', 'Rate', 'Amount', 'Less Fold', 'Disc %', 'Add/Less', 'GST %', 'Tax', 'Net', '']
                     ).map(head => <th key={head} className="px-2 py-2 font-black">{head}</th>)}
                   </tr>
@@ -1618,7 +1662,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
                           <td className="min-w-[150px] px-1 py-1.5">
                             <input className={inputClass} list="main-screen-names" value={line.mainScreen} onChange={e => updateLine(index, 'mainScreen', e.target.value)} onBlur={e => checkUnknownMainScreen(index, e.target.value)} />
                           </td>
-                          <td className="px-1 py-1.5"><input className={inputClass} type="number" value={line.bundles || ''} onChange={e => updateLine(index, 'bundles', toNum(e.target.value))} /></td>
+                          <td className="px-1 py-1.5"><input className={`${inputClass} min-w-[4.5rem]`} value={line.bundleEntry ?? (line.bundles ? String(line.bundles) : '')} onChange={e => updateBundle(index, e.target.value)} /></td>
                           <td className="min-w-[140px] px-1 py-1.5">
                             <input
                               className={inputClass}
@@ -1649,7 +1693,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
                               onBlur={e => applyMasterIfKnown(index, e.target.value)}
                             />
                           </td>
-                          <td className="px-1 py-1.5"><input className={inputClass} type="number" value={line.bundles || ''} onChange={e => updateLine(index, 'bundles', toNum(e.target.value))} /></td>
+                          <td className="px-1 py-1.5"><input className={`${inputClass} min-w-[4.5rem]`} value={line.bundleEntry ?? (line.bundles ? String(line.bundles) : '')} onChange={e => updateBundle(index, e.target.value)} /></td>
                           <td className="min-w-[140px] px-1 py-1.5">
                             <input className={inputClass} list="main-screen-names" value={line.mainScreen} onChange={e => updateLine(index, 'mainScreen', e.target.value)} onBlur={e => checkUnknownMainScreen(index, e.target.value)} />
                           </td>
@@ -1660,14 +1704,10 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
                       <td className="px-1 py-1.5"><input className={inputClass} type="number" value={line.pcs || ''} onChange={e => updateLine(index, 'pcs', toNum(e.target.value))} /></td>
                       <td className="px-1 py-1.5"><input className={inputClass} type="number" value={line.cut || ''} onChange={e => updateLine(index, 'cut', toNum(e.target.value))} /></td>
                       <td className="px-1 py-1.5"><input className={inputClass} type="number" value={line.mtsQty || ''} onChange={e => updateLine(index, 'mtsQty', toNum(e.target.value))} /></td>
-                      {!isSalesOrder && (
-                        <td className="px-2 py-1.5 text-right font-semibold">{netMetres(line.mtsQty, line.lessFold).toFixed(2)}</td>
-                      )}
+                      <td className="px-2 py-1.5 text-right font-semibold">{netMetres(line.mtsQty, line.lessFold).toFixed(2)}</td>
                       <td className="px-1 py-1.5"><input className={inputClass} type="number" value={line.rate || ''} onChange={e => updateLine(index, 'rate', toNum(e.target.value))} /></td>
                       <td className="px-2 py-1.5 text-right font-bold">{round2(toNum(line.amount)).toFixed(2)}</td>
-                      {!isSalesOrder && (
-                        <td className="px-1 py-1.5"><input className={inputClass} type="number" value={toNum(line.lessFold)} onChange={e => updateLine(index, 'lessFold', toNum(e.target.value))} /></td>
-                      )}
+                      <td className="px-1 py-1.5"><input className={inputClass} type="number" value={toNum(line.lessFold) || ''} onChange={e => updateLine(index, 'lessFold', toNum(e.target.value))} /></td>
                       {isSalesOrder ? (
                         <>
                           <td className="px-1 py-1.5"><input className={inputClass} type="number" value={line.rd || ''} onChange={e => updateLine(index, 'rd', toNum(e.target.value))} /></td>
@@ -1706,9 +1746,10 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
                     <td className="px-2 py-2 text-right">{totals.pcs.toFixed(2)}</td>
                     <td />
                     <td className="px-2 py-2 text-right">{totals.mts.toFixed(2)}</td>
-                    {!isSalesOrder && <td className="px-2 py-2 text-right">{totals.netMts.toFixed(2)}</td>}
+                    <td className="px-2 py-2 text-right">{totals.netMts.toFixed(2)}</td>
                     <td />
                     <td className="px-2 py-2 text-right">{totals.amount.toFixed(2)}</td>
+                    {isSalesOrder && <td />}
                     <td colSpan={isSalesOrder ? 5 : 4} className="px-2 py-2 text-right">Taxable {totals.taxable.toFixed(2)}</td>
                     <td className="px-2 py-2 text-right text-indigo-800">{(isSalesOrder ? totals.tax : billNet).toFixed(2)}</td>
                     <td />

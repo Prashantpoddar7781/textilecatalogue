@@ -256,6 +256,8 @@ export interface SalesLineItem {
   itemMasterId?: string | null;
   itemName: string;
   bundles: number;
+  /** What was typed in Bundles, such as 30*24, until pieces, cut, or metres are edited. */
+  bundleEntry?: string;
   mainScreen: string;
   screenName?: string | null;
   packing: string;
