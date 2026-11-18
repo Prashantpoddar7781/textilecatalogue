@@ -212,6 +212,7 @@ export interface SaleBillPrintInput {
   sgst: number;
   igst: number;
   netAmount: number;
+  discount?: number;
   bankName?: string;
   bankAccount?: string;
   bankIfsc?: string;
@@ -343,14 +344,16 @@ export function openSaleBillPrint(input: SaleBillPrintInput) {
               <td class="n amt">${money(input.grossAmount)}</td>
             </tr>
             ${taxRows.map(row => `<tr><td class="taxline" colspan="12">${row}</td></tr>`).join('')}
+            ${(Number(input.discount) || 0) > 0.5 ? `<tr><td class="taxline" colspan="11">LESS DISCOUNT</td><td class="n amt">${money(input.discount || 0)}</td></tr>` : ''}
             <tr>
               <td colspan="5">DUE DAYS: ${Number(input.dueDays) || 0}</td>
               <td class="inv" colspan="6">Invoice Value</td>
               <td class="n amt">${money(input.netAmount)}</td>
             </tr>
+            ${(Number(input.discount) || 0) > 0.5 ? `<tr><td colspan="5"></td><td class="inv" colspan="6">Net Amount</td><td class="n amt">${money(Math.round(((input.netAmount || 0) - (input.discount || 0)) * 100) / 100)}</td></tr>` : ''}
           </tbody>
         </table>
-        <div class="words">${escapeHtml(rupeesInWords(input.netAmount).toUpperCase())}</div>
+        <div class="words">${escapeHtml(rupeesInWords((Number(input.discount) || 0) > 0.5 ? Math.round(((input.netAmount || 0) - (input.discount || 0)) * 100) / 100 : input.netAmount).toUpperCase())}</div>
         <div class="sign">
           <div class="terms">
             <div class="termhead">TERMS &amp; CONDITIONS:-</div>

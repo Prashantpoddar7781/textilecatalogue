@@ -716,10 +716,21 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
     if (isDeductAllocation(bill)) {
       return { adjustAmount: adjust, discountPercent: 0, discountAmount: 0 };
     }
-    const pct = partyDhara();
-    const taxable = Number(bill.taxableAmount) || Number(bill.billAmount) || 0;
-    const computed = pct > 0 && taxable > 0 ? roundMoneyLocal(taxable * pct / 100) : 0;
     const pendingAmt = roundMoneyLocal(bill.pendingAmount || 0);
+    const billDisc = roundMoneyLocal(Number(bill.adatDisc) || 0);
+    const taxable = Number(bill.taxableAmount) || Number(bill.billAmount) || 0;
+    if (billDisc > 0.05 && pendingAmt > 0) {
+      const discount = roundMoneyLocal(Math.min(billDisc, pendingAmt));
+      const net = roundMoneyLocal(Math.max(pendingAmt - discount, 0));
+      const percent = taxable > 0 ? roundMoneyLocal((discount / taxable) * 100) : 0;
+      return {
+        adjustAmount: roundMoneyLocal(Math.min(adjust, net)),
+        discountPercent: percent,
+        discountAmount: discount
+      };
+    }
+    const pct = partyDhara();
+    const computed = pct > 0 && taxable > 0 ? roundMoneyLocal(taxable * pct / 100) : 0;
     const shortfall = roundMoneyLocal(Math.max(pendingAmt - adjust, 0));
     if (computed > 0.05 && shortfall > 0.05 && Math.abs(shortfall - computed) <= 1) {
       return { adjustAmount: adjust, discountPercent: pct, discountAmount: shortfall };
@@ -738,7 +749,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
   const pickBill = (billId: string, opts?: { toggle?: boolean }) => {
     const target = pendingBills.find(bill => bill.billId === billId);
     if (!target) return false;
-    const already = (target.adjustAmount || 0) > 0;
+    const already = (target.adjustAmount || 0) > 0 || (target.discountAmount || 0) > 0;
     if (already) {
       if (opts?.toggle === false) return false;
       setPendingBills(prev => prev.map(bill => (
@@ -907,6 +918,8 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
           interestDays: item.interestDays,
           interestAmount: item.interestAmount,
           adatDisc: item.adatDisc,
+          discountPercent: item.discountPercent,
+          discountAmount: item.discountAmount,
           billAmount: item.billAmount,
           pendingAmount: item.pendingAmount,
           taxableAmount: item.taxableAmount,
@@ -1578,7 +1591,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                             >
                               <span className="font-black">{bill.billNumber}</span>
                               <span>
-                                {bill.transactionType || 'Bill'}{bill.oppositeAccount ? ` · ${bill.oppositeAccount}` : ''} · {formatMoney(isDeductRow(bill) ? -(bill.pendingAmount || 0) : (bill.pendingAmount || 0))}
+                                {bill.transactionType || 'Bill'}{bill.oppositeAccount ? ` · ${bill.oppositeAccount}` : ''} · {formatMoney(isDeductRow(bill) ? -(bill.pendingAmount || 0) : (bill.pendingAmount || 0))}{(bill.adatDisc || 0) > 0.5 ? ` · Disc ${formatMoney(bill.adatDisc || 0)}` : ''}
                               </span>
                             </button>
                           ))

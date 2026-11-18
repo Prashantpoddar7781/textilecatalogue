@@ -4,7 +4,7 @@ import { body, validationResult } from 'express-validator';
 import { authenticateToken } from '../middleware/auth.js';
 import { requireActiveSubscription } from '../middleware/subscription.js';
 import { resolveCustomerForEntry } from '../utils/partyMaster.js';
-import { roundMoney, allocateNextInvoiceNumber } from '../utils/orderBilling.js';
+import { roundMoney, allocateNextInvoiceNumber, saleBillDiscount } from '../utils/orderBilling.js';
 import { allocateNextTypeBillNumber } from '../utils/transactionBilling.js';
 import { getStateFromGstin, calculateGstBreakup } from '../utils/gstCalculation.js';
 import { getGstDefaultsForTransactionType } from '../constants/erpTransactionTypes.js';
@@ -835,7 +835,9 @@ async function saveBill(req, res, existing = null) {
       agentName: optionalString(req.body.brokerName || req.body.agentName),
       transportName: optionalString(req.body.transportName),
       discountRate: 0,
-      shippingCharge: totals.totalTaxAmount,
+      shippingCharge: existing && saleBillDiscount(existing) > 0.5
+        ? existing.shippingCharge
+        : totals.totalTaxAmount,
       orderDate: toDate(req.body.orderDate),
       expectedDate: req.body.expectedDate ? toDate(req.body.expectedDate, null) : null,
       haste: optionalString(req.body.haste),

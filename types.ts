@@ -1057,6 +1057,8 @@ export interface BankBillAllocation {
   interestDays?: number;
   interestAmount?: number;
   adatDisc?: number;
+  discountPercent?: number;
+  discountAmount?: number;
   billAmount: number;
   pendingAmount: number;
   taxableAmount?: number;

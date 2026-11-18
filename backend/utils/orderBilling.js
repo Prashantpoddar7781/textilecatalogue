@@ -509,6 +509,7 @@ export function mapOrderToPendingBill(order, paidByOrderId, asOfValue = Date.now
   const billAmount = rounded.billAmount;
   const paidAmount = rounded.paidAmount;
   const pendingAmount = rounded.pendingAmount;
+  const billDiscount = roundMoney(Math.max(saleBillDiscount(order) - allocationDiscount, roundMoney(discountAmount)));
   const billDate = order.orderDate || order.createdAt;
   const displayNumber = order.typeBillNumber != null
     ? String(order.typeBillNumber)
@@ -526,7 +527,7 @@ export function mapOrderToPendingBill(order, paidByOrderId, asOfValue = Date.now
     days,
     agingBucket: bucket,
     grace: order.grace,
-    adatDisc: roundMoney(discountAmount),
+    adatDisc: billDiscount,
     billAmount,
     paidAmount,
     pendingAmount,

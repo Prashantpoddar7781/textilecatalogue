@@ -896,11 +896,13 @@ router.get('/outstanding-report', authenticateToken, requireActiveSubscription, 
           || normalizeTransactionType(order.transactionType, DEFAULT_SALES_TRANSACTION_TYPE) === normalizedType)
         .map(order => {
           const mapped = mapOrderToPendingBill(order, paidByOrderId, asOf);
-          const discount = saleBillDiscount(order);
-          if (!(discount > 0.5)) return mapped;
+          const settlement = paidByOrderId.get(order.id);
+          const already = settlement && typeof settlement === 'object' ? (Number(settlement.discount) || 0) : 0;
+          const extra = roundMoney(Math.max(saleBillDiscount(order) - already, 0));
+          if (!(extra > 0.5)) return mapped;
           return {
             ...mapped,
-            pendingAmount: roundMoney(Math.max((mapped.pendingAmount || 0) - discount, 0))
+            pendingAmount: roundMoney(Math.max((mapped.pendingAmount || 0) - extra, 0))
           };
         })
         .filter(bill => includeSettled || bill.pendingAmount > 0.001);

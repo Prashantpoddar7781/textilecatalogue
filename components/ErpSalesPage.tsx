@@ -99,6 +99,20 @@ const blankLine = (lineNo = 1, gstRate = 5, hsnCode = '5407', discountPercent = 
   hsnCode
 });
 
+/** Bill discount stored as final amount minus taxable, when that gap is below the GST. */
+function empireBillDiscount(bill: { shippingCharge?: number | null; orderLines?: unknown }): number {
+  const lines = Array.isArray(bill.orderLines) ? bill.orderLines : [];
+  const taxable = lines.reduce((sum, line) => sum + (Number(line?.amount) || 0), 0);
+  const tax = lines.reduce((sum, line) => sum + (Number(line?.taxAmount) || 0), 0);
+  const ship = Number(bill.shippingCharge) || 0;
+  if (!(ship > 0.5) || ship + 0.5 >= tax) return 0;
+  const invoice = lines.reduce((sum, line) => sum + (Number(line?.totalAmount) || 0), 0);
+  const roundedInvoice = Math.round(invoice + Math.sign(invoice) * 1e-9);
+  const finalAmt = Math.round((taxable + ship) * 100) / 100;
+  const gap = Math.round((roundedInvoice - finalAmt) * 100) / 100;
+  return gap > 0.5 ? gap : 0;
+}
+
 function plainBillNo(counter?: number | string | null) {
   if (counter == null || counter === '') return '';
   const numeric = Number(counter);
@@ -340,6 +354,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [haste, setHaste] = useState('');
   const [hasteGstin, setHasteGstin] = useState('');
   const [dhara, setDhara] = useState('0');
+  const [billDiscount, setBillDiscount] = useState(0);
   const [grace, setGrace] = useState('0');
   const [screenSeries, setScreenSeries] = useState('');
   const [orderNo, setOrderNo] = useState('');
@@ -431,6 +446,9 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
   }), { pcs: 0, mts: 0, netMts: 0, amount: 0, taxable: 0, tax: 0, net: 0, cgst: 0, sgst: 0, igst: 0 }), [lineItems]);
   const billNet = isSalesOrder ? totals.net : roundRupee(totals.net);
   const roundOff = round2(billNet - totals.net);
+  const lineDiscount = round2(lineItems.reduce((sum, line) => sum + toNum(line.discountAmount), 0));
+  const shownDiscount = !isSalesOrder && lineDiscount > 0.5 ? lineDiscount : (!isSalesOrder ? billDiscount : 0);
+  const netAfterDiscount = round2(billNet - shownDiscount);
 
   useEffect(() => {
     let cancelled = false;
@@ -458,6 +476,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
           setHsnCode(d.hsnCode);
           setOrderNo(String(meta.nextOrderNo || 1));
           setLineItems([blankLine(1, d.gstRate, d.hsnCode)]);
+          setBillDiscount(0);
         }
 
         if (editId && (editKind === 'order' || transactionType === 'SALES ORDERS')) {
@@ -582,6 +601,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
     setHaste(bill.haste || '');
     setHasteGstin(bill.hasteGstin || '');
     setDhara(String(bill.dhara ?? 0));
+    setBillDiscount(empireBillDiscount(bill));
     setGrace(String(bill.grace ?? 0));
     setScreenSeries(bill.screenSeries || '');
     setSelectedSources(sources);
@@ -1303,6 +1323,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
       sgst: totals.sgst,
       igst: totals.igst,
       netAmount: isSalesOrder ? totals.net : billNet,
+      discount: shownDiscount,
       bankName: profile?.bankName || '',
       bankAccount: profile?.bankAccount || '',
       bankIfsc: profile?.bankIfsc || '',
@@ -1807,8 +1828,11 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
             {!isSalesOrder && Math.abs(roundOff) >= 0.005 && (
               <label><span className={labelClass}>Round Off</span><input className={readonlyClass} value={roundOff.toFixed(2)} readOnly /></label>
             )}
+            {!isSalesOrder && (
+              <label><span className={labelClass}>Discount</span><input className={readonlyClass} value={shownDiscount.toFixed(2)} readOnly /></label>
+            )}
             <label><span className={labelClass}>Bill Amt</span><input className={readonlyClass} value={(isSalesOrder ? totals.net : billNet).toFixed(2)} readOnly /></label>
-            <label><span className={labelClass}>Net Amt</span><input className={`${readonlyClass} font-black text-indigo-800`} value={(isSalesOrder ? totals.net : billNet).toFixed(2)} readOnly /></label>
+            <label><span className={labelClass}>Net Amt</span><input className={`${readonlyClass} font-black text-indigo-800`} value={(isSalesOrder ? totals.net : netAfterDiscount).toFixed(2)} readOnly /></label>
             {ewayBill && (
               <label className="md:col-span-2">
                 <span className={labelClass}>E-Way Bill No.</span>
