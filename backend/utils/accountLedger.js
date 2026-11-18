@@ -18,7 +18,7 @@ import {
 } from './orderBilling.js';
 import { isPurchaseReturn } from './erpLineItems.js';
 import { isExpensePurchaseType } from '../constants/erpTransactionTypes.js';
-import { postingDiscountAccount, postingSaleOrPurchaseAccount, postingTdsAccount, resolveDiscountJournal, formatSeriesBillNumber } from '../constants/erpTransactionPostingRules.js';
+import { postingDiscountAccount, postingSaleOrPurchaseAccount, postingTdsAccount, resolveDiscountJournal, formatSeriesBillNumber, getPostingRule, ERP_POSTING_RULES } from '../constants/erpTransactionPostingRules.js';
 import { parseNoteType } from '../constants/creditDebitNoteTypes.js';
 import {
   formatAdjustedOnRemark,
@@ -202,7 +202,8 @@ function pushJournalLedgerRows(rawEntries, vouchers, { partyName, paidByBill } =
           : (paidOn || `Journal ${billNo} · ${voucher.oppositeAccount || ''}${narration ? ` · ${narration}` : ''}`),
         remarks: paidOn || narration,
         debitAmount: partyCredit ? 0 : amount,
-        creditAmount: partyCredit ? amount : 0
+        creditAmount: partyCredit ? amount : 0,
+        transactionType: voucher.transactionType || ''
       });
     } else {
       rawEntries.push({
@@ -216,7 +217,8 @@ function pushJournalLedgerRows(rawEntries, vouchers, { partyName, paidByBill } =
         particulars: `Journal ${billNo} · ${voucher.partyName}${narration ? ` · ${narration}` : ''}`,
         remarks: narration,
         debitAmount: partyCredit ? amount : 0,
-        creditAmount: partyCredit ? 0 : amount
+        creditAmount: partyCredit ? 0 : amount,
+        transactionType: voucher.transactionType || ''
       });
     }
   }
@@ -869,6 +871,111 @@ async function buildCommissionNominalLedger(prisma, userId, accountName) {
   return { partyType: 'customer', partyName: name, ledger: rows };
 }
 
+function salesSeriesForAccount(accountName) {
+  const target = String(accountName || '').trim().toLowerCase();
+  if (!target) return [];
+  return ERP_POSTING_RULES.filter(row => {
+    const account = String(row.saleOrPurchaseAccount || '').trim().toLowerCase();
+    return account && account === target && String(row.series || '').toUpperCase().includes('SALES');
+  });
+}
+
+function printedSaleBill(order) {
+  const rule = getPostingRule(order?.transactionType);
+  const number = order?.typeBillNumber;
+  if (number == null || number === '') return order?.orderNumber || '-';
+  return rule?.billSuffix ? `${number}/${rule.billSuffix}` : String(number);
+}
+
+function saleLineGst(order) {
+  const lines = normalizeOrderLines(order?.orderLines);
+  let igst = 0;
+  let cgst = 0;
+  let sgst = 0;
+  let tax = 0;
+  for (const line of lines) {
+    igst = roundMoney(igst + (Number(line.igstAmount) || 0));
+    cgst = roundMoney(cgst + (Number(line.cgstAmount) || 0));
+    sgst = roundMoney(sgst + (Number(line.sgstAmount) || 0));
+    tax = roundMoney(tax + (Number(line.taxAmount) || 0));
+  }
+  if (igst + cgst + sgst <= 0.001 && tax > 0.001) {
+    if (String(order?.gstType || '').toLowerCase() === 'cgst') {
+      cgst = roundMoney(tax / 2);
+      sgst = roundMoney(tax - cgst);
+    } else {
+      igst = tax;
+    }
+  }
+  return { igst, cgst, sgst };
+}
+
+/**
+ * Sale/Pur A/C for a finish sale. Empire credits this account with the invoice
+ * and debits the GST back out (the VAT JV). The bill is the source, so a sale
+ * that has no VAT JV still shows both sides. GST stays in paise.
+ */
+async function buildSaleNominalLedger(prisma, userId, accountName, { fromDate, toDate } = {}) {
+  const series = salesSeriesForAccount(accountName);
+  if (!series.length) return { ledger: [] };
+  const fromDay = fromDate ? calendarDay(fromDate) : '';
+  const toDay = toDate ? calendarDay(toDate) : '';
+  const orders = await prisma.order.findMany({
+    where: {
+      userId,
+      status: 'completed',
+      transactionType: { in: series.map(row => row.series) }
+    },
+    include: { customer: true },
+    orderBy: [{ orderDate: 'asc' }, { createdAt: 'asc' }]
+  });
+  const rows = [];
+  for (const order of orders) {
+    const posted = resolvePostedSaleAmount(order);
+    if (!(posted.amount > 0)) continue;
+    const party = getOrderPartyName(order) || 'Customer';
+    const billNo = printedSaleBill(order);
+    const isReturn = isSalesGoodsReturn(order.transactionType);
+    const date = order.orderDate || order.createdAt;
+    const day = calendarDay(date);
+    if (fromDay && day < fromDay) continue;
+    if (toDay && day > toDay) continue;
+    const remark = `${party} - BN${billNo}`;
+    rows.push({
+      id: `sale-ac-${order.id}`,
+      sourceType: 'order',
+      sourceId: order.id,
+      date,
+      voucherNumber: String(order.typeBillNumber || '-'),
+      billNumber: billNo,
+      account: party,
+      particulars: remark,
+      remarks: remark,
+      debitAmount: isReturn ? posted.amount : 0,
+      creditAmount: isReturn ? 0 : posted.amount
+    });
+    const gst = saleLineGst(order);
+    const gstDebit = !isReturn;
+    for (const [label, amount] of [['IGST A/C', gst.igst], ['CGST A/C', gst.cgst], ['SGST A/C', gst.sgst]]) {
+      if (!(amount > 0.001)) continue;
+      rows.push({
+        id: `sale-gst-${label}-${order.id}`,
+        sourceType: 'order',
+        sourceId: order.id,
+        date,
+        voucherNumber: String(order.typeBillNumber || '-'),
+        billNumber: billNo,
+        account: label,
+        particulars: remark,
+        remarks: remark,
+        debitAmount: gstDebit ? amount : 0,
+        creditAmount: gstDebit ? 0 : amount
+      });
+    }
+  }
+  return { partyType: 'supplier', partyName: accountName, ledger: rows };
+}
+
 export async function buildUnifiedPartyLedger(prisma, userId, { partyName, supplierId, customerId, fromDate, toDate }) {
   const name = String(partyName || '').trim();
   if (!name) return null;
@@ -915,6 +1022,9 @@ export async function buildUnifiedPartyLedger(prisma, userId, { partyName, suppl
   const nominal = await buildCommissionNominalLedger(prisma, userId, name);
   if (nominal?.ledger?.length) chunks.push(nominal);
 
+  const saleNominal = await buildSaleNominalLedger(prisma, userId, name, { fromDate, toDate });
+  if (saleNominal?.ledger?.length) chunks.push(saleNominal);
+
   const emptyResult = {
     partyType: bankBook ? 'bank' : (resolvedSupplierId ? 'supplier' : 'customer'),
     partyName: name,
@@ -938,8 +1048,11 @@ export async function buildUnifiedPartyLedger(prisma, userId, { partyName, suppl
   }
 
   const byId = new Map();
+  const saleAccount = Boolean(saleNominal?.ledger?.length);
   for (const chunk of chunks) {
     for (const row of chunk.sourceRows || chunk.ledger || []) {
+      // The bill now carries the GST. The imported VAT JV would debit it again.
+      if (saleAccount && String(row.transactionType || '').trim().toUpperCase() === 'VAT JV') continue;
       byId.set(row.id, {
         id: row.id,
         sourceType: row.sourceType,

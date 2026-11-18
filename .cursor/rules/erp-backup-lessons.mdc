@@ -68,3 +68,5 @@ These live in the software. A later backup does not replace them, and they are n
 28. **HSN from the item master.** Quality Information HSN is the bill HSN. Korean Silk stored as 540752 must not stay on the series default 5407. Picking the item fills the line and the bill HSN from `hsnSac`.
 
 29. **Sales order lines on a sale bill.** Picking a sales order copies each of its lines. Order 7 stays 20×24 (480 m, cut 24) and the 10-piece list (216 m, cut 0). It must not become one Korean Silk line of 30 pcs with cut 23. Cut is not rewritten as metres ÷ pieces. The bundle text of each line is kept.
+
+30. **Sales A/C.** FINISH SALES and FINISH SALES (GST) credit SALES A/C with the invoice (the same figure the party is debited) and debit the GST on that bill. The imported VAT JV is the same GST and must not be posted again. A bill with no VAT JV, such as 1468/F through 1478/F, still shows its GST. Empire's GST debit on this account to 18/11/2026 is 23,40,829.53. The sale credit is the invoice, not only the GST.
