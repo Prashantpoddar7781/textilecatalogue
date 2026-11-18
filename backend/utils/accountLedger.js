@@ -115,10 +115,11 @@ function bankEntryLedgerRow(entry, settlementByUnadjId = null) {
 }
 
 /**
- * Receipt bill-discount that has no same-day journal credit. Imported Empire
- * discounts already sit on the DISCOUNT A/C voucher, so only a discount typed
- * on a receipt in this software is added here. The bank-receipt series does
- * not journal it; the party ledger still has to credit it once.
+ * Receipt bill-discount that has no same-day journal. Imported Empire
+ * discounts already sit on the V1 voucher, on the debit or the credit, so
+ * only a discount typed on a receipt in this software is added here. The
+ * bank-receipt series does not journal it; the party ledger still has to
+ * credit it once.
  */
 function pushUncoveredReceiptDiscounts(rawEntries, entries) {
   const account = postingDiscountAccount('FINISH SALES (GST)') || 'DISCOUNT A/C';
@@ -134,7 +135,8 @@ function pushUncoveredReceiptDiscounts(rawEntries, entries) {
   for (const [day, list] of byDay) {
     const covered = rawEntries
       .filter(row => row.sourceType === 'journal_voucher' && calendarDay(row.date) === day)
-      .map(row => roundMoney(row.creditAmount))
+      .flatMap(row => [row.debitAmount, row.creditAmount])
+      .map(amount => roundMoney(amount))
       .filter(amount => amount > 0);
     const open = discountsNotCoveredByCredits(list.map(item => item.amount), covered);
     const pending = [...list];

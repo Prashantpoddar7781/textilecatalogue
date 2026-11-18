@@ -178,9 +178,9 @@ export function receiptBillDiscounts(entry) {
 }
 
 /**
- * A receipt discount that already has a same-day journal credit (imported V1)
- * must not be credited again. Amounts within a rupee are the same discount
- * after the journal was stored in whole rupees.
+ * A receipt discount that already has a same-day journal (imported V1) must
+ * not be credited again. The journal may sit on the debit or the credit of
+ * the party. Amounts within a rupee are the same discount.
  */
 export function discountsNotCoveredByCredits(discounts, credits) {
   const pool = Array.isArray(credits) ? credits : [];

@@ -13,7 +13,7 @@ When a new hole is found, add it here in the same sitting as the code change, wi
 
 2. **State is the GSTIN, not the city.** Empire STATE1 is often the city (SURAT, JAUNPUR). GST state is the first two digits of the GSTIN. A place that is not a real state must not be treated as interstate. City stays in the city field. Repair: `repairPartyStatesFromGstin`.
 
-3. **Sale amount.** Post the full invoice (BILLAMT). `finalamt` is after the bill discount. Do not store `finalamt − taxable` in `shippingCharge` and then post that as the sale. The imported discount is the V1 journal, credited once. A bank-receipt discount credits DISCOUNT A/C only when no same-day V1 already covers it (within ₹1).
+3. **Sale amount.** Post the full invoice (BILLAMT). `finalamt` is after the bill discount. Do not store `finalamt − taxable` in `shippingCharge` and then post that as the sale. The imported discount is the V1 journal, posted once. A bank-receipt discount is credited only when no same-day V1 of that amount already hits the party, on the debit or the credit (within ₹1). Laxmi receipt 118 on 7/5/2026 has a ₹9 discount on bill 2025/F, and V1 voucher 10 the same day is Dr party 9. The receipt must not credit that ₹9 again. The party balance is 260142.
 
 4. **Opening balance** (series 00) is the brought-forward figure. Vouchers before 1 April are already inside it. Do not add them again. A March bill's April discount journal stays; the March sale does not.
 

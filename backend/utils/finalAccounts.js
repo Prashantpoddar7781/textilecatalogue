@@ -438,7 +438,7 @@ export async function buildFinalAccounts(prisma, userId, {
       timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit'
     }).format(new Date(voucher.voucherDate || voucher.createdAt));
     for (const line of journalPostingLines(voucher)) {
-      if (line.debit || !(line.amount > 0)) continue;
+      if (!(line.amount > 0)) continue;
       const key = `${String(line.name || '').trim().toLowerCase()}|${day}`;
       const list = journalCreditsByPartyDay.get(key) || [];
       list.push(line.amount);
