@@ -24,6 +24,12 @@ export function isEmpireTagged(row) {
   return /\[E:/i.test(String(row?.remarks || ''));
 }
 
+/** BILLS.paid = Y. Empire keeps that bill off outstanding even when this year's receipts do not name it. */
+export function empireMarkedSettled(row) {
+  const raw = row?.einvoiceRaw;
+  return Boolean(raw && typeof raw === 'object' && !Array.isArray(raw) && raw.empirePaid === true);
+}
+
 function isRoundableSaleBill(order) {
   const type = String(order?.transactionType || '').trim().toUpperCase();
   if (!type || type === 'SALES ORDERS') return false;
@@ -551,8 +557,9 @@ export function mapOrderToPendingBill(order, paidByOrderId, asOfValue = Date.now
     ? { billAmount: face, paidAmount: face, pendingAmount: 0 }
     : applyBillRoundOff(face, paidToward);
   const billAmount = footerDisc > 0.5 && lineDisc <= 0.5 ? face : rounded.billAmount;
-  const paidAmount = rounded.paidAmount;
-  const pendingAmount = rounded.pendingAmount;
+  const settledByEmpire = empireMarkedSettled(order);
+  const paidAmount = settledByEmpire ? billAmount : rounded.paidAmount;
+  const pendingAmount = settledByEmpire ? 0 : rounded.pendingAmount;
   const billDiscount = 0;
   const billDate = order.orderDate || order.createdAt;
   const displayNumber = order.typeBillNumber != null

@@ -759,7 +759,8 @@ async function main() {
         vehicleNo: text(bill.vehicle_NO, 40) || null,
         dhara: num(bill.PAYDAYS) || null,
         grace: num(bill.GRACEDAYS) || null,
-        ewayBillNo: text(bill.EWB_NO, 40) || null
+        ewayBillNo: text(bill.EWB_NO, 40) || null,
+        einvoiceRaw: text(bill.paid, 4).toUpperCase() === 'Y' ? { empirePaid: true } : undefined
       });
       continue;
     }
