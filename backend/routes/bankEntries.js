@@ -310,7 +310,7 @@ async function getPendingOrderBills(userId, partyName, transactionType, excludeE
     .filter(bill => bill.pendingAmount > 0);
 
   return [...orderBills, ...invoiceBills]
-    .sort((a, b) => String(a.billNumber).localeCompare(String(b.billNumber), undefined, { numeric: true }));
+    .sort(compareOldestOutstanding);
 }
 
 async function getPurchaseBillRecords(userId) {
@@ -491,7 +491,7 @@ async function getPendingUnadjPayments(userId, partyName, partyType, excludeEntr
     });
   }
 
-  return rows.sort((a, b) => String(a.billNumber).localeCompare(String(b.billNumber), undefined, { numeric: true }));
+  return rows.sort(compareOldestOutstanding);
 }
 
 async function getPendingWorkReceiptBills(userId, partyName, excludeEntryId = null) {
@@ -523,7 +523,7 @@ async function getPendingWorkReceiptBills(userId, partyName, excludeEntryId = nu
     .filter(receipt => !partyName || matchesSupplierName(receipt.partyName, partyName))
     .map(receipt => mapWorkReceiptToPendingBill(receipt, paidByReceiptId))
     .filter(bill => bill.pendingAmount > 0)
-    .sort((a, b) => String(a.billNumber).localeCompare(String(b.billNumber), undefined, { numeric: true }));
+    .sort(compareOldestOutstanding);
 }
 
 async function getPendingPurchaseBills(userId, partyName, transactionType, excludeEntryId = null) {
@@ -540,7 +540,7 @@ async function getPendingPurchaseBills(userId, partyName, transactionType, exclu
     .filter(bill => !normalizedType || normalizeTransactionType(bill.transactionType, DEFAULT_PURCHASE_TRANSACTION_TYPE) === normalizedType)
     .map(bill => mapPurchaseBillToPendingBill(bill, paidByBillId))
     .filter(bill => bill.pendingAmount > 0)
-    .sort((a, b) => String(a.billNumber).localeCompare(String(b.billNumber), undefined, { numeric: true }));
+    .sort(compareOldestOutstanding);
 }
 
 async function getPendingSalesReturns(userId, partyName, excludeEntryId = null) {
@@ -557,7 +557,7 @@ async function getPendingSalesReturns(userId, partyName, excludeEntryId = null) 
       adjustDirection: 'deduct'
     }))
     .filter(bill => bill.pendingAmount > 0)
-    .sort((a, b) => String(a.billNumber).localeCompare(String(b.billNumber), undefined, { numeric: true }));
+    .sort(compareOldestOutstanding);
 }
 
 async function getPendingPurchaseReturns(userId, partyName, excludeEntryId = null) {
@@ -574,7 +574,15 @@ async function getPendingPurchaseReturns(userId, partyName, excludeEntryId = nul
       adjustDirection: 'deduct'
     }))
     .filter(item => item.pendingAmount > 0)
-    .sort((a, b) => String(a.billNumber).localeCompare(String(b.billNumber), undefined, { numeric: true }));
+    .sort(compareOldestOutstanding);
+}
+
+/** Oldest outstanding bill first. Same date keeps the smaller bill number. */
+function compareOldestOutstanding(a, b) {
+  const dateA = new Date(a?.billDate || 0).getTime() || 0;
+  const dateB = new Date(b?.billDate || 0).getTime() || 0;
+  if (dateA !== dateB) return dateA - dateB;
+  return String(a?.billNumber || '').localeCompare(String(b?.billNumber || ''), undefined, { numeric: true });
 }
 
 function signedPendingAmount(item) {
@@ -708,7 +716,7 @@ router.get('/pending-bills', authenticateToken, requireActiveSubscription, async
     ]);
 
     res.json({
-      bills: [...bills, ...returns, ...unadjusted, ...notes, ...journals, ...workBills],
+      bills: [...bills, ...returns, ...unadjusted, ...notes, ...journals, ...workBills].sort(compareOldestOutstanding),
       unadjusted,
       notes,
       journals,

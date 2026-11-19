@@ -1690,8 +1690,8 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
                 <thead className="border-b bg-gray-50 text-[10px] uppercase text-gray-500">
                   <tr>
                     {(isSalesOrder
-                      ? ['#', 'Main Screen', 'Bundles', 'Screen Name', 'Packing', 'Unit', 'PCS', 'Cut', 'MTS/Qty', 'Net Mtrs', 'Rate', 'Amount', 'Less Fold', 'R.D.', 'Disc %', 'Manual Add/Ls', 'IGST %', 'SGST %', 'CGST/IGST Amt', '']
-                      : ['#', 'Ref', 'Item Name', 'Bundles', 'Design No', 'Packing', 'Unit', 'PCS', 'Cut', 'MTS/Qty', 'Net Mtrs', 'Rate', 'Amount', 'Less Fold', 'Disc %', 'Add/Less', 'GST %', 'Tax', 'Net', '']
+                      ? ['#', 'Main Screen', 'HSN', 'Bundles', 'Screen Name', 'Packing', 'Unit', 'PCS', 'Cut', 'MTS/Qty', 'Net Mtrs', 'Rate', 'Amount', 'Less Fold', 'R.D.', 'Disc %', 'Manual Add/Ls', 'IGST %', 'SGST %', 'CGST/IGST Amt', '']
+                      : ['#', 'Ref', 'Item Name', 'HSN', 'Bundles', 'Design No', 'Packing', 'Unit', 'PCS', 'Cut', 'MTS/Qty', 'Net Mtrs', 'Rate', 'Amount', 'Less Fold', 'Disc %', 'Add/Less', 'GST %', 'Tax', 'Net', '']
                     ).map(head => <th key={head} className="px-2 py-2 font-black">{head}</th>)}
                   </tr>
                 </thead>
@@ -1711,6 +1711,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
                           <td className="min-w-[150px] px-1 py-1.5">
                             <input className={inputClass} list="main-screen-names" value={line.mainScreen} onChange={e => updateLine(index, 'mainScreen', e.target.value)} onBlur={e => checkUnknownMainScreen(index, e.target.value)} />
                           </td>
+                          <td className="px-1 py-1.5"><input data-erp-line-default className={`${inputClass} min-w-[5.5rem]`} value={line.hsnCode || ''} onChange={e => updateLine(index, 'hsnCode', e.target.value)} /></td>
                           <td className="px-1 py-1.5"><input className={`${inputClass} min-w-[4.5rem]`} value={line.bundleEntry ?? (line.bundles ? String(line.bundles) : '')} onChange={e => updateBundle(index, e.target.value)} /></td>
                           <td className="min-w-[140px] px-1 py-1.5">
                             <input
@@ -1742,6 +1743,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
                               onBlur={e => applyMasterIfKnown(index, e.target.value)}
                             />
                           </td>
+                          <td className="px-1 py-1.5"><input data-erp-line-default className={`${inputClass} min-w-[5.5rem]`} value={line.hsnCode || ''} onChange={e => updateLine(index, 'hsnCode', e.target.value)} /></td>
                           <td className="px-1 py-1.5"><input className={`${inputClass} min-w-[4.5rem]`} value={line.bundleEntry ?? (line.bundles ? String(line.bundles) : '')} onChange={e => updateBundle(index, e.target.value)} /></td>
                           <td className="min-w-[140px] px-1 py-1.5">
                             <input className={inputClass} list="main-screen-names" value={line.mainScreen} onChange={e => updateLine(index, 'mainScreen', e.target.value)} onBlur={e => checkUnknownMainScreen(index, e.target.value)} />
@@ -1791,7 +1793,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
                 </tbody>
                 <tfoot className="bg-gray-50 font-black">
                   <tr>
-                    <td colSpan={isSalesOrder ? 6 : 7} className="px-2 py-2 text-right uppercase">Grand Totals</td>
+                    <td colSpan={isSalesOrder ? 7 : 8} className="px-2 py-2 text-right uppercase">Grand Totals</td>
                     <td className="px-2 py-2 text-right">{totals.pcs.toFixed(2)}</td>
                     <td />
                     <td className="px-2 py-2 text-right">{totals.mts.toFixed(2)}</td>

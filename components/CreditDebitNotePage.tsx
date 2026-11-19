@@ -319,7 +319,14 @@ export const CreditDebitNotePage: React.FC<Props> = ({ noteType: initialNoteType
       if (number.includes(q) || voucher.includes(q)) return 1;
       return 2;
     };
-    return [...pendingBills].sort((a, b) => rank(a) - rank(b)).slice(0, 40);
+    return [...pendingBills].sort((a, b) => {
+      const rankDiff = rank(a) - rank(b);
+      if (rankDiff !== 0) return rankDiff;
+      const dateA = new Date(a.billDate || 0).getTime() || 0;
+      const dateB = new Date(b.billDate || 0).getTime() || 0;
+      if (dateA !== dateB) return dateA - dateB;
+      return String(a.billNumber || '').localeCompare(String(b.billNumber || ''), undefined, { numeric: true });
+    }).slice(0, 40);
   }, [pendingBills, refBillQuery]);
 
   const pickBill = (bill: BankPendingBill) => {
@@ -623,7 +630,7 @@ export const CreditDebitNotePage: React.FC<Props> = ({ noteType: initialNoteType
                       }}
                     >
                       <span className="font-black">{bill.billNumber}</span>
-                      <span>{bill.transactionType || 'Bill'} · {(bill.pendingAmount || 0).toLocaleString('en-IN')}</span>
+                      <span>{bill.billDate ? new Date(bill.billDate).toLocaleDateString('en-IN') : ''} · {bill.transactionType || 'Bill'} · {(bill.pendingAmount || 0).toLocaleString('en-IN')}</span>
                     </button>
                   ))}
                 </div>

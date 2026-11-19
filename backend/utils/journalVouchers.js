@@ -102,5 +102,10 @@ export async function getPendingJournalVouchers(prismaClient, userId, partyName,
     .filter(voucher => matchesJournalParty(voucher, partyName, partyType))
     .map(voucher => mapJournalVoucherToPendingItem(voucher, paidById, partyType))
     .filter(item => item.pendingAmount > 0)
-    .sort((a, b) => String(a.billNumber).localeCompare(String(b.billNumber), undefined, { numeric: true }));
+    .sort((a, b) => {
+      const dateA = new Date(a?.billDate || 0).getTime() || 0;
+      const dateB = new Date(b?.billDate || 0).getTime() || 0;
+      if (dateA !== dateB) return dateA - dateB;
+      return String(a?.billNumber || '').localeCompare(String(b?.billNumber || ''), undefined, { numeric: true });
+    });
 }

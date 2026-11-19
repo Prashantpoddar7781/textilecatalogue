@@ -87,6 +87,16 @@ const formatPartyBalance = (value: number, partyType?: string) => {
 
 const formatBankBalance = (value: number) => `${formatMoney(Math.abs(value))} ${value >= 0 ? 'DR' : 'CR'}`;
 
+const compareOldestBill = (
+  a: { billDate?: string | null; billNumber?: string | null },
+  b: { billDate?: string | null; billNumber?: string | null }
+) => {
+  const dateA = new Date(a.billDate || 0).getTime() || 0;
+  const dateB = new Date(b.billDate || 0).getTime() || 0;
+  if (dateA !== dateB) return dateA - dateB;
+  return String(a.billNumber || '').localeCompare(String(b.billNumber || ''), undefined, { numeric: true });
+};
+
 const formatDate = (value?: string | null) =>
   value ? new Date(value).toLocaleDateString('en-IN') : '-';
 
@@ -316,12 +326,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
             : (bill.adjustDirection || 'add'),
           entryKind: isUnadjAllocation(bill) ? UNADJ_BILL_TYPE : bill.entryKind
         }))
-        .sort((a, b) => {
-          const aDeduct = isDeductAllocation(a) ? 1 : 0;
-          const bDeduct = isDeductAllocation(b) ? 1 : 0;
-          if (aDeduct !== bDeduct) return aDeduct - bDeduct;
-          return String(a.billNumber).localeCompare(String(b.billNumber), undefined, { numeric: true });
-        });
+        .sort(compareOldestBill);
 
       if (restoreAllocations?.length) {
         const byId = new Map(restoreAllocations.map(item => [item.billId, item]));
@@ -341,7 +346,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
             const picked = pickedById.get(bill.billId);
             if (!picked) return bill;
             return keepPickedBill(bill, picked);
-          });
+          }).sort(compareOldestBill);
         });
         setRestoreAllocations(null);
       } else {
@@ -356,7 +361,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
           for (const picked of pickedById.values()) {
             if (!next.some(row => row.billId === picked.billId)) next.push(picked);
           }
-          return next;
+          return next.sort(compareOldestBill);
         });
       }
     } catch (err: any) {
@@ -625,7 +630,11 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
       if (number.includes(q) || voucher.includes(q)) return 1;
       return 2;
     };
-    return [...pool].sort((a, b) => rank(a) - rank(b));
+    return [...pool].sort((a, b) => {
+      const rankDiff = rank(a) - rank(b);
+      if (rankDiff !== 0) return rankDiff;
+      return compareOldestBill(a, b);
+    });
   }, [pendingBills, quickBillNo, billType]);
 
   useEffect(() => {
@@ -821,6 +830,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
     setBillType(resolved);
     setBillTypePickerOpen(false);
     setQuickBillNo('');
+    setBillPickerOpen(true);
     window.setTimeout(() => focusInputStart(billNoRef.current), 0);
   };
 
@@ -1526,21 +1536,24 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                       data-erp-add-line
                       data-erp-save-if-empty
                       className="min-w-[220px] rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm font-semibold outline-none focus:border-indigo-400"
-                      placeholder={unadjMode ? 'Type to list unadj…' : (noteMode ? 'Type note no…' : 'Type bill no…')}
+                      placeholder={unadjMode ? 'Oldest unadj first…' : (noteMode ? 'Oldest note first…' : 'Oldest bill first…')}
                       value={quickBillNo}
                       disabled={!form.partyName.trim()}
                       onFocus={() => {
-                        if (form.partyName.trim() && quickBillNo.trim()) setBillPickerOpen(true);
+                        if (form.partyName.trim() && billType.trim()) setBillPickerOpen(true);
                       }}
-                      onBlur={() => window.setTimeout(() => setBillPickerOpen(false), 150)}
+                      onBlur={() => window.setTimeout(() => {
+                        if (document.activeElement === billNoRef.current) return;
+                        setBillPickerOpen(false);
+                      }, 150)}
                       onChange={e => {
                         const value = e.target.value;
                         setQuickBillNo(value);
-                        setBillPickerOpen(Boolean(value.trim()) && Boolean(form.partyName.trim()));
+                        setBillPickerOpen(Boolean(form.partyName.trim()));
                       }}
                       onKeyDown={e => {
                         if (e.key === 'ArrowDown') {
-                          if (!quickBillNo.trim()) return;
+                          if (!form.partyName.trim() || !quickBillMatches.length) return;
                           e.preventDefault();
                           e.stopPropagation();
                           setBillPickerOpen(true);
@@ -1565,8 +1578,8 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                         }
                       }}
                     />
-                    {billPickerOpen && form.partyName.trim() && quickBillNo.trim() && (
-                      <div className="absolute z-30 mt-1 max-h-56 w-[320px] overflow-y-auto rounded-xl border bg-white shadow-lg">
+                    {billPickerOpen && form.partyName.trim() && (
+                      <div className="absolute z-30 mt-1 max-h-56 w-[28rem] overflow-y-auto rounded-xl border bg-white shadow-lg">
                         {loadingBills ? (
                           <div className="px-3 py-3 text-xs text-gray-500">Loading…</div>
                         ) : quickBillMatches.length === 0 ? (
@@ -1591,7 +1604,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                             >
                               <span className="font-black">{bill.billNumber}</span>
                               <span>
-                                {bill.transactionType || 'Bill'}{bill.oppositeAccount ? ` · ${bill.oppositeAccount}` : ''} · {formatMoney(isDeductRow(bill) ? -(bill.pendingAmount || 0) : (bill.pendingAmount || 0))}{(bill.adatDisc || 0) > 0.5 ? ` · Disc ${formatMoney(bill.adatDisc || 0)}` : ''}
+                                {formatDate(bill.billDate)} · {bill.transactionType || 'Bill'}{bill.oppositeAccount ? ` · ${bill.oppositeAccount}` : ''} · {formatMoney(isDeductRow(bill) ? -(bill.pendingAmount || 0) : (bill.pendingAmount || 0))}{(bill.adatDisc || 0) > 0.5 ? ` · Disc ${formatMoney(bill.adatDisc || 0)}` : ''}
                               </span>
                             </button>
                           ))

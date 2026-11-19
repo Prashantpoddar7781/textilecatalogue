@@ -507,8 +507,10 @@ export const ErpExpensesPage: React.FC<Props> = ({ onBack, erpSession }) => {
       cut: toNum(item.cut),
       rate: toNum(item.sellingRate),
       gstRate: toNum(item.gstRate) || defaultGstRate,
-      hsnCode: item.hsnSac || defaultHsnCode
+      hsnCode: String(item.hsnSac || '').trim() || defaultHsnCode
     }, businessState, state) : line));
+    const masterHsn = String(item.hsnSac || '').trim();
+    if (masterHsn) setHsnCode(masterHsn);
   };
 
   const sharedPayload = () => ({
@@ -804,7 +806,7 @@ export const ErpExpensesPage: React.FC<Props> = ({ onBack, erpSession }) => {
               <table className="min-w-[1500px] w-full text-left text-xs">
                 <thead className="border-b bg-gray-50 text-[10px] uppercase text-gray-500">
                   <tr>
-                    {['#', 'Item Name', 'Bundles', 'Category / Main Screen', 'Packing', 'Unit', 'PCS', 'Cut', 'MTS', 'Rate', 'Amount', 'Disc %', 'Add/Less', 'GST %', 'Tax', 'Net', ''].map(head => (
+                    {['#', 'Item Name', 'HSN', 'Bundles', 'Category / Main Screen', 'Packing', 'Unit', 'PCS', 'Cut', 'MTS', 'Rate', 'Amount', 'Disc %', 'Add/Less', 'GST %', 'Tax', 'Net', ''].map(head => (
                       <th key={head} className="px-2 py-2 font-black">{head}</th>
                     ))}
                   </tr>
@@ -818,13 +820,19 @@ export const ErpExpensesPage: React.FC<Props> = ({ onBack, erpSession }) => {
                           className={inputClass}
                           list="expense-item-names"
                           value={line.itemName}
-                          onChange={e => updateLine(index, 'itemName', e.target.value)}
+                          onChange={e => {
+                            const value = e.target.value;
+                            updateLine(index, 'itemName', value);
+                            const found = items.find(item => item.name.toLowerCase() === value.trim().toLowerCase());
+                            if (found) applyItem(index, found);
+                          }}
                           onBlur={e => {
                             const found = items.find(item => item.name.toLowerCase() === e.target.value.trim().toLowerCase());
                             if (found) applyItem(index, found);
                           }}
                         />
                       </td>
+                      <td className="px-1 py-1.5"><input data-erp-line-default className={`${inputClass} min-w-[5.5rem]`} value={line.hsnCode || ''} onChange={e => updateLine(index, 'hsnCode', e.target.value)} /></td>
                       <td className="px-1 py-1.5"><input className={inputClass} type="number" value={line.bundles || ''} onChange={e => updateLine(index, 'bundles', toNum(e.target.value))} /></td>
                       <td className="min-w-[140px] px-1 py-1.5">
                         <input
@@ -862,7 +870,7 @@ export const ErpExpensesPage: React.FC<Props> = ({ onBack, erpSession }) => {
                 </tbody>
                 <tfoot className="bg-gray-50 font-black">
                   <tr>
-                    <td colSpan={6} className="px-2 py-2 text-right uppercase">Grand Totals</td>
+                    <td colSpan={7} className="px-2 py-2 text-right uppercase">Grand Totals</td>
                     <td className="px-2 py-2 text-right">{totals.pcs.toFixed(2)}</td>
                     <td />
                     <td className="px-2 py-2 text-right">{totals.mts.toFixed(2)}</td>
