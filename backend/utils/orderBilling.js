@@ -4,16 +4,6 @@ import { applyInterestFields } from './interestCalculation.js';
 
 export const OPENING_BANK_BALANCE = 1000000;
 
-/** Series 00 opening is 1 April 2026. A bill dated before that is already inside it. */
-export const BOOKS_FROM = '2026-04-01';
-
-export function isBeforeBooks(dateValue) {
-  if (!dateValue) return false;
-  const date = new Date(dateValue);
-  if (Number.isNaN(date.getTime())) return false;
-  return date < new Date(`${BOOKS_FROM}T00:00:00`);
-}
-
 export const roundMoney = (value) => Math.round((Number(value) || 0) * 100) / 100;
 
 /** Nearest rupee. 1000.40 → 1000, 1000.50 → 1001. Journals are not passed through this. */
@@ -427,7 +417,7 @@ export function mapWorkReceiptToPendingBill(receipt, paidByReceiptId, asOfValue 
     adatDisc: roundMoney(receipt.discountAmount),
     billAmount: rounded.billAmount,
     paidAmount: rounded.paidAmount,
-    pendingAmount: isBeforeBooks(billDate) ? 0 : rounded.pendingAmount,
+    pendingAmount: rounded.pendingAmount,
     taxableAmount: roundMoney(receipt.taxableAmount),
     adjustAmount: 0,
     partyName: receipt.partyName || '',
@@ -466,7 +456,7 @@ export function mapPurchaseBillToPendingBill(bill, paidByBillId, asOfValue = Dat
     adatDisc: roundMoney(bill.discountAmount),
     billAmount,
     paidAmount,
-    pendingAmount: isBeforeBooks(billDate) ? 0 : pendingAmount,
+    pendingAmount,
     taxableAmount: roundMoney(bill.taxableAmount),
     adjustAmount: 0,
     partyName: bill.supplier?.name || bill.supplierName || '',
@@ -562,8 +552,7 @@ export function mapOrderToPendingBill(order, paidByOrderId, asOfValue = Date.now
     : applyBillRoundOff(face, paidToward);
   const billAmount = footerDisc > 0.5 && lineDisc <= 0.5 ? face : rounded.billAmount;
   const paidAmount = rounded.paidAmount;
-  const billDateForBooks = order.orderDate || order.createdAt;
-  const pendingAmount = isBeforeBooks(billDateForBooks) ? 0 : rounded.pendingAmount;
+  const pendingAmount = rounded.pendingAmount;
   const billDiscount = 0;
   const billDate = order.orderDate || order.createdAt;
   const displayNumber = order.typeBillNumber != null
