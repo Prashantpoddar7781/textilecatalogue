@@ -473,7 +473,9 @@ export function mapPurchaseBillToPendingBill(bill, paidByBillId, asOfValue = Dat
 /**
  * Discount already on the sale bill. An imported bill stores finalamt − taxable
  * in shippingCharge. When that is below the GST, the gap is the bill discount.
- * The sale bill keeps this amount. Only the outstanding report takes it out of pending.
+ * The sale bill keeps this amount. Outstanding and the receipt pick list
+ * take it out of pending, so a bill whose only remainder is this discount
+ * does not appear.
  * A blank shipping charge is not a discount.
  */
 export function saleBillDiscount(order) {
@@ -508,8 +510,9 @@ export function mapOrderToPendingBill(order, paidByOrderId, asOfValue = Date.now
   );
   const billAmount = rounded.billAmount;
   const paidAmount = rounded.paidAmount;
-  const pendingAmount = rounded.pendingAmount;
-  const billDiscount = roundMoney(Math.max(saleBillDiscount(order) - allocationDiscount, roundMoney(discountAmount)));
+  const embeddedLeft = roundMoney(Math.max(saleBillDiscount(order) - allocationDiscount, 0));
+  const pendingAmount = roundMoney(Math.max(rounded.pendingAmount - embeddedLeft, 0));
+  const billDiscount = embeddedLeft;
   const billDate = order.orderDate || order.createdAt;
   const displayNumber = order.typeBillNumber != null
     ? String(order.typeBillNumber)

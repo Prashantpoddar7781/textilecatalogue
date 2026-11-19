@@ -30,7 +30,7 @@ import {
 import { parseNoteType } from '../constants/creditDebitNoteTypes';
 import { AccountsInformationDialog } from './AccountsInformationDialog';
 import { openChequePrint } from '../utils/stationeryPrint';
-import { ErpFormShell } from './ErpFormShell';
+import { ErpFormShell, useErpFormActions } from './ErpFormShell';
 import { ErpPageBack } from './ErpPageBack';
 import { PhotoEntryButton } from './PhotoEntryButton';
 import { PhotoExtraction } from '../services/api';
@@ -126,6 +126,58 @@ const emptyForm = () => {
   };
 };
 
+function BillPickField({
+  inputRef,
+  value,
+  disabled,
+  placeholder,
+  onFocus,
+  onBlur,
+  onChange,
+  onArrow,
+  onPick
+}: {
+  inputRef: React.RefObject<HTMLInputElement | null>;
+  value: string;
+  disabled: boolean;
+  placeholder: string;
+  onFocus: () => void;
+  onBlur: () => void;
+  onChange: (value: string) => void;
+  onArrow: (key: 'ArrowDown' | 'ArrowUp') => void;
+  onPick: () => boolean;
+}) {
+  const actions = useErpFormActions();
+  return (
+    <input
+      ref={inputRef}
+      data-erp-enter-custom
+      data-erp-arrow-custom
+      className="w-full min-w-[7rem] rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm font-semibold outline-none focus:border-indigo-400"
+      placeholder={placeholder}
+      value={value}
+      disabled={disabled}
+      onFocus={onFocus}
+      onBlur={onBlur}
+      onChange={e => onChange(e.target.value)}
+      onKeyDown={e => {
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+          e.preventDefault();
+          e.stopPropagation();
+          onArrow(e.key);
+          return;
+        }
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (onPick()) return;
+        if (value.trim()) return;
+        actions?.requestSave();
+      }}
+    />
+  );
+}
+
 /** Empire-style bill-wise receipt/payment — bills, returns, unadj, and credit/debit notes. */
 export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
   const editIdFromUrl = useMemo(() => new URLSearchParams(window.location.search).get('edit'), []);
@@ -166,7 +218,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
   const [billTypePickerOpen, setBillTypePickerOpen] = useState(false);
   const [billPickerOpen, setBillPickerOpen] = useState(false);
   const [billTypeHighlight, setBillTypeHighlight] = useState(0);
-  const [billHighlight, setBillHighlight] = useState(0);
+  const [billHighlight, setBillHighlight] = useState(-1);
   const [showAddBank, setShowAddBank] = useState(false);
   const [newBankName, setNewBankName] = useState('');
   const [restoreAllocations, setRestoreAllocations] = useState<BankPendingBill[] | null>(null);
@@ -178,6 +230,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
   const voucherRef = useRef<HTMLInputElement>(null);
   const billTypeRef = useRef<HTMLInputElement>(null);
   const billNoRef = useRef<HTMLInputElement>(null);
+  const billListChosen = useRef(false);
 
   const focusInputStart = (el: HTMLInputElement | null) => {
     if (!el) return;
@@ -620,7 +673,10 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
   const noteMode = Boolean(selectedNoteType && /note/i.test(billType));
 
   const quickBillMatches = useMemo(() => {
-    const pool = pendingBills.filter(bill => matchesSelectedBillType(bill, billType));
+    const pool = pendingBills.filter(bill =>
+      matchesSelectedBillType(bill, billType)
+      && !((bill.adjustAmount || 0) > 0 || (bill.discountAmount || 0) > 0)
+    );
     const q = quickBillNo.trim().toLowerCase();
     const rank = (bill: BankPendingBill) => {
       if (!q) return 1;
@@ -638,7 +694,8 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
   }, [pendingBills, quickBillNo, billType]);
 
   useEffect(() => {
-    setBillHighlight(0);
+    setBillHighlight(-1);
+    billListChosen.current = false;
   }, [quickBillMatches]);
 
   useEffect(() => {
@@ -728,14 +785,12 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
     const pendingAmt = roundMoneyLocal(bill.pendingAmount || 0);
     const billDisc = roundMoneyLocal(Number(bill.adatDisc) || 0);
     const taxable = Number(bill.taxableAmount) || Number(bill.billAmount) || 0;
-    if (billDisc > 0.05 && pendingAmt > 0) {
-      const discount = roundMoneyLocal(Math.min(billDisc, pendingAmt));
-      const net = roundMoneyLocal(Math.max(pendingAmt - discount, 0));
-      const percent = taxable > 0 ? roundMoneyLocal((discount / taxable) * 100) : 0;
+    if (billDisc > 0.05 && pendingAmt > 0 && adjust + 0.05 >= pendingAmt) {
+      const percent = taxable > 0 ? roundMoneyLocal((billDisc / taxable) * 100) : 0;
       return {
-        adjustAmount: roundMoneyLocal(Math.min(adjust, net)),
+        adjustAmount: pendingAmt,
         discountPercent: percent,
-        discountAmount: discount
+        discountAmount: billDisc
       };
     }
     const pct = partyDhara();
@@ -792,23 +847,11 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
     return true;
   };
 
-  const leftoverOfCurrentType = (pickedId: string) => pendingBills.filter(bill =>
-    bill.billId !== pickedId
-    && (bill.adjustAmount || 0) <= 0
-    && (bill.pendingAmount || 0) > 0
-    && matchesSelectedBillType(bill, billType)
-  );
-
-  const afterPickFocusNextType = (pickedId: string) => {
+  const afterPickFocusNextType = () => {
     setQuickBillNo('');
     setBillPickerOpen(false);
-    if (leftoverOfCurrentType(pickedId).length === 0) {
-      setBillType('');
-      setBillTypePickerOpen(false);
-      window.setTimeout(() => focusTypeField(), 0);
-      return;
-    }
-    window.setTimeout(() => focusInputStart(billNoRef.current), 0);
+    billListChosen.current = false;
+    window.setTimeout(() => focusTypeField(), 0);
   };
 
   const pickBillByNumber = (billNumber: string) => {
@@ -817,7 +860,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
     if (!bill) return;
     const picked = pickBill(bill.billId, { toggle: false });
     if (picked === false) return;
-    afterPickFocusNextType(bill.billId);
+    afterPickFocusNextType();
   };
 
   const commitBillType = (value: string) => {
@@ -1447,306 +1490,252 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
               </div>
             </section>
 
-            {/* Bill pick — Empire: Type + Bill No; list only after typing; show selected rows only */}
+            {/* Bill lines — Type, then Bill, on the same row as the amounts. */}
             <section data-erp-line-grid className="rounded-3xl border border-gray-100 bg-white shadow-sm">
-              <div className="flex flex-wrap items-end justify-between gap-3 border-b px-5 py-4">
-                <div>
-                  <h2 className="text-sm font-black uppercase tracking-wide text-gray-900">Bill allocation</h2>
-                  <p className="text-xs text-gray-500">
-                    1) Full settle — pick bills = Rec/Paid Amt.
-                    2) Installments — save amount with no bills (Unadj); later pick all bills + Type U to clear Unadj.
-                    3) Partial bill — Rec/Paid first; next bill Adjust stops at remaining amount.
-                    After the last bill of a type, Type clears — type U, C or D for Unadj / notes.
-                  </p>
-                </div>
-                <div className="flex flex-wrap items-end gap-2">
-                  <div className="relative">
-                    <label className={labelClass}>Type</label>
-                    <input
-                      ref={billTypeRef}
-                      data-erp-arrow-custom
-                      data-erp-enter-custom
-                      className="min-w-[200px] rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm font-semibold outline-none focus:border-indigo-400"
-                      placeholder={form.entryType === 'payment' ? 'FINISH PURCHASE' : 'FINISH SALES'}
-                      value={billType}
-                      onFocus={() => {
-                        setBillTypePickerOpen(true);
-                        window.setTimeout(() => billTypeRef.current?.select?.(), 0);
-                      }}
-                      onBlur={() => window.setTimeout(() => setBillTypePickerOpen(false), 150)}
-                      onChange={e => {
-                        setBillType(e.target.value);
-                        setBillTypePickerOpen(true);
-                      }}
-                      onKeyDown={e => {
-                        if (e.key === 'ArrowDown') {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          setBillTypePickerOpen(true);
-                          setBillTypeHighlight(i => Math.min(i + 1, Math.max(billTypeMatches.length - 1, 0)));
-                          return;
-                        }
-                        if (e.key === 'ArrowUp') {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          setBillTypeHighlight(i => Math.max(i - 1, 0));
-                          return;
-                        }
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          if (!billTypeMatches.length) return;
-                          const pick = billTypeMatches[billTypeHighlight] || billTypeMatches[0] || billType;
-                          commitBillType(pick);
-                        }
-                      }}
-                    />
-                    {billTypePickerOpen && !billType.trim() && (
-                      <div className="absolute z-30 mt-1 w-full rounded-xl border bg-white px-3 py-2 text-[11px] font-semibold text-gray-500 shadow-lg">
-                        Type a letter — U Unadj, J journal, C credit note, D debit note, S sales, P purchase
-                      </div>
-                    )}
-                    {billTypePickerOpen && billTypeMatches.length > 0 && (
-                      <div className="absolute z-30 mt-1 max-h-52 w-full overflow-y-auto rounded-xl border bg-white shadow-lg">
-                        {billTypeMatches.map((type, index) => (
-                          <button
-                            key={type}
-                            type="button"
-                            data-erp-skip-nav
-                            className={`flex w-full px-3 py-2 text-left text-xs font-bold hover:bg-indigo-50 ${
-                              index === billTypeHighlight
-                                ? 'bg-indigo-100 text-indigo-900'
-                                : (type === UNADJ_PAYMENT_TYPE || type === JOURNAL_TYPE || /note/i.test(type) ? 'text-violet-800' : 'text-gray-800')
-                            }`}
-                            onMouseDown={ev => {
-                              ev.preventDefault();
-                              commitBillType(type);
-                            }}
-                          >
-                            {type}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  <div className="relative">
-                    <label className={labelClass}>Bill No.</label>
-                    <input
-                      ref={billNoRef}
-                      data-erp-add-line
-                      data-erp-save-if-empty
-                      className="min-w-[220px] rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm font-semibold outline-none focus:border-indigo-400"
-                      placeholder={unadjMode ? 'Oldest unadj first…' : (noteMode ? 'Oldest note first…' : 'Oldest bill first…')}
-                      value={quickBillNo}
-                      disabled={!form.partyName.trim()}
-                      onFocus={() => {
-                        if (form.partyName.trim() && billType.trim()) setBillPickerOpen(true);
-                      }}
-                      onBlur={() => window.setTimeout(() => {
-                        if (document.activeElement === billNoRef.current) return;
-                        setBillPickerOpen(false);
-                      }, 150)}
-                      onChange={e => {
-                        const value = e.target.value;
-                        setQuickBillNo(value);
-                        setBillPickerOpen(Boolean(form.partyName.trim()));
-                      }}
-                      onKeyDown={e => {
-                        if (e.key === 'ArrowDown') {
-                          if (!form.partyName.trim() || !quickBillMatches.length) return;
-                          e.preventDefault();
-                          e.stopPropagation();
-                          setBillPickerOpen(true);
-                          setBillHighlight(i => Math.min(i + 1, Math.max(quickBillMatches.length - 1, 0)));
-                          return;
-                        }
-                        if (e.key === 'ArrowUp') {
-                          if (!quickBillNo.trim()) return;
-                          e.preventDefault();
-                          e.stopPropagation();
-                          setBillHighlight(i => Math.max(i - 1, 0));
-                          return;
-                        }
-                        if (e.key === 'Enter') {
-                          if (quickBillNo.trim() && quickBillMatches.length > 0) {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            const match = quickBillMatches[billHighlight] || quickBillMatches[0];
-                            if (match) pickBillByNumber(match.billNumber);
-                          }
-                          // Empty Bill No. → ErpFormShell advances to next field.
-                        }
-                      }}
-                    />
-                    {billPickerOpen && form.partyName.trim() && (
-                      <div className="absolute z-30 mt-1 max-h-56 w-[28rem] overflow-y-auto rounded-xl border bg-white shadow-lg">
-                        {loadingBills ? (
-                          <div className="px-3 py-3 text-xs text-gray-500">Loading…</div>
-                        ) : quickBillMatches.length === 0 ? (
-                          <div className="px-3 py-3 text-xs text-gray-500">
-                            {unadjMode ? 'No unadjusted payments.' : (noteMode ? 'No matching pending notes.' : 'No matching pending bills.')}
-                          </div>
-                        ) : (
-                          quickBillMatches.slice(0, 40).map((bill, index) => (
-                            <button
-                              key={bill.billId}
-                              type="button"
-                              data-erp-skip-nav
-                              className={`flex w-full items-center justify-between px-3 py-2 text-left text-xs hover:bg-indigo-50 ${
-                                index === billHighlight
-                                  ? 'bg-indigo-100'
-                                  : ''
-                              } ${isDeductRow(bill) ? 'text-violet-800' : 'text-gray-800'}`}
-                              onMouseDown={ev => {
-                                ev.preventDefault();
-                                pickBillByNumber(bill.billNumber);
-                              }}
-                            >
-                              <span className="font-black">{bill.billNumber}</span>
-                              <span>
-                                {formatDate(bill.billDate)} · {bill.transactionType || 'Bill'}{bill.oppositeAccount ? ` · ${bill.oppositeAccount}` : ''} · {formatMoney(isDeductRow(bill) ? -(bill.pendingAmount || 0) : (bill.pendingAmount || 0))}{(bill.adatDisc || 0) > 0.5 ? ` · Disc ${formatMoney(bill.adatDisc || 0)}` : ''}
-                              </span>
-                            </button>
-                          ))
-                        )}
-                      </div>
-                    )}
-                  </div>
-                  <button
-                    type="button"
-                    data-erp-skip-nav
-                    onClick={() => {
-                      setAllowOverAllocation(false);
-                      setPendingBills(prev => prev.map(bill => ({ ...bill, adjustAmount: 0, discountPercent: 0, discountAmount: 0 })));
-                    }}
-                    className="rounded-xl border px-3 py-2.5 text-xs font-black text-gray-700"
-                  >
-                    Clear picks
-                  </button>
-                </div>
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b px-5 py-3">
+                <h2 className="text-sm font-black uppercase tracking-wide text-gray-900">Bill allocation</h2>
+                <button
+                  type="button"
+                  data-erp-skip-nav
+                  onClick={() => {
+                    setAllowOverAllocation(false);
+                    setPendingBills(prev => prev.map(bill => ({ ...bill, adjustAmount: 0, discountPercent: 0, discountAmount: 0 })));
+                  }}
+                  className="rounded-xl border px-3 py-2 text-xs font-black text-gray-700"
+                >
+                  Clear picks
+                </button>
               </div>
-
-              <div className="overflow-x-auto">
-                {!form.partyName ? (
-                  <div className="px-5 py-10 text-center text-sm text-gray-400">Select A/C Name, then Type + Bill No. (keyboard / Enter).</div>
-                ) : adjustedBills.length === 0 ? (
-                  <div className="px-5 py-10 text-center text-sm text-gray-500">
-                    <p className="font-semibold text-gray-700">No bills selected.</p>
-                    <p className="mt-1">
-                      Type Bill No. + Enter to pick, or leave empty and <span className="font-black text-indigo-700">Save</span> —
-                      Rec/Paid Amt becomes an <span className="font-black text-violet-700">Unadj Payment</span> (no bill required).
-                    </p>
-                    {roundMoneyLocal(Number(form.amount) || 0) > 0 && (
-                      <p className="mt-3 text-sm font-black text-violet-800">
-                        Save now → Unadj Payment of {formatMoney(Number(form.amount) || 0)}
-                      </p>
-                    )}
-                    {summary.unadjAvailable > 0 && (
-                      <p className="mt-2 text-xs font-semibold text-violet-700">
-                        Prior Unadj on account: {formatMoney(summary.unadjAvailable)}. To use it, pick the pending bill first, then Type U.
-                      </p>
-                    )}
-                  </div>
-                ) : (
-                  <table className="min-w-full text-left text-sm">
-                    <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-gray-500">
-                      <tr>
-                        <th className="px-3 py-2">Bill</th>
-                        <th className="px-3 py-2">Date</th>
-                        <th className="px-3 py-2">Days</th>
-                        <th className="px-3 py-2 text-right">Interest</th>
-                        <th className="px-3 py-2">Type</th>
-                        <th className="px-3 py-2">V.No</th>
-                        <th className="px-3 py-2 text-right">Taxable</th>
-                        <th className="px-3 py-2 text-right">Bill Amt</th>
-                        <th className="px-3 py-2 text-right">Pend Amt</th>
-                        <th className="px-3 py-2 text-right">Disc %</th>
-                        <th className="px-3 py-2 text-right">Disc Amt</th>
-                        <th className="px-3 py-2 text-right">Adjust</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {adjustedBills.map(bill => {
-                        const deduct = isDeductRow(bill);
-                        return (
-                          <tr
-                            key={bill.billId}
-                            data-erp-line
-                            data-erp-line-filled
-                            className={`border-t ${deduct ? 'bg-violet-50/80' : 'bg-indigo-50/70'}`}
-                          >
-                            <td className={`px-3 py-2.5 font-black ${deduct ? 'text-violet-800' : 'text-gray-900'}`}>{bill.billNumber}</td>
-                            <td className="px-3 py-2.5">{formatDate(bill.billDate)}</td>
-                            <td className="px-3 py-2.5 tabular-nums">{bill.days || 0}{bill.grace ? ` / ${bill.grace}g` : ''}</td>
-                            <td className="px-3 py-2.5 text-right font-semibold text-violet-800">{formatMoney(bill.interestAmount || 0)}</td>
-                            <td className={`px-3 py-2.5 text-xs font-semibold ${deduct ? 'text-violet-700' : 'text-gray-600'}`}>
-                              {bill.oppositeAccount ? `${bill.transactionType || 'JOURNAL'} · ${bill.oppositeAccount}` : (bill.transactionType || '-')}
-                            </td>
-                            <td className="px-3 py-2.5">{bill.voucherNumber || '-'}</td>
-                            <td className="px-3 py-2.5 text-right">
-                              {deduct ? formatMoney(-(bill.taxableAmount || bill.billAmount || 0)) : formatMoney(bill.taxableAmount || 0)}
-                            </td>
-                            <td className={`px-3 py-2.5 text-right font-semibold ${deduct ? 'text-violet-800' : ''}`}>
-                              {deduct ? formatMoney(-(bill.billAmount || 0)) : formatMoney(bill.billAmount)}
-                            </td>
-                            <td className={`px-3 py-2.5 text-right font-semibold ${deduct ? 'text-violet-700' : 'text-amber-700'}`}>
-                              {deduct
-                                ? formatMoney(-(bill.pendingAmount || 0))
-                                : (
-                                  <span title="Outstanding before this entry">
-                                    {formatMoney(bill.pendingAmount)}
-                                    {(bill.adjustAmount || 0) + (bill.discountAmount || 0) > 0
-                                      && (bill.adjustAmount || 0) + (bill.discountAmount || 0) < (bill.pendingAmount || 0) && (
-                                      <span className="mt-0.5 block text-[10px] font-bold text-rose-600">
-                                        left {formatMoney((bill.pendingAmount || 0) - (bill.adjustAmount || 0) - (bill.discountAmount || 0))}
-                                      </span>
-                                    )}
-                                  </span>
-                                )}
-                            </td>
-                            <td className="px-3 py-2.5 text-right">
-                              {deduct ? '—' : (
-                                <input
-                                  className="w-16 rounded-lg border border-amber-300 bg-white px-2 py-1.5 text-right text-sm font-bold"
-                                  type="number"
-                                  min="0"
-                                  step="0.01"
-                                  value={bill.discountPercent || ''}
-                                  onChange={e => updateBillDiscount(bill.billId, { percent: e.target.value })}
-                                />
-                              )}
-                            </td>
-                            <td className="px-3 py-2.5 text-right">
-                              {deduct ? '—' : (
-                                <input
-                                  className="w-24 rounded-lg border border-amber-300 bg-white px-2 py-1.5 text-right text-sm font-bold"
-                                  type="number"
-                                  min="0"
-                                  step="0.01"
-                                  value={bill.discountAmount || ''}
-                                  onChange={e => updateBillDiscount(bill.billId, { amount: e.target.value })}
-                                />
-                              )}
-                            </td>
-                            <td className="px-3 py-2.5 text-right">
+              <div>
+                <table className="min-w-full text-left text-sm">
+                  <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-gray-500">
+                    <tr>
+                      <th className="px-3 py-2">Type</th>
+                      <th className="px-3 py-2">Bill</th>
+                      <th className="px-3 py-2">Date</th>
+                      <th className="px-3 py-2 text-right">Taxable</th>
+                      <th className="px-3 py-2 text-right">Bill Amt</th>
+                      <th className="px-3 py-2">V.No</th>
+                      <th className="px-3 py-2">Days</th>
+                      <th className="px-3 py-2 text-right">Disc Amt</th>
+                      <th className="px-3 py-2 text-right">Adjust</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {adjustedBills.map(bill => {
+                      const deduct = isDeductRow(bill);
+                      return (
+                        <tr
+                          key={bill.billId}
+                          data-erp-line
+                          data-erp-line-filled
+                          className={`border-t ${deduct ? 'bg-violet-50/80' : 'bg-indigo-50/70'}`}
+                        >
+                          <td className={`px-3 py-2.5 text-xs font-semibold ${deduct ? 'text-violet-700' : 'text-gray-600'}`}>
+                            {bill.oppositeAccount ? `${bill.transactionType || 'JOURNAL'} · ${bill.oppositeAccount}` : (bill.transactionType || '-')}
+                          </td>
+                          <td className={`px-3 py-2.5 font-black ${deduct ? 'text-violet-800' : 'text-gray-900'}`}>{bill.billNumber}</td>
+                          <td className="px-3 py-2.5">{formatDate(bill.billDate)}</td>
+                          <td className="px-3 py-2.5 text-right">
+                            {deduct ? formatMoney(-(bill.taxableAmount || bill.billAmount || 0)) : formatMoney(bill.taxableAmount || 0)}
+                          </td>
+                          <td className={`px-3 py-2.5 text-right font-semibold ${deduct ? 'text-violet-800' : ''}`}>
+                            {deduct ? formatMoney(-(bill.billAmount || 0)) : formatMoney(bill.billAmount)}
+                          </td>
+                          <td className="px-3 py-2.5">{bill.voucherNumber || '-'}</td>
+                          <td className="px-3 py-2.5 tabular-nums">{bill.days || 0}{bill.grace ? ` / ${bill.grace}g` : ''}</td>
+                          <td className="px-3 py-2.5 text-right">
+                            {deduct ? '—' : (
                               <input
-                                className={`w-28 rounded-lg border px-2 py-1.5 text-right text-sm font-bold ${
-                                  deduct ? 'border-violet-300 bg-white' : 'border-indigo-300 bg-white'
-                                }`}
+                                className="w-24 rounded-lg border border-amber-300 bg-white px-2 py-1.5 text-right text-sm font-bold"
                                 type="number"
                                 min="0"
                                 step="0.01"
-                                max={bill.pendingAmount}
-                                value={bill.adjustAmount || ''}
-                                onChange={e => updateBillAdjust(bill.billId, e.target.value)}
+                                value={bill.discountAmount || ''}
+                                onChange={e => updateBillDiscount(bill.billId, { amount: e.target.value })}
                               />
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                )}
+                            )}
+                          </td>
+                          <td className="px-3 py-2.5 text-right">
+                            <input
+                              className={`w-28 rounded-lg border px-2 py-1.5 text-right text-sm font-bold ${
+                                deduct ? 'border-violet-300 bg-white' : 'border-indigo-300 bg-white'
+                              }`}
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              max={bill.pendingAmount}
+                              value={bill.adjustAmount || ''}
+                              onChange={e => updateBillAdjust(bill.billId, e.target.value)}
+                            />
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    <tr data-erp-line className="border-t bg-white">
+                      <td className="relative px-2 py-2">
+                        <input
+                          ref={billTypeRef}
+                          data-erp-add-line
+                          data-erp-arrow-custom
+                          data-erp-enter-custom
+                          data-erp-line-default
+                          className="w-full min-w-[11rem] rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm font-semibold outline-none focus:border-indigo-400"
+                          placeholder={form.entryType === 'payment' ? 'FINISH PURCHASE' : 'FINISH SALES'}
+                          value={billType}
+                          onFocus={() => {
+                            setBillTypePickerOpen(true);
+                            window.setTimeout(() => billTypeRef.current?.select?.(), 0);
+                          }}
+                          onBlur={() => window.setTimeout(() => setBillTypePickerOpen(false), 150)}
+                          onChange={e => {
+                            setBillType(e.target.value);
+                            setBillTypePickerOpen(true);
+                          }}
+                          onKeyDown={e => {
+                            if (e.key === 'ArrowDown') {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setBillTypePickerOpen(true);
+                              setBillTypeHighlight(i => Math.min(i + 1, Math.max(billTypeMatches.length - 1, 0)));
+                              return;
+                            }
+                            if (e.key === 'ArrowUp') {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setBillTypeHighlight(i => Math.max(i - 1, 0));
+                              return;
+                            }
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              if (billTypeMatches.length) {
+                                const pick = billTypeMatches[billTypeHighlight] || billTypeMatches[0] || billType;
+                                commitBillType(pick);
+                              } else {
+                                window.setTimeout(() => focusInputStart(billNoRef.current), 0);
+                              }
+                            }
+                          }}
+                        />
+                        {billTypePickerOpen && !billType.trim() && (
+                          <div className="absolute z-30 mt-1 w-64 rounded-xl border bg-white px-3 py-2 text-[11px] font-semibold text-gray-500 shadow-lg">
+                            Type a letter — U Unadj, J journal, C credit note, D debit note, S sales, P purchase
+                          </div>
+                        )}
+                        {billTypePickerOpen && billTypeMatches.length > 0 && (
+                          <div className="absolute z-50 mt-1 max-h-52 w-64 overflow-y-auto rounded-xl border bg-white shadow-lg">
+                            {billTypeMatches.map((type, index) => (
+                              <button
+                                key={type}
+                                type="button"
+                                data-erp-skip-nav
+                                className={`flex w-full px-3 py-2 text-left text-xs font-bold hover:bg-indigo-50 ${
+                                  index === billTypeHighlight
+                                    ? 'bg-indigo-100 text-indigo-900'
+                                    : (type === UNADJ_PAYMENT_TYPE || type === JOURNAL_TYPE || /note/i.test(type) ? 'text-violet-800' : 'text-gray-800')
+                                }`}
+                                onMouseDown={ev => {
+                                  ev.preventDefault();
+                                  commitBillType(type);
+                                }}
+                              >
+                                {type}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </td>
+                      <td className="relative px-2 py-2">
+                        <BillPickField
+                          inputRef={billNoRef}
+                          value={quickBillNo}
+                          disabled={!form.partyName.trim()}
+                          placeholder="Bill"
+                          onFocus={() => {
+                            billListChosen.current = false;
+                            setBillHighlight(-1);
+                            if (form.partyName.trim() && billType.trim()) setBillPickerOpen(true);
+                          }}
+                          onBlur={() => window.setTimeout(() => {
+                            if (document.activeElement === billNoRef.current) return;
+                            setBillPickerOpen(false);
+                          }, 150)}
+                          onChange={value => {
+                            billListChosen.current = false;
+                            setQuickBillNo(value);
+                            setBillPickerOpen(Boolean(form.partyName.trim()));
+                          }}
+                          onArrow={key => {
+                            if (!form.partyName.trim() || !quickBillMatches.length) return;
+                            billListChosen.current = true;
+                            setBillPickerOpen(true);
+                            setBillHighlight(i => key === 'ArrowDown'
+                              ? Math.min(i + 1, quickBillMatches.length - 1)
+                              : Math.max(i - 1, 0));
+                          }}
+                          onPick={() => {
+                            const typed = quickBillNo.trim();
+                            const chosen = (typed || billListChosen.current) && quickBillMatches.length > 0;
+                            if (!chosen) return false;
+                            const match = (billHighlight >= 0 ? quickBillMatches[billHighlight] : null) || (typed ? quickBillMatches[0] : null);
+                            if (!match) return false;
+                            pickBillByNumber(match.billNumber);
+                            return true;
+                          }}
+                        />
+                        {billPickerOpen && form.partyName.trim() && (
+                          <div className="absolute z-50 mt-1 max-h-64 w-[36rem] overflow-y-auto rounded-xl border bg-white shadow-lg">
+                            {loadingBills ? (
+                              <div className="px-3 py-3 text-xs text-gray-500">Loading…</div>
+                            ) : quickBillMatches.length === 0 ? (
+                              <div className="px-3 py-3 text-xs text-gray-500">
+                                {unadjMode ? 'No unadjusted payments.' : (noteMode ? 'No matching pending notes.' : 'No matching pending bills.')}
+                              </div>
+                            ) : (
+                              <table className="w-full text-left text-xs">
+                                <thead className="bg-slate-50 text-[10px] uppercase text-gray-500">
+                                  <tr>
+                                    <th className="px-2 py-1">Bill</th>
+                                    <th className="px-2 py-1">Date</th>
+                                    <th className="px-2 py-1 text-right">Taxable</th>
+                                    <th className="px-2 py-1 text-right">Pending</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {quickBillMatches.slice(0, 40).map((bill, index) => (
+                                    <tr
+                                      key={bill.billId}
+                                      className={index === billHighlight ? 'bg-indigo-100' : 'hover:bg-indigo-50'}
+                                    >
+                                      <td colSpan={4} className="p-0">
+                                        <button
+                                          type="button"
+                                          data-erp-skip-nav
+                                          className={`flex w-full items-center px-2 py-1.5 text-left ${isDeductRow(bill) ? 'text-violet-800' : 'text-gray-800'}`}
+                                          onMouseDown={ev => {
+                                            ev.preventDefault();
+                                            pickBillByNumber(bill.billNumber);
+                                          }}
+                                        >
+                                          <span className="w-16 font-black">{bill.billNumber}</span>
+                                          <span className="w-24">{formatDate(bill.billDate)}</span>
+                                          <span className="ml-auto w-24 text-right">{formatMoney(bill.taxableAmount || 0)}</span>
+                                          <span className="w-28 text-right font-semibold">{formatMoney(isDeductRow(bill) ? -(bill.pendingAmount || 0) : (bill.pendingAmount || 0))}</span>
+                                        </button>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            )}
+                          </div>
+                        )}
+                      </td>
+                      <td colSpan={7} />
+                    </tr>
+                  </tbody>
+                </table>
               </div>
             </section>
 
