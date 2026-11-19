@@ -113,6 +113,17 @@ function empireBillDiscount(bill: { shippingCharge?: number | null; orderLines?:
   return gap > 0.5 ? gap : 0;
 }
 
+/** Percent that reproduces the bill discount on the taxable amount, within a rupee. */
+function discountPercentOf(discount: number, taxable: number): number {
+  if (!(discount > 0.5) || !(taxable > 0)) return 0;
+  const raw = (discount / taxable) * 100;
+  for (const digits of [0, 2, 4]) {
+    const pct = Math.round(raw * (10 ** digits)) / (10 ** digits);
+    if (pct > 0 && pct <= 35 && Math.abs((taxable * pct) / 100 - discount) <= 1) return pct;
+  }
+  return 0;
+}
+
 function plainBillNo(counter?: number | string | null) {
   if (counter == null || counter === '') return '';
   const numeric = Number(counter);
@@ -448,6 +459,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const roundOff = round2(billNet - totals.net);
   const lineDiscount = round2(lineItems.reduce((sum, line) => sum + toNum(line.discountAmount), 0));
   const shownDiscount = !isSalesOrder && lineDiscount > 0.5 ? lineDiscount : (!isSalesOrder ? billDiscount : 0);
+  const impliedDiscPct = !isSalesOrder && lineDiscount <= 0.5 ? discountPercentOf(billDiscount, totals.amount) : 0;
   const netAfterDiscount = round2(billNet - shownDiscount);
 
   useEffect(() => {
@@ -1762,7 +1774,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
                       {isSalesOrder ? (
                         <>
                           <td className="px-1 py-1.5"><input className={inputClass} type="number" value={line.rd || ''} onChange={e => updateLine(index, 'rd', toNum(e.target.value))} /></td>
-                          <td className="px-1 py-1.5"><input data-erp-line-default className={inputClass} type="number" value={line.discountPercent || ''} onChange={e => updateLine(index, 'discountPercent', toNum(e.target.value))} /></td>
+                          <td className="px-1 py-1.5"><input data-erp-line-default className={inputClass} type="number" value={toNum(line.discountPercent) > 0 ? line.discountPercent : (impliedDiscPct || '')} onChange={e => updateLine(index, 'discountPercent', toNum(e.target.value))} /></td>
                           <td className="px-1 py-1.5"><input className={inputClass} type="number" value={line.manualAddLess || ''} onChange={e => updateLine(index, 'manualAddLess', toNum(e.target.value))} /></td>
                           <td className="px-2 py-1.5 text-right font-bold">{round2(toNum(line.igstRate)).toFixed(2)}</td>
                           <td className="px-2 py-1.5 text-right font-bold">{round2(toNum(line.sgstRate)).toFixed(2)}</td>
@@ -1770,7 +1782,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
                         </>
                       ) : (
                         <>
-                          <td className="px-1 py-1.5"><input data-erp-line-default className={inputClass} type="number" value={line.discountPercent || ''} onChange={e => updateLine(index, 'discountPercent', toNum(e.target.value))} /></td>
+                          <td className="px-1 py-1.5"><input data-erp-line-default className={inputClass} type="number" value={toNum(line.discountPercent) > 0 ? line.discountPercent : (impliedDiscPct || '')} onChange={e => updateLine(index, 'discountPercent', toNum(e.target.value))} /></td>
                           <td className="px-1 py-1.5"><input className={inputClass} type="number" value={line.manualAddLess || ''} onChange={e => updateLine(index, 'manualAddLess', toNum(e.target.value))} /></td>
                           <td className="px-1 py-1.5"><input data-erp-line-default className={inputClass} type="number" value={line.gstRate || ''} onChange={e => updateLine(index, 'gstRate', toNum(e.target.value))} /></td>
                           <td className="px-2 py-1.5 text-right font-bold">{round2(toNum(line.taxAmount)).toFixed(2)}</td>

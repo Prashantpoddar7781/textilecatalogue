@@ -783,16 +783,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
       return { adjustAmount: adjust, discountPercent: 0, discountAmount: 0 };
     }
     const pendingAmt = roundMoneyLocal(bill.pendingAmount || 0);
-    const billDisc = roundMoneyLocal(Number(bill.adatDisc) || 0);
     const taxable = Number(bill.taxableAmount) || Number(bill.billAmount) || 0;
-    if (billDisc > 0.05 && pendingAmt > 0 && adjust + 0.05 >= pendingAmt) {
-      const percent = taxable > 0 ? roundMoneyLocal((billDisc / taxable) * 100) : 0;
-      return {
-        adjustAmount: pendingAmt,
-        discountPercent: percent,
-        discountAmount: billDisc
-      };
-    }
     const pct = partyDhara();
     const computed = pct > 0 && taxable > 0 ? roundMoneyLocal(taxable * pct / 100) : 0;
     const shortfall = roundMoneyLocal(Math.max(pendingAmt - adjust, 0));
@@ -847,11 +838,16 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
     return true;
   };
 
-  const afterPickFocusNextType = () => {
+  const afterPickFocusDiscount = (billId: string) => {
     setQuickBillNo('');
     setBillPickerOpen(false);
     billListChosen.current = false;
-    window.setTimeout(() => focusTypeField(), 0);
+    window.setTimeout(() => {
+      const el = document.querySelector<HTMLInputElement>(`[data-erp-disc="${billId}"]`);
+      if (!el) return;
+      el.focus();
+      el.select?.();
+    }, 0);
   };
 
   const pickBillByNumber = (billNumber: string) => {
@@ -860,7 +856,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
     if (!bill) return;
     const picked = pickBill(bill.billId, { toggle: false });
     if (picked === false) return;
-    afterPickFocusNextType();
+    afterPickFocusDiscount(bill.billId);
   };
 
   const commitBillType = (value: string) => {
@@ -1517,6 +1513,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                       <th className="px-3 py-2 text-right">Bill Amt</th>
                       <th className="px-3 py-2">V.No</th>
                       <th className="px-3 py-2">Days</th>
+                      <th className="px-3 py-2 text-right">Disc %</th>
                       <th className="px-3 py-2 text-right">Disc Amt</th>
                       <th className="px-3 py-2 text-right">Adjust</th>
                     </tr>
@@ -1544,6 +1541,19 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                           </td>
                           <td className="px-3 py-2.5">{bill.voucherNumber || '-'}</td>
                           <td className="px-3 py-2.5 tabular-nums">{bill.days || 0}{bill.grace ? ` / ${bill.grace}g` : ''}</td>
+                          <td className="px-3 py-2.5 text-right">
+                            {deduct ? '—' : (
+                              <input
+                                data-erp-disc={bill.billId}
+                                className="w-16 rounded-lg border border-amber-300 bg-white px-2 py-1.5 text-right text-sm font-bold"
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={bill.discountPercent || ''}
+                                onChange={e => updateBillDiscount(bill.billId, { percent: e.target.value })}
+                              />
+                            )}
+                          </td>
                           <td className="px-3 py-2.5 text-right">
                             {deduct ? '—' : (
                               <input
@@ -1732,7 +1742,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                           </div>
                         )}
                       </td>
-                      <td colSpan={7} />
+                      <td colSpan={8} />
                     </tr>
                   </tbody>
                 </table>

@@ -478,6 +478,26 @@ export function mapPurchaseBillToPendingBill(bill, paidByBillId, asOfValue = Dat
  * does not appear.
  * A blank shipping charge is not a discount.
  */
+/**
+ * Bill amount the sale screen calls Net Amt: GST on each line, nearest rupee,
+ * minus the bill discount. That is the figure outstanding shows.
+ */
+export function saleBillFace(order) {
+  const lines = normalizeOrderLines(order?.orderLines);
+  const exact = lines.reduce((sum, line) => {
+    const amount = Number(line.amount) || 0;
+    if (!(amount > 0)) return sum;
+    const pct = Number(line.discountPercent) || 0;
+    const base = amount * (1 - pct / 100);
+    const gst = Number(line.gstRate) || 0;
+    return sum + base * (1 + gst / 100);
+  }, 0);
+  const invoice = isRoundableSaleBill(order) ? roundRupee(exact) : roundMoney(exact);
+  const lineDisc = lines.reduce((sum, line) => sum + (Number(line.discountAmount) || 0), 0);
+  const footer = lineDisc > 0.5 ? 0 : saleBillDiscount(order);
+  return roundMoney(Math.max(invoice - footer, 0));
+}
+
 export function saleBillDiscount(order) {
   const lines = normalizeOrderLines(order?.orderLines);
   const taxable = lines.reduce((sum, line) => sum + (Number(line.amount) || 0), 0);
@@ -504,15 +524,21 @@ export function mapOrderToPendingBill(order, paidByOrderId, asOfValue = Date.now
   const rawPaid = paidByOrderId.get(order.id);
   const cashPaid = rawPaid && typeof rawPaid === 'object' ? (Number(rawPaid.cash) || 0) : (Number(rawPaid) || 0);
   const allocationDiscount = rawPaid && typeof rawPaid === 'object' ? (Number(rawPaid.discount) || 0) : 0;
-  const rounded = applyBillRoundOff(
-    exactBillAmount(order),
-    cashPaid + Math.max(roundMoney(discountAmount), allocationDiscount)
-  );
-  const billAmount = rounded.billAmount;
+  const footerDisc = saleBillDiscount(order);
+  const lineDisc = lines.reduce((sum, line) => sum + (Number(line.discountAmount) || 0), 0);
+  const gross = isRoundableSaleBill(order) ? roundRupee(exactBillAmount(order)) : roundMoney(exactBillAmount(order));
+  const storedNet = roundMoney(Math.max(gross - (lineDisc > 0.5 ? 0 : footerDisc), 0));
+  const face = footerDisc > 0.5 && lineDisc <= 0.5 ? saleBillFace(order) : gross;
+  const extraAlloc = roundMoney(Math.max(allocationDiscount - footerDisc, 0));
+  const paidToward = cashPaid + Math.max(roundMoney(discountAmount), extraAlloc);
+  const settledOnStoredNet = footerDisc > 0.5 && paidToward + 1 >= storedNet;
+  const rounded = settledOnStoredNet
+    ? { billAmount: face, paidAmount: face, pendingAmount: 0 }
+    : applyBillRoundOff(face, paidToward);
+  const billAmount = footerDisc > 0.5 && lineDisc <= 0.5 ? face : rounded.billAmount;
   const paidAmount = rounded.paidAmount;
-  const embeddedLeft = roundMoney(Math.max(saleBillDiscount(order) - allocationDiscount, 0));
-  const pendingAmount = roundMoney(Math.max(rounded.pendingAmount - embeddedLeft, 0));
-  const billDiscount = embeddedLeft;
+  const pendingAmount = rounded.pendingAmount;
+  const billDiscount = 0;
   const billDate = order.orderDate || order.createdAt;
   const displayNumber = order.typeBillNumber != null
     ? String(order.typeBillNumber)
