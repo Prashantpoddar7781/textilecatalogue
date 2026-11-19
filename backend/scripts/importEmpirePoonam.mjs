@@ -1008,7 +1008,20 @@ async function main() {
   }
   const purchaseData = purchases.filter(row => row.supplierId).map(({ _party, ...row }) => row);
 
-  console.log(`Writing vouchers: sales ${orders.length}, purchases ${purchaseData.length}, grey ${greyPurchases.length}, work out ${workDespatches.length}, work in ${workReceipts.length}, notes ${notes.length}, unadjusted ${bankFromBills.length}`);
+  const journalCopy = new Set();
+  for (const row of fas) {
+    if (text(row.TYPE, 12) !== 'J2') continue;
+    const amount = round(Math.max(num(row.DRAMT), num(row.CRAMT)));
+    if (amount <= 0) continue;
+    journalCopy.add(`${norm(row.code)}|${int(row.VNO)}|${amount}`);
+  }
+  const unadjustedBills = bankFromBills.filter(entry => {
+    const match = String(entry.billNumber || '').trim().match(/^(\d+)\s*J$/i);
+    if (!match) return true;
+    const key = `${norm(entry.partyName)}|${Number(match[1])}|${round(Math.abs(entry.amount))}`;
+    return !journalCopy.has(key);
+  });
+  console.log(`Writing vouchers: sales ${orders.length}, purchases ${purchaseData.length}, grey ${greyPurchases.length}, work out ${workDespatches.length}, work in ${workReceipts.length}, notes ${notes.length}, unadjusted ${unadjustedBills.length}`);
   await batches(orders, 40, (rows) => prisma.order.createMany({ data: rows }));
   await batches(salesOrders, 40, (rows) => prisma.salesOrder.createMany({ data: rows }));
   await batches(purchaseData, 40, (rows) => prisma.purchaseBill.createMany({ data: rows }));
@@ -1016,7 +1029,7 @@ async function main() {
   await batches(workDespatches, 40, (rows) => prisma.workDespatch.createMany({ data: rows }));
   await batches(workReceipts, 40, (rows) => prisma.workReceipt.createMany({ data: rows }));
   await batches(notes, 50, (rows) => prisma.creditDebitNote.createMany({ data: rows }));
-  await batches(bankFromBills, 100, (rows) => prisma.bankEntry.createMany({ data: rows }));
+  await batches(unadjustedBills, 100, (rows) => prisma.bankEntry.createMany({ data: rows }));
 
   const savedGrey = await prisma.greyPurchase.findMany({
     where: { userId },

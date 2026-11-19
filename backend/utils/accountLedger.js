@@ -26,7 +26,8 @@ import {
   formatPaidOnRemark,
   isChequeReturnedEntry,
   isUnadjAllocation,
-  unadjAmountCreated
+  unadjAmountCreated,
+  unadjCopiesJournal
 } from '../constants/bankCashSeries.js';
 import { matchesNoteParty } from './creditDebitNotes.js';
 import { JOURNAL_TRANSACTION_TYPE } from './journalVouchers.js';
@@ -166,6 +167,15 @@ function namesMatch(left, right) {
   return String(left || '').trim().toLowerCase() === String(right || '').trim().toLowerCase();
 }
 
+/** A journal stored at paise while its narration is a full bill. The expense bill replaced it. */
+function journalReplacedByBill(voucher) {
+  const amount = roundMoney(voucher?.amount);
+  if (!(amount > 0) || amount >= 1) return false;
+  const narration = String(voucher?.narration || '');
+  return [...narration.matchAll(/Dr\s+([\d.]+)\s+Cr\s+([\d.]+)/gi)]
+    .some(match => (Number(match[1]) || 0) >= 1 || (Number(match[2]) || 0) >= 1);
+}
+
 function journalBillNo(voucher) {
   return voucher.voucherNumber
     || formatSeriesBillNumber(JOURNAL_TRANSACTION_TYPE, voucher.typeBillNumber)
@@ -176,7 +186,7 @@ function pushJournalLedgerRows(rawEntries, vouchers, { partyName, paidByBill } =
   const target = String(partyName || '').trim();
   for (const voucher of vouchers || []) {
     const amount = roundMoney(voucher.amount);
-    if (amount <= 0) continue;
+    if (amount <= 0 || journalReplacedByBill(voucher)) continue;
     const billNo = journalBillNo(voucher);
     const partyCredit = String(voucher.partySide || '').toLowerCase() === 'credit';
     const asParty = namesMatch(voucher.partyName, target);
@@ -1332,7 +1342,7 @@ export async function buildCompanySelfLedger(prisma, userId, { fromDate, toDate 
   });
   for (const voucher of journals) {
     const amount = roundMoney(voucher.amount);
-    if (amount <= 0) continue;
+    if (amount <= 0 || journalReplacedByBill(voucher)) continue;
     const billNo = journalBillNo(voucher);
     const partyCredit = String(voucher.partySide || '').toLowerCase() === 'credit';
     const narration = voucher.narration || voucher.remarks || '';
@@ -1483,6 +1493,7 @@ export async function buildCompanySelfLedger(prisma, userId, { fromDate, toDate 
   }
 
   for (const entry of bankEntries) {
+    if (unadjCopiesJournal(entry, journals)) continue;
     const row = bankEntryLedgerRow(entry, settlementByUnadjId);
     if ((row.debitAmount || 0) + (row.creditAmount || 0) <= 0) continue;
     rawEntries.push(companyRow(row, entry.partyName));
@@ -1661,6 +1672,7 @@ export async function buildCustomerLedger(prisma, userId, partyName) {
   const partyReceipts = [];
   for (const entry of bankEntries) {
     if (!matchesPartyName({ buyerName: entry.partyName, customer: null }, partyName)) continue;
+    if (unadjCopiesJournal(entry, customerJournals)) continue;
     const row = bankEntryLedgerRow(entry, settlementByUnadjId);
     if ((row.debitAmount || 0) + (row.creditAmount || 0) <= 0) continue;
     rawEntries.push(row);
@@ -2043,6 +2055,7 @@ export async function buildSupplierLedger(prisma, userId, supplierId) {
   const settlementByUnadjId = unadjSettlementInfo(bankEntries);
   for (const entry of bankEntries) {
     if (!matchesSupplierName(entry.partyName, supplier.name)) continue;
+    if (unadjCopiesJournal(entry, supplierJournals)) continue;
     const row = bankEntryLedgerRow(entry, settlementByUnadjId);
     if ((row.debitAmount || 0) + (row.creditAmount || 0) <= 0) continue;
     // Supplier party ledger: payment debits the party (clears CR), receipt credits.

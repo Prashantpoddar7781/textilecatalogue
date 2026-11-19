@@ -42,6 +42,7 @@ import {
   formatBillNosRemark,
   isBankCashSeries,
   isChequeReturnedEntry,
+  unadjCopiesJournal,
   isUnadjAllocation,
   nextNumberFromVoucherList,
   normalizeBankCashSeries,
@@ -452,9 +453,19 @@ async function getPendingUnadjPayments(userId, partyName, partyType, excludeEntr
   });
 
   const consumedByUnadjId = consumedUnadjByEntryId(partyEntries);
+  const journalNos = partyEntries
+    .map(entry => String(entry.billNumber || '').trim().match(/^(\d+)\s*J$/i)?.[1])
+    .filter(Boolean);
+  const copiedJournals = journalNos.length
+    ? await prisma.journalVoucher.findMany({
+      where: { userId, transactionType: 'JOURNAL', voucherNumber: { in: [...new Set(journalNos)] } },
+      select: { transactionType: true, voucherNumber: true, amount: true, partyName: true, oppositeAccount: true }
+    })
+    : [];
 
   const rows = [];
   for (const entry of partyEntries) {
+    if (unadjCopiesJournal(entry, copiedJournals)) continue;
     const created = unadjAmountCreated(entry);
     if (created <= 0) continue;
     const consumed = consumedByUnadjId.get(entry.id) || 0;
@@ -756,9 +767,19 @@ async function outstandingUnadjRows(userId, partyType, asOf) {
     return true;
   });
   const consumed = consumedUnadjByEntryId(partyEntries);
+  const journalNos = partyEntries
+    .map(entry => String(entry.billNumber || '').trim().match(/^(\d+)\s*J$/i)?.[1])
+    .filter(Boolean);
+  const copiedJournals = journalNos.length
+    ? await prisma.journalVoucher.findMany({
+      where: { userId, transactionType: 'JOURNAL', voucherNumber: { in: [...new Set(journalNos)] } },
+      select: { transactionType: true, voucherNumber: true, amount: true, partyName: true, oppositeAccount: true }
+    })
+    : [];
   const rows = [];
   for (const entry of partyEntries) {
     if (entry.entryDate && new Date(entry.entryDate) > asOf) continue;
+    if (unadjCopiesJournal(entry, copiedJournals)) continue;
     const created = unadjAmountCreated(entry);
     if (created <= 0) continue;
     const pending = roundMoney(Math.max(created - (consumed.get(entry.id) || 0), 0));

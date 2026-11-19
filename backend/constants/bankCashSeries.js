@@ -78,6 +78,28 @@ export function formatUnadjBillNumber(voucherNumber) {
   return `${v} B`;
 }
 
+/**
+ * Series XX "271 J" is the copy of journal 271 left behind after the expense
+ * bill replaced that journal. The journal is already on the ledger.
+ */
+export function unadjCopiesJournal(entry, journals) {
+  const type = String(entry?.transactionType || '').toUpperCase();
+  if (type !== 'UNADJ PAYMENT') return false;
+  const match = String(entry?.billNumber || '').trim().match(/^(\d+)\s*J$/i);
+  if (!match) return false;
+  const amount = Math.abs(Number(entry.amount) || 0);
+  if (!(amount > 0)) return false;
+  const party = String(entry.partyName || '').trim().toLowerCase();
+  return (journals || []).some(voucher => {
+    if (String(voucher.transactionType || '').trim().toUpperCase() !== 'JOURNAL') return false;
+    if (String(voucher.voucherNumber || '') !== match[1]) return false;
+    if (Math.abs(Math.abs(Number(voucher.amount) || 0) - amount) > 0.5) return false;
+    const names = [voucher.partyName, voucher.oppositeAccount]
+      .map(value => String(value || '').trim().toLowerCase());
+    return names.includes(party);
+  });
+}
+
 /** Imported unadj rows keep the printed bill ("852B") beside the internal voucher. */
 export function displayUnadjBillNumber(entry) {
   const raw = String(entry?.billNumber || '').replace(/\*/g, '').trim();
