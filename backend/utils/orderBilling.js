@@ -4,6 +4,16 @@ import { applyInterestFields } from './interestCalculation.js';
 
 export const OPENING_BANK_BALANCE = 1000000;
 
+/** Series 00 opening is 1 April 2026. A bill dated before that is already inside it. */
+export const BOOKS_FROM = '2026-04-01';
+
+export function isBeforeBooks(dateValue) {
+  if (!dateValue) return false;
+  const date = new Date(dateValue);
+  if (Number.isNaN(date.getTime())) return false;
+  return date < new Date(`${BOOKS_FROM}T00:00:00`);
+}
+
 export const roundMoney = (value) => Math.round((Number(value) || 0) * 100) / 100;
 
 /** Nearest rupee. 1000.40 → 1000, 1000.50 → 1001. Journals are not passed through this. */
@@ -417,7 +427,7 @@ export function mapWorkReceiptToPendingBill(receipt, paidByReceiptId, asOfValue 
     adatDisc: roundMoney(receipt.discountAmount),
     billAmount: rounded.billAmount,
     paidAmount: rounded.paidAmount,
-    pendingAmount: rounded.pendingAmount,
+    pendingAmount: isBeforeBooks(billDate) ? 0 : rounded.pendingAmount,
     taxableAmount: roundMoney(receipt.taxableAmount),
     adjustAmount: 0,
     partyName: receipt.partyName || '',
@@ -456,7 +466,7 @@ export function mapPurchaseBillToPendingBill(bill, paidByBillId, asOfValue = Dat
     adatDisc: roundMoney(bill.discountAmount),
     billAmount,
     paidAmount,
-    pendingAmount,
+    pendingAmount: isBeforeBooks(billDate) ? 0 : pendingAmount,
     taxableAmount: roundMoney(bill.taxableAmount),
     adjustAmount: 0,
     partyName: bill.supplier?.name || bill.supplierName || '',
@@ -478,24 +488,39 @@ export function mapPurchaseBillToPendingBill(bill, paidByBillId, asOfValue = Dat
  * does not appear.
  * A blank shipping charge is not a discount.
  */
+function discountPercentThatFits(discount, taxable) {
+  if (!(discount > 0.5) || !(taxable > 0)) return 0;
+  const raw = (discount / taxable) * 100;
+  for (const digits of [0, 2, 4]) {
+    const pct = Math.round(raw * (10 ** digits)) / (10 ** digits);
+    if (pct > 0 && pct <= 35 && Math.abs((taxable * pct) / 100 - discount) <= 1) return pct;
+  }
+  return 0;
+}
+
 /**
- * Bill amount the sale screen calls Net Amt: GST on each line, nearest rupee,
- * minus the bill discount. That is the figure outstanding shows.
+ * Payable amount on a FINISH SALES (GST) bill. The bill discount comes off
+ * each line first, and GST is on that taxable amount. Bill 998: gross 30,138,
+ * 4% off, taxable 28,932.48, GST 1,446.62, bill 30,379.
  */
 export function saleBillFace(order) {
   const lines = normalizeOrderLines(order?.orderLines);
+  const gross = lines.reduce((sum, line) => sum + (Number(line.amount) > 0 ? Number(line.amount) : 0), 0);
+  const lineDisc = lines.reduce((sum, line) => sum + (Number(line.discountAmount) || 0), 0);
+  const footer = lineDisc > 0.5 ? 0 : saleBillDiscount(order);
+  const implied = footer > 0.5 ? discountPercentThatFits(footer, gross) : 0;
   const exact = lines.reduce((sum, line) => {
     const amount = Number(line.amount) || 0;
     if (!(amount > 0)) return sum;
-    const pct = Number(line.discountPercent) || 0;
-    const base = amount * (1 - pct / 100);
+    const pct = Number(line.discountPercent) > 0
+      ? Number(line.discountPercent)
+      : (implied > 0 ? implied : (footer > 0.5 && gross > 0 ? (footer / gross) * 100 : 0));
+    const base = roundMoney(amount * (1 - pct / 100));
     const gst = Number(line.gstRate) || 0;
-    return sum + base * (1 + gst / 100);
+    return sum + base + roundMoney(base * gst / 100);
   }, 0);
-  const invoice = isRoundableSaleBill(order) ? roundRupee(exact) : roundMoney(exact);
-  const lineDisc = lines.reduce((sum, line) => sum + (Number(line.discountAmount) || 0), 0);
-  const footer = lineDisc > 0.5 ? 0 : saleBillDiscount(order);
-  return roundMoney(Math.max(invoice - footer, 0));
+  if (!(exact > 0)) return 0;
+  return isRoundableSaleBill(order) ? roundRupee(exact) : roundMoney(exact);
 }
 
 export function saleBillDiscount(order) {
@@ -537,7 +562,8 @@ export function mapOrderToPendingBill(order, paidByOrderId, asOfValue = Date.now
     : applyBillRoundOff(face, paidToward);
   const billAmount = footerDisc > 0.5 && lineDisc <= 0.5 ? face : rounded.billAmount;
   const paidAmount = rounded.paidAmount;
-  const pendingAmount = rounded.pendingAmount;
+  const billDateForBooks = order.orderDate || order.createdAt;
+  const pendingAmount = isBeforeBooks(billDateForBooks) ? 0 : rounded.pendingAmount;
   const billDiscount = 0;
   const billDate = order.orderDate || order.createdAt;
   const displayNumber = order.typeBillNumber != null

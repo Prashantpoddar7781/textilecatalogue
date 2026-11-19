@@ -460,7 +460,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const lineDiscount = round2(lineItems.reduce((sum, line) => sum + toNum(line.discountAmount), 0));
   const shownDiscount = !isSalesOrder && lineDiscount > 0.5 ? lineDiscount : (!isSalesOrder ? billDiscount : 0);
   const impliedDiscPct = !isSalesOrder && lineDiscount <= 0.5 ? discountPercentOf(billDiscount, totals.amount) : 0;
-  const netAfterDiscount = round2(billNet - shownDiscount);
+  const netAfterDiscount = lineDiscount > 0.5 ? billNet : round2(billNet - shownDiscount);
 
   useEffect(() => {
     let cancelled = false;
@@ -628,9 +628,12 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
     setExpectedDate(bill.expectedDate?.slice(0, 10) || '');
     setRemarks(bill.remarks || '');
     const raw = Array.isArray(bill.orderLines) ? bill.orderLines : [];
+    const grossAmount = raw.reduce((sum, line) => sum + (Number(line?.amount) || 0), 0);
+    const billDiscPct = discountPercentOf(empireBillDiscount(bill), grossAmount);
     setLineItems(raw.length ? raw.map((line: any, index: number) => calcLine({
       ...blankLine(index + 1, gstRate, hsn),
       ...line,
+      discountPercent: Number(line.discountPercent) > 0 ? Number(line.discountPercent) : billDiscPct,
       lineNo: line.lineNo || index + 1,
       sourceSalesOrderId: line.sourceSalesOrderId || bill.sourceSalesOrderId || null,
       sourceOrderNo: line.sourceOrderNo || (sources.length === 1 ? String(sources[0].orderNo) : null),
