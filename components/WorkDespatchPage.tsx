@@ -160,7 +160,7 @@ export const WorkDespatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
       setPlaceOfSupply(match.state);
       setStateCode(match.state);
     }
-    if (match.brokerName) setBrokerName(match.brokerName);
+    setBrokerName(match.brokerName || '');
     applyGstFromNumber(match.gstNumber || '', true);
   };
 

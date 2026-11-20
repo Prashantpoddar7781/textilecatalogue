@@ -319,6 +319,7 @@ export const ErpPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
     setPartyMsme(supplier.msmeType || '');
     setState(nextState);
     setStation(supplier.city || '');
+    setBrokerName(supplier.brokerName || '');
     if (!isEditMode) {
       const pct = partyDhara(supplier);
       const graceDays = partyGraceDays(supplier);
@@ -376,6 +377,7 @@ export const ErpPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
         dhara: party.dhara,
         graceDays: party.graceDays,
         interestRate: party.interestRate,
+        brokerName: party.brokerName,
         createdAt: '',
         updatedAt: ''
       }];
@@ -386,7 +388,7 @@ export const ErpPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
     setPartyMsme(party.msmeType || '');
     setState(party.state || '');
     setStation(party.city || '');
-    if (party.brokerName) setBrokerName(party.brokerName);
+    setBrokerName(party.brokerName || '');
     if (!isEditMode) {
       const pct = partyDhara(party);
       const graceDays = partyGraceDays(party);

@@ -291,6 +291,7 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
       }
     }
     if (supplier.msmeType) setPartyMsme(supplier.msmeType);
+    setBrokerName(supplier.brokerName || '');
     if (!isEditMode) setDiscountPercent(String(partyDhara(supplier) || ''));
   };
 
@@ -379,6 +380,7 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
       dhara: party.dhara,
       graceDays: party.graceDays,
       interestRate: party.interestRate,
+      brokerName: party.brokerName,
       createdAt: '',
       updatedAt: ''
     };

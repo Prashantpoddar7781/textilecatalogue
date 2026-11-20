@@ -462,7 +462,7 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
 
   const fillPartyDefaults = (match: { name: string; gstNumber?: string | null; state?: string | null; brokerName?: string | null }) => {
     setPartyGstin(match.gstNumber || '');
-    if (match.brokerName) setBrokerName(match.brokerName);
+    setBrokerName(match.brokerName || '');
     if (match.state) setPlaceOfSupply(match.state);
     if (!isEditMode) setDiscountPercent(String(partyDhara(match) || ''));
     applyTdsDefaults(transactionType, { party: match.name, gstin: match.gstNumber });

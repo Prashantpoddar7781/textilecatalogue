@@ -428,6 +428,7 @@ async function main() {
       graceDays: int(row.crdays) || null,
       interestRate: num(row.DRINTRATE) || null,
       brokerPercent: num(row.commission) || null,
+      broker: text(row.ADATIYA, 80) || null,
       udyam: text(row.MSME_NO, 40) || null,
       msmeType: text(row.MSME_TYPE, 40) || null,
       remark: text(row.FLASH_RMK, 240) || null
@@ -456,6 +457,7 @@ async function main() {
         graceDays: null,
         interestRate: null,
         brokerPercent: null,
+        broker: null,
         udyam: null,
         msmeType: null,
         remark: 'Created from a voucher whose account head was not in the master'
@@ -499,12 +501,14 @@ async function main() {
       customers.push({
         ...shared,
         organizationName: party.name,
+        agentName: party.broker,
         remark: party.remark
       });
     } else {
       suppliers.push({
         ...shared,
         name: party.name,
+        brokerName: party.broker,
         udyamNumber: party.udyam,
         msmeType: party.msmeType,
         remark: party.remark
@@ -702,7 +706,8 @@ async function main() {
     const sharedParty = {
       partyGstin: party?.gst || null,
       placeOfSupply: party?.state || null,
-      stateCode: text(bill.STATE_CODE, 8) || null
+      stateCode: text(bill.STATE_CODE, 8) || null,
+      brokerName: text(bill.BCODE, 80) || null
     };
 
     if (SALES_ORDER.has(code)) {
@@ -723,6 +728,7 @@ async function main() {
         orderNo,
         orderDate: when,
         haste: text(bill.haste, 80) || null,
+        brokerName: text(bill.BCODE, 80) || null,
         remarks: tag(code, vno, bill.RMK),
         hsnCode: text(bill.BILLS_HSN_CODE, 20) || '5407',
         lineItems: lines,
@@ -806,6 +812,7 @@ async function main() {
         netAmount: amounts.net,
         placeOfSupply: party?.state || null,
         stateCode: text(bill.STATE_CODE, 8) || null,
+        brokerName: text(bill.BCODE, 80) || null,
         remarks: tag(code, vno, bill.RMK),
         status: 'posted'
       });
@@ -838,6 +845,7 @@ async function main() {
         igstAmount: gst.igstAmount,
         netAmount: amounts.net,
         placeOfSupply: party?.state || null,
+        brokerName: text(bill.BCODE, 80) || null,
         remarks: tag(code, vno, bill.RMK),
         status: 'posted',
         _party: norm(partyName)
@@ -986,6 +994,7 @@ async function main() {
       vehicleNo: text(bill.vehicle_NO, 40) || null,
       dhara: num(bill.PAYDAYS) || null,
       grace: num(bill.GRACEDAYS) || null,
+      agentName: text(bill.BCODE, 80) || null,
       remarks: tag(code, vno, [bill.RMK, num(bill.TDSAMT) ? `TDS ${round(num(bill.TDSAMT))}` : ''].filter(Boolean).join(' ')),
       challanNo: text(bill.CHALLAN, 40) || null,
       supplierBillNo: billNo,
