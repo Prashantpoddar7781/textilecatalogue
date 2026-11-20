@@ -215,7 +215,9 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
     const cgstAmt = interstate ? 0 : round2(taxable * halfRate / 100);
     const sgstAmt = interstate ? 0 : round2(taxable * halfRate / 100);
     const igstAmt = interstate ? round2(taxable * gstPct / 100) : 0;
-    const invoice = roundRupee(taxable + cgstAmt + sgstAmt + igstAmt);
+    const exact = round2(taxable + cgstAmt + sgstAmt + igstAmt);
+    const invoice = roundRupee(exact);
+    const roundOff = round2(invoice - exact);
     const tdsBase = tdsOnAmtTouched && toNum(tdsOnAmt) > 0 ? toNum(tdsOnAmt) : taxable;
     const tdsAmt = roundTdsRupee(tdsBase * toNum(tdsPercent) / 100);
     return {
@@ -229,6 +231,7 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
       sgstAmt,
       igstAmt,
       invoice,
+      roundOff,
       tdsBase,
       tdsAmt,
       net: round2(invoice - tdsAmt)
@@ -1212,6 +1215,10 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
             <div>
               <label className={labelClass}>GST Rate</label>
               <input className={inputClass} type="number" step="0.01" value={gstRate} onChange={e => setGstRate(e.target.value)} />
+            </div>
+            <div>
+              <label className={labelClass}>Round Off</label>
+              <input className={readonlyClass} value={billTotals.roundOff.toFixed(2)} readOnly />
             </div>
             <div>
               <label className={labelClass}>Invoice Value</label>

@@ -62,7 +62,8 @@ function applyMillReceiptGst(totals) {
     igstAmount: 0,
     totalTaxAmount: tax,
     payableAmount: roundMoney(Number(totals.taxableAmount) + tax),
-    netAmount: roundMoney(Number(totals.taxableAmount) + tax)
+    netAmount: roundRupee(Number(totals.taxableAmount) + tax),
+    roundOff: roundMoney(roundRupee(Number(totals.taxableAmount) + tax) - roundMoney(Number(totals.taxableAmount) + tax))
   };
 }
 

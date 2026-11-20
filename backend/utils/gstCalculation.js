@@ -273,7 +273,9 @@ export function calculateGreyPurchaseTotals(input) {
   const payableAmount = roundMoney(taxableAmount + gst.totalTaxAmount);
   const otherAddAfter = roundMoney(input.otherAddAfter);
   const otherLessAfter = roundMoney(input.otherLessAfter);
-  const netAmount = roundMoney(payableAmount + otherAddAfter - otherLessAfter);
+  const exactNet = roundMoney(payableAmount + otherAddAfter - otherLessAfter);
+  const netAmount = roundRupee(exactNet);
+  const roundOff = roundMoney(netAmount - exactNet);
 
   const fromGstin = getStateFromGstin(input.partyGstin);
   let stateCode = String(input.stateCode || fromGstin.stateCode || getStateCodeFromName(input.placeOfSupply) || '');
@@ -305,7 +307,8 @@ export function calculateGreyPurchaseTotals(input) {
     payableAmount,
     otherAddAfter,
     otherLessAfter,
-    netAmount
+    netAmount,
+    roundOff
   };
 }
 
@@ -324,7 +327,9 @@ export function calculateNoteTotals(input) {
     businessState: input.businessState
   });
   const tcsAmount = roundMoney(taxableAmount * (Number(input.tcsRate) || 0) / 100);
-  const netAmount = roundRupee(taxableAmount + gst.totalTaxAmount + tcsAmount);
+  const exactNet = roundMoney(taxableAmount + gst.totalTaxAmount + tcsAmount);
+  const netAmount = roundRupee(exactNet);
+  const roundOff = roundMoney(netAmount - exactNet);
   return {
     grossAmount,
     discountAmount,
@@ -333,6 +338,7 @@ export function calculateNoteTotals(input) {
     tcsRate: Number(input.tcsRate) || 0,
     tcsAmount,
     netAmount,
+    roundOff,
     netAmountAfterTds: netAmount
   };
 }

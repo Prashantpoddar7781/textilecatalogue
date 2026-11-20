@@ -12,7 +12,7 @@ import {
 } from '../utils/gstCalculation.js';
 import { ensureMillParty, resolveSupplierForEntry } from '../utils/partyMaster.js';
 import { bankAdjustmentBlock } from '../utils/voucherDelete.js';
-import { roundMoney, roundTdsRupee } from '../utils/orderBilling.js';
+import { postedBillRupee, roundMoney, roundRupee, roundTdsRupee } from '../utils/orderBilling.js';
 import { resolvePartyPan, suggestTdsPercentFromPan } from '../utils/tds.js';
 import { normalizeWorkLines } from './workDespatches.js';
 import { getGstDefaultsForTransactionType } from '../constants/erpTransactionTypes.js';
@@ -120,7 +120,7 @@ function computeReceiptTotals(reqBody, lineItems, ctx, despatch = null) {
     stateCode: reqBody.stateCode || despatch?.stateCode
   });
 
-  const invoiceValue = roundMoney(totals.netAmount);
+  const invoiceValue = roundRupee(totals.netAmount);
   const { tdsOnAmt, tdsPercent, tdsAmount, netAfterTds } = resolveTdsFields({
     tdsOnAmtInput: reqBody.tdsOnAmt,
     tdsPercentInput: reqBody.tdsPercent,
@@ -331,18 +331,14 @@ router.get('/report', authenticateToken, requireActiveSubscription, async (req, 
     const rows = [];
     for (const receipt of receipts) {
       const lines = Array.isArray(receipt.lineItems) ? receipt.lineItems : [];
-      const invoiceValue = roundMoney(receipt.invoiceValue || 0);
+      const invoiceValue = postedBillRupee(receipt.invoiceValue || 0);
       let tdsAmount = roundTdsRupee(receipt.tdsAmount || 0);
       const tdsPercent = Number(receipt.tdsPercent) || 0;
       if (tdsAmount <= 0 && tdsPercent > 0) {
         const base = roundMoney(receipt.tdsOnAmt || receipt.taxableAmount || receipt.grossAmount || 0);
         tdsAmount = roundTdsRupee(base * tdsPercent / 100);
       }
-      const netAfterTds = roundMoney(
-        receipt.netAfterTds != null && receipt.netAfterTds !== ''
-          ? receipt.netAfterTds
-          : Math.max(0, invoiceValue - tdsAmount)
-      );
+      const netAfterTds = roundMoney(invoiceValue - tdsAmount);
 
       if (!lines.length) {
         rows.push({
@@ -418,14 +414,13 @@ router.get('/report', authenticateToken, requireActiveSubscription, async (req, 
       fresh: roundMoney(rows.reduce((s, r) => s + (Number(r.fresh) || 0), 0)),
       amount: roundMoney(rows.reduce((s, r) => s + (Number(r.amount) || 0), 0)),
       taxableAmount: roundMoney(receipts.reduce((s, r) => s + (Number(r.taxableAmount) || 0), 0)),
-      invoiceValue: roundMoney(receipts.reduce((s, r) => s + (Number(r.invoiceValue) || 0), 0)),
-      tdsAmount: roundMoney(receipts.reduce((s, r) => s + (Number(r.tdsAmount) || 0), 0)),
-      netAfterTds: roundMoney(receipts.reduce((s, r) => {
-        const inv = Number(r.invoiceValue) || 0;
-        const tds = Number(r.tdsAmount) || 0;
-        const net = r.netAfterTds != null ? Number(r.netAfterTds) : Math.max(0, inv - tds);
-        return s + net;
-      }, 0))
+      invoiceValue: receipts.reduce((s, r) => s + postedBillRupee(r.invoiceValue || 0), 0),
+      tdsAmount: receipts.reduce((s, r) => s + roundTdsRupee(r.tdsAmount || 0), 0),
+      netAfterTds: receipts.reduce((s, r) => {
+        const inv = postedBillRupee(r.invoiceValue || 0);
+        const tds = roundTdsRupee(r.tdsAmount || 0);
+        return s + roundMoney(inv - tds);
+      }, 0)
     };
 
     res.json({

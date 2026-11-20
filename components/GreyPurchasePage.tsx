@@ -97,6 +97,7 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [otherAddAfter, setOtherAddAfter] = useState('');
   const [otherLessAfter, setOtherLessAfter] = useState('');
   const [netAmount, setNetAmount] = useState(0);
+  const [roundOff, setRoundOff] = useState(0);
   const [paid, setPaid] = useState(false);
   const [paidDate, setPaidDate] = useState('');
   const [despatchMts, setDespatchMts] = useState('0');
@@ -415,6 +416,7 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
       setIgstRate(String(totals.igstRate ?? 0));
       setIgstAmount(String(totals.igstAmount ?? 0));
       setPayableAmount(Number(totals.payableAmount ?? 0));
+      setRoundOff(Number(totals.roundOff ?? 0));
       setNetAmount(Number(totals.netAmount ?? 0));
     } catch {
       // keep current values
@@ -861,6 +863,10 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
                 <label>
                   <span className={labelClass}>8. Other Less</span>
                   <input className={calcInputClass} type="number" step="0.01" value={otherLessAfter} onChange={e => setOtherLessAfter(e.target.value)} />
+                </label>
+                <label>
+                  <span className={labelClass}>Round Off</span>
+                  <input className={calcInputClass} readOnly value={money(roundOff)} />
                 </label>
                 <label>
                   <span className={labelClass}>9. Net Amount</span>

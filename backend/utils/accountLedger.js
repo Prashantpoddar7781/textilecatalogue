@@ -399,7 +399,7 @@ export async function getSupplierLedgerParties(prisma, userId) {
 
     for (const grey of greyPurchases) {
       if (grey.supplierId !== supplier.id && !matchesSupplierName(supplier.name, grey.partyName)) continue;
-      runningBalance = roundMoney(runningBalance + grey.netAmount);
+      runningBalance = roundMoney(runningBalance + postedBillRupee(grey.netAmount));
       entryCount += 1 + (resolveDiscountJournal('GREY PURCHASE', grey.discountAmount) ? 1 : 0);
     }
 
@@ -408,7 +408,7 @@ export async function getSupplierLedgerParties(prisma, userId) {
         || matchesSupplierName(supplier.name, ret.partyName)
         || matchesSupplierName(supplier.name, ret.greyPurchase?.partyName);
       if (!linkedToSupplier) continue;
-      runningBalance = roundMoney(runningBalance - ret.netAmount);
+      runningBalance = roundMoney(runningBalance - postedBillRupee(ret.netAmount));
       entryCount += 1 + (resolveDiscountJournal('GREY PURCHASE RETURN', ret.discountAmount) ? 1 : 0);
     }
 
@@ -421,7 +421,7 @@ export async function getSupplierLedgerParties(prisma, userId) {
         const base = roundMoney(receipt.tdsOnAmt || receipt.taxableAmount || receipt.jobAmount || 0);
         tdsAmount = roundTdsRupee(base * tdsPercent / 100);
       }
-      const invoiceValue = roundMoney(
+      const invoiceValue = postedBillRupee(
         receipt.invoiceValue
         || (Number(receipt.netAfterTds || 0) + tdsAmount)
         || 0
@@ -438,7 +438,7 @@ export async function getSupplierLedgerParties(prisma, userId) {
       const tdsPercent = Number(receipt.tdsPercent) || 0;
       const taxable = roundMoney(receipt.taxableAmount || receipt.grossAmount || 0);
       const tdsAmount = tdsPercent > 0 ? roundTdsRupee(taxable * tdsPercent / 100) : 0;
-      const invoiceValue = roundMoney(receipt.invoiceValue || receipt.taxableAmount || 0);
+      const invoiceValue = postedBillRupee(receipt.invoiceValue || receipt.taxableAmount || 0);
       if (invoiceValue <= 0 && tdsAmount <= 0) continue;
       runningBalance = roundMoney(runningBalance + invoiceValue - tdsAmount);
       entryCount += 1
@@ -1375,7 +1375,7 @@ export async function buildCompanySelfLedger(prisma, userId, { fromDate, toDate 
   }
 
   for (const grey of greyPurchases) {
-    const amount = roundMoney(grey.netAmount);
+    const amount = postedBillRupee(grey.netAmount);
     if (amount <= 0) continue;
     rawEntries.push(companyRow({
       id: `grey-${grey.id}`,
@@ -1393,7 +1393,7 @@ export async function buildCompanySelfLedger(prisma, userId, { fromDate, toDate 
   }
 
   for (const ret of greyReturns) {
-    const amount = roundMoney(ret.netAmount);
+    const amount = postedBillRupee(ret.netAmount);
     if (amount <= 0) continue;
     rawEntries.push(companyRow({
       id: `grey-return-${ret.id}`,
@@ -1418,7 +1418,7 @@ export async function buildCompanySelfLedger(prisma, userId, { fromDate, toDate 
       const base = roundMoney(receipt.tdsOnAmt || receipt.taxableAmount || receipt.jobAmount || 0);
       tdsAmount = roundTdsRupee(base * tdsPercent / 100);
     }
-    const invoiceValue = roundMoney(
+    const invoiceValue = postedBillRupee(
       receipt.invoiceValue || (Number(receipt.netAfterTds || 0) + tdsAmount) || 0
     );
     if (invoiceValue <= 0 && tdsAmount <= 0) continue;
@@ -1457,7 +1457,7 @@ export async function buildCompanySelfLedger(prisma, userId, { fromDate, toDate 
     const tdsPercent = Number(receipt.tdsPercent) || 0;
     const taxable = roundMoney(receipt.taxableAmount || receipt.grossAmount || 0);
     const tdsAmount = tdsPercent > 0 ? roundTdsRupee(taxable * tdsPercent / 100) : 0;
-    const invoiceValue = roundMoney(
+    const invoiceValue = postedBillRupee(
       receipt.invoiceValue || (Number(receipt.netAfterTds || 0) + tdsAmount) || receipt.taxableAmount || 0
     );
     if (invoiceValue <= 0 && tdsAmount <= 0) continue;
@@ -1783,7 +1783,7 @@ export async function buildSupplierLedger(prisma, userId, supplierId) {
   });
 
   for (const grey of greyPurchases) {
-    const amount = roundMoney(grey.netAmount);
+    const amount = postedBillRupee(grey.netAmount);
     if (amount <= 0) continue;
     const disc = resolveDiscountJournal('GREY PURCHASE', grey.discountAmount);
     const mainAmount = disc ? roundMoney(amount + disc.amount) : amount;
@@ -1839,7 +1839,7 @@ export async function buildSupplierLedger(prisma, userId, supplierId) {
       || matchesSupplierName(supplier.name, ret.greyPurchase?.partyName);
     if (!linkedToSupplier) continue;
 
-    const amount = roundMoney(ret.netAmount);
+    const amount = postedBillRupee(ret.netAmount);
     if (amount <= 0) continue;
     const adjustBill = ret.adjustBillNo || ret.refBillNo || ret.greyPurchase?.billNo;
     const disc = resolveDiscountJournal('GREY PURCHASE RETURN', ret.discountAmount);
@@ -1895,7 +1895,7 @@ export async function buildSupplierLedger(prisma, userId, supplierId) {
       const base = roundMoney(receipt.tdsOnAmt || receipt.taxableAmount || receipt.jobAmount || 0);
       tdsAmount = roundTdsRupee(base * tdsPercent / 100);
     }
-    const invoiceValue = roundMoney(
+    const invoiceValue = postedBillRupee(
       receipt.invoiceValue
       || (Number(receipt.netAfterTds || 0) + tdsAmount)
       || 0
@@ -1967,7 +1967,7 @@ export async function buildSupplierLedger(prisma, userId, supplierId) {
     // Always derive TDS from taxable × % (same as entry UI) — ignore stale saved tdsAmount/tdsOnAmt
     const taxable = roundMoney(receipt.taxableAmount || receipt.grossAmount || 0);
     const tdsAmount = tdsPercent > 0 ? roundTdsRupee(taxable * tdsPercent / 100) : 0;
-    const invoiceValue = roundMoney(
+    const invoiceValue = postedBillRupee(
       receipt.invoiceValue
       || (Number(receipt.netAfterTds || 0) + tdsAmount)
       || receipt.taxableAmount
@@ -2394,10 +2394,10 @@ export async function getLedgerEntryDetail(prisma, userId, sourceType, sourceId)
         tdsAmount = roundTdsRupee(tdsOnAmt * tdsPercent / 100);
       }
     }
-    const invoiceValue = roundMoney(receipt.invoiceValue || 0);
+    const invoiceValue = postedBillRupee(receipt.invoiceValue || 0);
     const netAfterTds = tdsAmount > 0
       ? roundMoney(invoiceValue - tdsAmount)
-      : roundMoney(receipt.netAfterTds || invoiceValue);
+      : postedBillRupee(receipt.netAfterTds || invoiceValue);
 
     return {
       title: isTdsLine
@@ -2469,7 +2469,7 @@ export async function getLedgerEntryDetail(prisma, userId, sourceType, sourceId)
     const taxable = roundMoney(receipt.taxableAmount || receipt.grossAmount || 0);
     const tdsOnAmt = taxable;
     const tdsAmount = tdsPercent > 0 ? roundTdsRupee(taxable * tdsPercent / 100) : 0;
-    const invoiceValue = roundMoney(receipt.invoiceValue || 0);
+    const invoiceValue = postedBillRupee(receipt.invoiceValue || 0);
     const netAfterTds = roundMoney(invoiceValue - tdsAmount);
 
     return {
@@ -2575,7 +2575,7 @@ export async function getLedgerEntryDetail(prisma, userId, sourceType, sourceId)
         { label: 'CGST', value: ret.cgstAmount, isMoney: true },
         { label: 'SGST', value: ret.sgstAmount, isMoney: true },
         { label: 'IGST', value: ret.igstAmount, isMoney: true },
-        { label: 'Net Amount', value: ret.netAmount, isMoney: true },
+        { label: 'Net Amount', value: postedBillRupee(ret.netAmount), isMoney: true },
         { label: 'Paid', value: ret.paid ? 'Y' : 'N' },
         { label: 'Remarks', value: ret.remarks }
       ]),
@@ -2631,7 +2631,7 @@ export async function getLedgerEntryDetail(prisma, userId, sourceType, sourceId)
         { label: 'SGST', value: grey.sgstAmount, isMoney: true },
         { label: 'IGST', value: grey.igstAmount, isMoney: true },
         { label: 'Payable', value: grey.payableAmount, isMoney: true },
-        { label: 'Net Amount', value: grey.netAmount, isMoney: true },
+        { label: 'Net Amount', value: postedBillRupee(grey.netAmount), isMoney: true },
         { label: 'Despatch Mts', value: grey.despatchMts, isMoney: true },
         { label: 'Paid', value: grey.paid ? 'Y' : 'N' },
         { label: 'Remarks', value: grey.remarks }

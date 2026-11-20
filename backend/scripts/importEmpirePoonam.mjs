@@ -77,6 +77,11 @@ function text(value, max = 180) {
   return max ? clean.slice(0, max) : clean;
 }
 
+function cleanPan(value) {
+  const pan = String(value || '').replace(/[^0-9A-Za-z]/g, '').toUpperCase();
+  return /^[A-Z]{5}[0-9]{4}[A-Z]$/.test(pan) ? pan : null;
+}
+
 function norm(value) {
   return text(value, 0).toUpperCase();
 }
@@ -411,6 +416,7 @@ async function main() {
       debtor: /DEBTOR/i.test(typeName),
       accountGroup: groups.get(text(row.GCODE, 40)) || null,
       gst: gst || null,
+      pan: cleanPan(row.PNRNO) || cleanPan(String(gst || '').slice(2, 12)),
       mobile: text(row.MOBILE || row.PHONE1, 20) || null,
       email: text(row.EMAIL, 120) || null,
       address: text([row.ADDRESS1, row.ADDRESS2, row.ADDRESS3].filter(Boolean).join(', '), 240) || null,
@@ -439,6 +445,7 @@ async function main() {
         debtor: Boolean(debtor),
         accountGroup: null,
         gst: null,
+        pan: null,
         mobile: null,
         address: null,
         city: null,
@@ -474,6 +481,7 @@ async function main() {
     const shared = {
       userId,
       gstNumber: party.gst,
+      panNumber: party.pan,
       mobileNumber: party.mobile,
       address: party.address,
       city: party.city,

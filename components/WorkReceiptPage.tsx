@@ -18,6 +18,7 @@ import { PhotoPartyDetails, matchPhotoParty, photoPartyDetails, photoPartyState 
 import { ErpTopMenu } from './ErpTopMenu';
 import { MasterNameInput } from './MasterNameInput';
 import { partyDhara } from '../utils/partyBillingTerms';
+import { roundRupee } from '../utils/rupeeRound';
 import { useVoucherJump } from '../hooks/useVoucherJump';
 
 interface Props {
@@ -28,6 +29,11 @@ interface Props {
 const today = () => new Date().toISOString().slice(0, 10);
 const toNum = (v: string | number) => Number(v) || 0;
 const round2 = (v: number) => Math.round((Number(v) || 0) * 100) / 100;
+const roundTdsRupee = (v: number) => {
+  const n = round2(v);
+  if (!(n > 0)) return 0;
+  return Math.ceil(n - 1e-9);
+};
 const DEFAULT_CUT = 6.3;
 const inputClass = 'w-full rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-sm font-semibold outline-none focus:border-fuchsia-400';
 const readonlyClass = 'w-full rounded-lg border border-gray-200 bg-gray-100 px-2.5 py-2 text-sm font-semibold';
@@ -368,6 +374,7 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [tdsOnAmtTouched, setTdsOnAmtTouched] = useState(false);
   const [grossAmount, setGrossAmount] = useState(0);
   const [invoiceValue, setInvoiceValue] = useState(0);
+  const [roundOff, setRoundOff] = useState(0);
   const [taxableAmount, setTaxableAmount] = useState(0);
   const [netAfterTds, setNetAfterTds] = useState(0);
   const [cgstAmount, setCgstAmount] = useState('0');
@@ -913,6 +920,7 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
           setGrossAmount(0);
           setTaxableAmount(0);
           setInvoiceValue(0);
+          setRoundOff(0);
           setNetAfterTds(0);
           setTdsAmount('0');
           return;
@@ -936,6 +944,7 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
           setDiscountAmount(Number(totals.discountAmount) || 0);
           setTaxableAmount(Number(totals.taxableAmount) || 0);
           setInvoiceValue(Number(totals.invoiceValue) || 0);
+          setRoundOff(Number(totals.roundOff) || 0);
           setNetAfterTds(Number(totals.netAfterTds) || Number(totals.invoiceValue) || 0);
           setCgstAmount(String(totals.cgstAmount ?? 0));
           setSgstAmount(String(totals.sgstAmount ?? 0));
@@ -955,10 +964,12 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
           if (totals.stateCode) setStateCode(String(totals.stateCode));
         } catch {
           const gross = round2(lines.reduce((s, r) => s + toNum(r.amount), 0));
+          const invoice = roundRupee(gross);
           setGrossAmount(gross);
           setTaxableAmount(gross);
-          setInvoiceValue(gross);
-          setNetAfterTds(gross);
+          setInvoiceValue(invoice);
+          setRoundOff(round2(invoice - gross));
+          setNetAfterTds(invoice);
         }
       })();
     }, 300);
@@ -971,9 +982,11 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
       ? toNum(tdsOnAmt)
       : taxableAmount;
     const pct = toNum(tdsPercent);
-    const amt = round2(base * pct / 100);
+    const amt = roundTdsRupee(base * pct / 100);
+    const invoice = roundRupee(invoiceValue);
     setTdsAmount(String(amt));
-    setNetAfterTds(round2(invoiceValue - amt));
+    if (invoiceValue > 0 && invoice !== invoiceValue) setInvoiceValue(invoice);
+    setNetAfterTds(round2(invoice - amt));
     if (pct > 0 && !tdsOnAmtTouched && taxableAmount > 0) {
       setTdsOnAmt(String(taxableAmount));
     }
@@ -1408,6 +1421,7 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
                 />
               </div>
               <div><span className={labelClass}>TDS Amt</span><input className={readonlyClass} value={tdsAmount} readOnly /></div>
+              <div><span className={labelClass}>Round Off</span><input className={readonlyClass} value={roundOff.toFixed(2)} readOnly /></div>
               <div><span className={labelClass}>Net Amt</span><input className={`${readonlyClass} font-black text-fuchsia-900`} value={netAfterTds.toFixed(2)} readOnly /></div>
             </div>
             <div className="border-t px-4 py-2 text-right text-xs font-bold text-gray-600">

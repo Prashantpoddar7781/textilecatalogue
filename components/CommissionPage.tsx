@@ -75,7 +75,9 @@ export const CommissionPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const cgst = interstate ? 0 : roundMoney(grossAmount * 2.5 / 100);
   const sgst = interstate ? 0 : roundMoney(grossAmount * 2.5 / 100);
   const igst = interstate ? roundMoney(grossAmount * gstRate / 100) : 0;
-  const invoiceValue = roundRupee(grossAmount + (interstate ? igst : cgst + sgst));
+  const exactInvoice = roundMoney(grossAmount + (interstate ? igst : cgst + sgst));
+  const invoiceValue = roundRupee(exactInvoice);
+  const roundOff = roundMoney(invoiceValue - exactInvoice);
   const tdsAmount = roundRupee(grossAmount * (Number(tdsPercent) || 0) / 100);
   const netPayable = invoiceValue - tdsAmount;
 
@@ -208,10 +210,11 @@ export const CommissionPage: React.FC<Props> = ({ onBack, erpSession }) => {
             <button type="button" onClick={() => void openPicker()} className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-black uppercase text-white">F4 · Pick bills</button>
             <span className="text-xs font-semibold text-slate-500">Press F4 in gross amount to pick the broker&apos;s received bills.</span>
           </div>
-          <div className="md:col-span-3 grid grid-cols-2 gap-2 text-sm font-semibold text-slate-800 md:grid-cols-4">
+          <div className="md:col-span-3 grid grid-cols-2 gap-2 text-sm font-semibold text-slate-800 md:grid-cols-5">
             <p>CGST {money(cgst)}</p>
             <p>SGST {money(sgst)}</p>
             <p>IGST {money(igst)}</p>
+            <p>Round off {money(roundOff)}</p>
             <p>Invoice {money(invoiceValue)}</p>
           </div>
           <label>

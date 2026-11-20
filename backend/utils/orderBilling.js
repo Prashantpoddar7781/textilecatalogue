@@ -396,7 +396,7 @@ export function workReceiptAmountDue(receipt) {
   const tdsAmount = storedTds > 0
     ? roundTdsRupee(storedTds)
     : (tdsPercent > 0 ? roundTdsRupee(taxable * tdsPercent / 100) : 0);
-  const invoiceValue = roundMoney(
+  const invoiceValue = postedBillRupee(
     receipt?.invoiceValue
     || (Number(receipt?.netAfterTds || 0) + tdsAmount)
     || taxable

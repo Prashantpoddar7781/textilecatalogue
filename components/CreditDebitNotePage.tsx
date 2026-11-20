@@ -96,6 +96,7 @@ export const CreditDebitNotePage: React.FC<Props> = ({ noteType: initialNoteType
   const [tcsRate, setTcsRate] = useState('');
   const [tcsAmount, setTcsAmount] = useState('');
   const [netAmount, setNetAmount] = useState('');
+  const [roundOff, setRoundOff] = useState('');
   const [netAmountAfterTds, setNetAmountAfterTds] = useState('');
   const [paidAmount, setPaidAmount] = useState('');
   const [isPaid, setIsPaid] = useState(false);
@@ -282,6 +283,7 @@ export const CreditDebitNotePage: React.FC<Props> = ({ noteType: initialNoteType
       setIgstRate(String(totals.igstRate ?? ''));
       setIgstAmount(String(totals.igstAmount ?? ''));
       setTcsAmount(String(totals.tcsAmount ?? ''));
+      setRoundOff(String(totals.roundOff ?? ''));
       setNetAmount(String(totals.netAmount ?? ''));
       setNetAmountAfterTds(String(totals.netAmountAfterTds ?? totals.netAmount ?? ''));
     } catch {
@@ -695,6 +697,7 @@ export const CreditDebitNotePage: React.FC<Props> = ({ noteType: initialNoteType
                 </div>
               </div>
             ) : null}
+            <div><label className={labelClass}>Round Off</label><input className={inputClass} readOnly value={roundOff} /></div>
             <div><label className={labelClass}>Net Amt.</label><input className={inputClass} readOnly value={netAmount} /></div>
             <div><label className={labelClass}>Net Amt. After TDS</label><input className={inputClass} type="number" value={netAmountAfterTds} onChange={e => setNetAmountAfterTds(e.target.value)} /></div>
             <div><label className={labelClass}>Paid Amt.</label><input className={inputClass} type="number" value={paidAmount} onChange={e => setPaidAmount(e.target.value)} /></div>
