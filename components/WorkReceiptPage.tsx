@@ -9,7 +9,7 @@ import { AccountsInformationDialog, AddPartyConfirmDialog } from './AccountsInfo
 import { GstTypeSelect, useMissingGstPrompt } from './GstTypeField';
 import { gstTypeFromGstin, isNonGstType } from '../utils/partyGst';
 import { DeleteEntryButton } from './DeleteEntryButton';
-import { ErpFormShell } from './ErpFormShell';
+import { ErpFormShell, useErpFormActions } from './ErpFormShell';
 import { ErpSaveButton } from './ErpSaveButton';
 import { ErpPageBack } from './ErpPageBack';
 import { PhotoEntryButton } from './PhotoEntryButton';
@@ -64,6 +64,197 @@ const computeWorkLine = (row: WorkLineItem, patch: Partial<WorkLineItem> = {}): 
     fabricRate: toNum(next.fabricRate)
   };
 };
+
+interface ChallanChoice {
+  source: LinkedSourceDocument;
+  pendingLine: WorkLineItem;
+}
+
+function challanChoices(pending: LinkedSourceDocument[]): ChallanChoice[] {
+  const rows: ChallanChoice[] = [];
+  for (const source of pending) {
+    const pendingLines = source.pendingLines?.length ? source.pendingLines : [];
+    for (const pendingLine of pendingLines) {
+      if ((Number(pendingLine.pendingPcs) || 0) <= 0 && (Number(pendingLine.pendingMts) || 0) <= 0) continue;
+      rows.push({ source, pendingLine });
+    }
+  }
+  return rows;
+}
+
+function choiceLabel(choice: ChallanChoice) {
+  const challan = choice.source.documentNo || '-';
+  const item = choice.pendingLine.itemName || '';
+  const category = choice.pendingLine.category || '';
+  const pcs = Number(choice.pendingLine.pendingPcs) || 0;
+  return [challan, item, category, pcs ? `${pcs} pcs` : ''].filter(Boolean).join(' · ');
+}
+
+/** Challan is the first cell. Type a number or a name to pick that despatch on this line. */
+function LineChallanPick({
+  value,
+  pending,
+  onPick,
+  onClear
+}: {
+  value: string;
+  pending: LinkedSourceDocument[];
+  onPick: (choice: ChallanChoice) => void;
+  onClear: () => void;
+}) {
+  const actions = useErpFormActions();
+  const [query, setQuery] = useState(value);
+  const [open, setOpen] = useState(false);
+  const [highlight, setHighlight] = useState(-1);
+  const [box, setBox] = useState<{ top: number; left: number; width: number } | null>(null);
+  const blankEnters = useRef(0);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { setQuery(value); }, [value]);
+
+  const matches = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return challanChoices(pending).filter(choice => {
+      if (!q) return true;
+      const hay = `${choice.source.documentNo || ''} ${choice.pendingLine.itemName || ''} ${choice.pendingLine.category || ''}`.toLowerCase();
+      return hay.includes(q);
+    });
+  }, [pending, query]);
+
+  const placeBox = () => {
+    const el = inputRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    setBox({ top: rect.bottom + 4, left: rect.left, width: Math.max(rect.width, 280) });
+  };
+
+  const focusNext = (input: HTMLInputElement) => {
+    const row = input.closest('[data-erp-line]');
+    if (!row) return;
+    const fields = Array.from(row.querySelectorAll<HTMLInputElement>('input:not([readonly])'));
+    const index = fields.indexOf(input);
+    fields[index + 1]?.focus();
+  };
+
+  const lineBlank = (input: HTMLInputElement) => {
+    const row = input.closest('[data-erp-line]');
+    if (!row) return !input.value.trim();
+    return !Array.from(row.querySelectorAll<HTMLInputElement>('input')).some(field => {
+      if (field === input || field.hasAttribute('data-erp-line-default')) return false;
+      const text = field.value.trim();
+      return text !== '' && text !== '0';
+    }) && !input.value.trim();
+  };
+
+  return (
+    <div className="relative min-w-[7.5rem]">
+      <input
+        ref={inputRef}
+        data-erp-enter-custom
+        data-erp-arrow-custom
+        className={inputClass}
+        placeholder="Challan"
+        value={query}
+        onFocus={() => {
+          setOpen(true);
+          setHighlight(query.trim() ? 0 : -1);
+          placeBox();
+        }}
+        onBlur={() => {
+          window.setTimeout(() => setOpen(false), 120);
+          if (!query.trim()) onClear();
+          else setQuery(value);
+        }}
+        onChange={e => {
+          const next = e.target.value;
+          setQuery(next);
+          setOpen(true);
+          setHighlight(next.trim() ? 0 : -1);
+          blankEnters.current = 0;
+          placeBox();
+          if (!next.trim()) onClear();
+        }}
+        onKeyDown={e => {
+          if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+            e.preventDefault();
+            e.stopPropagation();
+            if (open && matches.length) {
+              setHighlight(current => {
+                const start = current < 0 ? 0 : current;
+                const step = e.key === 'ArrowDown' ? 1 : -1;
+                return (start + step + matches.length) % matches.length;
+              });
+              return;
+            }
+            const row = e.currentTarget.closest('[data-erp-line]');
+            const grid = row?.closest('[data-erp-line-grid]');
+            const rows = grid ? Array.from(grid.querySelectorAll('[data-erp-line]')) : [];
+            const rowIndex = row ? rows.indexOf(row) : -1;
+            const nextRow = rows[rowIndex + (e.key === 'ArrowDown' ? 1 : -1)];
+            if (nextRow) {
+              const mine = row ? Array.from(row.querySelectorAll('input')) : [];
+              const col = mine.indexOf(e.currentTarget);
+              const fields = Array.from(nextRow.querySelectorAll<HTMLInputElement>('input'));
+              fields[Math.max(col, 0)]?.focus();
+            }
+            return;
+          }
+          if (e.key !== 'Enter') return;
+          e.preventDefault();
+          e.stopPropagation();
+          const typed = query.trim();
+          const chosen = typed && matches.length
+            ? matches[highlight >= 0 ? highlight : 0]
+            : null;
+          if (chosen) {
+            blankEnters.current = 0;
+            onPick(chosen);
+            setOpen(false);
+            focusNext(e.currentTarget);
+            return;
+          }
+          if (lineBlank(e.currentTarget)) {
+            if (blankEnters.current >= 1) {
+              blankEnters.current = 0;
+              actions?.requestSave();
+              return;
+            }
+            blankEnters.current += 1;
+            return;
+          }
+          blankEnters.current = 0;
+          focusNext(e.currentTarget);
+        }}
+      />
+      {open && box && (
+        <div
+          className="fixed z-[70] max-h-64 overflow-y-auto rounded-lg border border-fuchsia-200 bg-white shadow-xl"
+          style={{ top: box.top, left: box.left, width: box.width }}
+        >
+          {matches.length === 0 && (
+            <p className="px-3 py-2 text-[11px] font-semibold text-gray-500">No pending challan for that search.</p>
+          )}
+          {matches.slice(0, 40).map((choice, index) => (
+            <button
+              key={`${choice.source.sourceId}:${choice.pendingLine.lineNo || index}`}
+              type="button"
+              className={`block w-full px-3 py-1.5 text-left text-[11px] font-bold ${index === highlight ? 'bg-fuchsia-100 text-fuchsia-900' : 'text-gray-800 hover:bg-fuchsia-50'}`}
+              onMouseDown={e => {
+                e.preventDefault();
+                onPick(choice);
+                setQuery(choice.source.documentNo || '');
+                setOpen(false);
+                if (inputRef.current) focusNext(inputRef.current);
+              }}
+            >
+              {choiceLabel(choice)}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 const blankLine = (lineNo: number): WorkLineItem => ({
   lineNo,
@@ -165,7 +356,7 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [checked, setChecked] = useState<Record<string, boolean>>({});
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pendingLoading, setPendingLoading] = useState(false);
-  const [lines, setLines] = useState<WorkLineItem[]>([]);
+  const [lines, setLines] = useState<WorkLineItem[]>([blankLine(1)]);
   const [discountPercent, setDiscountPercent] = useState('');
   const [discountAmount, setDiscountAmount] = useState(0);
   const [otherLess, setOtherLess] = useState('');
@@ -353,7 +544,7 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
     setPending([]);
     setChecked({});
     setPickerOpen(false);
-    setLines([]);
+    setLines([blankLine(1)]);
     setDiscountPercent('');
     setDiscountAmount(0);
     setOtherLess('');
@@ -501,6 +692,30 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
     }
   };
 
+  useEffect(() => {
+    const party = partyName.trim();
+    if (!party) return undefined;
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const { sources } = await workReceiptsApi.getPendingSources({
+            transactionType,
+            partyName: party,
+            excludeId: editId || undefined
+          });
+          if (!cancelled) setPending(sources || []);
+        } catch {
+          if (!cancelled) setPending([]);
+        }
+      })();
+    }, 300);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [partyName, transactionType, editId]);
+
   const toggleChecked = (key: string) => {
     setChecked(prev => ({ ...prev, [key]: !prev[key] }));
   };
@@ -646,8 +861,49 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
     return notes;
   };
 
+  const withLineLink = (row: WorkLineItem): WorkLineItem => {
+    if (!row.sourceDespatchId) return { ...row, sourceAllocations: [] };
+    const allocs = Array.isArray(row.sourceAllocations) ? row.sourceAllocations.filter(alloc => alloc?.sourceDespatchId) : [];
+    if (allocs.length > 1) return row;
+    return {
+      ...row,
+      sourceAllocations: [{
+        sourceDespatchId: row.sourceDespatchId,
+        sourceChallanNo: row.sourceChallanNo || null,
+        sourceLineNo: row.sourceLineNo ?? null,
+        pcs: row.pcs,
+        mtsQty: row.mtsQty
+      }]
+    };
+  };
+
   const updateLine = (index: number, patch: Partial<WorkLineItem>) => {
-    setLines(prev => prev.map((row, i) => i === index ? computeWorkLine(row, patch) : row));
+    setLines(prev => prev.map((row, i) => i === index ? withLineLink(computeWorkLine(row, patch)) : row));
+  };
+
+  const linkLineChallan = (index: number, choice: ChallanChoice) => {
+    setSelectedSources(prev => prev.some(source => source.sourceId === choice.source.sourceId) ? prev : [...prev, choice.source]);
+    setLines(prev => {
+      const next = prev.map((row, i) => {
+        if (i !== index) return row;
+        const itemName = String(row.itemName || '').trim() || choice.pendingLine.itemName || '';
+        const category = String(row.category || '').trim() || choice.pendingLine.category || null;
+        return withLineLink(computeWorkLine(row, {
+          sourceDespatchId: choice.source.sourceId,
+          sourceChallanNo: choice.source.documentNo || null,
+          sourceLineNo: choice.pendingLine.lineNo ?? null,
+          itemName,
+          category
+        }));
+      });
+      const nos = [...new Set(next.map(row => row.sourceChallanNo).filter(Boolean))];
+      if (nos.length) setChallanNo(nos.join(', '));
+      return next;
+    });
+  };
+
+  const clearLineChallan = (index: number) => {
+    updateLine(index, { sourceDespatchId: null, sourceChallanNo: null, sourceLineNo: null, sourceAllocations: [] });
   };
 
   useEffect(() => {
@@ -731,7 +987,10 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
   }), [lines]);
 
   const buildPayload = () => ({
-    sourceDespatchIds: selectedSources.map(source => source.sourceId),
+    sourceDespatchIds: [...new Set([
+      ...selectedSources.map(source => source.sourceId),
+      ...lines.map(line => line.sourceDespatchId).filter((id): id is string => Boolean(id))
+    ])],
     companyName,
     transactionType,
     partyName: partyName.trim(),
@@ -787,7 +1046,7 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
         setSelectedSources([]);
         setChecked({});
         setChallanNo('');
-        setLines([]);
+        setLines([blankLine(1)]);
         setRemarks('');
         setBillNo('');
         setDiscountPercent('');
@@ -968,9 +1227,9 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
               <label className="md:col-span-2"><span className={labelClass}>Remark</span><input className={inputClass} value={remarks} onChange={e => setRemarks(e.target.value)} /></label>
             </div>
 
-            {selectedSources.length > 1 && (
+            {selectedSources.length > 0 && (
               <div className="mt-3 rounded-xl border border-fuchsia-200 bg-white p-3">
-                <p className={labelClass}>This bill covers {selectedSources.length} desp challans</p>
+                <p className={labelClass}>{selectedSources.length > 1 ? `This bill covers ${selectedSources.length} desp challans` : 'Despatch on this bill'}</p>
                 <div className="flex flex-wrap gap-2">
                   {selectedSources.map(source => {
                     const billed = lines.reduce((sum, line) => {
@@ -1036,7 +1295,14 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
                   )}
                   {lines.map((line, index) => (
                     <tr key={index} data-erp-line className="border-b">
-                      <td className="px-2 py-2 text-[11px] font-bold text-fuchsia-800">{line.sourceChallanNo || '-'}</td>
+                      <td className="px-2 py-2">
+                        <LineChallanPick
+                          value={line.sourceChallanNo || ''}
+                          pending={pending}
+                          onPick={choice => linkLineChallan(index, choice)}
+                          onClear={() => clearLineChallan(index)}
+                        />
+                      </td>
                       <td className="px-2 py-2">
                         <input className={inputClass} value={line.itemName} onChange={e => updateLine(index, { itemName: e.target.value })} placeholder="Item / design" />
                       </td>

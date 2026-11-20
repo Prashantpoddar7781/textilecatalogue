@@ -487,6 +487,14 @@ function requestedSourceIds(reqBody) {
   const ids = many.map(id => optionalString(id)).filter(Boolean);
   const single = optionalString(reqBody.workDespatchId);
   if (single && !ids.includes(single)) ids.unshift(single);
+  for (const line of Array.isArray(reqBody.lineItems) ? reqBody.lineItems : []) {
+    const lineId = optionalString(line?.sourceDespatchId);
+    if (lineId && !ids.includes(lineId)) ids.push(lineId);
+    for (const alloc of Array.isArray(line?.sourceAllocations) ? line.sourceAllocations : []) {
+      const allocId = optionalString(alloc?.sourceDespatchId);
+      if (allocId && !ids.includes(allocId)) ids.push(allocId);
+    }
+  }
   return Array.from(new Set(ids));
 }
 
@@ -524,7 +532,24 @@ async function saveReceipt(req, res, existing = null) {
   if (attributed.errors.length) {
     return res.status(400).json({ error: attributed.errors.join(' ') });
   }
-  const taggedLines = attributed.lines;
+  // Each picked line deducts its own pcs, including two prices from one challan.
+  const taggedLines = attributed.lines.map(line => {
+    if (!line.sourceDespatchId) return { ...line, sourceAllocations: [] };
+    const allocs = Array.isArray(line.sourceAllocations)
+      ? line.sourceAllocations.filter(alloc => alloc?.sourceDespatchId)
+      : [];
+    if (allocs.length > 1) return line;
+    return {
+      ...line,
+      sourceAllocations: [{
+        sourceDespatchId: line.sourceDespatchId,
+        sourceChallanNo: line.sourceChallanNo || null,
+        sourceLineNo: line.sourceLineNo ?? null,
+        pcs: roundMoney(line.pcs),
+        mtsQty: roundMoney(line.mtsQty)
+      }]
+    };
+  });
 
   const agg = lineAgg(taggedLines);
   const totals = computeReceiptTotals(req.body, taggedLines, ctx, primary);
