@@ -19,6 +19,7 @@ import { ErpTopMenu } from './ErpTopMenu';
 import { MasterNameInput } from './MasterNameInput';
 import { partyDhara } from '../utils/partyBillingTerms';
 import { roundRupee } from '../utils/rupeeRound';
+import { focusAdjacentField } from '../hooks/useErpFormKeyboard';
 import { useVoucherJump } from '../hooks/useVoucherJump';
 
 interface Props {
@@ -184,11 +185,26 @@ function LineChallanPick({
           if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
             e.preventDefault();
             e.stopPropagation();
+            if (e.key === 'ArrowUp' && !(open && matches.length && highlight > 0)) {
+              setOpen(false);
+              const row = e.currentTarget.closest('[data-erp-line]');
+              const grid = row?.closest('[data-erp-line-grid]');
+              const rows = grid ? Array.from(grid.querySelectorAll('[data-erp-line]')) : [];
+              const rowIndex = row ? rows.indexOf(row) : -1;
+              if (row && rowIndex > 0) {
+                const col = Array.from(row.querySelectorAll('input')).indexOf(e.currentTarget);
+                const fields = Array.from(rows[rowIndex - 1].querySelectorAll<HTMLInputElement>('input'));
+                fields[Math.max(col, 0)]?.focus();
+                return;
+              }
+              focusAdjacentField(e.currentTarget, -1);
+              return;
+            }
             if (open && matches.length) {
               setHighlight(current => {
                 const start = current < 0 ? 0 : current;
-                const step = e.key === 'ArrowDown' ? 1 : -1;
-                return (start + step + matches.length) % matches.length;
+                if (e.key === 'ArrowUp') return Math.max(start - 1, 0);
+                return Math.min(start + 1, matches.length - 1);
               });
               return;
             }
@@ -202,6 +218,8 @@ function LineChallanPick({
               const col = mine.indexOf(e.currentTarget);
               const fields = Array.from(nextRow.querySelectorAll<HTMLInputElement>('input'));
               fields[Math.max(col, 0)]?.focus();
+            } else if (e.key === 'ArrowUp') {
+              focusAdjacentField(e.currentTarget, -1);
             }
             return;
           }

@@ -6,6 +6,19 @@ const FIELD_SELECTOR = [
   'textarea:not([disabled]):not([readonly]):not([data-erp-skip-nav])'
 ].join(', ');
 
+export function focusAdjacentField(target: HTMLElement, delta: number) {
+  const container = target.closest('[data-erp-form]') as HTMLElement | null;
+  if (!container) return;
+  const fields = getNavigableFields(container);
+  const index = fields.indexOf(target);
+  const next = index >= 0 ? fields[index + delta] : null;
+  if (!next) return;
+  next.focus();
+  if (next instanceof HTMLInputElement || next instanceof HTMLTextAreaElement) {
+    next.setSelectionRange?.(0, 0);
+  }
+}
+
 export function getNavigableFields(container: HTMLElement): HTMLElement[] {
   return Array.from(container.querySelectorAll<HTMLElement>(FIELD_SELECTOR)).filter(el => {
     const style = window.getComputedStyle(el);
@@ -55,6 +68,7 @@ export function useErpFormKeyboard(onSave: () => void | Promise<void>, options: 
 
   const saveArmed = useRef(false);
   const blankEnters = useRef(0);
+  const skipPickAdvance = useRef(false);
 
   const handleKeyDown = useCallback((event: KeyboardEvent) => {
     if (disabled || saving || confirmOpen) return;
@@ -98,6 +112,11 @@ export function useErpFormKeyboard(onSave: () => void | Promise<void>, options: 
       event.preventDefault();
       requestSave();
       return;
+    }
+
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      skipPickAdvance.current = true;
+      window.setTimeout(() => { skipPickAdvance.current = false; }, 80);
     }
 
     if (event.key === 'ArrowDown') {
@@ -228,6 +247,44 @@ export function useErpFormKeyboard(onSave: () => void | Promise<void>, options: 
       }
     }
   }, [confirmOpen, disabled, focusField, requestSave, saving]);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    let queued: HTMLElement | null = null;
+    const scheduleAdvance = (target: HTMLElement) => {
+      if (queued === target) return;
+      queued = target;
+      window.setTimeout(() => {
+        queued = null;
+        if (skipPickAdvance.current) return;
+        if (document.activeElement !== target) return;
+        focusAdjacentField(target, 1);
+      }, 0);
+    };
+    const onInput = (event: Event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLInputElement) || !target.list || !container.contains(target)) return;
+      const native = event as InputEvent;
+      if (native.inputType !== 'insertReplacementText') return;
+      scheduleAdvance(target);
+    };
+    const onChange = (event: Event) => {
+      const target = event.target;
+      if (!container.contains(target as Node)) return;
+      if (target instanceof HTMLSelectElement) {
+        scheduleAdvance(target);
+        return;
+      }
+      if (target instanceof HTMLInputElement && target.list) scheduleAdvance(target);
+    };
+    container.addEventListener('input', onInput);
+    container.addEventListener('change', onChange);
+    return () => {
+      container.removeEventListener('input', onInput);
+      container.removeEventListener('change', onChange);
+    };
+  }, [disabled]);
 
   useEffect(() => {
     const onWindowKeyDown = (event: KeyboardEvent) => {
