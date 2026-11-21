@@ -1,8 +1,8 @@
 /**
- * Poonam, 21 Nov 2026. Sales orders 1–11 become sales challans (next free
- * numbers). FINISH SALES (S1) vouchers 1–20, dated before 21 Nov 2026, become
- * sales orders 1–20. Sales orders 12–15 become 21–24, and FINISH SALES 21–24
- * keep billing those same rows.
+ * Poonam, 21 Nov 2026. Sales orders 1–11 are sales challans 1468–1478.
+ * Sales orders 12–15 are 21–24. FINISH SALES 1–20 stay invoices. Running this
+ * script puts those invoices back if they were copied into sales orders, and
+ * puts bank receipt 542 of SHYAM TRADING CO. back onto FINISH SALES 2.
  *
  *   node backend/scripts/repairSalesSeriesMove.mjs
  *
@@ -14,6 +14,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { PrismaClient } from '@prisma/client';
+import { mapOrderToPendingBill } from '../utils/orderBilling.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.join(here, '..', '.env') });
@@ -133,35 +134,11 @@ export function salesOrderFromFinishBill(row, orderNo, customer = null) {
 }
 
 /**
- * Before insert: FINISH SALES 1–20 dated before 21 Nov 2026 go in as sales
- * orders of the same number. A sales order that already holds that number
- * takes the next free number.
+ * FINISH SALES 1–20 stay invoices. An earlier pass moved them into sales
+ * orders; that was put back. This returns the arrays unchanged.
  */
 export function divertPoonamFinishSales(orders, salesOrders) {
-  const kept = [];
-  const moved = [];
-  for (const order of orders) {
-    if (isMovedFinishSale(order)) moved.push(order);
-    else kept.push(order);
-  }
-  if (!moved.length) return { orders, salesOrders, moved: 0, shifted: 0 };
-  const used = new Set(salesOrders.map(row => Number(row.orderNo)));
-  let maxNo = used.size ? Math.max(...used) : 0;
-  let shifted = 0;
-  for (const row of moved.sort((a, b) => a.typeBillNumber - b.typeBillNumber)) {
-    const wanted = Number(row.typeBillNumber);
-    if (used.has(wanted)) {
-      const other = salesOrders.find(item => Number(item.orderNo) === wanted);
-      maxNo += 1;
-      while (used.has(maxNo)) maxNo += 1;
-      other.orderNo = maxNo;
-      used.add(maxNo);
-      shifted += 1;
-    }
-    used.add(wanted);
-    salesOrders.push(salesOrderFromFinishBill(row, wanted));
-  }
-  return { orders: kept, salesOrders, moved: moved.length, shifted };
+  return { orders, salesOrders, moved: 0, shifted: 0 };
 }
 
 function challanFromSalesOrder(so, challanNo) {
@@ -227,227 +204,133 @@ async function alreadyMoved(prisma, userId) {
   return null;
 }
 
-async function main() {
+const EMPIRE_FINAL = {
+  1: 42027, 2: 41826, 3: 41889, 4: 41889, 5: 42015,
+  6: 42878, 7: 43401, 8: 43117, 9: 41076, 10: 42903,
+  11: 43136, 12: 43042, 13: 42796, 14: 42928, 15: 42916,
+  16: 43042, 17: 42985, 18: 40369, 19: 41909, 20: 42213
+};
+
+function originalRemark(remarks) {
+  return String(remarks || '')
+    .replace(/\s*Transferred from FINISH SALES \d+\.?(?:\s*E-way \d+\.?)?/i, '')
+    .trim();
+}
+
+function ewayOf(remarks) {
+  const match = String(remarks || '').match(/E-way (\d+)/i);
+  return match ? match[1] : null;
+}
+
+async function restoreFinishSales() {
   const prisma = new PrismaClient();
   try {
     const user = await prisma.user.findUnique({ where: { email: EMAIL }, select: { id: true } });
     if (!user) throw new Error('Poonam user not found');
     const userId = user.id;
-    const done = await alreadyMoved(prisma, userId);
-    if (done) {
-      console.log(JSON.stringify({ already: true, ...done }));
-      return;
-    }
-
-    const salesOrders = await prisma.salesOrder.findMany({
-      where: { userId },
-      include: {
-        customer: { select: { gstNumber: true, state: true, mobileNumber: true } }
+    const copies = await prisma.salesOrder.findMany({
+      where: {
+        userId,
+        orderNo: { gte: 1, lte: 20 },
+        remarks: { contains: 'Transferred from FINISH SALES' }
       },
+      include: { customer: { select: { mobileNumber: true, organizationName: true } } },
       orderBy: { orderNo: 'asc' }
     });
-    const soByNo = new Map(salesOrders.map(row => [row.orderNo, row]));
-    for (let number = 1; number <= 15; number += 1) {
-      if (!soByNo.has(number)) throw new Error(`Sales order ${number} is missing`);
-    }
-    for (const number of [21, 22, 23, 24]) {
-      if (soByNo.has(number)) throw new Error(`Sales order ${number} already exists`);
-    }
-
-    const finish = await prisma.order.findMany({
-      where: { userId, transactionType: 'FINISH SALES', typeBillNumber: { gte: 1, lte: 24 } },
-      orderBy: { typeBillNumber: 'asc' }
+    const already = await prisma.order.count({
+      where: { userId, transactionType: 'FINISH SALES', typeBillNumber: { gte: 1, lte: 20 } }
     });
-    const finishByNo = new Map(finish.map(row => [row.typeBillNumber, row]));
-    for (let number = 1; number <= 24; number += 1) {
-      if (!finishByNo.has(number)) throw new Error(`FINISH SALES ${number} is missing`);
+    if (already === 20 && copies.length === 0) {
+      console.log(JSON.stringify({ already: true, finishSales: 20 }));
+      return;
     }
-    const moving = [];
-    for (let number = 1; number <= 20; number += 1) {
-      const row = finishByNo.get(number);
-      if (!isMovedFinishSale(row)) throw new Error(`FINISH SALES ${number} is not one of the Empire vouchers to move`);
-      if (row.sourceSalesOrderId) throw new Error(`FINISH SALES ${number} already picks a sales order`);
-      if (row.einvoiceIrn && row.einvoiceStatus !== 'cancelled') throw new Error(`FINISH SALES ${number} has an IRN`);
-      moving.push(row);
-    }
-    for (const [billNo, orderNo] of [[21, 12], [22, 13], [23, 14], [24, 15]]) {
-      const bill = finishByNo.get(billNo);
-      const order = soByNo.get(orderNo);
-      if (bill.sourceSalesOrderId !== order.id) {
-        throw new Error(`FINISH SALES ${billNo} does not bill sales order ${orderNo}`);
-      }
-    }
-
-    const moveIds = moving.map(row => row.id);
-    const [invoiceCount, formRefs] = await Promise.all([
-      prisma.salesInvoice.count({ where: { orderId: { in: moveIds } } }),
-      prisma.order.count({ where: { sourceOrderFormId: { in: moveIds } } })
-    ]);
-    if (invoiceCount) throw new Error(`${invoiceCount} sales invoices hang off FINISH SALES 1-20`);
-    if (formRefs) throw new Error(`${formRefs} bills were copied from FINISH SALES 1-20`);
-
-    const banks = await prisma.bankEntry.findMany({
-      where: { userId },
-      select: {
-        id: true, voucherNumber: true, entryType: true, partyName: true, amount: true,
-        linkedId: true, billNumber: true, billAllocations: true
-      }
-    });
-    const moveIdSet = new Set(moveIds);
-    const bankHits = banks.filter(entry => {
-      if (moveIdSet.has(entry.linkedId)) return true;
-      const lines = Array.isArray(entry.billAllocations) ? entry.billAllocations : [];
-      return lines.some(line => moveIdSet.has(line?.billId));
-    });
-
-    const soIds = [];
-    for (let number = 1; number <= 11; number += 1) soIds.push(soByNo.get(number).id);
-    const gstBills = await prisma.order.findMany({
-      where: {
-        userId,
-        transactionType: 'FINISH SALES (GST)',
-        OR: [
-          { sourceSalesOrderId: { in: soIds } },
-          { sourceSalesOrderIds: { hasSome: soIds } }
-        ]
-      }
-    });
-    if (gstBills.length !== 11) {
-      throw new Error(`Expected 11 GST bills on sales orders 1-11, found ${gstBills.length}`);
-    }
-    const seen = new Map();
-    for (const bill of gstBills) {
-      if (!soIds.includes(bill.sourceSalesOrderId)) {
-        throw new Error(`GST bill ${bill.typeBillNumber} is not billed from sales orders 1-11`);
-      }
-      seen.set(bill.sourceSalesOrderId, (seen.get(bill.sourceSalesOrderId) || 0) + 1);
-    }
-    if ([...seen.values()].some(count => count !== 1) || seen.size !== 11) {
-      throw new Error('Sales orders 1-11 are not each billed once');
-    }
-
-    const maxChallan = await prisma.order.aggregate({
-      where: { userId, transactionType: 'SALES CHALLAN' },
-      _max: { typeBillNumber: true }
-    });
-    const challanStart = (maxChallan._max.typeBillNumber || 0) + 1;
-    const challanEnd = challanStart + 10;
-    const clash = await prisma.order.count({
-      where: {
-        userId,
-        transactionType: 'SALES CHALLAN',
-        typeBillNumber: { gte: challanStart, lte: challanEnd }
-      }
-    });
-    if (clash) throw new Error(`Sales challan numbers ${challanStart}-${challanEnd} are already used`);
-
-    const customerIds = [...new Set(moving.map(row => row.customerId).filter(Boolean))];
-    const customers = await prisma.customer.findMany({
-      where: { id: { in: customerIds } },
-      select: { id: true, gstNumber: true, state: true }
-    });
-    const customerById = new Map(customers.map(row => [row.id, row]));
-    const soById = new Map(salesOrders.map(row => [row.id, row]));
+    if (already > 0) throw new Error(`FINISH SALES 1-20 already has ${already} vouchers`);
+    if (copies.length !== 20) throw new Error(`Expected 20 copied sales orders, found ${copies.length}`);
 
     const result = await prisma.$transaction(async (tx) => {
-      const challanMap = [];
-      for (let number = 1; number <= 11; number += 1) {
-        const order = soByNo.get(number);
-        const challanNo = challanStart + number - 1;
-        await tx.order.create({ data: challanFromSalesOrder(order, challanNo) });
-        challanMap.push({ salesOrder: number, challan: challanNo, party: order.partyName });
-      }
-      for (const bill of gstBills) {
-        const order = soById.get(bill.sourceSalesOrderId);
-        const challanNo = challanStart + order.orderNo - 1;
-        await tx.order.update({
-          where: { id: bill.id },
+      const created = [];
+      for (const copy of copies) {
+        const finalAmt = EMPIRE_FINAL[copy.orderNo];
+        const lines = Array.isArray(copy.lineItems) ? copy.lineItems : [];
+        const bill = await tx.order.create({
           data: {
-            orderNumber: String(challanNo),
-            sourceSalesOrderId: null,
-            sourceSalesOrderIds: [],
-            orderLines: retargetChallanLines(bill.orderLines, challanNo)
-          }
-        });
-      }
-      await tx.salesOrder.deleteMany({ where: { id: { in: soIds } } });
-
-      const renumber = [[12, 21], [13, 22], [14, 23], [15, 24]];
-      for (const [from, to] of renumber) {
-        await tx.salesOrder.update({
-          where: { id: soByNo.get(from).id },
-          data: { orderNo: to }
-        });
-      }
-      for (const [billNo, orderNo] of [[21, 12], [22, 13], [23, 14], [24, 15]]) {
-        const bill = finishByNo.get(billNo);
-        const nextNo = orderNo + 9;
-        await tx.order.update({
-          where: { id: bill.id },
-          data: {
-            orderNumber: String(nextNo),
-            orderLines: rewriteOrderLines(bill.orderLines, orderNo, nextNo)
-          }
-        });
-      }
-
-      for (const bill of moving) {
-        await tx.salesOrder.create({
-          data: salesOrderFromFinishBill(bill, bill.typeBillNumber, customerById.get(bill.customerId))
-        });
-      }
-      for (const entry of bankHits) {
-        const lines = Array.isArray(entry.billAllocations) ? entry.billAllocations : [];
-        const kept = lines.filter(line => !moveIdSet.has(line?.billId));
-        const linkedMoved = moveIdSet.has(entry.linkedId);
-        await tx.bankEntry.update({
-          where: { id: entry.id },
-          data: {
-            billAllocations: kept,
-            linkedId: linkedMoved ? (kept[0]?.billId || null) : entry.linkedId,
-            billNumber: linkedMoved ? (kept[0]?.billNumber || null) : entry.billNumber
-          }
-        });
-      }
-      await tx.order.deleteMany({ where: { id: { in: moveIds } } });
-
-      const [orderCount, finishLeft, finishKept, challanCount] = await Promise.all([
-        tx.salesOrder.count({ where: { userId, orderNo: { gte: 1, lte: 24 } } }),
-        tx.order.count({
-          where: { userId, transactionType: 'FINISH SALES', typeBillNumber: { gte: 1, lte: 20 } }
-        }),
-        tx.order.count({
-          where: { userId, transactionType: 'FINISH SALES', typeBillNumber: { gte: 21, lte: 24 } }
-        }),
-        tx.order.count({
-          where: {
             userId,
-            transactionType: 'SALES CHALLAN',
-            typeBillNumber: { gte: challanStart, lte: challanEnd },
-            status: 'posted'
+            customerId: copy.customerId || null,
+            buyerName: copy.partyName,
+            buyerPhone: copy.customer?.mobileNumber || '-',
+            quantity: Math.max(1, Math.round(Number(copy.totalPcs) || 1)),
+            orderLines: lines,
+            status: 'completed',
+            remarks: originalRemark(copy.remarks),
+            manualType: 'erp_sales',
+            transactionType: 'FINISH SALES',
+            typeBillNumber: copy.orderNo,
+            invoiceNumber: null,
+            orderNumber: null,
+            agentName: copy.brokerName || null,
+            transportName: copy.transportName || null,
+            discountRate: 0,
+            shippingCharge: roundMoney(finalAmt - (Number(copy.grossAmount) || 0)),
+            orderDate: copy.orderDate,
+            haste: copy.haste || null,
+            station: copy.station || null,
+            challanNo: copy.challanNo || null,
+            gstType: copy.gstType || null,
+            lrNo: copy.lrNo || null,
+            vehicleNo: copy.vehicleNo || null,
+            dhara: copy.dhara ?? null,
+            grace: copy.grace ?? null,
+            screenSeries: copy.screenSeries || null,
+            hasteGstin: copy.hasteGstin || null,
+            ewayBillNo: ewayOf(copy.remarks)
           }
-        })
-      ]);
-      if (orderCount !== 24 || finishLeft !== 0 || finishKept !== 4 || challanCount !== 11) {
-        throw new Error(`Move did not land: orders ${orderCount}, finish left ${finishLeft}, finish kept ${finishKept}, challans ${challanCount}`);
+        });
+        created.push(bill);
       }
-      const kept = await tx.order.findMany({
-        where: { userId, transactionType: 'FINISH SALES', typeBillNumber: { gte: 21, lte: 24 } },
-        select: { typeBillNumber: true, orderNumber: true, sourceSalesOrderId: true },
-        orderBy: { typeBillNumber: 'asc' }
+      const bill2 = created.find(row => row.typeBillNumber === 2);
+      const receipt = await tx.bankEntry.findFirst({
+        where: {
+          userId,
+          entryType: 'receipt',
+          voucherNumber: '542',
+          partyName: 'SHYAM TRADING CO.'
+        }
       });
-      return { challanStart, challanEnd, challanMap, kept };
+      if (!receipt) throw new Error('Bank receipt 542 of SHYAM TRADING CO. was not found');
+      const pending = mapOrderToPendingBill(
+        { ...bill2, customer: copies.find(row => row.orderNo === 2)?.customer || null },
+        new Map()
+      );
+      await tx.bankEntry.update({
+        where: { id: receipt.id },
+        data: {
+          linkedId: bill2.id,
+          linkedType: 'order',
+          billNumber: '2',
+          billAllocations: [{
+            ...pending,
+            adjustAmount: 41825.7,
+            discountAmount: 0,
+            discountPercent: 0,
+            paidAmount: 41825.7,
+            pendingAmount: 0,
+            adjustDirection: 'add'
+          }]
+        }
+      });
+      await tx.salesOrder.deleteMany({ where: { id: { in: copies.map(row => row.id) } } });
+      const restored = await tx.order.count({
+        where: { userId, transactionType: 'FINISH SALES', typeBillNumber: { gte: 1, lte: 20 }, status: 'completed' }
+      });
+      const leftover = await tx.salesOrder.count({
+        where: { userId, orderNo: { gte: 1, lte: 20 } }
+      });
+      if (restored !== 20 || leftover !== 0) {
+        throw new Error(`Restore did not land: invoices ${restored}, sales orders 1-20 left ${leftover}`);
+      }
+      return { restored, receipt: receipt.voucherNumber, bill2: bill2.id };
     }, { timeout: 120000, maxWait: 20000 });
-
-    console.log(JSON.stringify({
-      challans: `${result.challanStart}-${result.challanEnd}`,
-      challanMap: result.challanMap.map(row => `${row.salesOrder}->${row.challan} ${row.party}`),
-      salesOrdersFromFinishSales: '1-20',
-      ewayKept: moving.filter(row => row.ewayBillNo).length,
-      receiptsUnlinked: bankHits.map(entry => `${entry.entryType} ${entry.voucherNumber} ${entry.partyName} ${entry.amount}`),
-      salesOrdersRenumbered: '12-15 -> 21-24',
-      finishSalesKept: result.kept
-    }));
+    console.log(JSON.stringify(result));
   } finally {
     await prisma.$disconnect();
   }
@@ -456,7 +339,7 @@ async function main() {
 const invoked = process.argv[1] ? path.resolve(process.argv[1]) : '';
 const self = fileURLToPath(import.meta.url);
 if (invoked && path.normalize(invoked).toLowerCase() === path.normalize(self).toLowerCase()) {
-  main().catch((error) => {
+  restoreFinishSales().catch((error) => {
     console.error(error?.message || error);
     process.exitCode = 1;
   });
