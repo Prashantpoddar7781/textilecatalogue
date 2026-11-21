@@ -18,6 +18,7 @@ import {
   validateEinvoicePayload,
   withinCancelWindow
 } from '../services/einvoice.js';
+import { withBookFigures } from '../utils/orderBilling.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -218,6 +219,7 @@ async function generateOne(userId, id, kind, { dummy = false } = {}) {
   try {
     const result = await generateEinvoice(prepared.payload, config, { dummy: dummy || config.mode === 'mock' });
     const data = stampFromResult(result, mode);
+    data.einvoiceRaw = withBookFigures(data.einvoiceRaw, loaded.record.einvoiceRaw);
     if (loaded.kind === 'note') await prisma.creditDebitNote.update({ where: { id: loaded.record.id }, data });
     else await prisma.order.update({ where: { id: loaded.record.id }, data });
     return { id: loaded.record.id, billNo, einvoice: publicEinvoice({ ...loaded.record, ...data }), warnings: prepared.warnings, mode };
@@ -461,12 +463,12 @@ async function cancelOne(userId, id, kind, body) {
       einvoiceStatus: null,
       einvoiceMode: null,
       einvoiceCancelReason: null,
-      einvoiceRaw: null
+      einvoiceRaw: withBookFigures(null, loaded.record.einvoiceRaw)
     }
     : {
       einvoiceStatus: 'cancelled',
       einvoiceCancelReason: text(body?.remark).slice(0, 200),
-      einvoiceRaw: result.raw ?? undefined
+      einvoiceRaw: withBookFigures(result.raw, loaded.record.einvoiceRaw)
     };
   const saved = loaded.kind === 'note'
     ? await prisma.creditDebitNote.update({ where: { id: loaded.record.id }, data })

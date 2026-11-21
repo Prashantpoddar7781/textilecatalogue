@@ -175,6 +175,14 @@ function resolvedPartyState(state, gstin) {
   return fromGst.stateName || raw || null;
 }
 
+function saleBookRaw(bill, code) {
+  const raw = {};
+  if (text(bill.paid, 4).toUpperCase() === 'Y') raw.empirePaid = true;
+  const saleCredit = SALES_CHALLAN.has(code) ? 0 : Math.round(num(bill.BILLAMT));
+  if (saleCredit > 0) raw.saleCredit = saleCredit;
+  return Object.keys(raw).length ? raw : undefined;
+}
+
 function billAmounts(row, lineSum) {
   const billAmt = num(row.BILLAMT);
   const gross = num(row.grossamt);
@@ -775,7 +783,7 @@ async function main() {
         dhara: num(bill.PAYDAYS) || null,
         grace: num(bill.GRACEDAYS) || null,
         ewayBillNo: text(bill.EWB_NO, 40) || null,
-        einvoiceRaw: text(bill.paid, 4).toUpperCase() === 'Y' ? { empirePaid: true } : undefined
+        einvoiceRaw: saleBookRaw(bill, code)
       });
       continue;
     }

@@ -1,5 +1,6 @@
 import {
   resolvePostedSaleAmount,
+  saleAccountCredit,
   receiptBillDiscounts,
   discountsNotCoveredByCredits,
   getOrderPartyName,
@@ -941,8 +942,8 @@ async function buildSaleNominalLedger(prisma, userId, accountName, { fromDate, t
   });
   const rows = [];
   for (const order of orders) {
-    const posted = resolvePostedSaleAmount(order);
-    if (!(posted.amount > 0)) continue;
+    const amount = saleAccountCredit(order);
+    if (!(amount > 0)) continue;
     const party = getOrderPartyName(order) || 'Customer';
     const billNo = printedSaleBill(order);
     const isReturn = isSalesGoodsReturn(order.transactionType);
@@ -961,8 +962,8 @@ async function buildSaleNominalLedger(prisma, userId, accountName, { fromDate, t
       account: party,
       particulars: remark,
       remarks: remark,
-      debitAmount: isReturn ? posted.amount : 0,
-      creditAmount: isReturn ? 0 : posted.amount
+      debitAmount: isReturn ? amount : 0,
+      creditAmount: isReturn ? 0 : amount
     });
     const gst = saleLineGst(order);
     const gstDebit = !isReturn;

@@ -173,6 +173,41 @@ export function resolvePostedSaleAmount(order) {
   return { amount: roundRupee(posted.amount), discount: posted.discount };
 }
 
+/**
+ * Figure Empire credits to SALES A/C. BILLAMT is the gross after the bill
+ * less/add and the line discount, including GST, to the nearest rupee. The
+ * separate cash discount (billdis) and a freight add stay off this credit.
+ * The party ledger still uses the gross invoice.
+ */
+export function saleAccountCredit(order) {
+  const raw = order?.einvoiceRaw;
+  const stamped = raw && typeof raw === 'object' && !Array.isArray(raw) ? Number(raw.saleCredit) : 0;
+  if (stamped > 0.5) return isRoundableSaleBill(order) ? roundRupee(stamped) : roundMoney(stamped);
+  const lines = normalizeOrderLines(order?.orderLines);
+  const net = lines.reduce((sum, line) => {
+    const total = Number(line.totalAmount);
+    return Number.isFinite(total) && total > 0 ? sum + total : sum;
+  }, 0);
+  if (net > 0.5) return isRoundableSaleBill(order) ? roundRupee(net) : roundMoney(net);
+  return resolvePostedSaleAmount(order).amount;
+}
+
+/** empirePaid and saleCredit survive an e-invoice stamp or cancel. */
+export function bookFigures(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const kept = {};
+  if (raw.empirePaid === true) kept.empirePaid = true;
+  const credit = Number(raw.saleCredit);
+  if (credit > 0) kept.saleCredit = roundRupee(credit);
+  return kept;
+}
+
+export function withBookFigures(next, previous) {
+  const body = next && typeof next === 'object' && !Array.isArray(next) ? next : {};
+  const merged = { ...body, ...bookFigures(previous) };
+  return Object.keys(merged).length ? merged : null;
+}
+
 /** Bill discounts typed on a receipt. These settle the bill, same as cash. */
 export function receiptBillDiscounts(entry) {
   if (String(entry?.entryType || '').toLowerCase() !== 'receipt') return [];

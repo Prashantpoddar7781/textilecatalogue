@@ -4,7 +4,7 @@ import { body, validationResult } from 'express-validator';
 import { authenticateToken } from '../middleware/auth.js';
 import { requireActiveSubscription } from '../middleware/subscription.js';
 import { resolveCustomerForEntry } from '../utils/partyMaster.js';
-import { roundMoney, allocateNextInvoiceNumber, saleBillDiscount } from '../utils/orderBilling.js';
+import { roundMoney, roundRupee, allocateNextInvoiceNumber, saleBillDiscount } from '../utils/orderBilling.js';
 import { allocateNextTypeBillNumber } from '../utils/transactionBilling.js';
 import { getStateFromGstin, calculateGstBreakup } from '../utils/gstCalculation.js';
 import { getGstDefaultsForTransactionType } from '../constants/erpTransactionTypes.js';
@@ -855,6 +855,15 @@ async function saveBill(req, res, existing = null) {
       grace: optionalNumber(req.body.grace),
       screenSeries: optionalString(req.body.screenSeries)
     };
+    if (existing?.einvoiceRaw && typeof existing.einvoiceRaw === 'object' && !Array.isArray(existing.einvoiceRaw)) {
+      const credit = Number(existing.einvoiceRaw.saleCredit);
+      const next = roundRupee(orderLines.reduce((sum, line) => sum + (Number(line.totalAmount) || 0), 0));
+      if (credit > 0 && Math.abs(credit - next) > 0.5) {
+        const raw = { ...existing.einvoiceRaw };
+        delete raw.saleCredit;
+        data.einvoiceRaw = Object.keys(raw).length ? raw : null;
+      }
+    }
     let bill;
     if (existing) {
       bill = await tx.order.update({ where: { id: existing.id }, data });
