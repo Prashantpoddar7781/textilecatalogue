@@ -6,9 +6,8 @@
  *
  *   node backend/scripts/repairSalesSeriesMove.mjs
  *
- * A later import of this backup diverts those same S1 vouchers before insert
- * (`divertPoonamFinishSales`). Sales orders 1–11 were typed after the backup,
- * so only the live books have that half of the move.
+ * Running this script links FINISH SALES 1–20 to sales orders 1–20.
+ * The invoices stay. A later import calls `linkPoonamFinishSalesOrders`.
  */
 import dotenv from 'dotenv';
 import path from 'path';
@@ -336,11 +335,143 @@ async function restoreFinishSales() {
   }
 }
 
+function orderLinesFromBill(lines) {
+  return lineList(lines).map((line, index) => {
+    const copy = { ...line, lineNo: Number(line.lineNo) || index + 1 };
+    delete copy.sourceSalesOrderId;
+    delete copy.sourceOrderNo;
+    delete copy.sourceLineNo;
+    delete copy.sourceAllocations;
+    delete copy.sourceKind;
+    return copy;
+  });
+}
+
+function tagBillLines(lines, salesOrderId, orderNo) {
+  const label = String(orderNo);
+  return lineList(lines).map((line, index) => {
+    const lineNo = Number(line.lineNo) || index + 1;
+    const pcs = roundMoney(line.pcs ?? line.quantity ?? 0);
+    const mtsQty = roundMoney(line.mtsQty ?? 0);
+    return {
+      ...line,
+      lineNo,
+      sourceSalesOrderId: salesOrderId,
+      sourceOrderNo: label,
+      sourceLineNo: lineNo,
+      sourceAllocations: [{
+        sourceSalesOrderId: salesOrderId,
+        sourceOrderNo: label,
+        sourceLineNo: lineNo,
+        pcs,
+        mtsQty
+      }]
+    };
+  });
+}
+
+/**
+ * FINISH SALES 1–20 stay invoices. Each is marked as picked from the sales
+ * order of the same number. Nothing is deleted.
+ */
+export async function linkPoonamFinishSalesOrders(prisma, userId) {
+  const bills = await prisma.order.findMany({
+    where: { userId, transactionType: 'FINISH SALES', typeBillNumber: { gte: 1, lte: 20 } },
+    include: { customer: { select: { gstNumber: true, state: true } } },
+    orderBy: { typeBillNumber: 'asc' }
+  });
+  if (bills.length !== 20) throw new Error(`Expected 20 FINISH SALES invoices, found ${bills.length}`);
+  const byNo = new Map(bills.map(row => [row.typeBillNumber, row]));
+  for (let number = 1; number <= 20; number += 1) {
+    if (!byNo.has(number)) throw new Error(`FINISH SALES ${number} is missing`);
+  }
+  const existing = await prisma.salesOrder.findMany({
+    where: { userId, orderNo: { gte: 1, lte: 20 } },
+    select: { id: true, orderNo: true }
+  });
+  const soByNo = new Map(existing.map(row => [row.orderNo, row]));
+  const already = bills.every(bill => soByNo.get(bill.typeBillNumber)?.id === bill.sourceSalesOrderId);
+  if (already && existing.length === 20) return { already: true, linked: 20 };
+  if (existing.length) {
+    throw new Error('Sales orders 1-20 already exist and are not linked from Finish Sales 1-20');
+  }
+
+  const sample = await prisma.salesOrder.findFirst({
+    where: { userId },
+    select: { companyName: true }
+  });
+
+  return prisma.$transaction(async (tx) => {
+    let linked = 0;
+    for (let number = 1; number <= 20; number += 1) {
+      const bill = byNo.get(number);
+      const lines = orderLinesFromBill(bill.orderLines);
+      if (!lines.length) throw new Error(`FINISH SALES ${number} has no lines`);
+      const totals = totalsOf(lines);
+      const hsn = lines.map(line => String(line.hsnCode || '').trim()).find(Boolean) || '5407';
+      const order = await tx.salesOrder.create({
+        data: {
+          userId,
+          customerId: bill.customerId || null,
+          companyName: sample?.companyName || null,
+          partyName: bill.buyerName,
+          partyGstin: bill.customer?.gstNumber || null,
+          state: bill.customer?.state || null,
+          station: bill.station || null,
+          brokerName: bill.agentName || null,
+          transportName: bill.transportName || null,
+          vehicleNo: bill.vehicleNo || null,
+          lrNo: bill.lrNo || null,
+          challanNo: bill.challanNo || null,
+          gstType: bill.gstType || null,
+          hasteGstin: bill.hasteGstin || null,
+          dhara: bill.dhara ?? null,
+          grace: bill.grace ?? null,
+          screenSeries: bill.screenSeries || null,
+          orderNo: number,
+          orderDate: bill.orderDate || new Date(),
+          haste: bill.haste || null,
+          remarks: bill.remarks || null,
+          hsnCode: hsn,
+          lineItems: lines,
+          ...totals,
+          status: 'closed'
+        }
+      });
+      await tx.order.update({
+        where: { id: bill.id },
+        data: {
+          sourceSalesOrderId: order.id,
+          sourceSalesOrderIds: [order.id],
+          orderNumber: String(number),
+          orderLines: tagBillLines(bill.orderLines, order.id, number)
+        }
+      });
+      linked += 1;
+    }
+    const invoiceCount = await tx.order.count({
+      where: { userId, transactionType: 'FINISH SALES', typeBillNumber: { gte: 1, lte: 20 } }
+    });
+    if (invoiceCount !== 20) throw new Error(`Invoice count changed to ${invoiceCount}`);
+    return { already: false, linked };
+  }, { timeout: 120000, maxWait: 20000 });
+}
+
 const invoked = process.argv[1] ? path.resolve(process.argv[1]) : '';
 const self = fileURLToPath(import.meta.url);
 if (invoked && path.normalize(invoked).toLowerCase() === path.normalize(self).toLowerCase()) {
-  restoreFinishSales().catch((error) => {
-    console.error(error?.message || error);
-    process.exitCode = 1;
-  });
+  const prisma = new PrismaClient();
+  prisma.user.findUnique({ where: { email: EMAIL }, select: { id: true } })
+    .then((user) => {
+      if (!user) throw new Error('Poonam user not found');
+      return linkPoonamFinishSalesOrders(prisma, user.id);
+    })
+    .then((result) => {
+      console.log(JSON.stringify(result));
+    })
+    .catch((error) => {
+      console.error(error?.message || error);
+      process.exitCode = 1;
+    })
+    .finally(() => prisma.$disconnect());
 }

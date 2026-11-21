@@ -17,7 +17,7 @@ import { fileURLToPath } from 'url';
 import bcrypt from 'bcryptjs';
 import { PrismaClient } from '@prisma/client';
 import { repairEmpireBankAllocations } from './repairEmpireBankAllocations.mjs';
-import { divertPoonamFinishSales } from './repairSalesSeriesMove.mjs';
+import { divertPoonamFinishSales, linkPoonamFinishSalesOrders } from './repairSalesSeriesMove.mjs';
 import { repairPartyStatesFromGstin, repairWorkDespatchLinks } from './repairEmpireWorkLinks.mjs';
 import { getStateCodeFromName, getStateFromGstin } from '../utils/gstCalculation.js';
 
@@ -1318,6 +1318,8 @@ async function main() {
   const workLinks = await repairWorkDespatchLinks(prisma, userId);
   console.log(`Party state from GSTIN: ${partyStates.customers} customers, ${partyStates.suppliers} suppliers`);
   console.log(`Work despatch links: ${workLinks.linked} receipts, ${workLinks.discounts} discounts filled`);
+  const finishOrderLinks = await linkPoonamFinishSalesOrders(prisma, userId);
+  console.log(`Finish sales 1-20 picked from sales orders: ${finishOrderLinks.linked}`);
 
   const counts = {
     customers: await prisma.customer.count({ where: { userId } }),
