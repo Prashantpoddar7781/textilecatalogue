@@ -1468,9 +1468,13 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
                 <select
                   className={inputClass}
                   value={transactionType}
-                  disabled={isEditMode}
                   onChange={e => {
                     const next = e.target.value;
+                    if (next === transactionType) return;
+                    if (isEditMode) {
+                      window.location.href = `/erp/sales?type=${encodeURIComponent(next)}`;
+                      return;
+                    }
                     setTransactionType(next);
                     setSourceSalesOrderId('');
                     setSelectedSources([]);
