@@ -17,6 +17,7 @@ import { fileURLToPath } from 'url';
 import bcrypt from 'bcryptjs';
 import { PrismaClient } from '@prisma/client';
 import { repairEmpireBankAllocations } from './repairEmpireBankAllocations.mjs';
+import { divertPoonamFinishSales } from './repairSalesSeriesMove.mjs';
 import { repairPartyStatesFromGstin, repairWorkDespatchLinks } from './repairEmpireWorkLinks.mjs';
 import { getStateCodeFromName, getStateFromGstin } from '../utils/gstCalculation.js';
 
@@ -1039,9 +1040,10 @@ async function main() {
     const key = `${norm(entry.partyName)}|${Number(match[1])}|${round(Math.abs(entry.amount))}`;
     return !journalCopy.has(key);
   });
-  console.log(`Writing vouchers: sales ${orders.length}, purchases ${purchaseData.length}, grey ${greyPurchases.length}, work out ${workDespatches.length}, work in ${workReceipts.length}, notes ${notes.length}, unadjusted ${unadjustedBills.length}`);
-  await batches(orders, 40, (rows) => prisma.order.createMany({ data: rows }));
-  await batches(salesOrders, 40, (rows) => prisma.salesOrder.createMany({ data: rows }));
+  const diverted = divertPoonamFinishSales(orders, salesOrders);
+  console.log(`Writing vouchers: sales ${diverted.orders.length}, sales orders ${diverted.salesOrders.length} (${diverted.moved} finish sales moved, ${diverted.shifted} order numbers shifted), purchases ${purchaseData.length}, grey ${greyPurchases.length}, work out ${workDespatches.length}, work in ${workReceipts.length}, notes ${notes.length}, unadjusted ${unadjustedBills.length}`);
+  await batches(diverted.orders, 40, (rows) => prisma.order.createMany({ data: rows }));
+  await batches(diverted.salesOrders, 40, (rows) => prisma.salesOrder.createMany({ data: rows }));
   await batches(purchaseData, 40, (rows) => prisma.purchaseBill.createMany({ data: rows }));
   await batches(greyPurchases, 40, (rows) => prisma.greyPurchase.createMany({ data: rows }));
   await batches(workDespatches, 40, (rows) => prisma.workDespatch.createMany({ data: rows }));

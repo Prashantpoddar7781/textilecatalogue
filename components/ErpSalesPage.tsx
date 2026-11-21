@@ -1253,7 +1253,9 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
         setSuccess(
           isGoodsReturn
             ? `Sales Goods Return #${no} ${isEditMode ? 'updated' : 'saved'}. Credited to party ledger.`
-            : `${transactionType} bill #${no} ${isEditMode ? 'updated' : 'saved'}. Posted to ledger.`
+            : transactionType === 'SALES CHALLAN'
+              ? `Sales Challan #${no} ${isEditMode ? 'updated' : 'saved'}.`
+              : `${transactionType} bill #${no} ${isEditMode ? 'updated' : 'saved'}. Posted to ledger.`
         );
         if (!isEditMode) {
           setLineItems([blankLine(1, defaultGstRate, defaultHsnCode, toNum(dhara))]);

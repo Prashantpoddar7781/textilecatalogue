@@ -825,7 +825,7 @@ async function saveBill(req, res, existing = null) {
       buyerPhone: customer.mobileNumber || '',
       quantity,
       orderLines,
-      status: 'completed',
+      status: transactionType === 'SALES CHALLAN' ? 'posted' : 'completed',
       remarks: optionalString(req.body.remarks),
       manualType: 'erp_sales',
       orderNumber: sources.length
