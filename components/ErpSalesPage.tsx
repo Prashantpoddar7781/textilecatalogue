@@ -36,6 +36,7 @@ import { partyDhara, partyGraceDays } from '../utils/partyBillingTerms';
 import { roundRupee } from '../utils/rupeeRound';
 import { billedMetres, netMetres } from '../utils/lineMetres';
 import { useVoucherJump } from '../hooks/useVoucherJump';
+import { BillDiscountFields } from './BillDiscountFields';
 
 interface Props {
   onBack: () => void;
@@ -1873,9 +1874,17 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
             {!isSalesOrder && Math.abs(roundOff) >= 0.005 && (
               <label><span className={labelClass}>Round Off</span><input className={readonlyClass} value={roundOff.toFixed(2)} readOnly /></label>
             )}
-            {!isSalesOrder && (
-              <label><span className={labelClass}>Discount</span><input className={readonlyClass} value={shownDiscount.toFixed(2)} readOnly /></label>
-            )}
+            <BillDiscountFields
+              lines={lineItems}
+              discountAmount={lineDiscount > 0.5 ? lineDiscount : shownDiscount}
+              labelClass={labelClass}
+              inputClass={inputClass}
+              readonlyClass={readonlyClass}
+              onPercent={pct => {
+                setDhara(pct ? String(pct) : '0');
+                setLineItems(prev => prev.map(line => calcLine({ ...line, discountPercent: pct }, businessState, state)));
+              }}
+            />
             <label><span className={labelClass}>Bill Amt</span><input className={readonlyClass} value={(isSalesOrder ? totals.net : billNet).toFixed(2)} readOnly /></label>
             <label><span className={labelClass}>Net Amt</span><input className={`${readonlyClass} font-black text-indigo-800`} value={(isSalesOrder ? totals.net : netAfterDiscount).toFixed(2)} readOnly /></label>
             {ewayBill && (

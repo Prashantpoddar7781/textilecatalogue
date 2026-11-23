@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { BillDiscountFields } from './BillDiscountFields';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
 import { bankEntriesApi, purchasesApi } from '../services/api';
 import { ErpSession, PurchaseBill, SalesItemMaster, SalesLineItem, Supplier } from '../types';
@@ -222,6 +223,7 @@ export const ErpPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
   }), { pcs: 0, mts: 0, netMts: 0, amount: 0, taxable: 0, tax: 0, net: 0, cgst: 0, sgst: 0, igst: 0 }), [lineItems]);
   const billNet = roundRupee(totals.net);
   const roundOff = Math.round((billNet - totals.net) * 100) / 100;
+  const lineDiscount = round2(lineItems.reduce((sum, line) => sum + toNum(line.discountAmount), 0));
 
   const applyBillDoc = (bill: PurchaseBill, companyState: string, gstRate: number, hsn: string) => {
     setTransactionType(bill.transactionType || DEFAULT_PURCHASE_TRANSACTION_TYPE);
@@ -882,6 +884,17 @@ export const ErpPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
           </section>
 
           <section className="mt-4 grid gap-4 rounded-2xl border bg-white p-4 shadow-sm md:grid-cols-2 xl:grid-cols-4">
+            <BillDiscountFields
+              lines={lineItems}
+              discountAmount={lineDiscount}
+              labelClass={labelClass}
+              inputClass={inputClass}
+              readonlyClass={readonlyClass}
+              onPercent={pct => {
+                setDhara(pct ? String(pct) : '0');
+                setLineItems(prev => prev.map(line => calcLine({ ...line, discountPercent: pct }, businessState, state)));
+              }}
+            />
             <label><span className={labelClass}>Taxable</span><input className={readonlyClass} value={totals.taxable.toFixed(2)} readOnly /></label>
             <label><span className={labelClass}>CGST</span><input className={readonlyClass} value={totals.cgst.toFixed(2)} readOnly /></label>
             <label><span className={labelClass}>SGST</span><input className={readonlyClass} value={totals.sgst.toFixed(2)} readOnly /></label>
