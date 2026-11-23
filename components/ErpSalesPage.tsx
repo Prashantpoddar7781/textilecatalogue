@@ -393,6 +393,10 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
     return [blankLine(1, d.gstRate, d.hsnCode)];
   });
   const [itemModalOpen, setItemModalOpen] = useState(false);
+  const [showItemConfirm, setShowItemConfirm] = useState(false);
+  const [pendingItem, setPendingItem] = useState<{ index: number; name: string; mainScreen: string } | null>(null);
+  const itemPromptLock = useRef(false);
+  const declinedItem = useRef('');
   const [itemModalRow, setItemModalRow] = useState<number | null>(null);
   const [itemSaving, setItemSaving] = useState(false);
   const [itemForm, setItemForm] = useState(itemDefaults());
@@ -1125,24 +1129,51 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
     return found;
   };
 
-  const checkUnknownMainScreen = (index: number, typed?: string) => {
+  const offerNewItem = (index: number, rawName?: string, rawMain?: string) => {
+    if (itemPromptLock.current || itemModalOpen) return;
     const line = lineItems[index];
-    const value = (typed ?? line?.mainScreen ?? '').trim();
-    if (!value) return;
-    const found = findSalesItem(items, value, { name: line?.itemName, mainScreen: value });
+    const name = String(rawName ?? line?.screenName ?? line?.itemName ?? '').trim();
+    const main = String(rawMain ?? line?.mainScreen ?? '').trim();
+    const query = name || main;
+    if (!query) return;
+    const found = findSalesItem(items, query, { name: name || line?.itemName, mainScreen: main || line?.mainScreen });
     if (found) {
       applyItem(index, found);
       return;
     }
-    if (window.confirm(`"${value}" is not in Quality Information. Add a new item now?`)) {
-      setItemModalRow(index);
-      setItemForm({
-        ...itemDefaults(value, { gstRate: defaultGstRate, hsnCode: defaultHsnCode }),
-        name: line?.itemName?.trim() || value,
-        mainScreen: value
-      });
-      setItemModalOpen(true);
+    const key = `${name}|${main}`.toLowerCase();
+    if (declinedItem.current === key) return;
+    itemPromptLock.current = true;
+    setPendingItem({ index, name: name || main, mainScreen: main || name });
+    setShowItemConfirm(true);
+  };
+
+  const declineNewItem = () => {
+    if (pendingItem) declinedItem.current = `${pendingItem.name}|${pendingItem.mainScreen}`.toLowerCase();
+    itemPromptLock.current = false;
+    setShowItemConfirm(false);
+  };
+
+  const acceptNewItem = () => {
+    if (!pendingItem) {
+      itemPromptLock.current = false;
+      setShowItemConfirm(false);
+      return;
     }
+    setItemModalRow(pendingItem.index);
+    setItemForm({
+      ...itemDefaults(pendingItem.mainScreen, { gstRate: defaultGstRate, hsnCode: defaultHsnCode }),
+      name: pendingItem.name,
+      mainScreen: pendingItem.mainScreen
+    });
+    setShowItemConfirm(false);
+    setItemModalOpen(true);
+  };
+
+  const closeItemModal = () => {
+    if (pendingItem) declinedItem.current = `${pendingItem.name}|${pendingItem.mainScreen}`.toLowerCase();
+    itemPromptLock.current = false;
+    setItemModalOpen(false);
   };
 
   const saveItemMaster = async () => {
@@ -1160,6 +1191,8 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
         return next.sort((a, b) => a.mainScreen.localeCompare(b.mainScreen) || a.name.localeCompare(b.name));
       });
       if (itemModalRow != null) applyItem(itemModalRow, item);
+      declinedItem.current = '';
+      itemPromptLock.current = false;
       setItemModalOpen(false);
       setSuccess(`Quality Information saved for ${item.name}. Rate ${toNum(item.sellingRate)} will fill when you pick this name again.`);
     } catch (err: any) {
@@ -1173,6 +1206,8 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
             const { item } = await salesOrdersApi.updateItem(existing.id, itemForm);
             setItems(prev => prev.map(row => row.id === item.id ? item : row));
             applyItem(itemModalRow, item);
+            declinedItem.current = '';
+            itemPromptLock.current = false;
             setItemModalOpen(false);
             setSuccess(`Quality Information updated for ${item.name}.`);
             return;
@@ -1753,7 +1788,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
                       {isSalesOrder ? (
                         <>
                           <td className="min-w-[150px] px-1 py-1.5">
-                            <input className={inputClass} list="main-screen-names" value={line.mainScreen} onChange={e => updateLine(index, 'mainScreen', e.target.value)} onBlur={e => checkUnknownMainScreen(index, e.target.value)} />
+                            <input className={inputClass} list="main-screen-names" value={line.mainScreen} onChange={e => updateLine(index, 'mainScreen', e.target.value)} onBlur={e => offerNewItem(index, line.screenName || line.itemName, e.target.value)} />
                           </td>
                           <td className="px-1 py-1.5"><input data-erp-line-default className={`${inputClass} min-w-[5.5rem]`} value={line.hsnCode || ''} onChange={e => updateLine(index, 'hsnCode', e.target.value)} /></td>
                           <td className="px-1 py-1.5"><input className={`${inputClass} min-w-[4.5rem]`} value={line.bundleEntry ?? (line.bundles ? String(line.bundles) : '')} onChange={e => updateBundle(index, e.target.value)} /></td>
@@ -1769,7 +1804,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
                                   : row));
                                 applyMasterIfKnown(index, value);
                               }}
-                              onBlur={e => applyMasterIfKnown(index, e.target.value)}
+                              onBlur={e => offerNewItem(index, e.target.value, line.mainScreen)}
                             />
                           </td>
                         </>
@@ -1784,13 +1819,13 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
                                 updateLine(index, 'itemName', e.target.value);
                                 applyMasterIfKnown(index, e.target.value);
                               }}
-                              onBlur={e => applyMasterIfKnown(index, e.target.value)}
+                              onBlur={e => offerNewItem(index, e.target.value, line.mainScreen)}
                             />
                           </td>
                           <td className="px-1 py-1.5"><input data-erp-line-default className={`${inputClass} min-w-[5.5rem]`} value={line.hsnCode || ''} onChange={e => updateLine(index, 'hsnCode', e.target.value)} /></td>
                           <td className="px-1 py-1.5"><input className={`${inputClass} min-w-[4.5rem]`} value={line.bundleEntry ?? (line.bundles ? String(line.bundles) : '')} onChange={e => updateBundle(index, e.target.value)} /></td>
                           <td className="min-w-[140px] px-1 py-1.5">
-                            <input className={inputClass} list="main-screen-names" value={line.mainScreen} onChange={e => updateLine(index, 'mainScreen', e.target.value)} onBlur={e => checkUnknownMainScreen(index, e.target.value)} />
+                            <input className={inputClass} list="main-screen-names" value={line.mainScreen} onChange={e => updateLine(index, 'mainScreen', e.target.value)} onBlur={e => offerNewItem(index, line.itemName, e.target.value)} />
                           </td>
                         </>
                       )}
@@ -2088,15 +2123,25 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
         </div>
       )}
 
+      <AddPartyConfirmDialog
+        open={showItemConfirm}
+        partyName={pendingItem?.name || ''}
+        eyebrow="New item"
+        title="Do you want to add this item in the master?"
+        detail="Yes opens Quality Information (name, main screen, cut, packing, rate, HSN, GST)."
+        onNo={declineNewItem}
+        onYes={acceptNewItem}
+      />
+
       {itemModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4" data-erp-skip-nav>
           <div className="max-h-[92vh] w-full max-w-4xl overflow-y-auto rounded-2xl border bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b bg-indigo-50 px-5 py-4">
               <div>
                 <h2 className="text-lg font-black text-gray-900">Quality Information</h2>
-                <p className="text-xs font-semibold text-indigo-700">Add item and return it to the active sales line</p>
+                <p className="text-xs font-semibold text-indigo-700">Add the item to the master and return it to this line</p>
               </div>
-              <button type="button" onClick={() => setItemModalOpen(false)} className="rounded-lg p-1 hover:bg-white"><X className="h-5 w-5" /></button>
+              <button type="button" onClick={closeItemModal} className="rounded-lg p-1 hover:bg-white"><X className="h-5 w-5" /></button>
             </div>
             <div className="grid gap-3 p-5 sm:grid-cols-2 lg:grid-cols-3">
               {[
@@ -2122,7 +2167,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
               ))}
             </div>
             <div className="flex justify-end gap-2 border-t px-5 py-4">
-              <button type="button" onClick={() => setItemModalOpen(false)} className="rounded-xl border px-4 py-2 text-sm font-bold">Cancel</button>
+              <button type="button" onClick={closeItemModal} className="rounded-xl border px-4 py-2 text-sm font-bold">Cancel</button>
               <button type="button" disabled={itemSaving} onClick={() => void saveItemMaster()} className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-black text-white disabled:opacity-60">
                 {itemSaving ? 'Saving...' : 'Save Quality'}
               </button>

@@ -351,6 +351,7 @@ export const AccountsInformationDialog: React.FC<Props> = ({
 interface PromptProps {
   open: boolean;
   partyName: string;
+  eyebrow?: string;
   title?: string;
   detail?: string;
   onYes: () => void;
@@ -360,6 +361,7 @@ interface PromptProps {
 export const AddPartyConfirmDialog: React.FC<PromptProps> = ({
   open,
   partyName,
+  eyebrow = 'New party',
   title = 'Do you want to add this party name?',
   detail = 'Yes opens Accounts Information Manager (A/C Type, address, GSTIN, etc.).',
   onYes,
@@ -373,9 +375,9 @@ export const AddPartyConfirmDialog: React.FC<PromptProps> = ({
   }, [open]);
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-4">
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-4" data-erp-skip-nav>
       <div className="w-full max-w-md rounded-2xl border bg-white p-5 shadow-2xl">
-        <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">New party</p>
+        <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">{eyebrow}</p>
         <h3 className="mt-1 text-base font-black text-slate-900">
           {title}
         </h3>
