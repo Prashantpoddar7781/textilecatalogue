@@ -244,6 +244,8 @@ export interface SalesLineItem {
   /** sales_order lines show as SO; order_form lines show as OF. */
   sourceKind?: 'order_form' | 'sales_order' | null;
   sourceSalesOrderId?: string | null;
+  /** Sales challan (O57) this finish-sales GST line was picked from. */
+  sourceChallanId?: string | null;
   sourceOrderNo?: string | null;
   /** When several Sales Orders contribute the same item, pending is split here. */
   sourceAllocations?: Array<{

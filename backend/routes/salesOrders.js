@@ -11,6 +11,14 @@ import { getGstDefaultsForTransactionType } from '../constants/erpTransactionTyp
 import { linesForSource, qtySlicesForSalesOrder } from '../utils/documentLinkAttribution.js';
 import { rememberItemRateAndCut } from '../utils/itemMasterRates.js';
 import { bankAdjustmentBlock } from '../utils/voucherDelete.js';
+import {
+  challanVoucherNo,
+  findSalesChallansByNumber,
+  listPendingSalesChallans,
+  loadConsumingBills,
+  picksSalesChallan,
+  toChallanPickEntry
+} from '../utils/salesChallanPick.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -121,9 +129,12 @@ function normalizeSalesLines(raw, context = {}) {
       totalAmount: roundMoney(taxableAmount + taxAmount),
       hsnCode: optionalString(input.hsnCode) || context.defaultHsnCode || '5407',
       sourceSalesOrderId: optionalString(input.sourceSalesOrderId),
+      sourceChallanId: optionalString(input.sourceChallanId),
       sourceOrderNo: optionalString(input.sourceOrderNo),
       sourceLineNo: optionalNumber(input.sourceLineNo)
-        ?? (optionalString(input.sourceSalesOrderId) ? (Number(input.lineNo) || index + 1) : null),
+        ?? (optionalString(input.sourceSalesOrderId) || optionalString(input.sourceChallanId)
+          ? (Number(input.lineNo) || index + 1)
+          : null),
       sourceAllocations: normalizeSourceAllocations(input.sourceAllocations),
       sourceKind: optionalString(input.sourceKind) === 'order_form' ? 'order_form' : null
     };
@@ -356,6 +367,15 @@ router.get('/by-challan', authenticateToken, requireActiveSubscription, async (r
   try {
     const raw = optionalString(req.query.no);
     if (!raw) return res.json({ entries: [] });
+    if (picksSalesChallan(req.query.transactionType)) {
+      const entries = await findSalesChallansByNumber(
+        prisma,
+        req.user.userId,
+        raw,
+        optionalString(req.query.excludeId)
+      );
+      return res.json({ entries });
+    }
     const digits = raw.replace(/[^\d]/g, '');
     const asNumber = Number(digits);
     const or = [
@@ -385,6 +405,14 @@ router.get('/pending', authenticateToken, requireActiveSubscription, async (req,
     const partyName = optionalString(req.query.partyName);
     const customerId = optionalString(req.query.customerId);
     const excludeId = optionalString(req.query.excludeId);
+    if (picksSalesChallan(req.query.transactionType)) {
+      const entries = await listPendingSalesChallans(prisma, req.user.userId, {
+        partyName,
+        customerId,
+        excludeBillId: excludeId
+      });
+      return res.json({ entries });
+    }
     // Finish Sales must pick party first — never list all parties' orders.
     if (!customerId && !partyName) {
       return res.json({ entries: [] });
@@ -696,6 +724,44 @@ function tagSalesLinesToOrders(lines, sources) {
   return { lines: tagged, errors };
 }
 
+function requestedChallanIds(reqBody) {
+  const ids = requestedSalesOrderIds(reqBody);
+  for (const line of Array.isArray(reqBody.lineItems) ? reqBody.lineItems : []) {
+    const id = optionalString(line.sourceChallanId);
+    if (id && !ids.includes(id)) ids.push(id);
+  }
+  return ids;
+}
+
+/** Keep the challan on the line. Do not store its id on the Sales Order link. */
+function stampChallanLines(lines, challans) {
+  const byId = new Map(challans.map(row => [row.id, row]));
+  const errors = [];
+  const tagged = lines.map(line => {
+    const declared = optionalString(line.sourceChallanId) || optionalString(line.sourceSalesOrderId);
+    let source = declared ? byId.get(declared) : null;
+    if (declared && !source) {
+      errors.push('A line refers to a Sales Challan that is not selected.');
+    }
+    if (!source && challans.length === 1 && line.sourceLineNo != null) {
+      const key = Number(line.sourceLineNo);
+      const rows = Array.isArray(challans[0].orderLines) ? challans[0].orderLines : [];
+      const exists = rows.some((row, index) => (Number(row.lineNo) || index + 1) === key);
+      if (exists) source = challans[0];
+    }
+    if (!source) return { ...line, sourceSalesOrderId: line.sourceKind === 'order_form' ? null : line.sourceSalesOrderId };
+    return {
+      ...line,
+      sourceSalesOrderId: null,
+      sourceAllocations: [],
+      sourceChallanId: source.id,
+      sourceOrderNo: String(challanVoucherNo(source) || line.sourceOrderNo || ''),
+      sourceLineNo: line.sourceLineNo != null ? line.sourceLineNo : line.lineNo
+    };
+  });
+  return { lines: tagged, errors };
+}
+
 async function saveBill(req, res, existing = null) {
   const userId = req.user.userId;
   const ctx = await getCompanyContext(userId);
@@ -719,9 +785,31 @@ async function saveBill(req, res, existing = null) {
   }
 
   const goodsReturn = String(transactionType).toUpperCase() === 'SALES GOODS RETURN';
-  const requestedIds = goodsReturn ? [] : requestedSalesOrderIds(req.body);
+  const challanBill = !goodsReturn && picksSalesChallan(transactionType);
+  const requestedIds = goodsReturn ? [] : (challanBill ? requestedChallanIds(req.body) : requestedSalesOrderIds(req.body));
   const sources = [];
-  if (requestedIds.length) {
+  const challanSources = [];
+  if (requestedIds.length && challanBill) {
+    const found = await prisma.order.findMany({
+      where: {
+        id: { in: requestedIds },
+        userId,
+        transactionType: 'SALES CHALLAN',
+        status: 'posted'
+      },
+      include: { customer: { select: { gstNumber: true, state: true, agentName: true } } }
+    });
+    const byId = new Map(found.map(row => [row.id, row]));
+    for (const id of requestedIds) {
+      const challan = byId.get(id);
+      if (!challan) return res.status(404).json({ error: 'Sales Challan not found' });
+      challanSources.push(challan);
+    }
+    const parties = Array.from(new Set(challanSources.map(row => String(row.buyerName || '').trim().toUpperCase())));
+    if (parties.length > 1) {
+      return res.status(400).json({ error: 'All picked Sales Challans must belong to the same party.' });
+    }
+  } else if (requestedIds.length) {
     const found = await prisma.salesOrder.findMany({
       where: { id: { in: requestedIds }, userId }
     });
@@ -752,9 +840,30 @@ async function saveBill(req, res, existing = null) {
   });
   if (!lines.length) return res.status(400).json({ error: 'Add at least one sales line' });
 
-  const tagged = tagSalesLinesToOrders(lines, sources);
+  const tagged = challanSources.length
+    ? stampChallanLines(lines, challanSources)
+    : tagSalesLinesToOrders(lines, sources);
   if (tagged.errors.length) {
     return res.status(400).json({ error: tagged.errors.join(' ') });
+  }
+
+  for (const source of challanSources) {
+    const bills = await loadConsumingBills(prisma, userId, [source], existing?.id || null);
+    const pending = toChallanPickEntry(source, bills);
+    const pendingMap = new Map(pending.pendingLines.map(line => [Number(line.lineNo), line]));
+    for (const line of tagged.lines) {
+      if (line.sourceChallanId !== source.id) continue;
+      const key = Number(line.sourceLineNo);
+      const sourceLine = pendingMap.get(key);
+      if (!sourceLine) {
+        return res.status(400).json({ error: `Sales Challan #${challanVoucherNo(source)} line ${key} not found.` });
+      }
+      if ((Number(line.pcs) || 0) > sourceLine.pendingPcs + 0.01 || (Number(line.mtsQty) || 0) > sourceLine.pendingMts + 0.01) {
+        return res.status(400).json({
+          error: `Challan #${challanVoucherNo(source)}: only ${sourceLine.pendingPcs} pcs / ${sourceLine.pendingMts} mts pending for ${sourceLine.itemName || 'that line'}.`
+        });
+      }
+    }
   }
 
   for (const source of sources) {
@@ -828,9 +937,11 @@ async function saveBill(req, res, existing = null) {
       status: transactionType === 'SALES CHALLAN' ? 'posted' : 'completed',
       remarks: optionalString(req.body.remarks),
       manualType: 'erp_sales',
-      orderNumber: sources.length
-        ? sources.map(row => row.orderNo).join(', ')
-        : optionalString(req.body.orderNumber),
+      orderNumber: challanSources.length
+        ? challanSources.map(row => challanVoucherNo(row)).filter(Boolean).join(', ')
+        : sources.length
+          ? sources.map(row => row.orderNo).join(', ')
+          : optionalString(req.body.orderNumber),
       transactionType,
       agentName: optionalString(req.body.brokerName || req.body.agentName),
       transportName: optionalString(req.body.transportName),
@@ -842,8 +953,8 @@ async function saveBill(req, res, existing = null) {
       expectedDate: req.body.expectedDate ? toDate(req.body.expectedDate, null) : null,
       haste: optionalString(req.body.haste),
       station: optionalString(req.body.station),
-      sourceSalesOrderId: primary?.id || null,
-      sourceSalesOrderIds: sources.map(row => row.id),
+      sourceSalesOrderId: challanSources.length ? null : (primary?.id || null),
+      sourceSalesOrderIds: challanSources.length ? [] : sources.map(row => row.id),
       sourceOrderFormId,
       challanNo: optionalString(req.body.challanNo),
       gstType: optionalString(req.body.gstType),

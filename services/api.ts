@@ -816,16 +816,19 @@ export const salesOrdersApi = {
   delete: async (id: string) => {
     return request<{ success: boolean }>(`/sales-orders/${id}`, { method: 'DELETE' });
   },
-  getByChallan: async (no: string) => {
+  getByChallan: async (no: string, transactionType?: string, excludeId?: string) => {
     const query = new URLSearchParams();
     query.set('no', no);
+    if (transactionType) query.set('transactionType', transactionType);
+    if (excludeId) query.set('excludeId', excludeId);
     return request<{ entries: import('../types').SalesOrder[] }>(`/sales-orders/by-challan?${query.toString()}`);
   },
-  getPending: async (params: { partyName?: string; customerId?: string; excludeId?: string }) => {
+  getPending: async (params: { partyName?: string; customerId?: string; excludeId?: string; transactionType?: string }) => {
     const query = new URLSearchParams();
     if (params.customerId) query.set('customerId', params.customerId);
     if (params.partyName) query.set('partyName', params.partyName);
     if (params.excludeId) query.set('excludeId', params.excludeId);
+    if (params.transactionType) query.set('transactionType', params.transactionType);
     return request<{ entries: import('../types').SalesOrder[] }>(`/sales-orders/pending?${query.toString()}`);
   },
   getBill: async (id: string) => {

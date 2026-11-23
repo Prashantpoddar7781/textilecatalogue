@@ -10,6 +10,7 @@ import {
 import {
   getGstDocumentType,
   getPostingRule,
+  getPreviousLink,
   gstReturnSection,
   postingPartyAccountType,
   postingSummary,
@@ -314,6 +315,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
     typeFromUrl || (editKind === 'order' ? 'SALES ORDERS' : DEFAULT_SALES_TRANSACTION_TYPE)
   );
   const isSalesOrder = transactionType === 'SALES ORDERS';
+  const picksChallan = getPreviousLink(transactionType) === 'SALES CHALLAN';
   const isFinishSales = transactionType.startsWith('FINISH SALES');
   const isGoodsReturn = transactionType === 'SALES GOODS RETURN';
   const isBillEntry = !isSalesOrder;
@@ -534,14 +536,15 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
       void salesOrdersApi.getPending({
         customerId: customerId || undefined,
         partyName: partyName.trim(),
-        excludeId: editKind === 'bill' ? (editId || undefined) : undefined
+        excludeId: editKind === 'bill' ? (editId || undefined) : undefined,
+        transactionType
       })
         .then(({ entries }) => setPendingOrders(entries || []))
         .catch(() => setPendingOrders([]))
         .finally(() => setPendingLoading(false));
     }, 250);
     return () => window.clearTimeout(timer);
-  }, [customerId, partyName, isSalesOrder, isGoodsReturn, editId, editKind]);
+  }, [customerId, partyName, isSalesOrder, isGoodsReturn, editId, editKind, transactionType]);
 
   useEffect(() => {
     if (isSalesOrder || isGoodsReturn || isEditMode) return;
@@ -677,7 +680,9 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
     setChecked(Object.fromEntries(selectedSources.map(source => [source.id, true])));
     setPickerOpen(true);
     if (!pendingLoading && !pickerRows.length && partyName.trim()) {
-      setError(`No pending Sales Orders for ${partyName.trim()}. You can still add bill lines.`);
+      setError(picksChallan
+        ? `No pending Sales Challans for ${partyName.trim()}. You can still add bill lines.`
+        : `No pending Sales Orders for ${partyName.trim()}. You can still add bill lines.`);
     }
   };
 
@@ -687,13 +692,21 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
     setChallanLoading(true);
     setError('');
     try {
-      const { entries } = await salesOrdersApi.getByChallan(no);
+      const { entries } = await salesOrdersApi.getByChallan(
+        no,
+        transactionType,
+        editKind === 'bill' ? (editId || undefined) : undefined
+      );
       const hits = entries || [];
       if (!hits.length) {
-        setError(`No Sales Order for challan ${no}.`);
+        setError(picksChallan ? `No Sales Challan ${no}.` : `No Sales Order for challan ${no}.`);
         return;
       }
       const open = hits.filter(order => toNum(order.pendingPcs) > 0.001 || toNum(order.pendingMts) > 0.001);
+      if (picksChallan && !open.length) {
+        setError(`Sales Challan ${no} is already billed.`);
+        return;
+      }
       const usable = open.length ? open : hits;
       setChallanHits(usable);
       if (usable.length === 1) {
@@ -744,7 +757,8 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
           ...blankLine(filled.length + 1, defaultGstRate, defaultHsnCode),
           ...line,
           lineNo: filled.length + 1,
-          sourceSalesOrderId: order.id,
+          sourceSalesOrderId: picksChallan ? null : order.id,
+          sourceChallanId: picksChallan ? order.id : null,
           sourceOrderNo: String(order.orderNo),
           sourceLineNo: line.lineNo || line.sourceLineNo,
           pcs: toNum(line.pendingPcs),
@@ -768,8 +782,8 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
     setLineItems(merged.length ? merged : [blankLine(1, defaultGstRate, defaultHsnCode)]);
     setSuccess(
       orders.length === 1
-        ? `Sales Order #${primary.orderNo} loaded. All items are editable.`
-        : `${orders.length} Sales Orders loaded. Each order line stays on its own row.`
+        ? `${picksChallan ? 'Sales Challan' : 'Sales Order'} #${primary.orderNo} loaded. All items are editable.`
+        : `${orders.length} ${picksChallan ? 'Sales Challans' : 'Sales Orders'} loaded. Each line stays on its own row.`
     );
     setPickerOpen(false);
   };
@@ -1573,14 +1587,16 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
               {isBillEntry && !isGoodsReturn && (
                 <label className="md:col-span-2">
                   <span className={labelClass}>
-                    2. Challan / SO no. — loads the order and the party
+                    {picksChallan
+                      ? '2. Challan no. — loads the sales challan and the party'
+                      : '2. Challan / SO no. — loads the order and the party'}
                     {selectedSources.length > 1 ? ` · ${selectedSources.length}` : ''}
                   </span>
                   <div className="flex gap-2">
                     <input
                       className={inputClass}
                       value={challanQuery}
-                      placeholder="Challan or SO number"
+                      placeholder={picksChallan ? 'Sales challan number' : 'Challan or SO number'}
                       onChange={e => setChallanQuery(e.target.value)}
                       onKeyDown={e => {
                         if (e.key !== 'Enter') return;
@@ -1606,9 +1622,9 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
                     {pendingLoading
                       ? 'Loading party orders…'
                       : orderNo
-                        ? `SO ${orderNo}`
+                        ? `${picksChallan ? 'Challan' : 'SO'} ${orderNo}`
                         : partyName.trim()
-                          ? 'Or pick from this party’s pending orders'
+                          ? (picksChallan ? 'Or pick from this party’s pending challans' : 'Or pick from this party’s pending orders')
                           : 'Or pick after the challan is found'}
                   </button>
                 </label>
@@ -1662,11 +1678,11 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
             </div>
             {selectedSources.length > 1 && (
               <div className="mt-3 rounded-xl border border-indigo-200 bg-white p-3">
-                <p className={labelClass}>This bill covers {selectedSources.length} Sales Orders</p>
+                <p className={labelClass}>This bill covers {selectedSources.length} {picksChallan ? 'Sales Challans' : 'Sales Orders'}</p>
                 <div className="flex flex-wrap gap-2">
                   {selectedSources.map(source => {
                     const billed = lineItems
-                      .filter(line => line.sourceSalesOrderId === source.id)
+                      .filter(line => line.sourceSalesOrderId === source.id || line.sourceChallanId === source.id)
                       .reduce((sum, line) => sum + toNum(line.pcs), 0);
                     return (
                       <span
@@ -1674,7 +1690,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
                         className="rounded-lg bg-indigo-50 px-2.5 py-1 text-[11px] font-bold text-indigo-900"
                         title={`${source.pendingPcs} pcs pending on this order`}
                       >
-                        SO {source.orderNo} · {round2(billed)} pcs
+                        {picksChallan ? 'Ch' : 'SO'} {source.orderNo} · {round2(billed)} pcs
                       </span>
                     );
                   })}
@@ -1692,9 +1708,13 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
                     ? 'Return items · editable lines · amount credits party ledger'
                     : partyName.trim()
                       ? (selectedSources.length
-                        ? `Items from Sales Order #${orderNo || ''} — all fields editable`
-                        : 'Add lines here, or pick Ord / Ref above to load Sales Orders')
-                      : 'Select Party first. You can bill without a Sales Order.'}
+                        ? `Items from ${picksChallan ? 'Sales Challan' : 'Sales Order'} #${orderNo || ''} — all fields editable`
+                        : (picksChallan
+                          ? 'Add lines here, or pick a sales challan above'
+                          : 'Add lines here, or pick Ord / Ref above to load Sales Orders'))
+                      : (picksChallan
+                        ? 'Select Party first. You can bill without a Sales Challan.'
+                        : 'Select Party first. You can bill without a Sales Order.')}
               </p>
               <button
                 type="button"
@@ -1724,7 +1744,9 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
                         <td className="px-2 py-1.5 text-right font-semibold text-amber-800">
                           {line.sourceKind === 'order_form'
                             ? `OF ${line.sourceOrderNo || ''}`
-                            : line.sourceOrderNo ? `SO ${line.sourceOrderNo}` : (line.sourceLineNo || '-')}
+                            : line.sourceChallanId
+                              ? `Ch ${line.sourceOrderNo || ''}`
+                              : line.sourceOrderNo ? `SO ${line.sourceOrderNo}` : (line.sourceLineNo || '-')}
                         </td>
                       )}
                       {isSalesOrder ? (
@@ -1976,9 +1998,11 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
           <div className="max-h-[85vh] w-full max-w-3xl overflow-hidden rounded-2xl bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b px-4 py-3">
               <div>
-                <h3 className="text-sm font-black uppercase">Sales Orders · {partyName || 'All'}</h3>
+                <h3 className="text-sm font-black uppercase">{picksChallan ? 'Sales Challans' : 'Sales Orders'} · {partyName || 'All'}</h3>
                 <p className="text-[11px] font-semibold text-gray-500">
-                  Tick every order this bill covers — one bill can cover several Sales Orders.
+                  {picksChallan
+                    ? 'Tick every challan this bill covers — one bill can cover several Sales Challans.'
+                    : 'Tick every order this bill covers — one bill can cover several Sales Orders.'}
                 </p>
               </div>
               <button type="button" onClick={() => setPickerOpen(false)} className="rounded-lg border px-3 py-1 text-xs font-bold">Close</button>
@@ -2001,7 +2025,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
                           )}
                         />
                       </th>
-                      <th className="p-2">Order</th>
+                      <th className="p-2">{picksChallan ? 'Challan' : 'Order'}</th>
                       <th className="p-2">Date</th>
                       <th className="p-2">Status</th>
                       <th className="p-2 text-right">Pend Pcs</th>
@@ -2023,7 +2047,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
                             onClick={e => e.stopPropagation()}
                           />
                         </td>
-                        <td className="p-2 font-bold">SO {row.orderNo}</td>
+                        <td className="p-2 font-bold">{picksChallan ? 'Ch' : 'SO'} {row.orderNo}</td>
                         <td className="p-2 text-xs">{row.orderDate ? String(row.orderDate).slice(0, 10) : '-'}</td>
                         <td className="p-2 text-xs">{row.status || 'open'}</td>
                         <td className="p-2 text-right font-bold text-indigo-800">{row.pendingPcs}</td>
@@ -2031,7 +2055,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
                       </tr>
                     ))}
                     {!pickerRows.length && (
-                      <tr><td colSpan={6} className="p-8 text-center text-gray-500">No pending Sales Orders for this party.</td></tr>
+                      <tr><td colSpan={6} className="p-8 text-center text-gray-500">{picksChallan ? 'No pending Sales Challans for this party.' : 'No pending Sales Orders for this party.'}</td></tr>
                     )}
                   </tbody>
                 </table>
@@ -2039,7 +2063,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
             </div>
             <div className="flex items-center justify-between border-t bg-gray-50 px-4 py-3">
               <span className="text-xs font-bold text-gray-600">
-                {checkedCount} order{checkedCount === 1 ? '' : 's'} ticked ·{' '}
+                {checkedCount} {picksChallan ? 'challan' : 'order'}{checkedCount === 1 ? '' : 's'} ticked ·{' '}
                 {round2(pickerRows.filter(row => checked[row.id]).reduce((sum, row) => sum + toNum(row.pendingPcs), 0))} pcs pending
               </span>
               <button
