@@ -20,7 +20,7 @@ import {
 import { isPurchaseReturn } from './erpLineItems.js';
 import { isExpensePurchaseType } from '../constants/erpTransactionTypes.js';
 import { postingDiscountAccount, postingSaleOrPurchaseAccount, postingTdsAccount, resolveDiscountJournal, formatSeriesBillNumber, getPostingRule, ERP_POSTING_RULES } from '../constants/erpTransactionPostingRules.js';
-import { parseNoteType } from '../constants/creditDebitNoteTypes.js';
+import { parseNoteType, printedNoteVoucher } from '../constants/creditDebitNoteTypes.js';
 import {
   formatAdjustedOnRemark,
   formatBillNosRemark,
@@ -1639,7 +1639,7 @@ export async function buildCompanySelfLedger(prisma, userId, { fromDate, toDate 
       sourceType: 'credit_debit_note',
       sourceId: note.id,
       date: note.noteDate,
-      voucherNumber: String(note.voucherNumber || note.noteNumber || '-'),
+      voucherNumber: String(printedNoteVoucher(note.voucherNumber) || note.noteNumber || '-'),
       billNumber: note.noteNumber || String(note.voucherNumber || '-'),
       account: postingSaleOrPurchaseAccount(parseNoteType(`${note.noteKind} note (${note.noteSide})`)?.series) || 'DISCOUNT A/C SALES',
       particulars: `${note.noteKind === 'credit' ? 'Credit' : 'Debit'} note #${note.noteNumber || note.voucherNumber}`,
@@ -1657,7 +1657,7 @@ export async function buildCompanySelfLedger(prisma, userId, { fromDate, toDate 
       sourceType: 'credit_debit_note',
       sourceId: note.id,
       date: note.noteDate,
-      voucherNumber: String(note.voucherNumber || note.noteNumber || '-'),
+      voucherNumber: String(printedNoteVoucher(note.voucherNumber) || note.noteNumber || '-'),
       billNumber: note.noteNumber || String(note.voucherNumber || '-'),
       account: postingSaleOrPurchaseAccount(parseNoteType(`${note.noteKind} note (${note.noteSide})`)?.series) || 'DISCOUNT A/C PURCHASE',
       particulars: `${note.noteKind === 'credit' ? 'Credit' : 'Debit'} note #${note.noteNumber || note.voucherNumber}`,
@@ -1983,7 +1983,7 @@ export async function buildCustomerLedger(prisma, userId, partyName) {
       sourceType: 'credit_debit_note',
       sourceId: note.id,
       date: note.noteDate,
-      voucherNumber: String(note.voucherNumber || note.noteNumber || '-'),
+      voucherNumber: String(printedNoteVoucher(note.voucherNumber) || note.noteNumber || '-'),
       billNumber: note.noteNumber || String(note.voucherNumber || '-'),
       account: postingSaleOrPurchaseAccount(parseNoteType(`${note.noteKind} note (${note.noteSide})`)?.series) || 'DISCOUNT A/C SALES',
       particulars: `${note.noteKind === 'credit' ? 'Credit' : 'Debit'} note #${note.noteNumber || note.voucherNumber}${note.adjustBillNumber ? ` · Bill ${note.adjustBillNumber}` : ''}`,
@@ -2367,7 +2367,7 @@ export async function buildSupplierLedger(prisma, userId, supplierId) {
       sourceType: 'credit_debit_note',
       sourceId: note.id,
       date: note.noteDate,
-      voucherNumber: String(note.voucherNumber || note.noteNumber || '-'),
+      voucherNumber: String(printedNoteVoucher(note.voucherNumber) || note.noteNumber || '-'),
       billNumber: note.noteNumber || String(note.voucherNumber || '-'),
       account: postingSaleOrPurchaseAccount(parseNoteType(`${note.noteKind} note (${note.noteSide})`)?.series) || 'DISCOUNT A/C PURCHASE',
       particulars: `${note.noteKind === 'credit' ? 'Credit' : 'Debit'} note #${note.noteNumber || note.voucherNumber}${note.adjustBillNumber ? ` · Bill ${note.adjustBillNumber}` : ''}`,
@@ -3062,7 +3062,7 @@ export async function getLedgerEntryDetail(prisma, userId, sourceType, sourceId)
       editPath: `/erp/notes?edit=${note.id}`,
       fields: buildDetailFields([
         { label: 'Date', value: toIsoDate(note.noteDate) },
-        { label: 'Voucher', value: note.voucherNumber != null ? String(note.voucherNumber) : '' },
+        { label: 'Voucher', value: printedNoteVoucher(note.voucherNumber) ? String(printedNoteVoucher(note.voucherNumber)) : '' },
         { label: 'Party Type', value: note.partyType },
         { label: 'Place of Supply', value: note.placeOfSupply },
         { label: 'Ref. Bill', value: note.adjustBillNumber || note.refBillNumber },

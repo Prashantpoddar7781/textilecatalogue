@@ -1,4 +1,4 @@
-import { getAdjustDirection, parseNoteType } from '../constants/creditDebitNoteTypes.js';
+import { getAdjustDirection, parseNoteType, printedNoteVoucher } from '../constants/creditDebitNoteTypes.js';
 import { applyBillRoundOff, daysSince, forEachUniqueBillAllocation, loadAllocationEntries, matchesPartyName, matchesSupplierName, roundMoney } from './orderBilling.js';
 
 export async function getPaidAmountsByCreditDebitNoteId(prismaClient, userId, options = {}) {
@@ -36,7 +36,7 @@ export function mapCreditDebitNoteToPendingItem(note, paidByNoteId) {
     billType: 'credit_debit_note',
     billNumber: note.noteNumber || String(note.voucherNumber || note.id.slice(-6)),
     transactionType: typeLabel,
-    voucherNumber: String(note.voucherNumber || note.noteNumber || '-'),
+    voucherNumber: String(printedNoteVoucher(note.voucherNumber) || note.noteNumber || '-'),
     billDate: note.noteDate,
     days: daysSince(note.noteDate),
     grace: 0,

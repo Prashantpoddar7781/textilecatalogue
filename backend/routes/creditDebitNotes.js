@@ -4,6 +4,7 @@ import { body, validationResult } from 'express-validator';
 import { authenticateToken } from '../middleware/auth.js';
 import { requireActiveSubscription } from '../middleware/subscription.js';
 import { CREDIT_DEBIT_NOTE_TYPES, formatNoteNumber, parseNoteType } from '../constants/creditDebitNoteTypes.js';
+import { getCurrentAccountingYear, parseAccountingYear } from '../utils/accountingYear.js';
 import { postingSaleOrPurchaseAccount } from '../constants/erpTransactionPostingRules.js';
 import { resolveCustomerForEntry, resolveSupplierForEntry } from '../utils/partyMaster.js';
 import { calculateNoteTotals } from '../utils/gstCalculation.js';
@@ -44,12 +45,31 @@ async function getBusinessState(userId) {
   return profile?.state || '';
 }
 
-async function allocateNextVoucherNumber(tx, userId, noteKind, noteSide) {
-  const result = await tx.creditDebitNote.aggregate({
-    where: { userId, noteKind, noteSide },
-    _max: { voucherNumber: true }
+function liveNoteVoucher(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0 || n >= 100000) return 0;
+  return Math.trunc(n);
+}
+
+async function maxLiveVoucher(tx, where) {
+  const rows = await tx.creditDebitNote.findMany({
+    where,
+    select: { voucherNumber: true }
   });
-  return (result._max.voucherNumber ?? 0) + 1;
+  return rows.reduce((best, row) => Math.max(best, liveNoteVoucher(row.voucherNumber)), 0);
+}
+
+async function allocateNextVoucherNumber(tx, userId, noteKind, noteSide) {
+  const where = { userId, noteKind, noteSide };
+  const year = parseAccountingYear(getCurrentAccountingYear());
+  if (year) {
+    const currentMax = await maxLiveVoucher(tx, {
+      ...where,
+      noteDate: { gte: year.startDate, lte: year.endDate }
+    });
+    if (currentMax > 0) return currentMax + 1;
+  }
+  return (await maxLiveVoucher(tx, where)) + 1;
 }
 
 async function resolveParty(userId, noteType, body) {

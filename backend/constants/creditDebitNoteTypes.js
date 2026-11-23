@@ -32,8 +32,16 @@ export function parseNoteType(value) {
   return null;
 }
 
+/** Empire keeps an older year at 100000, 200000, 500000 plus the printed voucher. 500010 is 10. */
+export function printedNoteVoucher(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return n >= 100000 ? n % 100000 : Math.trunc(n);
+}
+
 export function formatNoteNumber(series, voucherNumber) {
-  const voucher = String(voucherNumber ?? '').trim();
+  const printed = printedNoteVoucher(voucherNumber);
+  const voucher = printed ? String(printed) : String(voucherNumber ?? '').trim();
   if (!voucher) return '';
   const type = parseNoteType(series);
   if (type?.seriesCode === 'P91') return `${voucher}/C`;

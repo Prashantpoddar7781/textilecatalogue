@@ -5,6 +5,7 @@ import {
   CREDIT_DEBIT_NOTE_TYPES,
   CreditDebitNoteType,
   formatNoteNumber,
+  printedNoteVoucher,
   INDIAN_STATES,
   noteTypeFromKindSide,
   parseNoteType
@@ -188,8 +189,9 @@ export const CreditDebitNotePage: React.FC<Props> = ({ noteType: initialNoteType
   const applyNote = (note: CreditDebitNote, type: CreditDebitNoteType) => {
     setEditingId(note.id);
     setCompanyName(note.companyName || '');
-    setVoucherNumber(String(note.voucherNumber || ''));
-    setAllocatedVoucher(String(note.voucherNumber || ''));
+    const shownVoucher = printedNoteVoucher(note.voucherNumber);
+    setVoucherNumber(shownVoucher ? String(shownVoucher) : '');
+    setAllocatedVoucher(shownVoucher ? String(shownVoucher) : '');
     setNoteNumber(note.noteNumber || formatNoteNumber(type.series, note.voucherNumber));
     setNoteDate(isoDate(note.noteDate) || today());
     setPartyName(note.partyName || '');
@@ -444,7 +446,7 @@ export const CreditDebitNotePage: React.FC<Props> = ({ noteType: initialNoteType
       const { note } = editingId
         ? await creditDebitNotesApi.update(editingId, payload)
         : await creditDebitNotesApi.create(payload);
-      setSuccess(`Saved ${noteType.label} voucher #${note.voucherNumber} for ${note.partyName}.`);
+      setSuccess(`Saved ${noteType.label} voucher #${printedNoteVoucher(note.voucherNumber) || note.voucherNumber} for ${note.partyName}.`);
       startNew();
       void loadNotes(noteType);
     } catch (err: any) {
@@ -768,7 +770,7 @@ export const CreditDebitNotePage: React.FC<Props> = ({ noteType: initialNoteType
                     onClick={() => openNote(note)}
                   >
                     <td className="px-3 py-2.5">{isoDate(note.noteDate)}</td>
-                    <td className="px-3 py-2.5 font-bold">{note.voucherNumber}</td>
+                    <td className="px-3 py-2.5 font-bold">{printedNoteVoucher(note.voucherNumber) || note.voucherNumber}</td>
                     <td className="px-3 py-2.5">{note.noteNumber}</td>
                     <td className="px-3 py-2.5">{note.partyName}</td>
                     <td className="px-3 py-2.5">{note.refBillNumber || note.adjustBillNumber || '-'}</td>

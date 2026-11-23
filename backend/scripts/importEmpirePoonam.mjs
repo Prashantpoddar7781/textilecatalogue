@@ -930,6 +930,8 @@ async function main() {
         noteKind,
         noteSide,
         companyName,
+        // VNO stays the Empire number. 500010 is printed 10 from an older year (10/C*****).
+        // The next note ignores 100000 and above and follows this year's printed series.
         voucherNumber: vno || null,
         noteNumber: billNo,
         noteDate: when,
