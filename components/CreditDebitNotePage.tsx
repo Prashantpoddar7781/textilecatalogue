@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { bankEntriesApi, creditDebitNotesApi, customersApi, EinvoiceInfo, purchasesApi } from '../services/api';
 import {
@@ -43,6 +43,49 @@ interface Props {
 
 const today = () => new Date().toISOString().slice(0, 10);
 const toNum = (v: string | number) => Number(v) || 0;
+const money = (value: number) => Math.round((Number(value) || 0) * 100) / 100;
+
+/** Taxable and net from the gross just typed. GST is CGST+SGST or IGST from the party type. */
+function noteFigures(input: {
+  gross: number;
+  discountPercent: number;
+  discountAmount: number | null;
+  otherLess: number;
+  addAmount: number;
+  returnGoods: number;
+  taxable: number | null;
+  gstRate: number;
+  gstType: string;
+  placeOfSupply: string;
+  businessState: string;
+  tcsRate: number;
+}) {
+  const discount = money(input.discountAmount != null ? input.discountAmount : input.gross * input.discountPercent / 100);
+  const taxable = money(input.taxable != null
+    ? input.taxable
+    : input.gross - discount - input.otherLess + input.addAmount - input.returnGoods);
+  const non = isNonGstType(input.gstType);
+  const rate = non ? 0 : input.gstRate;
+  const typed = String(input.gstType || '').toLowerCase();
+  const inter = !non && (typed.includes('inter') || (!typed && isInterStateSupply(input.placeOfSupply, input.businessState)));
+  const tax = money(taxable * rate / 100);
+  const half = money(tax / 2);
+  const tcs = money(taxable * input.tcsRate / 100);
+  const exact = money(taxable + tax + tcs);
+  const net = roundRupee(exact);
+  return {
+    taxable,
+    cgstRate: inter ? 0 : rate / 2,
+    cgst: inter ? 0 : half,
+    sgstRate: inter ? 0 : rate / 2,
+    sgst: inter ? 0 : half,
+    igstRate: inter ? rate : 0,
+    igst: inter ? tax : 0,
+    tcs,
+    roundOff: money(net - exact),
+    net
+  };
+}
 const isoDate = (value?: string | Date | null) => {
   if (!value) return '';
   const d = new Date(value);
@@ -92,6 +135,7 @@ export const CreditDebitNotePage: React.FC<Props> = ({ noteType: initialNoteType
   const [returnGoods, setReturnGoods] = useState('');
   const [hsnSac, setHsnSac] = useState('');
   const [taxableAmount, setTaxableAmount] = useState('');
+  const taxableEdited = useRef(false);
   const [gstRate, setGstRate] = useState('');
   const [cgstRate, setCgstRate] = useState('');
   const [cgstAmount, setCgstAmount] = useState('');
@@ -142,6 +186,7 @@ export const CreditDebitNotePage: React.FC<Props> = ({ noteType: initialNoteType
   }, []);
 
   const resetAmounts = () => {
+    taxableEdited.current = false;
     setPieces('');
     setQuantity('');
     setGrossAmount('');
@@ -219,6 +264,7 @@ export const CreditDebitNotePage: React.FC<Props> = ({ noteType: initialNoteType
     setAddAmount(note.addAmount ? String(note.addAmount) : '');
     setReturnGoods(note.returnGoods ? String(note.returnGoods) : '');
     setHsnSac(note.hsnSac || getPostingRule(type.series)?.defaultHsnCode || '');
+    taxableEdited.current = Boolean(note.taxableAmount);
     setTaxableAmount(note.taxableAmount ? String(note.taxableAmount) : '');
     setGstRate(note.gstRate ? String(note.gstRate) : String(postingGstRate(type.series) || ''));
     setTcsRate(note.tcsRate ? String(note.tcsRate) : '');
@@ -267,42 +313,35 @@ export const CreditDebitNotePage: React.FC<Props> = ({ noteType: initialNoteType
     }).catch(() => setError('Could not load this note.')).finally(() => setLoadingEdit(false));
   }, []);
 
-  const recalculate = useCallback(async () => {
-    try {
-      const { totals } = await creditDebitNotesApi.calculate({
-        grossAmount: toNum(grossAmount),
-        discountPercent: toNum(discountPercent),
-        discountAmount: discountAmount ? toNum(discountAmount) : undefined,
-        otherLess: toNum(otherLess),
-        addAmount: toNum(addAmount),
-        returnGoods: toNum(returnGoods),
-        taxableAmount: taxableAmount ? toNum(taxableAmount) : undefined,
-        gstRate: toNum(gstRate),
-        tcsRate: toNum(tcsRate),
-        placeOfSupply,
-        gstType,
-        partyGstin
-      });
-      setTaxableAmount(String(totals.taxableAmount ?? ''));
-      setCgstRate(String(totals.cgstRate ?? ''));
-      setCgstAmount(String(totals.cgstAmount ?? ''));
-      setSgstRate(String(totals.sgstRate ?? ''));
-      setSgstAmount(String(totals.sgstAmount ?? ''));
-      setIgstRate(String(totals.igstRate ?? ''));
-      setIgstAmount(String(totals.igstAmount ?? ''));
-      setTcsAmount(String(totals.tcsAmount ?? ''));
-      setRoundOff(String(totals.roundOff ?? ''));
-      setNetAmount(String(totals.netAmount ?? ''));
-      setNetAmountAfterTds(String(totals.netAmountAfterTds ?? totals.netAmount ?? ''));
-    } catch {
-      // keep manual values
-    }
-  }, [addAmount, discountAmount, discountPercent, grossAmount, gstRate, gstType, otherLess, partyGstin, placeOfSupply, returnGoods, tcsRate, taxableAmount]);
-
   useEffect(() => {
-    const timer = setTimeout(() => { void recalculate(); }, 300);
-    return () => clearTimeout(timer);
-  }, [recalculate]);
+    const hasGross = String(grossAmount).trim() !== '';
+    const figures = noteFigures({
+      gross: toNum(grossAmount),
+      discountPercent: toNum(discountPercent),
+      discountAmount: String(discountAmount).trim() ? toNum(discountAmount) : null,
+      otherLess: toNum(otherLess),
+      addAmount: toNum(addAmount),
+      returnGoods: toNum(returnGoods),
+      taxable: taxableEdited.current ? toNum(taxableAmount) : null,
+      gstRate: toNum(gstRate),
+      gstType,
+      placeOfSupply,
+      businessState,
+      tcsRate: toNum(tcsRate)
+    });
+    const show = hasGross || taxableEdited.current;
+    if (!taxableEdited.current) setTaxableAmount(show ? String(figures.taxable) : '');
+    setCgstRate(show ? String(figures.cgstRate) : '');
+    setCgstAmount(show ? String(figures.cgst) : '');
+    setSgstRate(show ? String(figures.sgstRate) : '');
+    setSgstAmount(show ? String(figures.sgst) : '');
+    setIgstRate(show ? String(figures.igstRate) : '');
+    setIgstAmount(show ? String(figures.igst) : '');
+    setTcsAmount(show ? String(figures.tcs) : '');
+    setRoundOff(show ? String(figures.roundOff) : '');
+    setNetAmount(show ? String(figures.net) : '');
+    setNetAmountAfterTds(show ? String(figures.net) : '');
+  }, [addAmount, businessState, discountAmount, discountPercent, grossAmount, gstRate, gstType, otherLess, placeOfSupply, returnGoods, taxableAmount, tcsRate]);
 
   useEffect(() => {
     if (!partyName.trim()) {
@@ -387,10 +426,14 @@ export const CreditDebitNotePage: React.FC<Props> = ({ noteType: initialNoteType
   }, [businessState, gstTouched, partyGstin]);
 
   const gstHint = useMemo(() => {
+    if (isNonGstType(gstType)) return 'Non GST — tax is 0.';
+    const typed = String(gstType || '').toLowerCase();
+    if (typed.includes('inter')) return 'Different state → IGST from the series.';
+    if (typed.includes('local') || typed.includes('cgst')) return 'Same state → CGST + SGST from the series.';
     if (!placeOfSupply || !businessState) return 'Select place of supply to apply GST.';
     if (!isInterStateSupply(placeOfSupply, businessState)) return 'Same state → CGST + SGST from the series.';
     return 'Different state → IGST from the series.';
-  }, [businessState, placeOfSupply]);
+  }, [businessState, gstType, placeOfSupply]);
 
   const changeType = (value: string) => {
     const next = parseNoteType(value);
@@ -561,7 +604,10 @@ export const CreditDebitNotePage: React.FC<Props> = ({ noteType: initialNoteType
     if (pcs) setPieces(String(pcs));
     if (qty) setQuantity(String(Math.round(qty * 100) / 100));
     const gross = x.grossAmount || x.lines.reduce((s, line) => s + line.amount, 0) || x.taxableAmount;
-    if (gross) setGrossAmount(String(gross));
+    if (gross) {
+      taxableEdited.current = false;
+      setGrossAmount(String(gross));
+    }
     if (x.discountPercent) setDiscountPercent(String(x.discountPercent));
     else if (x.discountAmount) setDiscountAmount(String(x.discountAmount));
     if (x.otherLess) setOtherLess(String(x.otherLess));
@@ -764,14 +810,14 @@ export const CreditDebitNotePage: React.FC<Props> = ({ noteType: initialNoteType
           <div className="mt-4 grid gap-4 md:grid-cols-3 xl:grid-cols-6">
             <div><label className={labelClass}>Pcs.</label><input className={inputClass} type="number" value={pieces} onChange={e => setPieces(e.target.value)} /></div>
             <div><label className={labelClass}>Mts. / Qty.</label><input className={inputClass} type="number" value={quantity} onChange={e => setQuantity(e.target.value)} /></div>
-            <div><label className={labelClass}>Gross Amt.</label><input className={inputClass} type="number" value={grossAmount} onChange={e => setGrossAmount(e.target.value)} /></div>
-            <div><label className={labelClass}>Disc. %</label><input className={inputClass} type="number" value={discountPercent} onChange={e => setDiscountPercent(e.target.value)} /></div>
-            <div><label className={labelClass}>Disc. Amt.</label><input className={inputClass} type="number" value={discountAmount} onChange={e => setDiscountAmount(e.target.value)} /></div>
-            <div><label className={labelClass}>Oth. Less</label><input className={inputClass} type="number" value={otherLess} onChange={e => setOtherLess(e.target.value)} /></div>
-            <div><label className={labelClass}>Add</label><input className={inputClass} type="number" value={addAmount} onChange={e => setAddAmount(e.target.value)} /></div>
-            <div><label className={labelClass}>Ret. Goods</label><input className={inputClass} type="number" value={returnGoods} onChange={e => setReturnGoods(e.target.value)} /></div>
+            <div><label className={labelClass}>Gross Amt.</label><input className={inputClass} type="number" value={grossAmount} onChange={e => { taxableEdited.current = false; setGrossAmount(e.target.value); }} /></div>
+            <div><label className={labelClass}>Disc. %</label><input className={inputClass} type="number" value={discountPercent} onChange={e => { taxableEdited.current = false; setDiscountPercent(e.target.value); }} /></div>
+            <div><label className={labelClass}>Disc. Amt.</label><input className={inputClass} type="number" value={discountAmount} onChange={e => { taxableEdited.current = false; setDiscountAmount(e.target.value); }} /></div>
+            <div><label className={labelClass}>Oth. Less</label><input className={inputClass} type="number" value={otherLess} onChange={e => { taxableEdited.current = false; setOtherLess(e.target.value); }} /></div>
+            <div><label className={labelClass}>Add</label><input className={inputClass} type="number" value={addAmount} onChange={e => { taxableEdited.current = false; setAddAmount(e.target.value); }} /></div>
+            <div><label className={labelClass}>Ret. Goods</label><input className={inputClass} type="number" value={returnGoods} onChange={e => { taxableEdited.current = false; setReturnGoods(e.target.value); }} /></div>
             <div><label className={labelClass}>HSN / SAC</label><input className={inputClass} value={hsnSac} onChange={e => setHsnSac(e.target.value)} /></div>
-            <div><label className={labelClass}>Taxable</label><input className={inputClass} type="number" value={taxableAmount} onChange={e => setTaxableAmount(e.target.value)} /></div>
+            <div><label className={labelClass}>Taxable</label><input className={inputClass} type="number" value={taxableAmount} onChange={e => { taxableEdited.current = true; setTaxableAmount(e.target.value); }} /></div>
             <div><label className={labelClass}>GST %</label><input className={`${inputClass} ${rule?.singleGstRateForBill ? '' : ''}`} type="number" value={gstRate} onChange={e => setGstRate(e.target.value)} /></div>
             <div><label className={labelClass}>CGST % / Amt</label><div className="grid grid-cols-2 gap-1"><input className={inputClass} readOnly value={cgstRate} /><input className={inputClass} readOnly value={cgstAmount} /></div></div>
             <div><label className={labelClass}>SGST % / Amt</label><div className="grid grid-cols-2 gap-1"><input className={inputClass} readOnly value={sgstRate} /><input className={inputClass} readOnly value={sgstAmount} /></div></div>
