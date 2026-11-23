@@ -158,6 +158,8 @@ function normalizePayload(body, businessState) {
     gstRate: optionalNumber(body.gstRate),
     tcsRate: optionalNumber(body.tcsRate),
     placeOfSupply: optionalString(body.placeOfSupply),
+    gstType: optionalString(body.gstType),
+    partyGstin: optionalString(body.partyGstin),
     businessState
   });
 

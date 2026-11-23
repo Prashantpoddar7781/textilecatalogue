@@ -28,7 +28,9 @@ import { ErpTopMenu } from './ErpTopMenu';
 import { PhotoEntryButton } from './PhotoEntryButton';
 import { PhotoExtraction } from '../services/api';
 import { matchPhotoParty, photoPartyState } from '../utils/photoEntry';
-import { isInterStateSupply } from '../utils/gstState';
+import { GST_STATE_CODES, getStateCodeFromName, isInterStateSupply } from '../utils/gstState';
+import { gstTypeFromGstin, isNonGstType, stateNameFromGstin } from '../utils/partyGst';
+import { GstTypeSelect, useMissingGstPrompt } from './GstTypeField';
 import { partyDhara } from '../utils/partyBillingTerms';
 import { roundRupee } from '../utils/rupeeRound';
 import { useVoucherJump } from '../hooks/useVoucherJump';
@@ -69,7 +71,10 @@ export const CreditDebitNotePage: React.FC<Props> = ({ noteType: initialNoteType
   const [customerId, setCustomerId] = useState('');
   const [supplierId, setSupplierId] = useState('');
   const [placeOfSupply, setPlaceOfSupply] = useState('');
+  const [partyGstin, setPartyGstin] = useState('');
   const [gstType, setGstType] = useState('');
+  const [gstTouched, setGstTouched] = useState(false);
+  const { askIfMissing, dialog: missingGstDialog } = useMissingGstPrompt();
   const [refBillNumber, setRefBillNumber] = useState('');
   const [refBillDate, setRefBillDate] = useState('');
   const [refBillQuery, setRefBillQuery] = useState('');
@@ -274,9 +279,10 @@ export const CreditDebitNotePage: React.FC<Props> = ({ noteType: initialNoteType
         taxableAmount: taxableAmount ? toNum(taxableAmount) : undefined,
         gstRate: toNum(gstRate),
         tcsRate: toNum(tcsRate),
-        placeOfSupply
+        placeOfSupply,
+        gstType,
+        partyGstin
       });
-      setGstType(String(totals.gstType || ''));
       setTaxableAmount(String(totals.taxableAmount ?? ''));
       setCgstRate(String(totals.cgstRate ?? ''));
       setCgstAmount(String(totals.cgstAmount ?? ''));
@@ -291,7 +297,7 @@ export const CreditDebitNotePage: React.FC<Props> = ({ noteType: initialNoteType
     } catch {
       // keep manual values
     }
-  }, [addAmount, discountAmount, discountPercent, grossAmount, gstRate, otherLess, placeOfSupply, returnGoods, tcsRate, taxableAmount]);
+  }, [addAmount, discountAmount, discountPercent, grossAmount, gstRate, gstType, otherLess, partyGstin, placeOfSupply, returnGoods, tcsRate, taxableAmount]);
 
   useEffect(() => {
     const timer = setTimeout(() => { void recalculate(); }, 300);
@@ -342,6 +348,44 @@ export const CreditDebitNotePage: React.FC<Props> = ({ noteType: initialNoteType
     setRefPickerOpen(false);
   };
 
+  const supplyStateOf = (gstin?: string | null, state?: string | null) => {
+    const fromGstin = stateNameFromGstin(gstin);
+    if (fromGstin) return fromGstin;
+    const code = getStateCodeFromName(state || '');
+    return code ? (GST_STATE_CODES[code] || '') : '';
+  };
+
+  const applyPartyGst = (
+    party: { name: string; gstNumber?: string | null; state?: string | null },
+    assign: () => void
+  ) => {
+    askIfMissing(party, () => {
+      assign();
+      const gstin = String(party.gstNumber || '').trim();
+      setPartyGstin(gstin);
+      const supply = supplyStateOf(gstin, party.state);
+      if (supply) setPlaceOfSupply(supply);
+      const auto = gstTypeFromGstin(gstin, businessState);
+      setGstTouched(false);
+      setGstType(auto);
+      if (!editingId || isNonGstType(auto)) {
+        const seriesRate = postingGstRate(noteType.series);
+        setGstRate(isNonGstType(auto) ? '0' : (seriesRate != null ? String(seriesRate) : ''));
+      }
+    }, () => {
+      setCustomerId('');
+      setSupplierId('');
+      setPartyName('');
+      setPartyGstin('');
+    });
+  };
+
+  useEffect(() => {
+    if (gstTouched || !partyGstin) return;
+    const auto = gstTypeFromGstin(partyGstin, businessState);
+    if (auto) setGstType(auto);
+  }, [businessState, gstTouched, partyGstin]);
+
   const gstHint = useMemo(() => {
     if (!placeOfSupply || !businessState) return 'Select place of supply to apply GST.';
     if (!isInterStateSupply(placeOfSupply, businessState)) return 'Same state → CGST + SGST from the series.';
@@ -356,6 +400,9 @@ export const CreditDebitNotePage: React.FC<Props> = ({ noteType: initialNoteType
     setEinvoice(null);
     setError('');
     setSuccess('');
+    setPartyGstin('');
+    setGstTouched(false);
+    setGstType('');
     resetAmounts();
     applySeriesDefaults(next);
     const url = new URL(window.location.href);
@@ -380,6 +427,9 @@ export const CreditDebitNotePage: React.FC<Props> = ({ noteType: initialNoteType
   const startNew = () => {
     setEditingId(null);
     setEinvoice(null);
+    setPartyGstin('');
+    setGstTouched(false);
+    setGstType('');
     resetAmounts();
     applySeriesDefaults(noteType);
     const url = new URL(window.location.href);
@@ -416,6 +466,8 @@ export const CreditDebitNotePage: React.FC<Props> = ({ noteType: initialNoteType
       customerId: customerId || undefined,
       supplierId: supplierId || undefined,
       placeOfSupply,
+      partyGstin: partyGstin || undefined,
+      gstType: gstType || undefined,
       refBillNumber: refBillNumber || undefined,
       refBillDate: refBillDate || undefined,
       challanNumber: challanNumber || undefined,
@@ -477,14 +529,21 @@ export const CreditDebitNotePage: React.FC<Props> = ({ noteType: initialNoteType
       if (isCustomer) setCustomerId(match.id);
       else setSupplierId(match.id);
       setPartyName(match.name);
-      if (match.state) setPlaceOfSupply(match.state);
+      const supply = supplyStateOf(match.gstNumber, match.state || photoPartyState(x));
+      if (supply) setPlaceOfSupply(supply);
+      const auto = gstTypeFromGstin(match.gstNumber, businessState);
+      if (auto) {
+        setGstTouched(false);
+        setGstType(auto);
+        setPartyGstin(String(match.gstNumber || '').trim());
+      }
       if (!editingId) setDiscountPercent(String(partyDhara(match) || ''));
     } else if (x.party.name) {
       setPartyName(x.party.name);
       out.push(`"${x.party.name}" is not in your ${isCustomer ? 'customer' : 'supplier'} list — pick or add the party before saving.`);
     }
-    const pos = match?.state || photoPartyState(x);
-    if (pos && INDIAN_STATES.includes(pos)) setPlaceOfSupply(pos);
+    const pos = supplyStateOf(match?.gstNumber, match?.state || photoPartyState(x));
+    if (pos) setPlaceOfSupply(pos);
     if (x.docNo) setNoteNumber(x.docNo);
     if (x.docDate) setNoteDate(x.docDate);
     if (x.refDocNo) {
@@ -569,26 +628,38 @@ export const CreditDebitNotePage: React.FC<Props> = ({ noteType: initialNoteType
               <label className={labelClass}>Party</label>
               {noteType.partyType === 'customer' ? (
                 <select className={inputClass} value={customerId} onChange={e => {
-                  setCustomerId(e.target.value);
                   const c = customers.find(x => x.id === e.target.value);
-                  if (c) {
-                    setPartyName(c.organizationName);
-                    if (c.state) setPlaceOfSupply(c.state);
-                    if (!editingId) setDiscountPercent(String(partyDhara(c) || ''));
+                  if (!c) {
+                    setCustomerId('');
+                    return;
                   }
+                  applyPartyGst(
+                    { name: c.organizationName, gstNumber: c.gstNumber, state: c.state },
+                    () => {
+                      setCustomerId(c.id);
+                      setPartyName(c.organizationName);
+                      if (!editingId) setDiscountPercent(String(partyDhara(c) || ''));
+                    }
+                  );
                 }}>
                   <option value="">Select customer</option>
                   {customers.map(c => <option key={c.id} value={c.id}>{c.organizationName}</option>)}
                 </select>
               ) : (
                 <select className={inputClass} value={supplierId} onChange={e => {
-                  setSupplierId(e.target.value);
                   const s = suppliers.find(x => x.id === e.target.value);
-                  if (s) {
-                    setPartyName(s.name);
-                    if (s.state) setPlaceOfSupply(s.state);
-                    if (!editingId) setDiscountPercent(String(partyDhara(s) || ''));
+                  if (!s) {
+                    setSupplierId('');
+                    return;
                   }
+                  applyPartyGst(
+                    { name: s.name, gstNumber: s.gstNumber, state: s.state },
+                    () => {
+                      setSupplierId(s.id);
+                      setPartyName(s.name);
+                      if (!editingId) setDiscountPercent(String(partyDhara(s) || ''));
+                    }
+                  );
                 }}>
                   <option value="">Select supplier</option>
                   {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
@@ -603,7 +674,22 @@ export const CreditDebitNotePage: React.FC<Props> = ({ noteType: initialNoteType
                 {INDIAN_STATES.map(state => <option key={state} value={state}>{state}</option>)}
               </select>
             </div>
-            <div><label className={labelClass}>GST Type</label><input className={inputClass} readOnly value={gstType} /></div>
+            <div>
+              <label className={labelClass}>GST Type</label>
+              <GstTypeSelect
+                className={inputClass}
+                value={gstType}
+                onChange={value => {
+                  setGstTouched(true);
+                  setGstType(value);
+                  if (isNonGstType(value)) setGstRate('0');
+                  else if (!toNum(gstRate)) {
+                    const seriesRate = postingGstRate(noteType.series);
+                    if (seriesRate != null) setGstRate(String(seriesRate));
+                  }
+                }}
+              />
+            </div>
             <div className="relative">
               <label className={labelClass}>Ref Bill No.</label>
               <input
@@ -733,6 +819,7 @@ export const CreditDebitNotePage: React.FC<Props> = ({ noteType: initialNoteType
           />
           </div>
           </ErpFormShell>
+          {missingGstDialog}
           {einvoiceOpen && editingId && (
             <EinvoiceDialog
               source="note"

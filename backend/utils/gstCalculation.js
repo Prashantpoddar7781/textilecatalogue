@@ -320,12 +320,29 @@ export function calculateNoteTotals(input) {
       ? input.taxableAmount
       : grossAmount - discountAmount - roundMoney(input.otherLess) + roundMoney(input.addAmount) - roundMoney(input.returnGoods)
   );
+  const fromGstin = getStateFromGstin(input.partyGstin);
+  const choice = canonicalGstChoice(input.gstType);
+  const place = knownStateCode(input.placeOfSupply)
+    ? input.placeOfSupply
+    : (fromGstin.stateName || input.placeOfSupply);
   const gst = calculateGstBreakup({
     taxableAmount,
-    gstRate: input.gstRate,
-    placeOfSupply: input.placeOfSupply,
+    gstRate: choice === 'non' ? 0 : input.gstRate,
+    placeOfSupply: taxPlaceForChoice(choice, place, input.businessState),
     businessState: input.businessState
   });
+  const gstType = choice === 'non'
+    ? 'Non GST'
+    : choice === 'local'
+      ? 'Local GST'
+      : choice === 'inter'
+        ? 'Interstate GST'
+        : gst.gstType === 'IGST'
+          ? 'Interstate GST'
+          : gst.gstType === 'CGST+SGST'
+            ? 'Local GST'
+            : (gst.gstType === 'none' ? '' : gst.gstType);
+  gst.gstType = gstType;
   const tcsAmount = roundMoney(taxableAmount * (Number(input.tcsRate) || 0) / 100);
   const exactNet = roundMoney(taxableAmount + gst.totalTaxAmount + tcsAmount);
   const netAmount = roundRupee(exactNet);
