@@ -987,6 +987,300 @@ async function buildSaleNominalLedger(prisma, userId, accountName, { fromDate, t
   return { partyType: 'supplier', partyName: accountName, ledger: rows };
 }
 
+function challanSeries(seriesName) {
+  return String(seriesName || '').toUpperCase().includes('CHALLAN');
+}
+
+/** Sale/Pur account for a bill series. A challan does not post to that head. */
+function nominalHead(seriesName, fallback = '') {
+  if (challanSeries(seriesName)) return '';
+  return String(postingSaleOrPurchaseAccount(seriesName) || fallback || '').trim();
+}
+
+function inNominalRange(date, fromDay, toDay) {
+  const day = calendarDay(date);
+  if (fromDay && day < fromDay) return false;
+  if (toDay && day > toDay) return false;
+  return true;
+}
+
+function pushNominalInvoice(rows, entry, gst, creditGst) {
+  rows.push(entry);
+  const igst = Number(gst?.igst ?? gst?.igstAmount) || 0;
+  const cgst = Number(gst?.cgst ?? gst?.cgstAmount) || 0;
+  const sgst = Number(gst?.sgst ?? gst?.sgstAmount) || 0;
+  for (const [label, gstAmount] of [
+    ['IGST A/C', igst],
+    ['CGST A/C', cgst],
+    ['SGST A/C', sgst]
+  ]) {
+    if (!(gstAmount > 0.001)) continue;
+    rows.push({
+      ...entry,
+      id: `${entry.id}-gst-${label}`,
+      account: label,
+      debitAmount: creditGst ? 0 : gstAmount,
+      creditAmount: creditGst ? gstAmount : 0
+    });
+  }
+}
+
+/**
+ * Purchase / expense head named on the bill. Empire debits this account with
+ * the invoice and credits the GST back out. The bill is the source, so a
+ * purchase that has no VAT JV still shows both sides. The head on the bill
+ * wins; a blank head uses the series Sale/Pur account. Grey, mill job work,
+ * and work bills post to the same kind of head.
+ */
+async function buildPurchaseNominalLedger(prisma, userId, accountName, { fromDate, toDate } = {}) {
+  const name = String(accountName || '').trim();
+  if (!name) return { ledger: [] };
+  const target = name.toLowerCase();
+  const defaultSeries = ERP_POSTING_RULES
+    .filter(row => String(row.saleOrPurchaseAccount || '').trim().toLowerCase() === target)
+    .map(row => row.series)
+    .filter(series => !String(series || '').toUpperCase().includes('SALES'));
+  const or = [{ purchaseAccount: { equals: name, mode: 'insensitive' } }];
+  if (defaultSeries.length) {
+    or.push({
+      transactionType: { in: defaultSeries },
+      OR: [{ purchaseAccount: null }, { purchaseAccount: '' }]
+    });
+  }
+  const fromDay = fromDate ? calendarDay(fromDate) : '';
+  const toDay = toDate ? calendarDay(toDate) : '';
+  const bills = await prisma.purchaseBill.findMany({
+    where: { userId, status: { not: 'cancelled' }, OR: or },
+    include: { supplier: { select: { name: true } } },
+    orderBy: [{ billDate: 'asc' }, { createdAt: 'asc' }]
+  });
+  const needsVatFill = bills.some(bill => {
+    const tax = (Number(bill.cgstAmount) || 0) + (Number(bill.sgstAmount) || 0) + (Number(bill.igstAmount) || 0);
+    return tax <= 0.001 && String(bill.billNumber || '').replace(/\*/g, '').trim().length >= 6;
+  });
+  const vatByBill = new Map();
+  if (needsVatFill) {
+    const vouchers = await prisma.journalVoucher.findMany({
+      where: { userId, transactionType: 'VAT JV', status: { not: 'cancelled' } },
+      select: { partyName: true, amount: true, remarks: true, narration: true }
+    });
+    for (const voucher of vouchers) {
+      const text = `${voucher.remarks || ''} ${voucher.narration || ''}`;
+      const match = text.match(/TI\/[\d\-]+\/\d+/i);
+      if (!match) continue;
+      const key = match[0].replace(/\*/g, '').toUpperCase();
+      const row = vatByBill.get(key) || { cgst: 0, sgst: 0, igst: 0 };
+      const party = String(voucher.partyName || '').toUpperCase();
+      const amount = Number(voucher.amount) || 0;
+      if (party.includes('CGST')) row.cgst = roundMoney(row.cgst + amount);
+      else if (party.includes('SGST')) row.sgst = roundMoney(row.sgst + amount);
+      else if (party.includes('IGST')) row.igst = roundMoney(row.igst + amount);
+      vatByBill.set(key, row);
+    }
+  }
+  const rows = [];
+  for (const bill of bills) {
+    if (isCommissionPurchase(bill.transactionType)) continue;
+    let cgst = Number(bill.cgstAmount) || 0;
+    let sgst = Number(bill.sgstAmount) || 0;
+    let igst = Number(bill.igstAmount) || 0;
+    const billNo = bill.billNumber || String(bill.typeBillNumber || '-');
+    if (cgst + sgst + igst <= 0.001) {
+      const key = String(billNo).replace(/\*/g, '').trim().toUpperCase();
+      const filled = vatByBill.get(key);
+      if (filled) {
+        cgst = filled.cgst;
+        sgst = filled.sgst;
+        igst = filled.igst;
+      }
+    }
+    const tax = roundMoney(cgst + sgst + igst);
+    const amount = postedPurchaseAmount(bill);
+    const invoice = tax > 0.001 && amount + 0.5 < Number(bill.taxableAmount || 0) + tax
+      ? postedBillRupee((Number(bill.taxableAmount) || 0) + tax)
+      : amount;
+    if (!(invoice > 0)) continue;
+    const disc = resolveDiscountJournal(bill.transactionType, bill.discountAmount);
+    const mainAmount = disc ? roundMoney(invoice + disc.amount) : invoice;
+    const date = bill.billDate || bill.createdAt;
+    const day = calendarDay(date);
+    if (fromDay && day < fromDay) continue;
+    if (toDay && day > toDay) continue;
+    const party = bill.supplier?.name || 'Supplier';
+    const isReturn = isPurchaseReturn(bill.transactionType);
+    const remark = `${party} - ${billNo}`;
+    pushNominalInvoice(rows, {
+      id: `pur-ac-${bill.id}`,
+      sourceType: 'purchase_bill',
+      sourceId: bill.id,
+      date,
+      voucherNumber: String(bill.typeBillNumber || bill.voucherNumber || '-'),
+      billNumber: billNo,
+      account: party,
+      particulars: remark,
+      remarks: remark,
+      debitAmount: isReturn ? 0 : mainAmount,
+      creditAmount: isReturn ? mainAmount : 0
+    }, { igst, cgst, sgst }, !isReturn);
+  }
+
+  const related = ERP_POSTING_RULES.filter(row => namesMatch(row.saleOrPurchaseAccount, name));
+  const wantsGrey = related.some(row => String(row.series || '').toUpperCase().includes('GREY'));
+  const wantsMill = related.some(row => String(row.series || '').toUpperCase() === 'JOB WORK');
+  const wantsWork = related.some(row => {
+    const series = String(row.series || '').toUpperCase();
+    return series.startsWith('WORK REC') || series === 'JOB WORK';
+  });
+
+  if (wantsGrey) {
+    const greys = await prisma.greyPurchase.findMany({
+      where: { userId, status: { not: 'cancelled' } },
+      orderBy: [{ billDate: 'asc' }, { createdAt: 'asc' }]
+    });
+    for (const grey of greys) {
+      const head = nominalHead(grey.transactionType, 'GREY PURCHASE');
+      if (!namesMatch(head, name)) continue;
+      const amount = postedBillRupee(grey.netAmount);
+      if (!(amount > 0)) continue;
+      const date = grey.billDate || grey.createdAt;
+      if (!inNominalRange(date, fromDay, toDay)) continue;
+      const disc = resolveDiscountJournal(grey.transactionType || 'GREY PURCHASE', grey.discountAmount);
+      const mainAmount = disc ? roundMoney(amount + disc.amount) : amount;
+      const party = grey.partyName || 'Supplier';
+      const billNo = grey.billNo || String(grey.srNo || '-');
+      const remark = `${party} - ${billNo}`;
+      pushNominalInvoice(rows, {
+        id: `grey-ac-${grey.id}`,
+        sourceType: 'grey_purchase',
+        sourceId: grey.id,
+        date,
+        voucherNumber: String(grey.typeBillNumber || grey.srNo || '-'),
+        billNumber: billNo,
+        account: party,
+        particulars: remark,
+        remarks: remark,
+        debitAmount: mainAmount,
+        creditAmount: 0
+      }, grey, true);
+    }
+    const greyReturns = await prisma.greyPurchaseReturn.findMany({
+      where: { userId, status: { not: 'cancelled' } },
+      orderBy: [{ returnDate: 'asc' }, { createdAt: 'asc' }]
+    });
+    for (const ret of greyReturns) {
+      const head = String(ret.saleAccount || nominalHead('GREY PURCHASE RETURN', 'GREY PURCHASE RETURN') || '').trim();
+      if (!namesMatch(head, name)) continue;
+      const amount = postedBillRupee(ret.netAmount);
+      if (!(amount > 0)) continue;
+      const date = ret.returnDate || ret.createdAt;
+      if (!inNominalRange(date, fromDay, toDay)) continue;
+      const disc = resolveDiscountJournal('GREY PURCHASE RETURN', ret.discountAmount);
+      const mainAmount = disc ? roundMoney(amount + disc.amount) : amount;
+      const party = ret.partyName || 'Supplier';
+      const billNo = ret.billNo || ret.refBillNo || String(ret.voucherNo || '-');
+      const remark = `${party} - ${billNo}`;
+      pushNominalInvoice(rows, {
+        id: `grey-ret-${ret.id}`,
+        sourceType: 'grey_purchase_return',
+        sourceId: ret.id,
+        date,
+        voucherNumber: String(ret.voucherNo || ret.challanNo || '-'),
+        billNumber: billNo,
+        account: party,
+        particulars: remark,
+        remarks: remark,
+        debitAmount: 0,
+        creditAmount: mainAmount
+      }, ret, false);
+    }
+  }
+
+  if (wantsMill) {
+    const millReceipts = await prisma.millReceipt.findMany({
+      where: { userId, status: { not: 'cancelled' } },
+      orderBy: [{ receiptDate: 'asc' }, { createdAt: 'asc' }]
+    });
+    for (const receipt of millReceipts) {
+      if (String(receipt.processType || '').toUpperCase() === 'RETURN') continue;
+      const head = nominalHead(receipt.entryType, 'JOB CHARGES A/C');
+      if (!namesMatch(head, name)) continue;
+      const date = receipt.receiptDate || receipt.createdAt;
+      if (!inNominalRange(date, fromDay, toDay)) continue;
+      const tdsPercent = Number(receipt.tdsPercent) || 0;
+      let tdsAmount = roundTdsRupee(receipt.tdsAmount || 0);
+      if (tdsAmount <= 0 && tdsPercent > 0) {
+        const base = roundMoney(receipt.tdsOnAmt || receipt.taxableAmount || receipt.jobAmount || 0);
+        tdsAmount = roundTdsRupee(base * tdsPercent / 100);
+      }
+      const invoiceValue = postedBillRupee(
+        receipt.invoiceValue || (Number(receipt.netAfterTds || 0) + tdsAmount) || 0
+      );
+      if (!(invoiceValue > 0)) continue;
+      const disc = resolveDiscountJournal(receipt.entryType, receipt.discountAmount);
+      const mainAmount = disc ? roundMoney(invoiceValue + disc.amount) : invoiceValue;
+      const party = receipt.millName || 'Mill';
+      const billNo = receipt.billNo || String(receipt.voucherNo || '-');
+      const remark = `${party} - ${billNo}`;
+      pushNominalInvoice(rows, {
+        id: `mill-ac-${receipt.id}`,
+        sourceType: 'mill_receipt',
+        sourceId: receipt.id,
+        date,
+        voucherNumber: String(receipt.voucherNo || '-'),
+        billNumber: billNo,
+        account: party,
+        particulars: remark,
+        remarks: remark,
+        debitAmount: mainAmount,
+        creditAmount: 0
+      }, receipt, true);
+    }
+  }
+
+  if (wantsWork) {
+    const workReceipts = await prisma.workReceipt.findMany({
+      where: { userId, status: { not: 'cancelled' } },
+      orderBy: [{ receiptDate: 'asc' }, { createdAt: 'asc' }]
+    });
+    for (const receipt of workReceipts) {
+      const head = nominalHead(receipt.transactionType, '');
+      if (!namesMatch(head, name)) continue;
+      const date = receipt.receiptDate || receipt.createdAt;
+      if (!inNominalRange(date, fromDay, toDay)) continue;
+      const tdsPercent = Number(receipt.tdsPercent) || 0;
+      const taxable = roundMoney(receipt.taxableAmount || receipt.grossAmount || 0);
+      const tdsAmount = tdsPercent > 0 ? roundTdsRupee(taxable * tdsPercent / 100) : 0;
+      const invoiceValue = postedBillRupee(
+        receipt.invoiceValue
+        || (Number(receipt.netAfterTds || 0) + tdsAmount)
+        || receipt.taxableAmount
+        || 0
+      );
+      if (!(invoiceValue > 0)) continue;
+      const disc = resolveDiscountJournal(receipt.transactionType, receipt.discountAmount);
+      const mainAmount = disc ? roundMoney(invoiceValue + disc.amount) : invoiceValue;
+      const party = receipt.partyName || 'Job worker';
+      const billNo = receipt.billNo || receipt.challanNo || String(receipt.voucherNo || '-');
+      const remark = `${party} - ${billNo}`;
+      pushNominalInvoice(rows, {
+        id: `work-ac-${receipt.id}`,
+        sourceType: 'work_receipt',
+        sourceId: receipt.id,
+        date,
+        voucherNumber: String(receipt.voucherNo || '-'),
+        billNumber: billNo,
+        account: party,
+        particulars: remark,
+        remarks: remark,
+        debitAmount: mainAmount,
+        creditAmount: 0
+      }, receipt, true);
+    }
+  }
+
+  return { partyType: 'supplier', partyName: name, ledger: rows };
+}
+
 export async function buildUnifiedPartyLedger(prisma, userId, { partyName, supplierId, customerId, fromDate, toDate }) {
   const name = String(partyName || '').trim();
   if (!name) return null;
@@ -1036,6 +1330,9 @@ export async function buildUnifiedPartyLedger(prisma, userId, { partyName, suppl
   const saleNominal = await buildSaleNominalLedger(prisma, userId, name, { fromDate, toDate });
   if (saleNominal?.ledger?.length) chunks.push(saleNominal);
 
+  const purchaseNominal = await buildPurchaseNominalLedger(prisma, userId, name, { fromDate, toDate });
+  if (purchaseNominal?.ledger?.length) chunks.push(purchaseNominal);
+
   const emptyResult = {
     partyType: bankBook ? 'bank' : (resolvedSupplierId ? 'supplier' : 'customer'),
     partyName: name,
@@ -1059,11 +1356,43 @@ export async function buildUnifiedPartyLedger(prisma, userId, { partyName, suppl
   }
 
   const byId = new Map();
-  const saleAccount = Boolean(saleNominal?.ledger?.length);
+  const saleCarriesGst = Boolean(saleNominal?.ledger?.length);
+  const purchaseGstPool = new Map();
+  const droppedVatIds = new Set();
+  for (const row of purchaseNominal?.ledger || []) {
+    if (!String(row.id || '').includes('-gst-')) continue;
+    const credit = Number(row.creditAmount) || 0;
+    const debit = Number(row.debitAmount) || 0;
+    const side = credit > 0 ? 'C' : 'D';
+    const amount = credit > 0 ? credit : debit;
+    const key = `${calendarDay(row.date)}|${side}|${roundMoney(amount).toFixed(2)}`;
+    purchaseGstPool.set(key, (purchaseGstPool.get(key) || 0) + 1);
+  }
   for (const chunk of chunks) {
     for (const row of chunk.sourceRows || chunk.ledger || []) {
-      // The bill now carries the GST. The imported VAT JV would debit it again.
-      if (saleAccount && String(row.transactionType || '').trim().toUpperCase() === 'VAT JV') continue;
+      // The bill now carries the GST. Drop the imported VAT JV only when this
+      // account already has that GST from the bill (same day, same amount).
+      // A journal the bill does not carry stays. A sales account still drops
+      // every VAT JV once the sale itself is on the account.
+      // The same head can arrive twice (supplier + customer chunks); once a
+      // VAT JV is dropped against the bill GST, do not put it back.
+      if (String(row.transactionType || '').trim().toUpperCase() === 'VAT JV') {
+        if (saleCarriesGst || droppedVatIds.has(row.id)) {
+          droppedVatIds.add(row.id);
+          continue;
+        }
+        const credit = Number(row.creditAmount) || 0;
+        const debit = Number(row.debitAmount) || 0;
+        const side = credit > 0 ? 'C' : 'D';
+        const amount = credit > 0 ? credit : debit;
+        const key = `${calendarDay(row.date)}|${side}|${roundMoney(amount).toFixed(2)}`;
+        const left = purchaseGstPool.get(key) || 0;
+        if (left > 0) {
+          purchaseGstPool.set(key, left - 1);
+          droppedVatIds.add(row.id);
+          continue;
+        }
+      }
       byId.set(row.id, {
         id: row.id,
         sourceType: row.sourceType,
