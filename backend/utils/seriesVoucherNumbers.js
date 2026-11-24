@@ -1,4 +1,30 @@
 import { canonicalSeriesName } from '../constants/erpTransactionPostingRules.js';
+import { parseVoucherNumber } from './parseVoucherNumber.js';
+
+/**
+ * Empire stores an older year at 100000, 200000, … plus the printed voucher.
+ * 100112 is printed 112*. 800023 is printed 23********. One star per 100000.
+ */
+export function empireVoucherLabel(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return '';
+  const whole = Math.trunc(n);
+  if (whole < 100000) return String(whole);
+  const years = Math.floor(whole / 100000);
+  const printed = whole % 100000;
+  if (!printed) return String(whole);
+  return `${printed}${'*'.repeat(years)}`;
+}
+
+/** "112" is this year. "112*" is last year's 100112. */
+export function storedVoucherNumber(raw) {
+  const text = String(raw ?? '').trim();
+  const stars = (text.match(/\*/g) || []).length;
+  const printed = parseVoucherNumber(text);
+  if (!printed) return null;
+  if (stars > 0) return printed + stars * 100000;
+  return printed;
+}
 
 /** Current-year voucher. Prior-year copies (100000 and above, or a starred number) do not set the next number. */
 function liveNumber(value) {

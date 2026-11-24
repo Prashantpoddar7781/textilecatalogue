@@ -46,7 +46,9 @@ export async function allocateNextTypeBillNumber(tx, userId, transactionType, so
       where: {
         userId,
         transactionType: type,
-        orderDate: { gte: year.startDate, lte: year.endDate }
+        orderDate: { gte: year.startDate, lte: year.endDate },
+        // Prior-year copies stay at 100000 and above (112* is 100112).
+        typeBillNumber: { lt: 100000 }
       },
       _max: { typeBillNumber: true }
     });

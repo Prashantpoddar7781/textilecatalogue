@@ -59,8 +59,11 @@ export function useVoucherJump({
   const tryJump = useCallback(async (raw: string, currentField?: HTMLElement | null) => {
     const typed = parseVoucherNumber(raw);
     if (!typed) return 'next' as const;
-    const shown = parseVoucherNumber(String(shownNumber ?? '')) ?? (Number(shownNumber) || null);
-    if (currentId && shown && typed === shown) return 'next' as const;
+    const shownText = String(shownNumber ?? '');
+    const shown = parseVoucherNumber(shownText) ?? (Number(shownNumber) || null);
+    const stars = (value: string) => (value.match(/\*/g) || []).length;
+    const sameVoucher = Boolean(shown && typed === shown && stars(raw) === stars(shownText));
+    if (currentId && sameVoucher) return 'next' as const;
 
     const attempt = ++attemptRef.current;
     setJumping(true);
@@ -79,7 +82,7 @@ export function useVoucherJump({
       return 'next' as const;
     } catch (err: any) {
       if (attemptRef.current !== attempt) return 'busy' as const;
-      if (!currentId && shown && typed === shown) return 'next' as const;
+      if (!currentId && sameVoucher) return 'next' as const;
       if (err?.status === 404 && onMissing && typed) {
         onMissing(typed);
         return 'navigated' as const;

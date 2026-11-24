@@ -1,6 +1,7 @@
 import { isExpensePurchaseType } from '../constants/erpTransactionTypes.js';
 import { isChequeReturnedEntry } from '../constants/bankCashSeries.js';
 import { applyInterestFields } from './interestCalculation.js';
+import { empireVoucherLabel } from './seriesVoucherNumbers.js';
 
 export const OPENING_BANK_BALANCE = 1000000;
 
@@ -597,9 +598,8 @@ export function mapOrderToPendingBill(order, paidByOrderId, asOfValue = Date.now
   const pendingAmount = settledByEmpire ? 0 : rounded.pendingAmount;
   const billDiscount = 0;
   const billDate = order.orderDate || order.createdAt;
-  const displayNumber = order.typeBillNumber != null
-    ? String(order.typeBillNumber)
-    : String(order.invoiceNumber || order.orderNumber || order.id.slice(-6));
+  const displayNumber = empireVoucherLabel(order.typeBillNumber)
+    || String(order.invoiceNumber || order.orderNumber || order.id.slice(-6));
   const days = daysSince(billDate, asOfValue);
   const bucket = agingBucket(days);
 

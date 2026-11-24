@@ -36,6 +36,7 @@ import { partyDhara, partyGraceDays } from '../utils/partyBillingTerms';
 import { roundRupee } from '../utils/rupeeRound';
 import { billedMetres, netMetres } from '../utils/lineMetres';
 import { useVoucherJump } from '../hooks/useVoucherJump';
+import { empireVoucherLabel } from '../utils/empireVoucher';
 import { BillDiscountFields } from './BillDiscountFields';
 import { QualityFieldControl, useItemFieldOptions } from './QualityFieldControl';
 
@@ -128,9 +129,7 @@ function discountPercentOf(discount: number, taxable: number): number {
 }
 
 function plainBillNo(counter?: number | string | null) {
-  if (counter == null || counter === '') return '';
-  const numeric = Number(counter);
-  return Number.isFinite(numeric) && numeric > 0 ? String(Math.trunc(numeric)) : String(counter);
+  return empireVoucherLabel(counter);
 }
 
 let salesGstMode: 'auto' | 'local' | 'interstate' | 'none' = 'auto';
@@ -438,7 +437,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
     module: isSalesOrder ? 'sales-order' : 'sales',
     transactionType: isSalesOrder ? undefined : transactionType,
     currentId: isEditMode ? editId : null,
-    shownNumber: isSalesOrder ? (orderNo || nextOrderNo) : typeBillNumber,
+    shownNumber: isSalesOrder ? (orderNo || nextOrderNo) : empireVoucherLabel(typeBillNumber),
     onError: setError
   });
 
@@ -500,7 +499,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
           setBillDiscount(0);
         }
 
-        if (editId && (editKind === 'order' || transactionType === 'SALES ORDERS')) {
+        if (editId && (editKind === 'order' || (editKind !== 'bill' && transactionType === 'SALES ORDERS'))) {
           const { order } = await salesOrdersApi.getById(editId);
           if (cancelled) return;
           setTransactionType('SALES ORDERS');
@@ -1310,6 +1309,11 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
               : `${transactionType} bill #${no} ${isEditMode ? 'updated' : 'saved'}. Posted to ledger.`
         );
         if (!isEditMode) {
+          const next = await bankEntriesApi.getNextTypeBillNumber({ transactionType, source: 'order' }).catch(() => null);
+          if (next && result.bill.typeBillNumber != null && next.typeBillNumber === result.bill.typeBillNumber) {
+            window.location.href = `/erp/sales?edit=${result.bill.id}&kind=bill`;
+            return;
+          }
           setLineItems([blankLine(1, defaultGstRate, defaultHsnCode, toNum(dhara))]);
           setSourceSalesOrderId('');
           setSourceOrderFormId('');
@@ -1321,8 +1325,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
           setLrNo('');
           setLrDate('');
           setEinvoice(null);
-          void bankEntriesApi.getNextTypeBillNumber({ transactionType, source: 'order' })
-            .then(resultBill => setTypeBillNumber(resultBill.typeBillNumber));
+          if (next) setTypeBillNumber(next.typeBillNumber);
         }
       }
     } catch (err: any) {

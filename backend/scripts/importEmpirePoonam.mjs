@@ -763,7 +763,9 @@ async function main() {
 
     if (SALES_INVOICE.has(code) || SALES_CHALLAN.has(code) || SALES_RETURN.has(code)) {
       const customer = customerByName.get(norm(partyName));
-      const simpleNo = simpleBillNumber(bill, vno);
+      // 100112 is last year's printed 112. Keep the raw VNO so this year's 112 stays free.
+      const internal = int(vno);
+      const simpleNo = internal >= 100000 ? internal : simpleBillNumber(bill, vno);
       orders.push({
         userId,
         customerId: customer?.id || null,

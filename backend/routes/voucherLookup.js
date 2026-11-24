@@ -5,6 +5,7 @@ import { requireActiveSubscription } from '../middleware/subscription.js';
 import { isExpensePurchaseType } from '../constants/erpTransactionTypes.js';
 import { parseNoteType } from '../constants/creditDebitNoteTypes.js';
 import { parseVoucherNumber, parseVoucherText } from '../utils/parseVoucherNumber.js';
+import { storedVoucherNumber } from '../utils/seriesVoucherNumbers.js';
 import { sameSeriesNames } from '../constants/erpTransactionPostingRules.js';
 
 const router = express.Router();
@@ -37,10 +38,12 @@ router.get('/lookup', authenticateToken, requireActiveSubscription, async (req, 
 
     if (module === 'sales') {
       if (!numeric) return res.status(404).json({ error: 'No sales bill with that voucher number.' });
+      const stored = storedVoucherNumber(raw);
+      if (!stored) return res.status(404).json({ error: 'No sales bill with that voucher number.' });
       const where = {
         userId,
         manualType: 'erp_sales',
-        typeBillNumber: numeric,
+        typeBillNumber: stored,
         ...(transactionType ? { transactionType } : {})
       };
       const bill = await prisma.order.findFirst({

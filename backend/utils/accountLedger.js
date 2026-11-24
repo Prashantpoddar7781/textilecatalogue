@@ -32,6 +32,7 @@ import {
 } from '../constants/bankCashSeries.js';
 import { matchesNoteParty } from './creditDebitNotes.js';
 import { JOURNAL_TRANSACTION_TYPE } from './journalVouchers.js';
+import { empireVoucherLabel } from './seriesVoucherNumbers.js';
 import {
   COMMISSION_ACCOUNT,
   COMMISSION_TDS_ACCOUNT,
@@ -893,9 +894,9 @@ function salesSeriesForAccount(accountName) {
 
 function printedSaleBill(order) {
   const rule = getPostingRule(order?.transactionType);
-  const number = order?.typeBillNumber;
-  if (number == null || number === '') return order?.orderNumber || '-';
-  return rule?.billSuffix ? `${number}/${rule.billSuffix}` : String(number);
+  const number = empireVoucherLabel(order?.typeBillNumber);
+  if (!number) return order?.orderNumber || '-';
+  return rule?.billSuffix ? `${number}/${rule.billSuffix}` : number;
 }
 
 function saleLineGst(order) {
@@ -957,7 +958,7 @@ async function buildSaleNominalLedger(prisma, userId, accountName, { fromDate, t
       sourceType: 'order',
       sourceId: order.id,
       date,
-      voucherNumber: String(order.typeBillNumber || '-'),
+      voucherNumber: empireVoucherLabel(order.typeBillNumber) || '-',
       billNumber: billNo,
       account: party,
       particulars: remark,
@@ -974,7 +975,7 @@ async function buildSaleNominalLedger(prisma, userId, accountName, { fromDate, t
         sourceType: 'order',
         sourceId: order.id,
         date,
-        voucherNumber: String(order.typeBillNumber || '-'),
+        voucherNumber: empireVoucherLabel(order.typeBillNumber) || '-',
         billNumber: billNo,
         account: label,
         particulars: remark,
@@ -1557,7 +1558,7 @@ export async function buildCompanySelfLedger(prisma, userId, { fromDate, toDate 
     if (invoicedOrderIds.has(order.id)) continue;
     const posted = resolvePostedSaleAmount(order);
     if (posted.amount <= 0) continue;
-    const billNo = order.typeBillNumber != null ? String(order.typeBillNumber) : (order.orderNumber || order.invoiceNumber || order.id.slice(-6));
+    const billNo = empireVoucherLabel(order.typeBillNumber) || order.orderNumber || order.invoiceNumber || order.id.slice(-6);
     const goodsReturn = isSalesGoodsReturn(order.transactionType);
     const disc = resolveDiscountJournal(order.transactionType, posted.discount);
     const mainAmount = posted.amount;
@@ -1898,7 +1899,7 @@ export async function buildCustomerLedger(prisma, userId, partyName) {
     if (invoicedOrderIds.has(order.id)) continue;
     const posted = resolvePostedSaleAmount(order);
     if (posted.amount <= 0) continue;
-    const billNo = order.typeBillNumber != null ? String(order.typeBillNumber) : (order.orderNumber || order.invoiceNumber || order.id.slice(-6));
+    const billNo = empireVoucherLabel(order.typeBillNumber) || order.orderNumber || order.invoiceNumber || order.id.slice(-6);
     const goodsReturn = isSalesGoodsReturn(order.transactionType);
     const disc = resolveDiscountJournal(order.transactionType, posted.discount);
     const mainAmount = posted.amount;
@@ -2481,9 +2482,8 @@ async function resolveBillNumbers(prisma, userId, allocations) {
 
   const orderMap = new Map(orders.map(order => [
     order.id,
-    order.typeBillNumber != null
-      ? String(order.typeBillNumber)
-      : (order.orderNumber || String(order.invoiceNumber || order.id.slice(-6)))
+    empireVoucherLabel(order.typeBillNumber)
+      || order.orderNumber || String(order.invoiceNumber || order.id.slice(-6))
   ]));
   const billMap = new Map(bills.map(bill => [
     bill.id,
@@ -2532,9 +2532,8 @@ export async function getLedgerEntryDetail(prisma, userId, sourceType, sourceId)
     const posted = resolvePostedSaleAmount(order);
     const grandTotal = posted.amount;
     const discountAmount = posted.discount;
-    const billNo = order.typeBillNumber != null
-      ? String(order.typeBillNumber)
-      : (order.orderNumber || order.invoiceNumber || order.id.slice(-6));
+    const billNo = empireVoucherLabel(order.typeBillNumber)
+      || order.orderNumber || order.invoiceNumber || order.id.slice(-6);
 
     const goodsReturn = isSalesGoodsReturn(order.transactionType);
     const isDiscountLine = sourceType === 'order_discount';
@@ -2569,13 +2568,14 @@ export async function getLedgerEntryDetail(prisma, userId, sourceType, sourceId)
         { key: 'amount', label: 'Amount', align: 'right', isMoney: true }
       ],
       lineItems: lines.map(line => {
-        const rate = Number(line.retailPrice ?? line.basePrice ?? 0);
-        const qty = parseInt(line.quantity, 10) || 0;
+        const qty = Number(line.pcs ?? line.quantity) || 0;
+        const rate = Number(line.rate ?? line.retailPrice ?? line.basePrice) || 0;
+        const amount = Number(line.amount) || roundMoney(rate * qty);
         return {
-          description: line.designName || line.title || line.designCode || line.remarks || 'Item',
+          description: line.itemName || line.description || line.designName || line.screenName || line.title || 'Item',
           quantity: qty,
           rate: roundMoney(rate),
-          amount: roundMoney(rate * qty)
+          amount: roundMoney(amount)
         };
       })
     };
