@@ -630,3 +630,48 @@ export function mapOrderToPendingBill(order, paidByOrderId, asOfValue = Date.now
       : undefined
   }, order.customer || {});
 }
+
+/** Drop Empire's paid flag. saleCredit and any other book figures stay. */
+export function einvoiceRawWithoutPaid(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  if (raw.empirePaid !== true) return raw;
+  const next = { ...raw };
+  delete next.empirePaid;
+  return Object.keys(next).length ? next : null;
+}
+
+/**
+ * A bounced receipt no longer pays its bills. Empire's paid flag must not
+ * keep those bills off outstanding once no live receipt still covers them.
+ * A re-presented cheque keeps its new allocation, so that bill stays settled.
+ */
+export async function releaseBouncedBillOutstanding(prisma, userId, allocations) {
+  const ids = Array.from(new Set(
+    (Array.isArray(allocations) ? allocations : [])
+      .filter(row => row && row.billId && String(row.billType || 'order') === 'order')
+      .map(row => String(row.billId))
+  ));
+  if (!ids.length) return [];
+  const [paid, orders] = await Promise.all([
+    getPaidAmountsByOrderId(prisma, userId),
+    prisma.order.findMany({ where: { userId, id: { in: ids } } })
+  ]);
+  const released = [];
+  for (const order of orders) {
+    if (!empireMarkedSettled(order)) continue;
+    const cleared = { ...order, einvoiceRaw: einvoiceRawWithoutPaid(order.einvoiceRaw) };
+    const pending = mapOrderToPendingBill(cleared, paid).pendingAmount;
+    if (!(pending > 0.001)) continue;
+    await prisma.order.update({
+      where: { id: order.id },
+      data: { einvoiceRaw: cleared.einvoiceRaw }
+    });
+    released.push({
+      id: order.id,
+      bill: order.typeBillNumber,
+      party: order.buyerName,
+      pending
+    });
+  }
+  return released;
+}

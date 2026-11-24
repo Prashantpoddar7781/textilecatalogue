@@ -15,6 +15,7 @@ import {
   isPurchaseReturn,
   applyBillRoundOff,
   mapOrderToPendingBill,
+  releaseBouncedBillOutstanding,
   mapPurchaseBillToPendingBill,
   mapWorkReceiptToPendingBill,
   isWorkReceiptBill,
@@ -1459,6 +1460,7 @@ router.post('/:id/cheque-return', authenticateToken, requireActiveSubscription, 
       return { entry, payment, deposit };
     });
 
+    await releaseBouncedBillOutstanding(prisma, userId, existing.billAllocations);
     res.json(result);
   } catch (error) {
     next(error);
