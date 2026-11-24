@@ -1864,28 +1864,48 @@ export async function buildCompanySelfLedger(prisma, userId, { fromDate, toDate 
   );
 }
 
-export async function buildCustomerLedger(prisma, userId, partyName) {
+export async function buildCustomerLedger(prisma, userId, partyName, options = {}) {
+  const scope = options.exactName ? String(partyName || '').trim() : '';
   const [orders, invoices, bankEntries, notes] = await Promise.all([
     prisma.order.findMany({
       where: {
         userId,
         status: 'completed',
-        OR: [{ transactionType: null }, { transactionType: { not: 'SALES ORDERS' } }]
+        AND: [
+          { OR: [{ transactionType: null }, { transactionType: { not: 'SALES ORDERS' } }] },
+          ...(scope ? [{
+            OR: [
+              { buyerName: { equals: scope, mode: 'insensitive' } },
+              { customer: { is: { organizationName: { equals: scope, mode: 'insensitive' } } } }
+            ]
+          }] : [])
+        ]
       },
       include: { customer: true },
       orderBy: [{ orderDate: 'asc' }, { createdAt: 'asc' }]
     }),
     prisma.salesInvoice.findMany({
-      where: { userId },
+      where: scope
+        ? { userId, customer: { is: { organizationName: { equals: scope, mode: 'insensitive' } } } }
+        : { userId },
       include: { customer: true, order: { select: { id: true, buyerName: true, typeBillNumber: true, transactionType: true } } },
       orderBy: [{ invoiceDate: 'asc' }, { createdAt: 'asc' }]
     }),
     prisma.bankEntry.findMany({
-      where: { userId, partyType: 'customer' },
+      where: {
+        userId,
+        partyType: 'customer',
+        ...(scope ? { partyName: { equals: scope, mode: 'insensitive' } } : {})
+      },
       orderBy: [{ entryDate: 'asc' }, { createdAt: 'asc' }]
     }),
     prisma.creditDebitNote.findMany({
-      where: { userId, noteSide: 'sales', status: { not: 'cancelled' } },
+      where: {
+        userId,
+        noteSide: 'sales',
+        status: { not: 'cancelled' },
+        ...(scope ? { partyName: { equals: scope, mode: 'insensitive' } } : {})
+      },
       orderBy: [{ noteDate: 'asc' }, { createdAt: 'asc' }]
     })
   ]);
@@ -1994,7 +2014,16 @@ export async function buildCustomerLedger(prisma, userId, partyName) {
   }
 
   const customerJournals = await prisma.journalVoucher.findMany({
-    where: { userId, status: { not: 'cancelled' } },
+    where: {
+      userId,
+      status: { not: 'cancelled' },
+      ...(scope ? {
+        OR: [
+          { partyName: { equals: scope, mode: 'insensitive' } },
+          { oppositeAccount: { equals: scope, mode: 'insensitive' } }
+        ]
+      } : {})
+    },
     orderBy: [{ voucherDate: 'asc' }, { createdAt: 'asc' }]
   });
   pushJournalLedgerRows(rawEntries, customerJournals, { partyName, paidByBill });
@@ -2032,7 +2061,7 @@ export async function buildCustomerLedger(prisma, userId, partyName) {
   };
 }
 
-export async function buildSupplierLedger(prisma, userId, supplierId) {
+export async function buildSupplierLedger(prisma, userId, supplierId, options = {}) {
   const supplier = await prisma.supplier.findFirst({
     where: { id: supplierId, userId },
     include: {
@@ -2041,14 +2070,24 @@ export async function buildSupplierLedger(prisma, userId, supplierId) {
   });
 
   if (!supplier) return null;
+  const scope = options.exactName ? String(supplier.name || '').trim() : '';
 
   const [bankEntries, notes] = await Promise.all([
     prisma.bankEntry.findMany({
-      where: { userId, partyType: 'supplier' },
+      where: {
+        userId,
+        partyType: 'supplier',
+        ...(scope ? { partyName: { equals: scope, mode: 'insensitive' } } : {})
+      },
       orderBy: [{ entryDate: 'asc' }, { createdAt: 'asc' }]
     }),
     prisma.creditDebitNote.findMany({
-      where: { userId, noteSide: 'purchase', status: { not: 'cancelled' } },
+      where: {
+        userId,
+        noteSide: 'purchase',
+        status: { not: 'cancelled' },
+        ...(scope ? { partyName: { equals: scope, mode: 'insensitive' } } : {})
+      },
       orderBy: [{ noteDate: 'asc' }, { createdAt: 'asc' }]
     })
   ]);
@@ -2210,7 +2249,8 @@ export async function buildSupplierLedger(prisma, userId, supplierId) {
   const millReceipts = await prisma.millReceipt.findMany({
     where: {
       userId,
-      status: { not: 'cancelled' }
+      status: { not: 'cancelled' },
+      ...(scope ? { millName: { equals: scope, mode: 'insensitive' } } : {})
     },
     orderBy: [{ receiptDate: 'asc' }, { createdAt: 'asc' }]
   });
@@ -2288,7 +2328,11 @@ export async function buildSupplierLedger(prisma, userId, supplierId) {
   }
 
   const workReceipts = await prisma.workReceipt.findMany({
-    where: { userId, status: { not: 'cancelled' } },
+    where: {
+      userId,
+      status: { not: 'cancelled' },
+      ...(scope ? { partyName: { equals: scope, mode: 'insensitive' } } : {})
+    },
     orderBy: [{ receiptDate: 'asc' }, { createdAt: 'asc' }]
   });
 
@@ -2378,7 +2422,16 @@ export async function buildSupplierLedger(prisma, userId, supplierId) {
   }
 
   const supplierJournals = await prisma.journalVoucher.findMany({
-    where: { userId, status: { not: 'cancelled' } },
+    where: {
+      userId,
+      status: { not: 'cancelled' },
+      ...(scope ? {
+        OR: [
+          { partyName: { equals: scope, mode: 'insensitive' } },
+          { oppositeAccount: { equals: scope, mode: 'insensitive' } }
+        ]
+      } : {})
+    },
     orderBy: [{ voucherDate: 'asc' }, { createdAt: 'asc' }]
   });
   pushJournalLedgerRows(rawEntries, supplierJournals, { partyName: supplier.name, paidByBill });

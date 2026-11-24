@@ -91,7 +91,11 @@ export async function getPendingJournalVouchers(prismaClient, userId, partyName,
   if (!partyName) return [];
   const [vouchers, paidById] = await Promise.all([
     prismaClient.journalVoucher.findMany({
-      where: { userId, status: { not: 'cancelled' } },
+      where: {
+        userId,
+        status: { not: 'cancelled' },
+        partyName: { contains: String(partyName).trim(), mode: 'insensitive' }
+      },
       orderBy: [{ voucherDate: 'asc' }, { createdAt: 'asc' }]
     }),
     getPaidAmountsByJournalId(prismaClient, userId, excludeEntryId ? { excludeEntryId } : {})

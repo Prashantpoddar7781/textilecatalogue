@@ -191,7 +191,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
   const [commissionTouched, setCommissionTouched] = useState(false);
   const [bankAccounts, setBankAccounts] = useState<Array<{ name: string; balance: number; accountType?: string }>>([]);
   const [bankBalance, setBankBalance] = useState(0);
-  const [partyBalance, setPartyBalance] = useState(0);
+  const [partyBalance, setPartyBalance] = useState<number | null>(0);
   const [loading, setLoading] = useState(false);
   const [loadingBills, setLoadingBills] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -212,6 +212,8 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
   voucherValueRef.current = form.voucherNumber;
   const nextBySeriesRef = useRef<Record<string, string>>({});
   const formEpoch = useRef(0);
+  const loadSeq = useRef(0);
+  const loadedPartyKey = useRef('');
   const openingVoucher = useRef(false);
   const [quickBillNo, setQuickBillNo] = useState('');
   const [billType, setBillType] = useState(defaultBillTypeForEntry(bankCashEntryType(DEFAULT_BANK_CASH_SERIES)));
@@ -321,21 +323,6 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
     }
   };
 
-  const refreshBalances = useCallback(async (bankName?: string, partyName?: string, partyType?: string) => {
-    try {
-      const { bankBalance: nextBankBalance, partyBalance: nextPartyBalance } = await bankEntriesApi.getBalances({
-        bankName: bankName || undefined,
-        partyName: partyName || undefined,
-        partyType: (partyType as any) || 'customer'
-      });
-      setBankBalance(nextBankBalance);
-      setPartyBalance(nextPartyBalance);
-    } catch {
-      setBankBalance(0);
-      setPartyBalance(0);
-    }
-  }, []);
-
   const keepPickedBill = (bill: BankPendingBill, picked: BankPendingBill) => {
     const discountAmount = Number(picked.discountAmount) || 0;
     const discountPercent = Number(picked.discountPercent) || 0;
@@ -356,8 +343,10 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
   const loadPendingBills = useCallback(async (
     partyName: string,
     partyType: string,
-    excludeEntryId?: string | null
+    excludeEntryId?: string | null,
+    isCurrent: () => boolean = () => true
   ) => {
+    if (!isCurrent()) return;
     if (!partyName.trim()) {
       setPendingBills([]);
       setQuickBillNo('');
@@ -370,6 +359,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
         partyType: partyType as any,
         excludeEntryId: excludeEntryId || undefined
       });
+      if (!isCurrent()) return;
       const seeded = (bills || [])
         .map(bill => ({
           ...bill,
@@ -418,10 +408,11 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
         });
       }
     } catch (err: any) {
+      if (!isCurrent()) return;
       setPendingBills([]);
       setError(err.message || 'Could not load pending bills.');
     } finally {
-      setLoadingBills(false);
+      if (isCurrent()) setLoadingBills(false);
     }
   }, [restoreAllocations]);
 
@@ -532,17 +523,52 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
   };
 
   useEffect(() => {
-    const resolvedType = partyTypeForName(form.partyName, form.entryType) || form.partyType;
-    if (form.partyName.trim() && resolvedType && resolvedType !== form.partyType) {
+    const namedType = partyTypeForName(form.partyName, form.entryType);
+    const resolvedType = namedType || form.partyType;
+    const partyName = form.partyName.trim();
+    if (partyName && namedType && namedType !== form.partyType) {
+      loadSeq.current += 1;
       setForm(current => (
-        current.partyName === form.partyName && current.partyType !== resolvedType
-          ? { ...current, partyType: resolvedType }
+        current.partyName === form.partyName && current.partyType !== namedType
+          ? { ...current, partyType: namedType }
           : current
       ));
+      return;
     }
-    void refreshBalances(form.bankName, form.partyName, resolvedType);
-    void loadPendingBills(form.partyName, resolvedType, editingId);
-  }, [form.bankName, form.partyName, form.partyType, form.entryType, editingId, accountParties, completedParties, purchaseParties, refreshBalances, loadPendingBills]);
+
+    const partyKey = `${partyName.toLowerCase()}|${resolvedType}`;
+    if (partyKey !== loadedPartyKey.current) {
+      loadedPartyKey.current = partyKey;
+      setPartyBalance(partyName ? null : 0);
+      setPendingBills([]);
+      setLoadingBills(Boolean(partyName));
+    }
+
+    const seq = ++loadSeq.current;
+    const exact = partyOptions.some(name => name.trim().toLowerCase() === partyName.toLowerCase());
+    const delay = !partyName || exact ? 0 : 350;
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const result = await bankEntriesApi.getBalances({
+            bankName: form.bankName || undefined,
+            partyName: partyName || undefined,
+            partyType: (resolvedType as 'customer' | 'supplier' | 'other') || 'customer'
+          });
+          if (loadSeq.current !== seq) return;
+          setBankBalance(result.bankBalance);
+          setPartyBalance(result.partyBalance);
+        } catch {
+          if (loadSeq.current !== seq) return;
+          setBankBalance(0);
+          setPartyBalance(0);
+        }
+      })();
+      void loadPendingBills(partyName, resolvedType, editingId, () => loadSeq.current === seq);
+    }, delay);
+
+    return () => window.clearTimeout(timer);
+  }, [form.bankName, form.partyName, form.partyType, form.entryType, editingId, accountParties, completedParties, purchaseParties, partyOptions, loadPendingBills]);
 
   const partyDhara = () => {
     const key = form.partyName.trim().toLowerCase();
@@ -722,13 +748,9 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
     const deductSum = roundMoneyLocal(args.deductSum);
 
     if (args.isDeduct) {
-      if (billSum <= 0) {
-        alert(
-          'Select the pending bill(s) first.\n\n' +
-          'Then Type U (Unadj), C (credit note) or D (debit note) to bring Net Bill Amt down to Rec/Paid Amt.\n\n' +
-          'To record money without any bill, leave Bill No. empty and press Save (creates Unadj).'
-        );
-        return null;
+      // A return, unadj, or note can be picked before any bill. Rec/Paid Amt follows the net.
+      if (!amountTouched || billSum <= 0) {
+        return pending;
       }
       const needed = roundMoneyLocal(Math.max(billSum - deductSum - received, 0));
       if (needed <= 0) {
@@ -1415,7 +1437,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                       <option key={name} value={name} />
                     ))}
                   </datalist>
-                  <p className="mt-1 text-xs font-bold text-amber-800">Cur. Bal.: {formatPartyBalance(partyBalance, form.partyType)}</p>
+                  <p className="mt-1 text-xs font-bold text-amber-800">Cur. Bal.: {partyBalance == null ? '…' : formatPartyBalance(partyBalance, form.partyType)}</p>
                 </div>
 
                 <div>

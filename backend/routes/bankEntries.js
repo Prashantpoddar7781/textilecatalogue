@@ -25,6 +25,7 @@ import {
   roundMoney
 } from '../utils/orderBilling.js';
 import { applyInterestFields } from '../utils/interestCalculation.js';
+import { buildCustomerLedger, buildSupplierLedger } from '../utils/accountLedger.js';
 import {
   ERP_TRANSACTION_TYPES,
   normalizeTransactionType,
@@ -165,9 +166,19 @@ async function getBankBalance(userId, bankName) {
   return roundMoneyLocal(OPENING_BANK_BALANCE + movement);
 }
 
-async function getCompletedOrders(userId) {
+async function getCompletedOrders(userId, partyName = '') {
+  const name = String(partyName || '').trim();
   return prisma.order.findMany({
-    where: { userId, status: 'completed' },
+    where: {
+      userId,
+      status: 'completed',
+      ...(name ? {
+        OR: [
+          { buyerName: { contains: name, mode: 'insensitive' } },
+          { customer: { is: { organizationName: { contains: name, mode: 'insensitive' } } } }
+        ]
+      } : {})
+    },
     include: { customer: true },
     orderBy: [{ invoiceNumber: 'asc' }, { createdAt: 'asc' }]
   });
@@ -253,7 +264,7 @@ async function getCompletedOrderParties(userId) {
 async function getPendingOrderBills(userId, partyName, transactionType, excludeEntryId = null) {
   const paidOpts = excludeEntryId ? { excludeEntryId } : {};
   const [orders, paidByOrderId, paidByInvoiceId] = await Promise.all([
-    getCompletedOrders(userId),
+    getCompletedOrders(userId, partyName),
     getPaidAmountsByOrderId(prisma, userId, paidOpts),
     getPaidAmountsByBillType(prisma, userId, 'sales_invoice', paidOpts)
   ]);
@@ -313,9 +324,14 @@ async function getPendingOrderBills(userId, partyName, transactionType, excludeE
     .sort(compareOldestOutstanding);
 }
 
-async function getPurchaseBillRecords(userId) {
+async function getPurchaseBillRecords(userId, partyName = '') {
+  const name = String(partyName || '').trim();
   return prisma.purchaseBill.findMany({
-    where: { userId, status: 'posted' },
+    where: {
+      userId,
+      status: 'posted',
+      ...(name ? { supplier: { is: { name: { contains: name, mode: 'insensitive' } } } } : {})
+    },
     include: { supplier: true },
     orderBy: [{ billDate: 'asc' }, { createdAt: 'asc' }]
   });
@@ -411,6 +427,7 @@ async function getPendingUnadjPayments(userId, partyName, partyType, excludeEntr
       where: {
         userId,
         entryType,
+        ...(partyName ? { partyName: { contains: String(partyName).trim(), mode: 'insensitive' } } : {}),
         ...(excludeEntryId ? { id: { not: excludeEntryId } } : {})
       },
       select: {
@@ -497,7 +514,11 @@ async function getPendingUnadjPayments(userId, partyName, partyType, excludeEntr
 async function getPendingWorkReceiptBills(userId, partyName, excludeEntryId = null) {
   const [receipts, paidByReceiptId] = await Promise.all([
     prisma.workReceipt.findMany({
-      where: { userId, status: { not: 'cancelled' } },
+      where: {
+        userId,
+        status: { not: 'cancelled' },
+        ...(partyName ? { partyName: { contains: String(partyName).trim(), mode: 'insensitive' } } : {})
+      },
       select: {
         id: true,
         partyName: true,
@@ -528,7 +549,7 @@ async function getPendingWorkReceiptBills(userId, partyName, excludeEntryId = nu
 
 async function getPendingPurchaseBills(userId, partyName, transactionType, excludeEntryId = null) {
   const [bills, paidByBillId] = await Promise.all([
-    getPurchaseBillRecords(userId),
+    getPurchaseBillRecords(userId, partyName),
     getPaidAmountsByBillType(prisma, userId, 'purchase_bill', excludeEntryId ? { excludeEntryId } : {})
   ]);
 
@@ -545,7 +566,7 @@ async function getPendingPurchaseBills(userId, partyName, transactionType, exclu
 
 async function getPendingSalesReturns(userId, partyName, excludeEntryId = null) {
   const [orders, paidByOrderId] = await Promise.all([
-    getCompletedOrders(userId),
+    getCompletedOrders(userId, partyName),
     getPaidAmountsByOrderId(prisma, userId, excludeEntryId ? { excludeEntryId } : {})
   ]);
   return orders
@@ -562,7 +583,7 @@ async function getPendingSalesReturns(userId, partyName, excludeEntryId = null) 
 
 async function getPendingPurchaseReturns(userId, partyName, excludeEntryId = null) {
   const [bills, paidByBillId] = await Promise.all([
-    getPurchaseBillRecords(userId),
+    getPurchaseBillRecords(userId, partyName),
     getPaidAmountsByBillType(prisma, userId, 'purchase_bill', excludeEntryId ? { excludeEntryId } : {})
   ]);
   return bills
@@ -585,29 +606,35 @@ function compareOldestOutstanding(a, b) {
   return String(a?.billNumber || '').localeCompare(String(b?.billNumber || ''), undefined, { numeric: true });
 }
 
-function signedPendingAmount(item) {
-  const amount = roundMoney(item?.pendingAmount || 0);
-  return String(item?.adjustDirection || '').toLowerCase() === 'deduct' ? -amount : amount;
+const partyBalanceInflight = new Map();
+
+async function computePartyBalance(userId, partyName, partyType) {
+  if (partyType === 'supplier' || partyType === 'other') {
+    const supplier = await prisma.supplier.findFirst({
+      where: { userId, name: { equals: partyName, mode: 'insensitive' } },
+      select: { id: true }
+    });
+    if (supplier) {
+      const ledger = await buildSupplierLedger(prisma, userId, supplier.id, { exactName: true });
+      return roundMoneyLocal(Number(ledger?.runningBalance) || 0);
+    }
+    if (partyType === 'supplier') return 0;
+  }
+  const ledger = await buildCustomerLedger(prisma, userId, partyName, { exactName: true });
+  return roundMoneyLocal(Number(ledger?.runningBalance) || 0);
 }
 
 async function getPartyBalance(userId, partyName, partyType) {
-  if (!partyName) return 0;
-  // Empire: Cur. Bal. = pending bills − unadj − deduct notes/returns + add notes.
-  const [bills, unadjusted, notes, returns, journals, workBills] = await Promise.all([
-    partyType === 'supplier'
-      ? getPendingPurchaseBills(userId, partyName)
-      : getPendingOrderBills(userId, partyName),
-    getPendingUnadjPayments(userId, partyName, partyType),
-    getPendingCreditDebitNotes(prisma, userId, partyName, partyType),
-    partyType === 'supplier'
-      ? getPendingPurchaseReturns(userId, partyName)
-      : getPendingSalesReturns(userId, partyName),
-    getPendingJournalVouchers(prisma, userId, partyName, partyType),
-    partyType === 'supplier' ? getPendingWorkReceiptBills(userId, partyName) : []
-  ]);
-  const pending = [...bills, ...returns, ...notes, ...journals, ...workBills].reduce((sum, item) => sum + signedPendingAmount(item), 0);
-  const unadjPending = unadjusted.reduce((sum, row) => sum + (row.pendingAmount || 0), 0);
-  return roundMoneyLocal(pending - unadjPending);
+  const name = String(partyName || '').trim();
+  if (!name) return 0;
+  const key = `${userId}|${partyType}|${name.toLowerCase()}`;
+  const existing = partyBalanceInflight.get(key);
+  if (existing) return existing;
+  const job = computePartyBalance(userId, name, partyType).finally(() => {
+    partyBalanceInflight.delete(key);
+  });
+  partyBalanceInflight.set(key, job);
+  return job;
 }
 
 router.get('/completed-order-parties', authenticateToken, requireActiveSubscription, async (req, res, next) => {
