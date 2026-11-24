@@ -852,6 +852,17 @@ export const salesOrdersApi = {
   getItems: async () => {
     return request<{ items: import('../types').SalesItemMaster[] }>('/sales-orders/items');
   },
+  getItemOptions: async () => {
+    return request<{ options: {
+      packing: string[];
+      greyQuality: string[];
+      type: string[];
+      itemType: string[];
+      screenSeries: string[];
+      category: string[];
+      unit: string[];
+    } }>('/sales-orders/item-options');
+  },
   createItem: async (body: Record<string, unknown>) => {
     return request<{ item: import('../types').SalesItemMaster }>('/sales-orders/items', {
       method: 'POST',

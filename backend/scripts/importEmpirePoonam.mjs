@@ -20,6 +20,7 @@ import { repairEmpireBankAllocations } from './repairEmpireBankAllocations.mjs';
 import { divertPoonamFinishSales, linkPoonamFinishSalesOrders } from './repairSalesSeriesMove.mjs';
 import { repairPartyStatesFromGstin, repairWorkDespatchLinks } from './repairEmpireWorkLinks.mjs';
 import { getStateCodeFromName, getStateFromGstin } from '../utils/gstCalculation.js';
+import { qualItemFields, replaceItemFieldOptions } from '../utils/itemFieldOptions.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.join(here, '..', '.env') });
@@ -548,26 +549,34 @@ async function main() {
     const key = `${norm(name)}|${norm(mainScreen)}`;
     if (seenItems.has(key)) continue;
     seenItems.add(key);
-    const cloth = text(row.CLOTHTYPE, 40).toUpperCase();
+    const fields = qualItemFields(row);
     items.push({
       userId,
       name,
       mainScreen,
-      packing: text(row.PACKING, 40) || 'NAKED',
+      packing: fields.packing,
       cut: num(row.CUT),
-      finishType: cloth.includes('GREY') ? 'GREY' : 'FINISH',
-      itemType: text(row.category, 40) || 'SAREE',
-      category: text(row.category, 40) || null,
-      unit: text(row.UNIT, 20) || 'PCS',
+      finishType: fields.finishType,
+      itemType: fields.itemType,
+      screenSeries: fields.screenSeries,
+      category: fields.category,
+      unit: fields.unit,
       sellingRate: num(row.SELL1),
       rate2: num(row.SELL2),
       rate3: num(row.SELL3),
       hsnSac: text(row.hsn_code, 20) || null,
       gstRate: num(row.GSTRATE) || round(num(row.VATRATE) + num(row.ADD_VATRATE)),
-      greyQuality: text(row.qcode, 40) || null
+      greyQuality: fields.greyQuality
     });
   }
   await batches(items, 200, (rows) => prisma.salesItemMaster.createMany({ data: rows }));
+  const optionCounts = await replaceItemFieldOptions(prisma, userId, {
+    categories: readTsv('category'),
+    packings: readTsv('packing'),
+    screens: readTsv('screencomp'),
+    quals
+  });
+  console.log('Item dropdowns', optionCounts);
 
   function priceBasis(pcs, mts, rate, amount, unit) {
     const piece = pcs * rate;

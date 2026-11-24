@@ -3,6 +3,7 @@ import { X } from 'lucide-react';
 import { getGstDefaultsForTransactionType } from '../constants/erpTransactionTypes';
 import { salesOrdersApi } from '../services/api';
 import { SalesItemMaster } from '../types';
+import { QualityFieldControl, useItemFieldOptions } from './QualityFieldControl';
 
 interface Props {
   open: boolean;
@@ -17,7 +18,6 @@ interface Props {
 
 const inputClass = 'w-full rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-sm font-semibold outline-none focus:border-indigo-400';
 const labelClass = 'mb-1 block text-[10px] font-black uppercase tracking-wide text-gray-500';
-const numberKeys = ['cut', 'sellingRate', 'rate2', 'rate3', 'workCut', 'gstRate'];
 
 const blank = (name: string, preset?: string) => {
   const kind = preset === 'grey' ? 'grey' : 'finish';
@@ -74,6 +74,7 @@ export const QualityInformationDialog: React.FC<Props> = ({
   const [form, setForm] = useState(() => editItem ? fromItem(editItem) : blank(initialName, preset));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const fieldOptions = useItemFieldOptions();
 
   useEffect(() => {
     if (!open) return;
@@ -131,14 +132,12 @@ export const QualityInformationDialog: React.FC<Props> = ({
           ] as const).map(([label, key]) => (
             <label key={key}>
               <span className={labelClass}>{label}</span>
-              <input
+              <QualityFieldControl
+                field={key}
                 className={inputClass}
-                type={numberKeys.includes(key) ? 'number' : 'text'}
                 value={form[key]}
-                onChange={e => setForm(prev => ({
-                  ...prev,
-                  [key]: e.target.type === 'number' ? (Number(e.target.value) || 0) : e.target.value
-                }))}
+                options={fieldOptions}
+                onChange={next => setForm(prev => ({ ...prev, [key]: next }))}
               />
             </label>
           ))}

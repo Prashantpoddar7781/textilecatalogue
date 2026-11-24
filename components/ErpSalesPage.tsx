@@ -37,6 +37,7 @@ import { roundRupee } from '../utils/rupeeRound';
 import { billedMetres, netMetres } from '../utils/lineMetres';
 import { useVoucherJump } from '../hooks/useVoucherJump';
 import { BillDiscountFields } from './BillDiscountFields';
+import { QualityFieldControl, useItemFieldOptions } from './QualityFieldControl';
 
 interface Props {
   onBack: () => void;
@@ -347,6 +348,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [typeBillNumber, setTypeBillNumber] = useState<number | null>(null);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [items, setItems] = useState<SalesItemMaster[]>([]);
+  const itemFieldOptions = useItemFieldOptions();
   const [pendingOrders, setPendingOrders] = useState<SalesOrder[]>([]);
   const [challanHits, setChallanHits] = useState<SalesOrder[]>([]);
   const [challanQuery, setChallanQuery] = useState('');
@@ -2154,14 +2156,12 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
               ].map(([label, key]) => (
                 <label key={key}>
                   <span className={labelClass}>{label}</span>
-                  <input
+                  <QualityFieldControl
+                    field={key}
                     className={inputClass}
-                    type={['cut', 'sellingRate', 'rate2', 'rate3', 'workCut', 'gstRate'].includes(key) ? 'number' : 'text'}
                     value={(itemForm as any)[key]}
-                    onChange={e => setItemForm(prev => ({
-                      ...prev,
-                      [key]: e.target.type === 'number' ? toNum(e.target.value) : e.target.value
-                    }))}
+                    options={itemFieldOptions}
+                    onChange={next => setItemForm(prev => ({ ...prev, [key]: next }))}
                   />
                 </label>
               ))}

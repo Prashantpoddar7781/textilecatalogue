@@ -55,6 +55,7 @@ model User {
   workReceipts            WorkReceipt[]
   salesOrders             SalesOrder[]
   salesItemMasters        SalesItemMaster[]
+  itemFieldOptions        ItemFieldOption[]
   gstPortalStatements     GstPortalStatement[]
   gstReconciliations      GstReconciliation[]
 }
@@ -451,6 +452,19 @@ model SalesItemMaster {
   @@index([userId])
   @@index([mainScreen])
   @@index([name])
+}
+
+/// Dropdown lists for Quality Information. Empire keeps these off the item row.
+model ItemFieldOption {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  field     String
+  name      String
+  createdAt DateTime @default(now())
+
+  @@unique([userId, field, name])
+  @@index([userId, field])
 }
 
 model OrderDraft {

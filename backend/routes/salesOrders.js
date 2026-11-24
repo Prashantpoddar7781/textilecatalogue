@@ -316,6 +316,60 @@ router.get('/meta', authenticateToken, requireActiveSubscription, async (req, re
   }
 });
 
+router.get('/item-options', authenticateToken, requireActiveSubscription, async (req, res, next) => {
+  try {
+    const userId = req.user.userId;
+    const [saved, items] = await Promise.all([
+      prisma.itemFieldOption.findMany({ where: { userId }, select: { field: true, name: true } }),
+      prisma.salesItemMaster.findMany({
+        where: { userId },
+        select: {
+          packing: true,
+          greyQuality: true,
+          finishType: true,
+          itemType: true,
+          screenSeries: true,
+          category: true,
+          unit: true
+        }
+      })
+    ]);
+    const lists = {
+      packing: new Set(),
+      greyQuality: new Set(),
+      type: new Set(),
+      itemType: new Set(),
+      screenSeries: new Set(),
+      category: new Set(),
+      unit: new Set()
+    };
+    const add = (field, value) => {
+      const name = String(value || '').replace(/\s+/g, ' ').trim();
+      if (!name || name === '-' || !lists[field]) return;
+      lists[field].add(name);
+    };
+    for (const row of saved) add(row.field, row.name);
+    for (const item of items) {
+      add('packing', item.packing);
+      add('greyQuality', item.greyQuality);
+      add('type', item.finishType);
+      add('itemType', item.itemType);
+      add('screenSeries', item.screenSeries);
+      add('category', item.category);
+      add('unit', item.unit);
+    }
+    add('type', 'FINISH');
+    add('type', 'GREY');
+    const options = {};
+    for (const [field, names] of Object.entries(lists)) {
+      options[field] = [...names].sort((a, b) => a.localeCompare(b));
+    }
+    res.json({ options });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.get('/items', authenticateToken, requireActiveSubscription, async (req, res, next) => {
   try {
     const items = await prisma.salesItemMaster.findMany({
