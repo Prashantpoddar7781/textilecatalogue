@@ -466,6 +466,25 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const billNet = isSalesOrder ? totals.net : roundRupee(totals.net);
   const roundOff = round2(billNet - totals.net);
   const lineDiscount = round2(lineItems.reduce((sum, line) => sum + toNum(line.discountAmount), 0));
+  const billAddLess = round2(lineItems.reduce((sum, line) => sum + toNum(line.manualAddLess), 0));
+  const billAddRemark = lineItems.map(line => String(line.addRemark || '').trim()).filter(Boolean).join(', ');
+  const setBillAddLess = (remark: string, amount: number) => {
+    setLineItems(prev => {
+      let target = -1;
+      for (let i = prev.length - 1; i >= 0; i -= 1) {
+        if (toNum(prev[i].amount) !== 0 || String(prev[i].itemName || prev[i].screenName || '').trim()) {
+          target = i;
+          break;
+        }
+      }
+      if (target < 0) target = Math.max(prev.length - 1, 0);
+      return prev.map((line, index) => calcLine({
+        ...line,
+        manualAddLess: index === target ? amount : 0,
+        addRemark: index === target ? remark : ''
+      }, businessState, state));
+    });
+  };
   const shownDiscount = !isSalesOrder && lineDiscount > 0.5 ? lineDiscount : (!isSalesOrder ? billDiscount : 0);
   const impliedDiscPct = !isSalesOrder && lineDiscount <= 0.5 ? discountPercentOf(billDiscount, totals.amount) : 0;
   const netAfterDiscount = lineDiscount > 0.5 ? billNet : round2(billNet - shownDiscount);
@@ -1776,8 +1795,8 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
                 <thead className="border-b bg-gray-50 text-[10px] uppercase text-gray-500">
                   <tr>
                     {(isSalesOrder
-                      ? ['#', 'Main Screen', 'HSN', 'Bundles', 'Screen Name', 'Packing', 'Unit', 'PCS', 'Cut', 'MTS/Qty', 'Net Mtrs', 'Rate', 'Remark', 'Add/Less', 'Amount', 'Less Fold', 'R.D.', 'Disc %', 'IGST %', 'SGST %', 'CGST/IGST Amt', '']
-                      : ['#', 'Ref', 'Item Name', 'HSN', 'Bundles', 'Design No', 'Packing', 'Unit', 'PCS', 'Cut', 'MTS/Qty', 'Net Mtrs', 'Rate', 'Remark', 'Add/Less', 'Amount', 'Less Fold', 'Disc %', 'GST %', 'Tax', 'Net', '']
+                      ? ['#', 'Main Screen', 'HSN', 'Bundles', 'Screen Name', 'Packing', 'Unit', 'PCS', 'Cut', 'MTS/Qty', 'Net Mtrs', 'Rate', 'Amount', 'Less Fold', 'R.D.', 'Disc %', 'IGST %', 'SGST %', 'CGST/IGST Amt', '']
+                      : ['#', 'Ref', 'Item Name', 'HSN', 'Bundles', 'Design No', 'Packing', 'Unit', 'PCS', 'Cut', 'MTS/Qty', 'Net Mtrs', 'Rate', 'Amount', 'Less Fold', 'Disc %', 'GST %', 'Tax', 'Net', '']
                     ).map(head => <th key={head || 'x'} className="px-2 py-2 font-black">{head}</th>)}
                   </tr>
                 </thead>
@@ -1845,8 +1864,6 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
                       <td className="px-1 py-1.5"><input className={inputClass} type="number" value={line.mtsQty || ''} onChange={e => updateLine(index, 'mtsQty', toNum(e.target.value))} /></td>
                       <td className="px-2 py-1.5 text-right font-semibold">{netMetres(line.mtsQty, line.lessFold).toFixed(2)}</td>
                       <td className="px-1 py-1.5"><input className={inputClass} type="number" value={line.rate || ''} onChange={e => updateLine(index, 'rate', toNum(e.target.value))} /></td>
-                      <td className="px-1 py-1.5"><input className={`${inputClass} min-w-[5.5rem]`} placeholder="Pouch" value={line.addRemark || ''} onChange={e => updateLine(index, 'addRemark', e.target.value)} /></td>
-                      <td className="px-1 py-1.5"><input className={inputClass} type="number" value={line.manualAddLess || ''} onChange={e => updateLine(index, 'manualAddLess', toNum(e.target.value))} /></td>
                       <td className="px-2 py-1.5 text-right font-bold">{round2(toNum(line.amount)).toFixed(2)}</td>
                       <td className="px-1 py-1.5"><input className={inputClass} type="number" value={toNum(line.lessFold) || ''} onChange={e => updateLine(index, 'lessFold', toNum(e.target.value))} /></td>
                       {isSalesOrder ? (
@@ -1887,14 +1904,33 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
                     <td className="px-2 py-2 text-right">{totals.mts.toFixed(2)}</td>
                     <td className="px-2 py-2 text-right">{totals.netMts.toFixed(2)}</td>
                     <td />
-                    <td />
-                    <td />
                     <td className="px-2 py-2 text-right">{totals.amount.toFixed(2)}</td>
                     {isSalesOrder && <td />}
                     <td colSpan={isSalesOrder ? 4 : 3} className="px-2 py-2 text-right">Taxable {totals.taxable.toFixed(2)}</td>
                     <td className="px-2 py-2 text-right text-indigo-800">{(isSalesOrder ? totals.tax : billNet).toFixed(2)}</td>
                     <td />
                     {!isSalesOrder && <td />}
+                  </tr>
+                  <tr className="bg-white font-semibold">
+                    <td colSpan={14} className="px-2 py-2 text-right uppercase text-gray-500">Remark</td>
+                    <td colSpan={3} className="px-1 py-1.5">
+                      <input
+                        className={inputClass}
+                        placeholder="Pouch"
+                        value={billAddRemark}
+                        onChange={e => setBillAddLess(e.target.value, billAddLess)}
+                      />
+                    </td>
+                    <td className="px-2 py-2 text-right uppercase text-gray-500">Add/Less</td>
+                    <td className="px-1 py-1.5">
+                      <input
+                        className={inputClass}
+                        type="number"
+                        value={billAddLess || ''}
+                        onChange={e => setBillAddLess(billAddRemark, toNum(e.target.value))}
+                      />
+                    </td>
+                    <td />
                   </tr>
                 </tfoot>
               </table>
