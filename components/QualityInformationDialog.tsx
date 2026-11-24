@@ -9,6 +9,8 @@ interface Props {
   initialName?: string;
   /** Grey purchase qualities are stored as Type GREY, the same row a later bill can pick. */
   preset?: 'grey' | 'finish';
+  /** Saved row. When set, Save updates this item instead of adding another. */
+  editItem?: SalesItemMaster | null;
   onClose: () => void;
   onSaved: (item: SalesItemMaster) => void;
 }
@@ -41,22 +43,43 @@ const blank = (name: string, preset?: string) => {
   };
 };
 
+const fromItem = (item: SalesItemMaster) => ({
+  name: item.name || '',
+  mainScreen: item.mainScreen || '',
+  packing: item.packing || 'NAKED',
+  cut: Number(item.cut) || 0,
+  greyQuality: item.greyQuality || '',
+  finishType: item.finishType || 'FINISH',
+  itemType: item.itemType || 'SAREE',
+  screenSeries: item.screenSeries || '',
+  category: item.category || '',
+  unit: item.unit || 'PCS',
+  sellingRate: Number(item.sellingRate) || 0,
+  rate2: Number(item.rate2) || 0,
+  rate3: Number(item.rate3) || 0,
+  workCut: Number(item.workCut) || 0,
+  hsnSac: item.hsnSac || '',
+  gstRate: Number(item.gstRate) || 0,
+  remark: item.remark || ''
+});
+
 export const QualityInformationDialog: React.FC<Props> = ({
   open,
   initialName = '',
   preset = 'finish',
+  editItem = null,
   onClose,
   onSaved
 }) => {
-  const [form, setForm] = useState(() => blank(initialName, preset));
+  const [form, setForm] = useState(() => editItem ? fromItem(editItem) : blank(initialName, preset));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
     if (!open) return;
     setError('');
-    setForm(blank(initialName, preset));
-  }, [open, initialName, preset]);
+    setForm(editItem ? fromItem(editItem) : blank(initialName, preset));
+  }, [open, initialName, preset, editItem]);
 
   if (!open) return null;
 
@@ -68,7 +91,9 @@ export const QualityInformationDialog: React.FC<Props> = ({
     setSaving(true);
     setError('');
     try {
-      const { item } = await salesOrdersApi.createItem({ ...form });
+      const { item } = editItem
+        ? await salesOrdersApi.updateItem(editItem.id, { ...form })
+        : await salesOrdersApi.createItem({ ...form });
       onSaved(item);
       onClose();
     } catch (err: any) {
@@ -85,7 +110,11 @@ export const QualityInformationDialog: React.FC<Props> = ({
           <div>
             <h2 className="text-lg font-black text-gray-900">Quality Information</h2>
             <p className="text-xs font-semibold text-indigo-700">
-              {preset === 'grey' ? 'New grey quality — Type GREY, item SAREE, packing NAKED' : 'Add the item to the master'}
+              {editItem
+                ? 'Edit this item. Sale and purchase lines that pick the name use this cut, rate, HSN and GST.'
+                : preset === 'grey'
+                  ? 'New grey quality — Type GREY, item SAREE, packing NAKED'
+                  : 'Add the item to the master'}
             </p>
           </div>
           <button type="button" onClick={onClose} className="rounded-lg p-1 hover:bg-white"><X className="h-5 w-5" /></button>

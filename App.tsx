@@ -51,6 +51,7 @@ import { FinishPurchaseReportPage } from './components/FinishPurchaseReportPage'
 import { ExpensesReportPage } from './components/ExpensesReportPage';
 import { FinalAccountsReportPage } from './components/FinalAccountsReportPage';
 import { AccountsInformationManagerPage } from './components/AccountsInformationManagerPage';
+import { QualityInformationManagerPage } from './components/QualityInformationManagerPage';
 import { OutstandingPaymentReportPage } from './components/OutstandingPaymentReportPage';
 import { BillWiseOutstandingPage } from './components/BillWiseOutstandingPage';
 import { ErpExpensesPage } from './components/ErpExpensesPage';
@@ -166,6 +167,7 @@ const App: React.FC = () => {
   const erpExpensesReportMatch = pathname.match(/^\/erp\/reports\/expenses\/?$/);
   const erpFinalAccountsReportMatch = pathname.match(/^\/erp\/reports\/final-accounts\/?$/);
   const erpAccountsMasterMatch = pathname.match(/^\/erp\/masters\/accounts\/?$/);
+  const erpItemsMasterMatch = pathname.match(/^\/erp\/masters\/items\/?$/);
   const erpOutstandingReportMatch = pathname.match(/^\/erp\/reports\/outstanding\/?$/);
   const erpBillOutstandingReportMatch = pathname.match(/^\/erp\/reports\/outstanding-bills\/?$/);
   const erpNotesHubMatch = pathname.match(/^\/erp\/notes\/?$/);
@@ -184,6 +186,7 @@ const App: React.FC = () => {
     || erpWorkDespatchReportMatch || erpWorkReceiptReportMatch || erpSalesOrderReportMatch || erpFinishSalesReportMatch
     || erpFinishPurchaseReportMatch || erpExpensesReportMatch || erpFinalAccountsReportMatch
     || erpAccountsMasterMatch
+    || erpItemsMasterMatch
     || erpOutstandingReportMatch
     || erpBillOutstandingReportMatch
     || erpNotesHubMatch || erpNotesMatch || erpJournalMatch || erpEwayMatch || erpEinvoiceMatch || erpLrEntryMatch || erpCommissionMatch || erpCommissionReportMatch || supplierLedgerMatch
@@ -1070,6 +1073,15 @@ const App: React.FC = () => {
   if (erpAccountsMasterMatch) {
     return (
       <AccountsInformationManagerPage
+        erpSession={erpSession}
+        onBack={() => { window.location.href = '/erp'; }}
+      />
+    );
+  }
+
+  if (erpItemsMasterMatch) {
+    return (
+      <QualityInformationManagerPage
         erpSession={erpSession}
         onBack={() => { window.location.href = '/erp'; }}
       />
