@@ -9,6 +9,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { PrismaClient } from '@prisma/client';
+import { getCurrentAccountingYear, parseAccountingYear } from '../utils/accountingYear.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.join(here, '..', '.env') });
@@ -19,11 +20,15 @@ const rows = await prisma.order.findMany({
   select: { id: true, typeBillNumber: true, remarks: true, buyerName: true, orderDate: true }
 });
 
+const year = parseAccountingYear(getCurrentAccountingYear());
 let updated = 0;
 for (const row of rows) {
   const match = String(row.remarks || '').match(/\[E:P3:(\d+)\]/);
   const raw = match ? Number(match[1]) : 0;
   if (!raw || raw < 100000 || raw === row.typeBillNumber) continue;
+  // A return already dated in this year stays on its printed number.
+  // Geeta's SITADEVI voucher 112 is 24 Nov 2026, even though the remark still says 100112.
+  if (year && row.orderDate && row.orderDate >= year.startDate && row.orderDate <= year.endDate) continue;
   await prisma.order.update({ where: { id: row.id }, data: { typeBillNumber: raw } });
   updated += 1;
 }
