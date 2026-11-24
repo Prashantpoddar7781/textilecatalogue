@@ -54,7 +54,7 @@ export const ErpFormShell: React.FC<Props> = ({
         {children}
         {showHint && (
           <p className="mt-3 text-[10px] font-bold uppercase tracking-wide text-gray-400">
-            Enter → next field · Up → previous field · Enter at end of a line → new line · Enter Enter on a blank line → save · F9 save
+            Enter → next field · Up → previous field · Enter at end of a line → new line · Enter Enter on a blank line → save · F9 save · Ctrl+L ledger
           </p>
         )}
       </div>

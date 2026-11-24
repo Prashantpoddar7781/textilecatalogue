@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { BookOpen, Building2, Loader2, RefreshCw, Search, X } from 'lucide-react';
 import { ledgerApi } from '../services/api';
 import { AccountLedgerEntry, AccountLedgerParty, ErpSession, LedgerEntryDetail } from '../types';
@@ -12,6 +12,10 @@ import { InterestReportView } from './InterestReportView';
 interface Props {
   onBack: () => void;
   initialPartyType?: 'customer' | 'supplier';
+  /** Open this account when the page is shown over an entry (Ctrl+L). */
+  initialParty?: string;
+  /** Shown over the current entry. Do not rewrite that entry's address. */
+  embedded?: boolean;
   erpSession?: ErpSession | null;
 }
 
@@ -63,10 +67,10 @@ const partyKey = (party: AccountLedgerParty) =>
     ? `${party.partyName}::company::`
     : `${party.partyName}::${party.supplierId || ''}::${party.customerId || ''}`;
 
-function ledgerQuery() {
+function ledgerQuery(initialParty = '') {
   const params = new URLSearchParams(window.location.search);
   return {
-    party: params.get('party') || '',
+    party: (params.get('party') || initialParty || '').trim(),
     q: params.get('q') || '',
     from: params.get('from') || '',
     to: params.get('to') || '',
@@ -74,9 +78,10 @@ function ledgerQuery() {
   };
 }
 
-export const AccountLedgerPage: React.FC<Props> = ({ onBack, erpSession }) => {
+export const AccountLedgerPage: React.FC<Props> = ({ onBack, erpSession, initialParty = '', embedded = false }) => {
   const fy = useMemo(() => defaultFyRange(), []);
-  const opened = useMemo(() => ledgerQuery(), []);
+  const opened = useMemo(() => ledgerQuery(initialParty), [initialParty]);
+  const searchRef = useRef<HTMLInputElement>(null);
   const [parties, setParties] = useState<AccountLedgerParty[]>([]);
   const [selectedKey, setSelectedKey] = useState('');
   const [fromDate, setFromDate] = useState(opened.from || fy.from);
@@ -95,7 +100,7 @@ export const AccountLedgerPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [detailLoading, setDetailLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [ledgerLoading, setLedgerLoading] = useState(false);
-  const [query, setQuery] = useState(opened.q);
+  const [query, setQuery] = useState(opened.q || opened.party);
   const [error, setError] = useState('');
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [interestReport, setInterestReport] = useState<InterestReport | null>(null);
@@ -118,7 +123,10 @@ export const AccountLedgerPage: React.FC<Props> = ({ onBack, erpSession }) => {
             || fetched.find(party => party.partyName.trim().toLowerCase() === wanted)
           : null;
         if (match) setSelectedKey(partyKey(match));
-        else if (!selectedKey) {
+        else if (wanted) {
+          setQuery(opened.party.trim());
+          setSelectedKey('');
+        } else if (!embedded && !selectedKey) {
           const first = fetched.find(party => party.partyType !== 'company') || fetched[0];
           setSelectedKey(partyKey(first));
         }
@@ -171,6 +179,7 @@ export const AccountLedgerPage: React.FC<Props> = ({ onBack, erpSession }) => {
 
   useEffect(() => {
     void loadParties();
+    if (embedded && !opened.party) searchRef.current?.focus();
   }, []);
 
   useEffect(() => {
@@ -194,7 +203,7 @@ export const AccountLedgerPage: React.FC<Props> = ({ onBack, erpSession }) => {
   }, [parties, query]);
 
   useEffect(() => {
-    if (!selectedParty?.partyName) return;
+    if (embedded || !selectedParty?.partyName) return;
     const params = new URLSearchParams();
     params.set('party', selectedParty.partyName);
     if (selectedParty.partyType) params.set('type', selectedParty.partyType);
@@ -241,7 +250,13 @@ export const AccountLedgerPage: React.FC<Props> = ({ onBack, erpSession }) => {
 
       <main className="mx-auto max-w-7xl px-4 py-6">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <ErpPageBack onBack={onBack} />
+          {embedded ? (
+            <button type="button" onClick={onBack} className="inline-flex items-center gap-2 text-sm font-bold text-gray-600 hover:text-gray-900">
+              Close ledger
+            </button>
+          ) : (
+            <ErpPageBack onBack={onBack} />
+          )}
           <button type="button" onClick={() => void loadParties()} className="flex items-center gap-2 rounded-xl border bg-white px-3 py-2 text-xs font-bold">
             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
             Refresh
@@ -257,6 +272,8 @@ export const AccountLedgerPage: React.FC<Props> = ({ onBack, erpSession }) => {
             <div className="relative mt-3">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
               <input
+                ref={searchRef}
+                data-ledger-search
                 className="w-full rounded-2xl border bg-gray-50 py-2.5 pl-9 pr-3 text-sm"
                 placeholder="Search account / GST / mobile"
                 value={query}
