@@ -274,6 +274,8 @@ export interface SalesLineItem {
   rd?: number;
   discountPercent?: number;
   discountAmount?: number;
+  /** Line remark for the add/less, such as Pouch. */
+  addRemark?: string | null;
   manualAddLess?: number;
   gstRate?: number;
   cgstRate?: number;

@@ -547,7 +547,7 @@ export function saleBillFace(order) {
     const pct = Number(line.discountPercent) > 0
       ? Number(line.discountPercent)
       : (implied > 0 ? implied : (footer > 0.5 && gross > 0 ? (footer / gross) * 100 : 0));
-    const base = roundMoney(amount * (1 - pct / 100));
+    const base = roundMoney(amount * (1 - pct / 100) + (Number(line.manualAddLess) || 0));
     const gst = Number(line.gstRate) || 0;
     return sum + base + roundMoney(base * gst / 100);
   }, 0);

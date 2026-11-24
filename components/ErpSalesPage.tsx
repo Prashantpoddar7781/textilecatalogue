@@ -1396,6 +1396,10 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
       igst: totals.igst,
       netAmount: isSalesOrder ? totals.net : billNet,
       discount: shownDiscount,
+      discountAlreadyInNet: lineDiscount > 0.5,
+      adjustments: printable
+        .filter(line => Math.abs(toNum(line.manualAddLess)) > 0.05)
+        .map(line => ({ remark: line.addRemark || 'Add / Less', amount: toNum(line.manualAddLess) })),
       bankName: profile?.bankName || '',
       bankAccount: profile?.bankAccount || '',
       bankIfsc: profile?.bankIfsc || '',
@@ -1772,9 +1776,9 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
                 <thead className="border-b bg-gray-50 text-[10px] uppercase text-gray-500">
                   <tr>
                     {(isSalesOrder
-                      ? ['#', 'Main Screen', 'HSN', 'Bundles', 'Screen Name', 'Packing', 'Unit', 'PCS', 'Cut', 'MTS/Qty', 'Net Mtrs', 'Rate', 'Amount', 'Less Fold', 'R.D.', 'Disc %', 'Manual Add/Ls', 'IGST %', 'SGST %', 'CGST/IGST Amt', '']
-                      : ['#', 'Ref', 'Item Name', 'HSN', 'Bundles', 'Design No', 'Packing', 'Unit', 'PCS', 'Cut', 'MTS/Qty', 'Net Mtrs', 'Rate', 'Amount', 'Less Fold', 'Disc %', 'Add/Less', 'GST %', 'Tax', 'Net', '']
-                    ).map(head => <th key={head} className="px-2 py-2 font-black">{head}</th>)}
+                      ? ['#', 'Main Screen', 'HSN', 'Bundles', 'Screen Name', 'Packing', 'Unit', 'PCS', 'Cut', 'MTS/Qty', 'Net Mtrs', 'Rate', 'Remark', 'Add/Less', 'Amount', 'Less Fold', 'R.D.', 'Disc %', 'IGST %', 'SGST %', 'CGST/IGST Amt', '']
+                      : ['#', 'Ref', 'Item Name', 'HSN', 'Bundles', 'Design No', 'Packing', 'Unit', 'PCS', 'Cut', 'MTS/Qty', 'Net Mtrs', 'Rate', 'Remark', 'Add/Less', 'Amount', 'Less Fold', 'Disc %', 'GST %', 'Tax', 'Net', '']
+                    ).map(head => <th key={head || 'x'} className="px-2 py-2 font-black">{head}</th>)}
                   </tr>
                 </thead>
                 <tbody>
@@ -1841,13 +1845,14 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
                       <td className="px-1 py-1.5"><input className={inputClass} type="number" value={line.mtsQty || ''} onChange={e => updateLine(index, 'mtsQty', toNum(e.target.value))} /></td>
                       <td className="px-2 py-1.5 text-right font-semibold">{netMetres(line.mtsQty, line.lessFold).toFixed(2)}</td>
                       <td className="px-1 py-1.5"><input className={inputClass} type="number" value={line.rate || ''} onChange={e => updateLine(index, 'rate', toNum(e.target.value))} /></td>
+                      <td className="px-1 py-1.5"><input className={`${inputClass} min-w-[5.5rem]`} placeholder="Pouch" value={line.addRemark || ''} onChange={e => updateLine(index, 'addRemark', e.target.value)} /></td>
+                      <td className="px-1 py-1.5"><input className={inputClass} type="number" value={line.manualAddLess || ''} onChange={e => updateLine(index, 'manualAddLess', toNum(e.target.value))} /></td>
                       <td className="px-2 py-1.5 text-right font-bold">{round2(toNum(line.amount)).toFixed(2)}</td>
                       <td className="px-1 py-1.5"><input className={inputClass} type="number" value={toNum(line.lessFold) || ''} onChange={e => updateLine(index, 'lessFold', toNum(e.target.value))} /></td>
                       {isSalesOrder ? (
                         <>
                           <td className="px-1 py-1.5"><input className={inputClass} type="number" value={line.rd || ''} onChange={e => updateLine(index, 'rd', toNum(e.target.value))} /></td>
                           <td className="px-1 py-1.5"><input data-erp-line-default className={inputClass} type="number" value={toNum(line.discountPercent) > 0 ? line.discountPercent : (impliedDiscPct || '')} onChange={e => updateLine(index, 'discountPercent', toNum(e.target.value))} /></td>
-                          <td className="px-1 py-1.5"><input className={inputClass} type="number" value={line.manualAddLess || ''} onChange={e => updateLine(index, 'manualAddLess', toNum(e.target.value))} /></td>
                           <td className="px-2 py-1.5 text-right font-bold">{round2(toNum(line.igstRate)).toFixed(2)}</td>
                           <td className="px-2 py-1.5 text-right font-bold">{round2(toNum(line.sgstRate)).toFixed(2)}</td>
                           <td className="px-2 py-1.5 text-right font-bold">{round2(toNum(line.taxAmount)).toFixed(2)}</td>
@@ -1855,7 +1860,6 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
                       ) : (
                         <>
                           <td className="px-1 py-1.5"><input data-erp-line-default className={inputClass} type="number" value={toNum(line.discountPercent) > 0 ? line.discountPercent : (impliedDiscPct || '')} onChange={e => updateLine(index, 'discountPercent', toNum(e.target.value))} /></td>
-                          <td className="px-1 py-1.5"><input className={inputClass} type="number" value={line.manualAddLess || ''} onChange={e => updateLine(index, 'manualAddLess', toNum(e.target.value))} /></td>
                           <td className="px-1 py-1.5"><input data-erp-line-default className={inputClass} type="number" value={line.gstRate || ''} onChange={e => updateLine(index, 'gstRate', toNum(e.target.value))} /></td>
                           <td className="px-2 py-1.5 text-right font-bold">{round2(toNum(line.taxAmount)).toFixed(2)}</td>
                           <td className="px-2 py-1.5 text-right font-black text-indigo-800">{round2(toNum(line.totalAmount)).toFixed(2)}</td>
@@ -1883,11 +1887,14 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
                     <td className="px-2 py-2 text-right">{totals.mts.toFixed(2)}</td>
                     <td className="px-2 py-2 text-right">{totals.netMts.toFixed(2)}</td>
                     <td />
+                    <td />
+                    <td />
                     <td className="px-2 py-2 text-right">{totals.amount.toFixed(2)}</td>
                     {isSalesOrder && <td />}
-                    <td colSpan={isSalesOrder ? 5 : 4} className="px-2 py-2 text-right">Taxable {totals.taxable.toFixed(2)}</td>
+                    <td colSpan={isSalesOrder ? 4 : 3} className="px-2 py-2 text-right">Taxable {totals.taxable.toFixed(2)}</td>
                     <td className="px-2 py-2 text-right text-indigo-800">{(isSalesOrder ? totals.tax : billNet).toFixed(2)}</td>
                     <td />
+                    {!isSalesOrder && <td />}
                   </tr>
                 </tfoot>
               </table>

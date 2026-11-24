@@ -116,6 +116,7 @@ function normalizeSalesLines(raw, context = {}) {
       rd: roundMoney(input.rd ?? 0),
       discountPercent,
       discountAmount,
+      addRemark: optionalString(input.addRemark),
       manualAddLess,
       gstRate,
       cgstRate: gst.cgstRate,

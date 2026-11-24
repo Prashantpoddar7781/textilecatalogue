@@ -213,6 +213,9 @@ export interface SaleBillPrintInput {
   igst: number;
   netAmount: number;
   discount?: number;
+  /** The net amount already has the line discount taken off. */
+  discountAlreadyInNet?: boolean;
+  adjustments?: Array<{ remark?: string; amount: number }>;
   bankName?: string;
   bankAccount?: string;
   bankIfsc?: string;
@@ -345,15 +348,16 @@ export function openSaleBillPrint(input: SaleBillPrintInput) {
             </tr>
             ${taxRows.map(row => `<tr><td class="taxline" colspan="12">${row}</td></tr>`).join('')}
             ${(Number(input.discount) || 0) > 0.5 ? `<tr><td class="taxline" colspan="11">LESS DISCOUNT</td><td class="n amt">${money(input.discount || 0)}</td></tr>` : ''}
+            ${(input.adjustments || []).filter(row => Math.abs(Number(row.amount) || 0) > 0.05).map(row => `<tr><td class="taxline" colspan="11">${escapeHtml(row.remark || 'ADD / LESS')}</td><td class="n amt">${money(row.amount)}</td></tr>`).join('')}
             <tr>
               <td colspan="5">DUE DAYS: ${Number(input.dueDays) || 0}</td>
               <td class="inv" colspan="6">Invoice Value</td>
               <td class="n amt">${money(input.netAmount)}</td>
             </tr>
-            ${(Number(input.discount) || 0) > 0.5 ? `<tr><td colspan="5"></td><td class="inv" colspan="6">Net Amount</td><td class="n amt">${money(Math.round(((input.netAmount || 0) - (input.discount || 0)) * 100) / 100)}</td></tr>` : ''}
+            ${(Number(input.discount) || 0) > 0.5 && !input.discountAlreadyInNet ? `<tr><td colspan="5"></td><td class="inv" colspan="6">Net Amount</td><td class="n amt">${money(Math.round(((input.netAmount || 0) - (input.discount || 0)) * 100) / 100)}</td></tr>` : ''}
           </tbody>
         </table>
-        <div class="words">${escapeHtml(rupeesInWords((Number(input.discount) || 0) > 0.5 ? Math.round(((input.netAmount || 0) - (input.discount || 0)) * 100) / 100 : input.netAmount).toUpperCase())}</div>
+        <div class="words">${escapeHtml(rupeesInWords((Number(input.discount) || 0) > 0.5 && !input.discountAlreadyInNet ? Math.round(((input.netAmount || 0) - (input.discount || 0)) * 100) / 100 : input.netAmount).toUpperCase())}</div>
         <div class="sign">
           <div class="terms">
             <div class="termhead">TERMS &amp; CONDITIONS:-</div>
