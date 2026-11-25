@@ -9,6 +9,7 @@ import { BarcodeOrderBuilder } from './BarcodeOrderBuilder';
 import { EditOrderDialog } from './EditOrderDialog';
 import { GenerateInvoiceDialog } from './GenerateInvoiceDialog';
 import { ManualOrderDialog } from './ManualOrderDialog';
+import { OrderDesignViewer } from './OrderDesignViewer';
 import { isUsableImageSrc } from '../services/designMedia';
 
 function designTitle(line: { designName?: string | null; designCode?: string | null }) {
@@ -73,6 +74,7 @@ export const OrdersPage: React.FC<Props> = ({ onBack, firmName }) => {
   const [designSearch, setDesignSearch] = useState('');
   const [editingOrder, setEditingOrder] = useState<Order | null>(null);
   const [viewingId, setViewingId] = useState<string | null>(null);
+  const [designViewerIndex, setDesignViewerIndex] = useState<number | null>(null);
   const [invoiceOrder, setInvoiceOrder] = useState<Order | null>(null);
   const loadingOrdersRef = useRef(false);
   const suppressRefreshUntil = useRef(0);
@@ -734,15 +736,20 @@ export const OrdersPage: React.FC<Props> = ({ onBack, firmName }) => {
                   {` · Qty ${viewingOrder.quantity}`}
                 </p>
               </div>
-              <button type="button" onClick={() => setViewingId(null)} className="p-2 rounded-full hover:bg-gray-100 text-gray-500">
+              <button type="button" onClick={() => { setDesignViewerIndex(null); setViewingId(null); }} className="p-2 rounded-full hover:bg-gray-100 text-gray-500">
                 <X className="w-5 h-5" />
               </button>
             </div>
             <div className="flex-1 overflow-y-auto p-4 space-y-2">
               {orderDesignRows(viewingOrder).length === 0 ? (
                 <p className="text-sm text-gray-500">No designs on this order.</p>
-              ) : orderDesignRows(viewingOrder).map(line => (
-                <div key={line.key} className="flex items-center gap-3 rounded-2xl border border-gray-100 bg-gray-50 p-3">
+              ) : orderDesignRows(viewingOrder).map((line, lineIndex) => (
+                <button
+                  key={line.key}
+                  type="button"
+                  onClick={() => setDesignViewerIndex(lineIndex)}
+                  className="flex w-full items-center gap-3 rounded-2xl border border-gray-100 bg-gray-50 p-3 text-left hover:border-indigo-200"
+                >
                   {line.image ? (
                     <img src={line.image} alt={line.name} className="h-16 w-16 rounded-xl object-cover bg-white" />
                   ) : (
@@ -754,7 +761,7 @@ export const OrdersPage: React.FC<Props> = ({ onBack, firmName }) => {
                     {line.fabric && <p className="text-xs text-gray-500 break-words">{line.fabric}</p>}
                     <p className="text-xs font-bold text-indigo-700">Qty {line.quantity}{line.remarks ? ` · ${line.remarks}` : ''}</p>
                   </div>
-                </div>
+                </button>
               ))}
             </div>
             <div className="shrink-0 border-t bg-gray-50 p-4 flex gap-2">
@@ -774,6 +781,16 @@ export const OrdersPage: React.FC<Props> = ({ onBack, firmName }) => {
             </div>
           </div>
         </div>
+      )}
+      {viewingOrder && designViewerIndex != null && (
+        <OrderDesignViewer
+          slides={orderDesignRows(viewingOrder)}
+          index={Math.min(designViewerIndex, Math.max(orderDesignRows(viewingOrder).length - 1, 0))}
+          buyerName={viewingOrder.buyerName}
+          buyerPhone={viewingOrder.buyerPhone}
+          onIndexChange={setDesignViewerIndex}
+          onClose={() => setDesignViewerIndex(null)}
+        />
       )}
       {showManual && (
         <ManualOrderDialog
