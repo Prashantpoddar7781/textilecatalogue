@@ -30,6 +30,8 @@ interface Options {
   currentId?: string | null;
   /** The voucher currently on screen (next number in add mode). */
   shownNumber?: string | number | null;
+  /** Selected accounting year, so a journal number is not taken from another year. */
+  accountingYear?: string;
   /** Open the found voucher in place. When omitted, the page reloads at editPath. */
   onOpen?: (found: { id: string; editPath: string }) => Promise<void> | void;
   /** The typed number is not saved. The screen starts a blank entry with that number. */
@@ -44,6 +46,7 @@ interface Options {
 export function useVoucherJump({
   module,
   transactionType,
+  accountingYear,
   currentId,
   shownNumber,
   onOpen,
@@ -64,6 +67,9 @@ export function useVoucherJump({
     const stars = (value: string) => (value.match(/\*/g) || []).length;
     const sameVoucher = Boolean(shown && typed === shown && stars(raw) === stars(shownText));
     if (currentId && sameVoucher) return 'next' as const;
+    // A new journal already shows its next number. Enter moves on.
+    // Searching that number used to open another series with the same counter.
+    if (!currentId && sameVoucher && module === 'journal') return 'next' as const;
 
     const attempt = ++attemptRef.current;
     setJumping(true);
@@ -71,7 +77,8 @@ export function useVoucherJump({
       const result = await vouchersApi.lookup({
         module,
         voucher: String(raw).trim(),
-        transactionType: transactionType || undefined
+        transactionType: transactionType || undefined,
+        accountingYear: accountingYear || undefined
       });
       if (attemptRef.current !== attempt) return 'busy' as const;
       if (result.id && result.editPath && result.id !== currentId) {
@@ -101,7 +108,7 @@ export function useVoucherJump({
         // stay; caller focuses next field on 'next'
       }
     }
-  }, [currentId, module, onError, onMissing, onOpen, shownNumber, transactionType]);
+  }, [accountingYear, currentId, module, onError, onMissing, onOpen, shownNumber, transactionType]);
 
   const onVoucherKeyDown = useCallback(async (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key !== 'Enter') return;

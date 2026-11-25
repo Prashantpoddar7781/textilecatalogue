@@ -1098,11 +1098,12 @@ export interface BulkEwayRow {
 }
 
 export const vouchersApi = {
-  lookup: async (params: { module: string; voucher: string; transactionType?: string }) => {
+  lookup: async (params: { module: string; voucher: string; transactionType?: string; accountingYear?: string }) => {
     const query = new URLSearchParams();
     query.set('module', params.module);
     query.set('voucher', params.voucher);
     if (params.transactionType) query.set('transactionType', params.transactionType);
+    if (params.accountingYear) query.set('year', params.accountingYear);
     return request<{ id: string; editPath: string; kind?: string }>(`/vouchers/lookup?${query.toString()}`);
   }
 };
@@ -1441,17 +1442,19 @@ export const creditDebitNotesApi = {
 };
 
 export const journalVouchersApi = {
-  getNextVoucher: async () => {
+  getNextVoucher: async (year?: string) => {
+    const query = year ? `?year=${encodeURIComponent(year)}` : '';
     return request<{
       transactionType: string;
       typeBillNumber: number;
       voucherNumber: string;
       companyName: string;
       warnOnManualEntry: boolean;
-    }>('/journal-vouchers/next-voucher');
+    }>(`/journal-vouchers/next-voucher${query}`);
   },
-  getAll: async () => {
-    return request<{ vouchers: JournalVoucher[] }>('/journal-vouchers');
+  getAll: async (year?: string) => {
+    const query = year ? `?year=${encodeURIComponent(year)}` : '';
+    return request<{ vouchers: JournalVoucher[] }>(`/journal-vouchers${query}`);
   },
   getById: async (id: string) => {
     return request<{ voucher: JournalVoucher }>(`/journal-vouchers/${id}`);

@@ -7,6 +7,7 @@ import { parseNoteType } from '../constants/creditDebitNoteTypes.js';
 import { parseVoucherNumber, parseVoucherText } from '../utils/parseVoucherNumber.js';
 import { storedVoucherNumber } from '../utils/seriesVoucherNumbers.js';
 import { sameSeriesNames } from '../constants/erpTransactionPostingRules.js';
+import { getCurrentAccountingYear, parseAccountingYear } from '../utils/accountingYear.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -210,8 +211,17 @@ router.get('/lookup', authenticateToken, requireActiveSubscription, async (req, 
       }
     } else if (module === 'journal') {
       if (!numeric) return res.status(404).json({ error: 'No journal voucher with that number.' });
+      const stored = storedVoucherNumber(raw);
+      if (!stored) return res.status(404).json({ error: 'No journal voucher with that number.' });
+      const year = parseAccountingYear(text(req.query.year)) || parseAccountingYear(getCurrentAccountingYear());
+      const series = transactionType || 'JOURNAL';
       const entry = await prisma.journalVoucher.findFirst({
-        where: { userId, typeBillNumber: numeric },
+        where: {
+          userId,
+          transactionType: series,
+          typeBillNumber: stored,
+          ...(year ? { voucherDate: { gte: year.startDate, lte: year.endDate } } : {})
+        },
         select: { id: true },
         orderBy: { createdAt: 'desc' }
       });

@@ -7,7 +7,7 @@ export function formatTypeBillNumber(typeBillNumber, transactionType = null) {
   return formatSeriesBillNumber(transactionType, typeBillNumber) || String(typeBillNumber);
 }
 
-export async function allocateNextTypeBillNumber(tx, userId, transactionType, source) {
+export async function allocateNextTypeBillNumber(tx, userId, transactionType, source, accountingYear = null) {
   const type = String(transactionType || '').trim();
   if (!type) return null;
 
@@ -30,8 +30,17 @@ export async function allocateNextTypeBillNumber(tx, userId, transactionType, so
   }
 
   if (source === 'journal_voucher') {
+    // JOURNAL (J2) restarts in the selected year. TDS, VATAV and opening
+    // balance share this table and must not move the journal number.
+    // Prior-year copies stored at 100000 and above stay out of the count.
+    const year = parseAccountingYear(accountingYear) || parseAccountingYear(getCurrentAccountingYear());
     const result = await tx.journalVoucher.aggregate({
-      where: { userId, transactionType: type },
+      where: {
+        userId,
+        transactionType: type,
+        typeBillNumber: { lt: 100000 },
+        ...(year ? { voucherDate: { gte: year.startDate, lte: year.endDate } } : {})
+      },
       _max: { typeBillNumber: true }
     });
     return (result._max.typeBillNumber ?? 0) + 1;

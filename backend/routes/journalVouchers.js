@@ -6,6 +6,7 @@ import { requireActiveSubscription } from '../middleware/subscription.js';
 import { formatSeriesBillNumber, warnsOnManualEntry } from '../constants/erpTransactionPostingRules.js';
 import { resolveCustomerForEntry, resolveSupplierForEntry } from '../utils/partyMaster.js';
 import { allocateNextTypeBillNumber } from '../utils/transactionBilling.js';
+import { getCurrentAccountingYear, parseAccountingYear } from '../utils/accountingYear.js';
 import { bankAdjustmentBlock } from '../utils/voucherDelete.js';
 import { JOURNAL_TRANSACTION_TYPE } from '../utils/journalVouchers.js';
 
@@ -120,11 +121,19 @@ function normalizePayload(body, companyName) {
   };
 }
 
+function selectedYear(req) {
+  return parseAccountingYear(String(req.query.year || '').trim())
+    || parseAccountingYear(getCurrentAccountingYear());
+}
+
 router.get('/next-voucher', authenticateToken, requireActiveSubscription, async (req, res, next) => {
   try {
     const userId = req.user.userId;
+    const year = selectedYear(req);
     const [typeBillNumber, companyName] = await Promise.all([
-      prisma.$transaction(tx => allocateNextTypeBillNumber(tx, userId, JOURNAL_TRANSACTION_TYPE, 'journal_voucher')),
+      prisma.$transaction(tx => allocateNextTypeBillNumber(
+        tx, userId, JOURNAL_TRANSACTION_TYPE, 'journal_voucher', year?.label
+      )),
       getCompanyName(userId)
     ]);
     res.json({
@@ -141,8 +150,14 @@ router.get('/next-voucher', authenticateToken, requireActiveSubscription, async 
 
 router.get('/', authenticateToken, requireActiveSubscription, async (req, res, next) => {
   try {
+    const year = selectedYear(req);
     const vouchers = await prisma.journalVoucher.findMany({
-      where: { userId: req.user.userId, status: { not: 'cancelled' } },
+      where: {
+        userId: req.user.userId,
+        transactionType: JOURNAL_TRANSACTION_TYPE,
+        status: { not: 'cancelled' },
+        ...(year ? { voucherDate: { gte: year.startDate, lte: year.endDate } } : {})
+      },
       orderBy: [{ voucherDate: 'desc' }, { createdAt: 'desc' }]
     });
     res.json({ vouchers });
@@ -169,7 +184,13 @@ router.post('/', authenticateToken, requireActiveSubscription, [
     const payload = normalizePayload(req.body, companyName);
 
     const voucher = await prisma.$transaction(async (tx) => {
-      const typeBillNumber = await allocateNextTypeBillNumber(tx, userId, JOURNAL_TRANSACTION_TYPE, 'journal_voucher');
+      const typeBillNumber = await allocateNextTypeBillNumber(
+        tx,
+        userId,
+        JOURNAL_TRANSACTION_TYPE,
+        'journal_voucher',
+        getCurrentAccountingYear(payload.voucherDate || new Date())
+      );
       return tx.journalVoucher.create({
         data: {
           userId,

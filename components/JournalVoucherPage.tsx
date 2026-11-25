@@ -77,10 +77,12 @@ export const JournalVoucherPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [showAccountsDialog, setShowAccountsDialog] = useState(false);
   const [partiesReady, setPartiesReady] = useState(false);
   const dismissedParty = useRef('');
+  const accountingYear = erpSession?.accountingYear || '';
 
   const voucherJump = useVoucherJump({
     module: 'journal',
     transactionType: JOURNAL_TYPE,
+    accountingYear,
     currentId: editingId,
     shownNumber: typeBillNumber,
     onError: setError
@@ -105,7 +107,7 @@ export const JournalVoucherPage: React.FC<Props> = ({ onBack, erpSession }) => {
 
   const loadMaster = useCallback(async () => {
     try {
-      const result = await journalVouchersApi.getNextVoucher();
+      const result = await journalVouchersApi.getNextVoucher(accountingYear);
       setCompanyName(result.companyName || '');
       setTypeBillNumber(result.typeBillNumber);
       setAllocatedVoucher(result.voucherNumber);
@@ -116,16 +118,16 @@ export const JournalVoucherPage: React.FC<Props> = ({ onBack, erpSession }) => {
       setVoucherInput(formatSeriesBillNumber(JOURNAL_TYPE, 1));
       setError('Could not load the next journal voucher number.');
     }
-  }, []);
+  }, [accountingYear]);
 
   const loadList = useCallback(async () => {
     try {
-      const { vouchers: rows } = await journalVouchersApi.getAll();
+      const { vouchers: rows } = await journalVouchersApi.getAll(accountingYear);
       setVouchers(rows || []);
     } catch {
       setVouchers([]);
     }
-  }, []);
+  }, [accountingYear]);
 
   useEffect(() => {
     let cancelled = false;
@@ -145,7 +147,14 @@ export const JournalVoucherPage: React.FC<Props> = ({ onBack, erpSession }) => {
     }
     setLoading(true);
     void journalVouchersApi.getById(editId)
-      .then(({ voucher }) => applyVoucher(voucher))
+      .then(({ voucher }) => {
+        if (String(voucher.transactionType || '').toUpperCase() !== JOURNAL_TYPE) {
+          window.history.replaceState({}, '', '/erp/journal');
+          setEditingId(null);
+          return loadMaster();
+        }
+        applyVoucher(voucher);
+      })
       .catch(() => setError('Could not load this journal voucher.'))
       .finally(() => setLoading(false));
   }, [loadMaster]);
