@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { bankEntriesApi } from '../services/api';
 import { ErpSession } from '../types';
@@ -45,6 +45,27 @@ function lineAmounts(row: BillRow) {
   };
 }
 
+function rowKey(row: BillRow) {
+  return String(row.id || `${row.billType || ''}-${row.billId || ''}`);
+}
+
+function sumLines(list: BillRow[]) {
+  return list.reduce((sum, row) => {
+    const line = lineAmounts(row);
+    sum.net += line.net;
+    sum.goodsReturn += line.goodsReturn;
+    sum.paid += line.paid;
+    sum.pending += line.pending;
+    return sum;
+  }, { net: 0, goodsReturn: 0, paid: 0, pending: 0 });
+}
+
+function isTypingTarget(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) return false;
+  const tag = target.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable;
+}
+
 export const BillWiseOutstandingPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const opened = useMemo(() => new URLSearchParams(window.location.search), []);
   const [loading, setLoading] = useState(true);
@@ -55,6 +76,12 @@ export const BillWiseOutstandingPage: React.FC<Props> = ({ onBack, erpSession })
   const [asOnDate, setAsOnDate] = useState(opened.get('asOnDate') || todayIso());
   const [partyName, setPartyName] = useState(opened.get('party') || '');
   const [rows, setRows] = useState<BillRow[]>([]);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const [cursor, setCursor] = useState(0);
+  const [adjustOpen, setAdjustOpen] = useState(false);
+  const [adjustNote, setAdjustNote] = useState('');
+  const tableRef = useRef<HTMLDivElement>(null);
+  const rowRefs = useRef<Array<HTMLTableRowElement | null>>([]);
 
   const load = async () => {
     setLoading(true);
@@ -131,14 +158,96 @@ export const BillWiseOutstandingPage: React.FC<Props> = ({ onBack, erpSession })
       });
   }, [rows, selected]);
 
-  const totals = useMemo(() => billRows.reduce((sum, row) => {
-    const line = lineAmounts(row);
-    sum.net += line.net;
-    sum.goodsReturn += line.goodsReturn;
-    sum.paid += line.paid;
-    sum.pending += line.pending;
-    return sum;
-  }, { net: 0, goodsReturn: 0, paid: 0, pending: 0 }), [billRows]);
+  const totals = useMemo(() => sumLines(billRows), [billRows]);
+
+  const shownRows = useMemo(
+    () => (adjustOpen ? billRows.filter(row => selectedIds.has(rowKey(row))) : billRows),
+    [adjustOpen, billRows, selectedIds]
+  );
+  const shownTotals = useMemo(() => sumLines(shownRows), [shownRows]);
+  const selectedCount = useMemo(
+    () => billRows.filter(row => selectedIds.has(rowKey(row))).length,
+    [billRows, selectedIds]
+  );
+
+  useEffect(() => {
+    setSelectedIds(new Set());
+    setCursor(0);
+    setAdjustOpen(false);
+    setAdjustNote('');
+  }, [selected?.name, partyType]);
+
+  useEffect(() => {
+    setCursor(index => Math.min(index, Math.max(shownRows.length - 1, 0)));
+  }, [shownRows.length]);
+
+  useEffect(() => {
+    rowRefs.current[cursor]?.scrollIntoView({ block: 'nearest' });
+  }, [cursor, adjustOpen, shownRows.length]);
+
+  const toggleRow = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+    setAdjustNote('');
+  };
+
+  useEffect(() => {
+    if (!selected) return undefined;
+    const onKey = (event: KeyboardEvent) => {
+      if (isTypingTarget(event.target)) return;
+      if (!billRows.length) return;
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        setCursor(index => Math.min(shownRows.length - 1, index + 1));
+        return;
+      }
+      if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        setCursor(index => Math.max(0, index - 1));
+        return;
+      }
+      if (event.key === 'Escape' && adjustOpen) {
+        event.preventDefault();
+        setAdjustOpen(false);
+        return;
+      }
+      const space = event.key === ' ' || event.code === 'Space';
+      if (space && (event.ctrlKey || event.metaKey)) {
+        event.preventDefault();
+        if (adjustOpen) {
+          setAdjustOpen(false);
+          return;
+        }
+        if (!selectedCount) {
+          setAdjustNote('Select a bill or a payment with Space first.');
+          return;
+        }
+        setAdjustOpen(true);
+        setCursor(0);
+        setAdjustNote('');
+        return;
+      }
+      if (space) {
+        event.preventDefault();
+        const row = shownRows[cursor];
+        if (row) toggleRow(rowKey(row));
+        return;
+      }
+      if (event.key === 'Enter') {
+        const row = shownRows[cursor];
+        if (row?.editPath) {
+          event.preventDefault();
+          openBill(row);
+        }
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [selected, billRows.length, shownRows, cursor, adjustOpen, selectedCount]);
 
   const openBill = (row: BillRow) => {
     if (!row?.editPath) return;
@@ -157,7 +266,7 @@ export const BillWiseOutstandingPage: React.FC<Props> = ({ onBack, erpSession })
         <section className="mb-4 rounded-2xl border bg-white p-4 shadow-sm">
           <p className="text-[10px] font-black uppercase tracking-widest text-sky-700">Sales / purchase outstanding bills</p>
           <p className="mt-1 text-xs text-gray-500">
-            Each bill shows its pending amount. A part payment and a goods return come on their own row and reduce the balance.
+            Each bill shows its pending amount. A goods return and a payment that is not yet adjusted come on their own row. Space selects the row. Down moves to the next row. Ctrl+Space shows the difference if those bills are adjusted against the selected payments.
           </p>
           <div className="mt-3 grid gap-3 md:grid-cols-4">
             <label className="md:col-span-2">
@@ -210,10 +319,35 @@ export const BillWiseOutstandingPage: React.FC<Props> = ({ onBack, erpSession })
               </p>
               <p className="mt-1 text-xs font-bold text-slate-600">
                 {billRows.length} row{billRows.length === 1 ? '' : 's'} · Pending {money(totals.pending)}
+                {selectedCount ? ` · ${selectedCount} selected` : ''}
               </p>
+              <p className="mt-1 text-[11px] font-semibold text-slate-500">
+                Space selects. Arrow up / down moves. Ctrl+Space shows the difference. Esc closes that view. Click a bill to open it.
+              </p>
+              {adjustNote && <p className="mt-2 text-xs font-bold text-amber-800">{adjustNote}</p>}
+              {adjustOpen && (
+                <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-950">
+                  {shownTotals.pending > 0.5
+                    ? `After adjusting the selected bills against the selected payments, ${money(shownTotals.pending)} is still pending.`
+                    : shownTotals.pending < -0.5
+                      ? `The selected payments are more than the bills by ${money(Math.abs(shownTotals.pending))}. That amount stays unadjusted.`
+                      : 'These bills and payments adjust exactly. Nothing is left pending.'}
+                  <button
+                    type="button"
+                    className="ml-3 rounded-lg bg-white px-2 py-1 text-[10px] font-black uppercase text-sky-800"
+                    onClick={() => setAdjustOpen(false)}
+                  >
+                    All bills
+                  </button>
+                </div>
+              )}
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[860px] border-collapse text-xs">
+            <div
+              ref={tableRef}
+              tabIndex={0}
+              className="overflow-x-auto outline-none"
+            >
+              <table className="w-full min-w-[960px] border-collapse text-xs">
                 <thead>
                   <tr>
                     <th className={thClass}>Bill No</th>
@@ -224,16 +358,28 @@ export const BillWiseOutstandingPage: React.FC<Props> = ({ onBack, erpSession })
                     <th className={thClass}>Pend. Amt</th>
                     <th className={thClass}>Days</th>
                     <th className={thClass}>Broker</th>
+                    <th className={thClass}>Select</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {billRows.map(row => {
+                  {shownRows.length === 0 && (
+                    <tr>
+                      <td colSpan={9} className={`${tdClass} py-8 text-center font-bold text-slate-400`}>
+                        {adjustOpen ? 'No bill or payment is selected.' : 'No outstanding rows.'}
+                      </td>
+                    </tr>
+                  )}
+                  {shownRows.map((row, index) => {
                     const line = lineAmounts(row);
+                    const id = rowKey(row);
+                    const checked = selectedIds.has(id);
+                    const current = index === cursor;
                     return (
                       <tr
-                        key={row.id}
-                        onClick={() => openBill(row)}
-                        className={row.editPath ? 'cursor-pointer hover:bg-sky-50' : ''}
+                        key={id}
+                        ref={node => { rowRefs.current[index] = node; }}
+                        onClick={() => { setCursor(index); openBill(row); }}
+                        className={`${row.editPath ? 'cursor-pointer' : ''} ${current ? 'bg-sky-100' : checked ? 'bg-amber-50' : 'hover:bg-sky-50'}`}
                         title={row.editPath ? 'Open this entry' : undefined}
                       >
                         <td className={`${tdClass} text-center font-black text-indigo-800`}>{row.displayBillNumber || row.billNumber}</td>
@@ -242,20 +388,29 @@ export const BillWiseOutstandingPage: React.FC<Props> = ({ onBack, erpSession })
                         <td className={`${tdNum} ${line.goodsReturn < 0 ? 'font-bold text-rose-700' : ''}`}>{money(line.goodsReturn)}</td>
                         <td className={tdNum}>{money(line.paid)}</td>
                         <td className={`${tdNum} font-black ${line.pending < 0 ? 'text-emerald-700' : 'text-rose-700'}`}>{money(line.pending)}</td>
-                        <td className={`${tdNum}`}>{row.days ?? ''}</td>
+                        <td className={tdNum}>{row.days ?? ''}</td>
                         <td className={tdClass}>{row.brokerName || ''}</td>
+                        <td className={`${tdClass} text-center`} onClick={event => event.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 accent-sky-700"
+                            checked={checked}
+                            onChange={() => { setCursor(index); toggleRow(id); }}
+                            aria-label={`Select ${row.displayBillNumber || row.billNumber || 'row'}`}
+                          />
+                        </td>
                       </tr>
                     );
                   })}
                 </tbody>
                 <tfoot>
                   <tr className="bg-sky-900 text-white">
-                    <td className={`${tdClass} border-sky-800 font-black`} colSpan={2}>Grand Total</td>
-                    <td className={`${tdNum} border-sky-800 font-black`}>{money(totals.net)}</td>
-                    <td className={`${tdNum} border-sky-800 font-black`}>{money(totals.goodsReturn)}</td>
-                    <td className={`${tdNum} border-sky-800 font-black`}>{money(totals.paid)}</td>
-                    <td className={`${tdNum} border-sky-800 font-black`}>{money(totals.pending)}</td>
-                    <td className={`${tdClass} border-sky-800`} colSpan={2} />
+                    <td className={`${tdClass} border-sky-800 font-black`} colSpan={2}>{adjustOpen ? 'Selected total' : 'Grand Total'}</td>
+                    <td className={`${tdNum} border-sky-800 font-black`}>{money(shownTotals.net)}</td>
+                    <td className={`${tdNum} border-sky-800 font-black`}>{money(shownTotals.goodsReturn)}</td>
+                    <td className={`${tdNum} border-sky-800 font-black`}>{money(shownTotals.paid)}</td>
+                    <td className={`${tdNum} border-sky-800 font-black`}>{money(shownTotals.pending)}</td>
+                    <td className={`${tdClass} border-sky-800`} colSpan={3} />
                   </tr>
                 </tfoot>
               </table>
