@@ -1,8 +1,7 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, Loader2, MessageCircle, X } from 'lucide-react';
-import { contactsApi, API_BASE_URL } from '../services/api';
-import { Contact } from '../types';
-import { isNativeAndroid, shareImagesNative } from '../services/nativeApp';
+import { API_BASE_URL } from '../services/api';
+import { isNativeAndroid, openWhatsAppWithText, shareImagesNative } from '../services/nativeApp';
 
 export interface OrderDesignSlide {
   key: string;
@@ -17,38 +16,24 @@ export interface OrderDesignSlide {
 interface Props {
   slides: OrderDesignSlide[];
   index: number;
-  buyerName?: string;
-  buyerPhone?: string;
   onIndexChange: (index: number) => void;
   onClose: () => void;
 }
 
 const SWIPE_MIN = 48;
 
-function fullSrc(slide: OrderDesignSlide) {
-  if (slide.designId) return `${API_BASE_URL}/designs/${slide.designId}/media/full?proxy=1`;
-  return slide.image || '';
-}
-
-function waDigits(raw: string) {
-  let digits = String(raw || '').replace(/\D/g, '');
-  if (digits.length === 10) digits = `91${digits}`;
-  if (digits.length === 11 && digits.startsWith('0')) digits = `91${digits.slice(1)}`;
-  return digits;
-}
-
-function usablePhone(raw?: string | null) {
-  const digits = waDigits(raw || '');
-  return digits.length >= 11 ? digits : '';
+function viewSrc(slide: OrderDesignSlide) {
+  if (slide.image) return slide.image;
+  if (slide.designId) return `${API_BASE_URL}/designs/${slide.designId}/media/thumb`;
+  return '';
 }
 
 async function fetchImageFile(slide: OrderDesignSlide, index: number) {
-  const src = fullSrc(slide);
+  const src = viewSrc(slide);
   if (!src) throw new Error('Missing photo');
   const token = typeof localStorage !== 'undefined' ? localStorage.getItem('auth_token') : null;
   const response = await fetch(src, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-    cache: 'no-store'
+    headers: token ? { Authorization: `Bearer ${token}` } : {}
   });
   if (!response.ok) throw new Error('Photo did not load');
   const blob = await response.blob();
@@ -78,42 +63,11 @@ function downloadFile(file: File) {
   window.setTimeout(() => URL.revokeObjectURL(url), 1500);
 }
 
-export const OrderDesignViewer: React.FC<Props> = ({
-  slides,
-  index,
-  buyerName,
-  buyerPhone,
-  onIndexChange,
-  onClose
-}) => {
+export const OrderDesignViewer: React.FC<Props> = ({ slides, index, onIndexChange, onClose }) => {
   const slide = slides[index];
   const startX = useRef<number | null>(null);
   const startY = useRef<number | null>(null);
-  const [pickingNumber, setPickingNumber] = useState(false);
-  const [contacts, setContacts] = useState<Contact[]>([]);
-  const [typedNumber, setTypedNumber] = useState('');
   const [sending, setSending] = useState(false);
-  const [sendNote, setSendNote] = useState('');
-
-  const customerPhone = usablePhone(buyerPhone);
-
-  const numbers = useMemo(() => {
-    const rows: { key: string; label: string; phone: string }[] = [];
-    if (customerPhone) {
-      rows.push({ key: 'customer', label: buyerName || 'Customer', phone: customerPhone });
-    }
-    for (const contact of contacts) {
-      const phone = usablePhone(contact.phoneNumber);
-      if (!phone || rows.some(row => row.phone === phone)) continue;
-      rows.push({ key: contact.id, label: contact.name || phone, phone });
-    }
-    return rows;
-  }, [contacts, customerPhone, buyerName]);
-
-  useEffect(() => {
-    if (!pickingNumber) return;
-    void contactsApi.getAll().then(setContacts).catch(() => setContacts([]));
-  }, [pickingNumber]);
 
   const go = (delta: number) => {
     const next = Math.min(slides.length - 1, Math.max(0, index + delta));
@@ -121,11 +75,19 @@ export const OrderDesignViewer: React.FC<Props> = ({
   };
 
   useEffect(() => {
+    const urls = [index - 1, index, index + 1, index + 2]
+      .map(position => slides[position])
+      .filter(Boolean)
+      .map(viewSrc)
+      .filter(Boolean);
+    for (const src of urls) {
+      const img = new Image();
+      img.src = src;
+    }
+  }, [index, slides]);
+
+  useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (pickingNumber) {
-        if (event.key === 'Escape') setPickingNumber(false);
-        return;
-      }
       if (event.key === 'Escape') onClose();
       if (event.key === 'ArrowLeft') go(-1);
       if (event.key === 'ArrowRight') go(1);
@@ -149,73 +111,55 @@ export const OrderDesignViewer: React.FC<Props> = ({
     go(dx < 0 ? 1 : -1);
   };
 
-  const sendAll = async (rawPhone: string) => {
-    const phone = usablePhone(rawPhone);
-    if (!phone) {
-      setSendNote('Enter a WhatsApp number with the country code, or a 10-digit mobile.');
-      return;
-    }
+  const shareOnWhatsApp = async () => {
+    if (sending) return;
     setSending(true);
-    setSendNote('');
     try {
       const files: File[] = [];
       for (let i = 0; i < slides.length; i += 1) {
         try {
           files.push(await fetchImageFile(slides[i], i));
         } catch {
-          // A missing photo should not stop the rest of the order.
+          // One missing photo should not stop the rest.
         }
       }
       if (!files.length) throw new Error('No photos to send');
 
-      const caption = [
-        `To +${phone}`,
-        buyerName ? `Designs for ${buyerName}` : 'Order designs',
-        ...slides.map((item, i) => `${i + 1}. ${item.name}${item.quantity ? ` · Qty ${item.quantity}` : ''}`)
-      ].join('\n');
-
       if (isNativeAndroid()) {
         const dataUrls = await Promise.all(files.map(blobToDataUrl));
         await shareImagesNative(dataUrls);
-        setPickingNumber(false);
         return;
       }
 
-      const canShareFiles = typeof navigator.share === 'function'
-        && typeof navigator.canShare === 'function'
-        && navigator.canShare({ files });
-      if (canShareFiles) {
-        await navigator.share({ files, text: caption });
-        setPickingNumber(false);
+      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+      if (isMobile && typeof navigator.share === 'function' && navigator.canShare?.({ files })) {
+        await navigator.share({ files });
         return;
       }
 
       for (const file of files) downloadFile(file);
-      window.open(`https://wa.me/${phone}?text=${encodeURIComponent(caption)}`, '_blank', 'noopener,noreferrer');
-      setSendNote(`Downloaded ${files.length} design${files.length === 1 ? '' : 's'}. Attach them in the WhatsApp chat that opened for this number.`);
+      await openWhatsAppWithText('');
     } catch (error: any) {
       if (error?.name === 'AbortError') return;
-      setSendNote(error?.message || 'Could not send these designs on WhatsApp.');
+      alert(error?.message || 'Could not open WhatsApp.');
     } finally {
       setSending(false);
     }
   };
 
   if (!slide) return null;
-  const src = fullSrc(slide);
+  const src = viewSrc(slide);
 
   return (
     <div className="fixed inset-0 z-[120] bg-black flex flex-col" role="dialog" aria-modal="true" aria-label="Order designs">
       <div className="flex items-center justify-between gap-2 px-3 py-3 text-white">
         <button
           type="button"
-          onClick={() => {
-            setSendNote('');
-            setPickingNumber(true);
-          }}
-          className="inline-flex items-center gap-2 rounded-full bg-green-600 px-3 py-2 text-xs font-black uppercase"
+          onClick={() => void shareOnWhatsApp()}
+          disabled={sending}
+          className="inline-flex items-center gap-2 rounded-full bg-green-600 px-3 py-2 text-xs font-black uppercase disabled:opacity-60"
         >
-          <MessageCircle className="w-4 h-4" />
+          {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <MessageCircle className="w-4 h-4" />}
           WhatsApp
         </button>
         <p className="text-sm font-bold">{index + 1} / {slides.length}</p>
@@ -256,54 +200,6 @@ export const OrderDesignViewer: React.FC<Props> = ({
         </p>
         <p className="mt-1 text-[11px] text-white/50">Swipe for the next design in this order</p>
       </div>
-
-      {pickingNumber && (
-        <div className="absolute inset-0 z-20 bg-black/70 flex items-end sm:items-center justify-center p-3" onClick={() => !sending && setPickingNumber(false)}>
-          <div className="bg-white text-gray-900 w-full max-w-md rounded-3xl p-4 max-h-[80vh] overflow-y-auto" onClick={event => event.stopPropagation()}>
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-sm font-black">Send all {slides.length} designs</p>
-                <p className="text-xs text-gray-500">Choose the WhatsApp number. Every design in this order is sent together.</p>
-              </div>
-              <button type="button" onClick={() => setPickingNumber(false)} className="p-2 rounded-full hover:bg-gray-100" aria-label="Close number list">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="mt-3 space-y-2">
-              {numbers.map(row => (
-                <button
-                  key={row.key}
-                  type="button"
-                  disabled={sending}
-                  onClick={() => void sendAll(row.phone)}
-                  className="w-full rounded-2xl border border-gray-200 px-3 py-2 text-left hover:border-green-400 disabled:opacity-50"
-                >
-                  <p className="text-sm font-black">{row.label}</p>
-                  <p className="text-xs font-semibold text-gray-500">+{row.phone}</p>
-                </button>
-              ))}
-              <div className="flex gap-2 pt-1">
-                <input
-                  value={typedNumber}
-                  onChange={event => setTypedNumber(event.target.value)}
-                  placeholder="Other number"
-                  inputMode="tel"
-                  className="flex-1 rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold outline-none focus:ring-2 focus:ring-green-500"
-                />
-                <button
-                  type="button"
-                  disabled={sending || !typedNumber.trim()}
-                  onClick={() => void sendAll(typedNumber)}
-                  className="rounded-xl bg-green-600 px-3 py-2 text-xs font-black text-white disabled:opacity-40"
-                >
-                  {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Send'}
-                </button>
-              </div>
-              {sendNote && <p className="text-xs font-semibold text-amber-800">{sendNote}</p>}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

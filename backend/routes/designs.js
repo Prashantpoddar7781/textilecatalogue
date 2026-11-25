@@ -220,16 +220,27 @@ router.get('/:id/media/:kind', async (req, res, next) => {
     const kind = req.params.kind === 'full' ? 'full' : 'thumb';
     const forceProxy = String(req.query.proxy || '') === '1';
     const design = await prisma.design.findUnique({
-      where: { id: req.params.id }
+      where: { id: req.params.id },
+      select: kind === 'thumb'
+        ? { id: true, imageThumb: true }
+        : { id: true, image: true, imageThumb: true, imageFull: true }
     });
     if (!design) {
       return res.status(404).json({ error: 'Design not found' });
+    }
+    if (kind === 'thumb' && !design.imageThumb) {
+      const heavier = await prisma.design.findUnique({
+        where: { id: req.params.id },
+        select: { image: true, imageThumb: true, imageFull: true }
+      });
+      if (heavier) Object.assign(design, heavier);
     }
 
     const preferred = kind === 'full'
       ? (design.imageFull || (isPublicImageUrl(design.image) ? design.image : '') || design.imageThumb)
       : (design.imageThumb || design.imageFull || (isPublicImageUrl(design.image) ? design.image : ''));
     if (isPublicImageUrl(preferred)) {
+      res.set('Cache-Control', 'public, max-age=86400');
       if (forceProxy) {
         await streamRemoteImage(preferred, res);
         return;

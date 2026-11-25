@@ -786,8 +786,6 @@ export const OrdersPage: React.FC<Props> = ({ onBack, firmName }) => {
         <OrderDesignViewer
           slides={orderDesignRows(viewingOrder)}
           index={Math.min(designViewerIndex, Math.max(orderDesignRows(viewingOrder).length - 1, 0))}
-          buyerName={viewingOrder.buyerName}
-          buyerPhone={viewingOrder.buyerPhone}
           onIndexChange={setDesignViewerIndex}
           onClose={() => setDesignViewerIndex(null)}
         />
