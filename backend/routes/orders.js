@@ -7,7 +7,7 @@ import { requireActiveSubscription } from '../middleware/subscription.js';
 import { allocateNextInvoiceNumber } from '../utils/orderBilling.js';
 import { normalizeTransactionType, DEFAULT_SALES_TRANSACTION_TYPE, getGstDefaultsForTransactionType } from '../constants/erpTransactionTypes.js';
 import { allocateNextTypeBillNumber } from '../utils/transactionBilling.js';
-import { DESIGN_PREVIEW_SELECT, presentDesignPreview, publicImageRef } from '../utils/designImages.js';
+import { publicImageRef } from '../utils/designImages.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -17,7 +17,11 @@ const ORDER_STATUSES = ['waiting_approval', 'pending', 'completed'];
 const orderInclude = {
   customer: true,
   design: {
-    select: DESIGN_PREVIEW_SELECT
+    select: {
+      id: true,
+      name: true,
+      fabric: true
+    }
   },
   shareLink: {
     select: {
@@ -27,19 +31,57 @@ const orderInclude = {
   }
 };
 
-function presentOrder(order) {
+function presentOrderLine(line, design) {
+  const image = publicImageRef(line?.image);
+  return {
+    ...line,
+    designName: design?.name || line?.designName || null,
+    designCode: line?.designCode || design?.designCode || null,
+    fabric: line?.fabric || design?.fabric || null,
+    image: image.startsWith('http') ? image : ''
+  };
+}
+
+function presentOrder(order, designsById = new Map()) {
   if (!order) return order;
   const lines = Array.isArray(order.orderLines)
-    ? order.orderLines.map((line) => ({
-        ...line,
-        image: publicImageRef(line.image)
-      }))
+    ? order.orderLines.map((line) => presentOrderLine(
+      line,
+      line?.designId ? designsById.get(line.designId) : null
+    ))
     : order.orderLines;
+  const linked = order.designId ? designsById.get(order.designId) : null;
+  const design = order.design || linked
+    ? {
+        id: order.design?.id || linked?.id || order.designId,
+        name: linked?.name || order.design?.name || null,
+        fabric: order.design?.fabric || linked?.fabric || null,
+        image: ''
+      }
+    : order.design;
   return {
     ...order,
-    design: presentDesignPreview(order.design),
+    design,
     orderLines: lines
   };
+}
+
+async function presentOrders(orders) {
+  const ids = new Set();
+  for (const order of orders) {
+    if (order?.designId) ids.add(order.designId);
+    for (const line of Array.isArray(order?.orderLines) ? order.orderLines : []) {
+      if (line?.designId) ids.add(line.designId);
+    }
+  }
+  const designs = ids.size
+    ? await prisma.design.findMany({
+        where: { id: { in: [...ids] } },
+        select: { id: true, name: true, designCode: true, fabric: true }
+      })
+    : [];
+  const designsById = new Map(designs.map((design) => [design.id, design]));
+  return orders.map((order) => presentOrder(order, designsById));
 }
 
 function designImageForOrder(design) {
@@ -856,7 +898,7 @@ router.get('/', authenticateToken, requireActiveSubscription, async (req, res, n
       orderBy: { createdAt: 'desc' }
     });
 
-    res.json({ orders: orders.map(presentOrder) });
+    res.json({ orders: await presentOrders(orders) });
   } catch (error) {
     next(error);
   }
@@ -1021,8 +1063,12 @@ router.put('/:id/status', authenticateToken, requireActiveSubscription, [
     }
 
     if (existing.status === status) {
-      const order = await prisma.order.findUnique({ where: { id }, include: orderInclude });
-      return res.json({ order: presentOrder(order) });
+      return res.json({ order: presentOrder(existing) });
+    }
+
+    const statusRank = { waiting_approval: 0, pending: 1, completed: 2 };
+    if ((statusRank[existing.status] ?? 0) > (statusRank[status] ?? 0)) {
+      return res.json({ order: presentOrder(existing) });
     }
 
     const updated = await prisma.$transaction(async (tx) => {
@@ -1070,12 +1116,7 @@ router.put('/:id/status', authenticateToken, requireActiveSubscription, [
       return order;
     });
 
-    const orderWithDetails = await prisma.order.findUnique({
-      where: { id: updated.id },
-      include: orderInclude
-    });
-
-    res.json({ order: presentOrder(orderWithDetails) });
+    res.json({ order: presentOrder(updated) });
   } catch (error) {
     next(error);
   }
@@ -1139,12 +1180,7 @@ router.put('/:id/lines/:lineIndex/completion', authenticateToken, requireActiveS
       });
     });
 
-    const orderWithDetails = await prisma.order.findUnique({
-      where: { id: updated.id },
-      include: orderInclude
-    });
-
-    res.json({ order: presentOrder(orderWithDetails) });
+    res.json({ order: presentOrder(updated) });
   } catch (error) {
     next(error);
   }

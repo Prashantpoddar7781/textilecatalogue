@@ -142,8 +142,8 @@ export const OrderFormCheckout: React.FC<Props> = ({
                     <div className="h-12 w-12 rounded-lg bg-gray-100" />
                   )}
                   <div className="min-w-0">
-                    <p className="text-sm font-bold text-gray-900 truncate">{line.designCode || line.designName || 'Design'}</p>
-                    <p className="text-[11px] text-gray-500 truncate">{line.designName || line.fabric || line.catalogueName}</p>
+                    <p className="text-sm font-bold text-gray-900 break-words">{line.designName || line.designCode || 'Design'}</p>
+                    <p className="text-[11px] text-gray-500 break-words">{line.designCode && line.designCode !== line.designName ? line.designCode : (line.fabric || line.catalogueName || '')}</p>
                     <p className="text-xs font-semibold text-indigo-700 sm:hidden">₹{rate.toLocaleString('en-IN')}</p>
                   </div>
                   <div className="hidden sm:block text-xs font-bold text-gray-800">₹{rate.toLocaleString('en-IN')}</div>

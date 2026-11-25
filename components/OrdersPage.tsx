@@ -11,10 +11,48 @@ import { GenerateInvoiceDialog } from './GenerateInvoiceDialog';
 import { ManualOrderDialog } from './ManualOrderDialog';
 import { isUsableImageSrc } from '../services/designMedia';
 
+function designTitle(line: { designName?: string | null; designCode?: string | null }) {
+  const name = String(line.designName || '').trim();
+  if (name) return name;
+  const code = String(line.designCode || '').trim();
+  return code || 'Design';
+}
+
 function orderImageSrc(image?: string | null, designId?: string | null) {
   if (isUsableImageSrc(image)) return image as string;
   if (designId) return `${API_BASE_URL}/designs/${designId}/media/thumb`;
   return '';
+}
+
+function orderDesignRows(order: Order) {
+  const lines = order.orderLines || [];
+  if (lines.length > 0) {
+    return lines.map((line, index) => ({
+      key: `${line.designId || 'line'}-${index}`,
+      designId: line.designId,
+      name: designTitle(line),
+      code: line.designCode && line.designCode !== line.designName ? line.designCode : '',
+      image: orderImageSrc(line.image, line.designId),
+      quantity: line.quantity,
+      fabric: line.fabric || '',
+      remarks: line.remarks || '',
+      completed: Boolean(line.completed)
+    }));
+  }
+  if (order.design || order.designId) {
+    return [{
+      key: order.designId || order.design?.id || order.id,
+      designId: order.designId || order.design?.id,
+      name: order.design?.name || 'Design',
+      code: '',
+      image: orderImageSrc(order.design?.image, order.designId || order.design?.id),
+      quantity: order.quantity,
+      fabric: order.design?.fabric || '',
+      remarks: '',
+      completed: order.status === 'completed'
+    }];
+  }
+  return [];
 }
 
 /** How often the orders list polls for new orders from other staff/devices (ms). */
@@ -28,17 +66,19 @@ interface Props {
 export const OrdersPage: React.FC<Props> = ({ onBack, firmName }) => {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(false);
-  const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [showManual, setShowManual] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
   const [activeTab, setActiveTab] = useState<'waiting_approval' | 'pending' | 'completed' | 'all'>('waiting_approval');
   const [lastRefreshedAt, setLastRefreshedAt] = useState<Date | null>(null);
   const [designSearch, setDesignSearch] = useState('');
   const [editingOrder, setEditingOrder] = useState<Order | null>(null);
+  const [viewingId, setViewingId] = useState<string | null>(null);
   const [invoiceOrder, setInvoiceOrder] = useState<Order | null>(null);
   const loadingOrdersRef = useRef(false);
+  const suppressRefreshUntil = useRef(0);
 
   const loadOrders = useCallback(async (options?: { background?: boolean }) => {
+    if (options?.background && Date.now() < suppressRefreshUntil.current) return;
     if (loadingOrdersRef.current) return;
     loadingOrdersRef.current = true;
     try {
@@ -86,82 +126,78 @@ export const OrdersPage: React.FC<Props> = ({ onBack, firmName }) => {
 
   const markCompleted = async (orderId: string) => {
     let previousOrders: Order[] = [];
-    try {
-      setUpdatingId(orderId);
-      setOrders(prev => {
-        previousOrders = prev;
-        return prev.map(order => {
-          if (order.id !== orderId) return order;
-          return {
-            ...order,
-            status: 'completed',
-            orderLines: order.orderLines?.map(line => ({
-              ...line,
-              completed: true,
-              completedAt: line.completedAt || new Date().toISOString()
-            })) || order.orderLines
-          };
-        });
+    suppressRefreshUntil.current = Date.now() + 60000;
+    setOrders(prev => {
+      previousOrders = prev;
+      return prev.map(order => {
+        if (order.id !== orderId) return order;
+        return {
+          ...order,
+          status: 'completed',
+          orderLines: order.orderLines?.map(line => ({
+            ...line,
+            completed: true,
+            completedAt: line.completedAt || new Date().toISOString()
+          })) || order.orderLines
+        };
       });
-      const { order } = await ordersApi.updateStatus(orderId, 'completed');
-      setOrders(prev => prev.map(o => (o.id === order.id ? { ...o, ...order } : o)));
+    });
+    try {
+      await ordersApi.updateStatus(orderId, 'completed');
       notifyOrdersUpdated();
+      suppressRefreshUntil.current = Date.now() + 1500;
     } catch (error) {
+      suppressRefreshUntil.current = 0;
       setOrders(previousOrders);
       alert('Failed to update order status.');
-    } finally {
-      setUpdatingId(null);
     }
   };
 
   const markLineCompleted = async (orderId: string, lineIndex: number) => {
-    const updateKey = `${orderId}:${lineIndex}`;
     let previousOrders: Order[] = [];
-    try {
-      setUpdatingId(updateKey);
-      setOrders(prev => {
-        previousOrders = prev;
-        return prev.map(order => {
-          if (order.id !== orderId || !order.orderLines) return order;
-          const nextLines = order.orderLines.map((line, idx) => idx === lineIndex
-            ? { ...line, completed: true, completedAt: line.completedAt || new Date().toISOString() }
-            : line
-          );
-          const allComplete = nextLines.length > 0 && nextLines.every(line => line.completed);
-          return {
-            ...order,
-            orderLines: nextLines,
-            status: allComplete ? 'completed' : order.status
-          };
-        });
+    suppressRefreshUntil.current = Date.now() + 60000;
+    setOrders(prev => {
+      previousOrders = prev;
+      return prev.map(order => {
+        if (order.id !== orderId || !order.orderLines) return order;
+        const nextLines = order.orderLines.map((line, idx) => idx === lineIndex
+          ? { ...line, completed: true, completedAt: line.completedAt || new Date().toISOString() }
+          : line
+        );
+        const allComplete = nextLines.length > 0 && nextLines.every(line => line.completed);
+        return {
+          ...order,
+          orderLines: nextLines,
+          status: allComplete ? 'completed' : order.status
+        };
       });
-      const { order } = await ordersApi.updateLineCompletion(orderId, lineIndex, true);
-      setOrders(prev => prev.map(o => (o.id === order.id ? { ...o, ...order } : o)));
+    });
+    try {
+      await ordersApi.updateLineCompletion(orderId, lineIndex, true);
       notifyOrdersUpdated();
+      suppressRefreshUntil.current = Date.now() + 1500;
     } catch (error) {
+      suppressRefreshUntil.current = 0;
       setOrders(previousOrders);
       alert('Failed to complete this item.');
-    } finally {
-      setUpdatingId(null);
     }
   };
 
   const approveOrder = async (orderId: string) => {
     let previousOrders: Order[] = [];
+    suppressRefreshUntil.current = Date.now() + 60000;
+    setOrders(prev => {
+      previousOrders = prev;
+      return prev.map(o => (o.id === orderId ? { ...o, status: 'pending' } : o));
+    });
     try {
-      setUpdatingId(orderId);
-      setOrders(prev => {
-        previousOrders = prev;
-        return prev.map(o => (o.id === orderId ? { ...o, status: 'pending' } : o));
-      });
-      const { order } = await ordersApi.updateStatus(orderId, 'pending');
-      setOrders(prev => prev.map(o => (o.id === order.id ? { ...o, ...order } : o)));
+      await ordersApi.updateStatus(orderId, 'pending');
       notifyOrdersUpdated();
+      suppressRefreshUntil.current = Date.now() + 1500;
     } catch (error) {
+      suppressRefreshUntil.current = 0;
       setOrders(previousOrders);
       alert('Failed to approve order.');
-    } finally {
-      setUpdatingId(null);
     }
   };
 
@@ -192,6 +228,11 @@ export const OrdersPage: React.FC<Props> = ({ onBack, firmName }) => {
     }
     return list;
   }, [activeTab, orders, designSearch, designSearchOrderIds]);
+
+  const viewingOrder = useMemo(
+    () => (viewingId ? orders.find(order => order.id === viewingId) || null : null),
+    [orders, viewingId]
+  );
 
   const counts = useMemo(() => ({
     waiting_approval: orders.filter(order => order.status === 'waiting_approval').length,
@@ -321,9 +362,11 @@ export const OrdersPage: React.FC<Props> = ({ onBack, firmName }) => {
                   </p>
                   <div className="mt-2 space-y-1.5 max-h-40 overflow-y-auto">
                     {designSearchMatches.map((match, idx) => (
-                      <div
+                      <button
                         key={`${match.order.id}-${match.designId || idx}`}
-                        className="flex items-center justify-between gap-2 rounded-lg bg-white px-2.5 py-1.5 text-xs border border-amber-100"
+                        type="button"
+                        onClick={() => setViewingId(match.order.id)}
+                        className="flex w-full items-center justify-between gap-2 rounded-lg bg-white px-2.5 py-1.5 text-left text-xs border border-amber-100 hover:border-indigo-200"
                       >
                         <div className="min-w-0">
                           <p className="font-bold text-gray-900 truncate">
@@ -334,7 +377,7 @@ export const OrdersPage: React.FC<Props> = ({ onBack, firmName }) => {
                             {match.order.orderNumber ? ` · #${match.order.orderNumber}` : ''}
                           </p>
                         </div>
-                      </div>
+                      </button>
                     ))}
                   </div>
                 </>
@@ -412,7 +455,16 @@ export const OrdersPage: React.FC<Props> = ({ onBack, firmName }) => {
                     ? 'Completed'
                     : order.status;
               return (
-                <div key={order.id} className="bg-white border border-gray-100 rounded-2xl p-4 shadow-sm">
+                <div
+                  key={order.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setViewingId(order.id)}
+                  onKeyDown={event => {
+                    if (event.key === 'Enter') setViewingId(order.id);
+                  }}
+                  className="bg-white border border-gray-100 rounded-2xl p-4 shadow-sm cursor-pointer hover:border-indigo-200"
+                >
                   <div className="flex items-center gap-3">
                     {isOpen ? (
                       <div className="w-12 h-12 rounded-lg bg-amber-50 flex items-center justify-center border border-amber-100">
@@ -462,7 +514,7 @@ export const OrdersPage: React.FC<Props> = ({ onBack, firmName }) => {
                       )}
                       {hasGroupedLines && (
                         <p className="text-xs text-gray-500 truncate">
-                          {orderLines.map(line => line.designCode || line.designName || line.designId).join(', ')}
+                          {orderLines.map(line => designTitle(line)).join(', ')}
                         </p>
                       )}
                     </div>
@@ -494,8 +546,8 @@ export const OrdersPage: React.FC<Props> = ({ onBack, firmName }) => {
                               <img src={orderImageSrc(line.image, line.designId)} alt={line.designName || 'Design'} className="h-9 w-9 rounded-md object-cover" />
                             )}
                             <div className="min-w-0 flex-1">
-                              <p className={`truncate font-semibold ${line.completed ? 'text-green-700 line-through decoration-green-500' : 'text-gray-800'}`}>
-                                {line.designCode || line.designName || line.designId}
+                              <p className={`font-semibold break-words ${line.completed ? 'text-green-700 line-through decoration-green-500' : 'text-gray-800'}`}>
+                                {designTitle(line)}
                               </p>
                               <p className="text-[10px] text-gray-500">
                                 Qty: {line.quantity}
@@ -511,11 +563,13 @@ export const OrdersPage: React.FC<Props> = ({ onBack, firmName }) => {
                               ) : (
                                 <button
                                   type="button"
-                                  onClick={() => void markLineCompleted(order.id, idx)}
-                                  disabled={updatingId === `${order.id}:${idx}` || updatingId === order.id}
-                                  className="shrink-0 rounded-lg border border-green-200 bg-green-50 px-2 py-1 text-[10px] font-black text-green-800 hover:bg-green-100 disabled:opacity-50"
+                                  onClick={event => {
+                                    event.stopPropagation();
+                                    void markLineCompleted(order.id, idx);
+                                  }}
+                                  className="shrink-0 rounded-lg border border-green-200 bg-green-50 px-2 py-1 text-[10px] font-black text-green-800 hover:bg-green-100"
                                 >
-                                  {updatingId === `${order.id}:${idx}` ? '...' : 'Complete'}
+                                  Complete
                                 </button>
                               )
                             )}
@@ -572,7 +626,7 @@ export const OrdersPage: React.FC<Props> = ({ onBack, firmName }) => {
                       <span className="font-semibold">Status:</span> {statusLabel}
                     </p>
                   </div>
-                  <div className="mt-4 space-y-2">
+                  <div className="mt-4 space-y-2" onClick={event => event.stopPropagation()}>
                     {!isOpen && (
                       <div className="grid grid-cols-4 gap-2">
                         <button
@@ -613,32 +667,33 @@ export const OrdersPage: React.FC<Props> = ({ onBack, firmName }) => {
                     )}
                     {order.status === 'waiting_approval' && (
                       <button
-                        onClick={() => approveOrder(order.id)}
-                        disabled={updatingId === order.id}
-                        className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 disabled:opacity-50"
+                        type="button"
+                        onClick={() => void approveOrder(order.id)}
+                        className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2"
                       >
                         <ThumbsUp className="w-4 h-4" />
-                        {updatingId === order.id ? 'Approving...' : 'Approve'}
+                        Approve
                       </button>
                     )}
                     {order.status === 'pending' && hasGroupedLines && (
                       <button
-                        onClick={() => markCompleted(order.id)}
-                        disabled={updatingId === order.id || !hasIncompleteLines}
+                        type="button"
+                        onClick={() => void markCompleted(order.id)}
+                        disabled={!hasIncompleteLines}
                         className="w-full bg-green-600 hover:bg-green-700 text-white py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 disabled:opacity-50"
                       >
                         <CheckCircle className="w-4 h-4" />
-                        {updatingId === order.id ? 'Updating...' : 'Complete all items'}
+                        Complete all items
                       </button>
                     )}
                     {order.status === 'pending' && !hasGroupedLines && (
                       <button
-                        onClick={() => markCompleted(order.id)}
-                        disabled={updatingId === order.id}
-                        className="w-full bg-green-600 hover:bg-green-700 text-white py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 disabled:opacity-50"
+                        type="button"
+                        onClick={() => void markCompleted(order.id)}
+                        className="w-full bg-green-600 hover:bg-green-700 text-white py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2"
                       >
                         <CheckCircle className="w-4 h-4" />
-                        {updatingId === order.id ? 'Updating...' : 'Mark Completed'}
+                        Mark Completed
                       </button>
                     )}
                     {order.status === 'completed' && (
@@ -661,6 +716,65 @@ export const OrdersPage: React.FC<Props> = ({ onBack, firmName }) => {
         )}
       </div>
 
+      {viewingOrder && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 p-0 sm:p-4" onClick={() => setViewingId(null)}>
+          <div
+            className="bg-white w-full max-w-3xl rounded-t-3xl sm:rounded-3xl shadow-2xl max-h-[min(94vh,900px)] overflow-hidden flex flex-col"
+            onClick={event => event.stopPropagation()}
+          >
+            <div className="shrink-0 px-5 py-4 border-b flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-[10px] font-black uppercase tracking-widest text-indigo-600">
+                  {viewingOrder.status === 'waiting_approval' ? 'Waiting for approval' : viewingOrder.status === 'pending' ? 'Pending' : viewingOrder.status === 'completed' ? 'Completed' : viewingOrder.status}
+                </p>
+                <h2 className="text-lg font-black text-gray-900 truncate">{viewingOrder.buyerName}</h2>
+                <p className="text-xs font-semibold text-gray-500">
+                  {viewingOrder.orderNumber ? `Order #${viewingOrder.orderNumber}` : 'Order'}
+                  {` · ${orderDesignRows(viewingOrder).length} design${orderDesignRows(viewingOrder).length === 1 ? '' : 's'}`}
+                  {` · Qty ${viewingOrder.quantity}`}
+                </p>
+              </div>
+              <button type="button" onClick={() => setViewingId(null)} className="p-2 rounded-full hover:bg-gray-100 text-gray-500">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-2">
+              {orderDesignRows(viewingOrder).length === 0 ? (
+                <p className="text-sm text-gray-500">No designs on this order.</p>
+              ) : orderDesignRows(viewingOrder).map(line => (
+                <div key={line.key} className="flex items-center gap-3 rounded-2xl border border-gray-100 bg-gray-50 p-3">
+                  {line.image ? (
+                    <img src={line.image} alt={line.name} className="h-16 w-16 rounded-xl object-cover bg-white" />
+                  ) : (
+                    <div className="h-16 w-16 rounded-xl bg-white border border-gray-100" />
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <p className={`text-sm font-black break-words ${line.completed ? 'text-green-700' : 'text-gray-900'}`}>{line.name}</p>
+                    {line.code && <p className="text-xs font-semibold text-gray-500 break-words">{line.code}</p>}
+                    {line.fabric && <p className="text-xs text-gray-500 break-words">{line.fabric}</p>}
+                    <p className="text-xs font-bold text-indigo-700">Qty {line.quantity}{line.remarks ? ` · ${line.remarks}` : ''}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="shrink-0 border-t bg-gray-50 p-4 flex gap-2">
+              <button type="button" onClick={() => setViewingId(null)} className="flex-1 rounded-xl border border-gray-200 bg-white py-3 font-bold text-gray-700">
+                Close
+              </button>
+              {viewingOrder.status === 'waiting_approval' && (
+                <button type="button" onClick={() => void approveOrder(viewingOrder.id)} className="flex-1 rounded-xl bg-indigo-600 py-3 font-bold text-white">
+                  Approve
+                </button>
+              )}
+              {viewingOrder.status === 'pending' && (
+                <button type="button" onClick={() => void markCompleted(viewingOrder.id)} className="flex-1 rounded-xl bg-green-600 py-3 font-bold text-white">
+                  Mark completed
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
       {showManual && (
         <ManualOrderDialog
           onClose={() => setShowManual(false)}
