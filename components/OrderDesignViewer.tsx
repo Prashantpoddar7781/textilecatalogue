@@ -28,19 +28,34 @@ function viewSrc(slide: OrderDesignSlide) {
   return '';
 }
 
+function shareSrcs(slide: OrderDesignSlide) {
+  const urls: string[] = [];
+  if (slide.designId) {
+    urls.push(`${API_BASE_URL}/designs/${slide.designId}/media/thumb?proxy=1`);
+    urls.push(`${API_BASE_URL}/designs/${slide.designId}/media/full?proxy=1`);
+  }
+  if (slide.image && !urls.includes(slide.image)) urls.push(slide.image);
+  return urls;
+}
+
 async function fetchImageFile(slide: OrderDesignSlide, index: number) {
-  const src = viewSrc(slide);
-  if (!src) throw new Error('Missing photo');
   const token = typeof localStorage !== 'undefined' ? localStorage.getItem('auth_token') : null;
-  const response = await fetch(src, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {}
-  });
-  if (!response.ok) throw new Error('Photo did not load');
-  const blob = await response.blob();
-  const type = blob.type && blob.type.startsWith('image/') ? blob.type : 'image/jpeg';
-  const ext = type.includes('png') ? 'png' : 'jpg';
-  const safe = (slide.name || `design-${index + 1}`).replace(/[^\w\-]+/g, '_').slice(0, 40);
-  return new File([blob], `${index + 1}-${safe}.${ext}`, { type });
+  const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {};
+  for (const src of shareSrcs(slide)) {
+    try {
+      const response = await fetch(src, { headers });
+      if (!response.ok) continue;
+      const blob = await response.blob();
+      if (!blob || blob.size < 32) continue;
+      const type = blob.type && blob.type.startsWith('image/') ? blob.type : 'image/jpeg';
+      const ext = type.includes('png') ? 'png' : 'jpg';
+      const safe = (slide.name || `design-${index + 1}`).replace(/[^\w\-]+/g, '_').slice(0, 40);
+      return new File([blob], `${String(index + 1).padStart(2, '0')}-${safe}.${ext}`, { type });
+    } catch {
+      // Try the next photo address.
+    }
+  }
+  throw new Error(`Could not load ${slide.name || 'a design'}`);
 }
 
 function blobToDataUrl(blob: Blob) {
@@ -113,17 +128,19 @@ export const OrderDesignViewer: React.FC<Props> = ({ slides, index, onIndexChang
 
   const shareOnWhatsApp = async () => {
     if (sending) return;
+    const orderSlides = slides.filter(item => item.designId || item.image);
+    if (!orderSlides.length) {
+      alert('This order has no designs to send.');
+      return;
+    }
     setSending(true);
     try {
-      const files: File[] = [];
-      for (let i = 0; i < slides.length; i += 1) {
-        try {
-          files.push(await fetchImageFile(slides[i], i));
-        } catch {
-          // One missing photo should not stop the rest.
-        }
+      const files = (await Promise.all(
+        orderSlides.map((item, position) => fetchImageFile(item, position).catch(() => null))
+      )).filter((file): file is File => Boolean(file));
+      if (files.length < orderSlides.length) {
+        throw new Error(`Only ${files.length} of ${orderSlides.length} designs could be prepared. WhatsApp was not opened.`);
       }
-      if (!files.length) throw new Error('No photos to send');
 
       if (isNativeAndroid()) {
         const dataUrls = await Promise.all(files.map(blobToDataUrl));
@@ -131,13 +148,15 @@ export const OrderDesignViewer: React.FC<Props> = ({ slides, index, onIndexChang
         return;
       }
 
-      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-      if (isMobile && typeof navigator.share === 'function' && navigator.canShare?.({ files })) {
+      if (typeof navigator.share === 'function' && navigator.canShare?.({ files })) {
         await navigator.share({ files });
         return;
       }
 
-      for (const file of files) downloadFile(file);
+      for (let i = 0; i < files.length; i += 1) {
+        downloadFile(files[i]);
+        if (i < files.length - 1) await new Promise(resolve => window.setTimeout(resolve, 350));
+      }
       await openWhatsAppWithText('');
     } catch (error: any) {
       if (error?.name === 'AbortError') return;
@@ -160,7 +179,7 @@ export const OrderDesignViewer: React.FC<Props> = ({ slides, index, onIndexChang
           className="inline-flex items-center gap-2 rounded-full bg-green-600 px-3 py-2 text-xs font-black uppercase disabled:opacity-60"
         >
           {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <MessageCircle className="w-4 h-4" />}
-          WhatsApp
+          WhatsApp ({slides.length})
         </button>
         <p className="text-sm font-bold">{index + 1} / {slides.length}</p>
         <button type="button" onClick={onClose} className="p-2 rounded-full bg-white/15" aria-label="Close">
