@@ -31,10 +31,8 @@ function viewSrc(slide: OrderDesignSlide) {
 function shareSrcs(slide: OrderDesignSlide) {
   const urls: string[] = [];
   if (slide.designId) {
-    urls.push(`${API_BASE_URL}/designs/${slide.designId}/media/thumb?proxy=1`);
     urls.push(`${API_BASE_URL}/designs/${slide.designId}/media/full?proxy=1`);
   }
-  if (slide.image && !urls.includes(slide.image)) urls.push(slide.image);
   return urls;
 }
 
