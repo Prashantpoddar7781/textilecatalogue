@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { LrEntryRow, salesOrdersApi } from '../services/api';
 import { ErpSession } from '../types';
@@ -62,7 +62,7 @@ export const LrEntryPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
     setError('');
     setNotice('');
@@ -79,13 +79,11 @@ export const LrEntryPage: React.FC<Props> = ({ onBack, erpSession }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [transactionType, fromDate, toDate]);
 
   useEffect(() => {
     void load();
-    // Open the current month of Finish Sales (GST) the first time.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [load]);
 
   const visible = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -231,7 +229,7 @@ export const LrEntryPage: React.FC<Props> = ({ onBack, erpSession }) => {
                   <tr><td colSpan={14} className={`${tdClass} py-8 text-center`}><Loader2 className="mx-auto h-5 w-5 animate-spin" /></td></tr>
                 )}
                 {!loading && loaded && visible.length === 0 && (
-                  <tr><td colSpan={14} className={`${tdClass} py-8 text-center text-slate-500`}>No bills in this list.</td></tr>
+                  <tr><td colSpan={14} className={`${tdClass} py-8 text-center text-slate-500`}>No {transactionType} bills between these dates.</td></tr>
                 )}
                 {!loading && visible.map(row => (
                   <tr
@@ -283,7 +281,7 @@ export const LrEntryPage: React.FC<Props> = ({ onBack, erpSession }) => {
           </div>
 
           <div className="mt-3 grid gap-3 text-xs font-bold text-slate-700 md:grid-cols-4">
-            <p>Total parcels: {visible.length}</p>
+            <p>Total parcels: {visible.length}{rows.length !== visible.length ? ` of ${rows.length}` : ''}</p>
             <p>Parcels with LR: {withLr}</p>
             <p>Amount of this bill: {selected ? money(selected.amount) : '—'}</p>
             <p>Company of this bill: {companyName || '—'}</p>
