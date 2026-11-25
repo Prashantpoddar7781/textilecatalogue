@@ -3,6 +3,7 @@ import { Edit3, Loader2, Plus, RefreshCw, Search, Trash2 } from 'lucide-react';
 import { bankEntriesApi, commissionsApi, partiesApi, vouchersApi } from '../services/api';
 import { getNavigableFields } from '../hooks/useErpFormKeyboard';
 import { parseVoucherNumber } from '../utils/parseVoucherNumber';
+import { clearBankOutstandingPrefill, readBankOutstandingPrefill } from '../utils/bankOutstandingPrefill';
 import { AccountParty, BankEntry, BankPendingBill, CompletedOrderParty, PurchaseBillParty } from '../types';
 import { partyRoleForAccountType } from '../constants/accountTypes';
 import { postingSaleOrPurchaseAccount, warnsOnManualEntry } from '../constants/erpTransactionPostingRules';
@@ -391,6 +392,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
             return keepPickedBill(bill, picked);
           }).sort(compareOldestBill);
         });
+        if (excludeEntryId) clearBankOutstandingPrefill(excludeEntryId);
         setRestoreAllocations(null);
       } else {
         setPendingBills(prev => {
@@ -972,9 +974,8 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
       referenceNumber: entry.referenceNumber || '',
       remarks: entry.remarks || ''
     });
-    if (Array.isArray(entry.billAllocations) && entry.billAllocations.length > 0) {
-      setRestoreAllocations(
-        entry.billAllocations.map(item => ({
+    const stored = Array.isArray(entry.billAllocations) && entry.billAllocations.length > 0
+      ? entry.billAllocations.map(item => ({
           billId: item.billId,
           billType: item.billType,
           billNumber: item.billNumber,
@@ -1000,10 +1001,14 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
           noteSide: item.noteSide,
           adjustDirection: isDeductAllocation(item) ? 'deduct' : (item.adjustDirection || 'add')
         }))
-      );
-    } else {
-      setRestoreAllocations(null);
+      : [];
+    const prefill = readBankOutstandingPrefill(entry.id) || [];
+    const byId = new Map(stored.map(item => [item.billId, item]));
+    for (const bill of prefill) {
+      if (!bill?.billId || byId.has(bill.billId)) continue;
+      byId.set(bill.billId, bill);
     }
+    setRestoreAllocations(byId.size ? [...byId.values()] : null);
   };
 
   useEffect(() => {

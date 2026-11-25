@@ -4,6 +4,7 @@ import { bankEntriesApi } from '../services/api';
 import { ErpSession } from '../types';
 import { partyNameMatches } from '../utils/partyNameMatch';
 import { rememberErpReturn, replaceErpSearch } from '../utils/erpBack';
+import { stashBankOutstandingPrefill } from '../utils/bankOutstandingPrefill';
 import { ErpPageBack } from './ErpPageBack';
 import { ErpTopMenu } from './ErpTopMenu';
 import { PartyNameField } from './PartyNameField';
@@ -286,6 +287,50 @@ export const BillWiseOutstandingPage: React.FC<Props> = ({ onBack, erpSession })
     window.location.href = row.editPath;
   };
 
+  const copyToBank = () => {
+    const picked = billRows.filter(row => selectedIds.has(rowKey(row)));
+    const payments = picked.filter(row => String(row.rowKind || '') === 'unadj' || String(row.billType || '') === 'unadj_payment');
+    const payment = payments.slice().sort((a, b) => Math.abs(Number(b.pendingAmount) || 0) - Math.abs(Number(a.pendingAmount) || 0))[0];
+    if (!payment?.billId) {
+      setAdjustNote('Select the bank receipt or payment as well, then copy.');
+      return;
+    }
+    const bills = picked
+      .filter(row => rowKey(row) !== rowKey(payment))
+      .map(row => {
+        const line = lineAmounts(row);
+        const open = Math.abs(line.pending);
+        const deduct = line.pending < 0 || String(row.rowKind || '') === 'return' || String(row.rowKind || '') === 'credit';
+        return {
+          billId: String(row.billId || ''),
+          billType: String(row.billType || 'order'),
+          billNumber: String(row.displayBillNumber || row.billNumber || ''),
+          transactionType: row.transactionType || null,
+          voucherNumber: row.voucherNumber || null,
+          billDate: row.billDate || null,
+          days: Number(row.days) || 0,
+          billAmount: Math.abs(Number(row.billAmount) || line.net || open),
+          pendingAmount: open,
+          taxableAmount: Number(row.taxableAmount) || 0,
+          adjustAmount: open,
+          discountPercent: 0,
+          discountAmount: 0,
+          adjustDirection: deduct ? 'deduct' : 'add',
+          brokerName: row.brokerName || null,
+          partyName: row.partyName || null,
+          editPath: row.editPath || null
+        };
+      })
+      .filter(row => row.billId && row.adjustAmount > 0);
+    if (!bills.length) {
+      setAdjustNote('Select the bills to put on this receipt or payment.');
+      return;
+    }
+    stashBankOutstandingPrefill({ entryId: String(payment.billId), bills });
+    rememberErpReturn();
+    window.location.href = `/erp/bank?edit=${encodeURIComponent(String(payment.billId))}`;
+  };
+
   return (
     <div className="min-h-screen bg-[#F6F7FB]">
       <ErpTopMenu title="Bill Wise Outstanding" erpSession={erpSession} showSessionActions onBackToCatalogue={onBack} />
@@ -367,6 +412,7 @@ export const BillWiseOutstandingPage: React.FC<Props> = ({ onBack, erpSession })
               </div>
               {adjustNote && <p className="mt-2 text-xs font-bold text-amber-800">{adjustNote}</p>}
               {adjustOpen && (
+                <>
                 <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-950">
                   {shownTotals.pending > 0.5
                     ? `After adjusting the selected bills against the selected payments, ${money(shownTotals.pending)} is still pending.`
@@ -381,6 +427,14 @@ export const BillWiseOutstandingPage: React.FC<Props> = ({ onBack, erpSession })
                     All bills
                   </button>
                 </div>
+                <button
+                  type="button"
+                  onClick={copyToBank}
+                  className="mt-2 w-full rounded-xl bg-emerald-700 px-3 py-2 text-xs font-black uppercase tracking-wide text-white"
+                >
+                  Copy this entry directly to bank receipt/payment
+                </button>
+                </>
               )}
             </div>
             <div
