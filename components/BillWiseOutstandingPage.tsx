@@ -62,6 +62,7 @@ function sumLines(list: BillRow[]) {
 
 function isTypingTarget(target: EventTarget | null) {
   if (!(target instanceof HTMLElement)) return false;
+  if (target instanceof HTMLInputElement && target.type === 'checkbox') return false;
   const tag = target.tagName;
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable;
 }
@@ -82,6 +83,9 @@ export const BillWiseOutstandingPage: React.FC<Props> = ({ onBack, erpSession })
   const [adjustNote, setAdjustNote] = useState('');
   const tableRef = useRef<HTMLDivElement>(null);
   const rowRefs = useRef<Array<HTMLTableRowElement | null>>([]);
+  const ctrlDown = useRef(false);
+  const chordOnDown = useRef(false);
+  const listState = useRef({ adjustOpen: false, selectedCount: 0, shownRows: [] as BillRow[], cursor: 0 });
 
   const load = async () => {
     setLoading(true);
@@ -195,14 +199,53 @@ export const BillWiseOutstandingPage: React.FC<Props> = ({ onBack, erpSession })
     setAdjustNote('');
   };
 
+  const openDifference = () => {
+    if (listState.current.adjustOpen) {
+      setAdjustOpen(false);
+      return;
+    }
+    if (!listState.current.selectedCount) {
+      setAdjustNote('Select a bill or a payment with Space first.');
+      return;
+    }
+    setAdjustOpen(true);
+    setCursor(0);
+    setAdjustNote('');
+  };
+
+  listState.current = { adjustOpen, selectedCount, shownRows, cursor };
+
   useEffect(() => {
     if (!selected) return undefined;
     const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Control' || event.key === 'Meta') {
+        ctrlDown.current = event.type === 'keydown';
+        return;
+      }
+      const space = event.code === 'Space' || event.key === ' ' || event.key === 'Spacebar' || event.keyCode === 32;
+      const chord = space && (event.ctrlKey || event.metaKey || ctrlDown.current);
+      if (chord) {
+        if (event.type === 'keydown' && event.repeat) return;
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.type === 'keyup') {
+          if (chordOnDown.current) {
+            chordOnDown.current = false;
+            return;
+          }
+        } else {
+          chordOnDown.current = true;
+        }
+        openDifference();
+        return;
+      }
+      if (event.type !== 'keydown') return;
       if (isTypingTarget(event.target)) return;
-      if (!billRows.length) return;
+      const current = listState.current;
+      if (!current.shownRows.length && event.key !== 'Escape') return;
       if (event.key === 'ArrowDown') {
         event.preventDefault();
-        setCursor(index => Math.min(shownRows.length - 1, index + 1));
+        setCursor(index => Math.min(current.shownRows.length - 1, index + 1));
         return;
       }
       if (event.key === 'ArrowUp') {
@@ -210,44 +253,32 @@ export const BillWiseOutstandingPage: React.FC<Props> = ({ onBack, erpSession })
         setCursor(index => Math.max(0, index - 1));
         return;
       }
-      if (event.key === 'Escape' && adjustOpen) {
+      if (event.key === 'Escape' && current.adjustOpen) {
         event.preventDefault();
         setAdjustOpen(false);
         return;
       }
-      const space = event.key === ' ' || event.code === 'Space';
-      if (space && (event.ctrlKey || event.metaKey)) {
-        event.preventDefault();
-        if (adjustOpen) {
-          setAdjustOpen(false);
-          return;
-        }
-        if (!selectedCount) {
-          setAdjustNote('Select a bill or a payment with Space first.');
-          return;
-        }
-        setAdjustOpen(true);
-        setCursor(0);
-        setAdjustNote('');
-        return;
-      }
       if (space) {
         event.preventDefault();
-        const row = shownRows[cursor];
+        const row = current.shownRows[current.cursor];
         if (row) toggleRow(rowKey(row));
         return;
       }
       if (event.key === 'Enter') {
-        const row = shownRows[cursor];
+        const row = current.shownRows[current.cursor];
         if (row?.editPath) {
           event.preventDefault();
           openBill(row);
         }
       }
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [selected, billRows.length, shownRows, cursor, adjustOpen, selectedCount]);
+    window.addEventListener('keydown', onKey, true);
+    window.addEventListener('keyup', onKey, true);
+    return () => {
+      window.removeEventListener('keydown', onKey, true);
+      window.removeEventListener('keyup', onKey, true);
+    };
+  }, [selected]);
 
   const openBill = (row: BillRow) => {
     if (!row?.editPath) return;
@@ -311,7 +342,7 @@ export const BillWiseOutstandingPage: React.FC<Props> = ({ onBack, erpSession })
           <section className="overflow-hidden rounded-2xl border bg-white shadow-sm">
             <div className="border-b bg-sky-50 px-4 py-3">
               <p className="text-sm font-black uppercase tracking-wide text-sky-950">
-                Outstanding bills — {selected.name}
+                {adjustOpen ? 'Adjustment — ' : 'Outstanding bills — '}{selected.name}
               </p>
               <p className="mt-1 text-xs font-semibold text-sky-900">
                 {selected.phone ? `Ph: ${selected.phone}` : 'Ph: —'}
@@ -321,9 +352,19 @@ export const BillWiseOutstandingPage: React.FC<Props> = ({ onBack, erpSession })
                 {billRows.length} row{billRows.length === 1 ? '' : 's'} · Pending {money(totals.pending)}
                 {selectedCount ? ` · ${selectedCount} selected` : ''}
               </p>
-              <p className="mt-1 text-[11px] font-semibold text-slate-500">
-                Space selects. Arrow up / down moves. Ctrl+Space shows the difference. Esc closes that view. Click a bill to open it.
-              </p>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <p className="text-[11px] font-semibold text-slate-500">
+                  Space selects. Arrow up / down moves. Ctrl+Space shows the difference. Esc closes that view. Click a bill to open it.
+                </p>
+                <button
+                  type="button"
+                  disabled={!selectedCount && !adjustOpen}
+                  onClick={openDifference}
+                  className="rounded-lg bg-sky-800 px-3 py-1.5 text-[10px] font-black uppercase tracking-wide text-white disabled:opacity-40"
+                >
+                  {adjustOpen ? 'All bills' : `Difference${selectedCount ? ` (${selectedCount})` : ''}`}
+                </button>
+              </div>
               {adjustNote && <p className="mt-2 text-xs font-bold text-amber-800">{adjustNote}</p>}
               {adjustOpen && (
                 <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-950">
