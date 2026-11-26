@@ -77,13 +77,47 @@ interface ChallanChoice {
   pendingLine: WorkLineItem;
 }
 
-function challanChoices(pending: LinkedSourceDocument[]): ChallanChoice[] {
+function challanLineKey(sourceId: string, lineNo?: number | null) {
+  return `${sourceId}:${lineNo || 0}`;
+}
+
+/** Pieces and metres already taken on the lines above this one. */
+function takenOnEarlierLines(lines: WorkLineItem[], index: number) {
+  const taken = new Map<string, { pcs: number; mts: number }>();
+  for (const row of lines.slice(0, index)) {
+    const allocs = (row.sourceAllocations || []).filter(alloc => alloc?.sourceDespatchId);
+    const parts = allocs.length
+      ? allocs.map(alloc => ({
+        id: alloc.sourceDespatchId || '',
+        lineNo: alloc.sourceLineNo,
+        pcs: Number(alloc.pcs) || 0,
+        mts: Number(alloc.mtsQty) || 0
+      }))
+      : row.sourceDespatchId
+        ? [{ id: row.sourceDespatchId, lineNo: row.sourceLineNo, pcs: Number(row.pcs) || 0, mts: Number(row.mtsQty) || 0 }]
+        : [];
+    for (const part of parts) {
+      if (!part.id || (part.pcs <= 0 && part.mts <= 0)) continue;
+      const key = challanLineKey(part.id, part.lineNo);
+      const current = taken.get(key) || { pcs: 0, mts: 0 };
+      current.pcs = round2(current.pcs + part.pcs);
+      current.mts = round2(current.mts + part.mts);
+      taken.set(key, current);
+    }
+  }
+  return taken;
+}
+
+function challanChoices(pending: LinkedSourceDocument[], taken = new Map<string, { pcs: number; mts: number }>()): ChallanChoice[] {
   const rows: ChallanChoice[] = [];
   for (const source of pending) {
     const pendingLines = source.pendingLines?.length ? source.pendingLines : [];
     for (const pendingLine of pendingLines) {
-      if ((Number(pendingLine.pendingPcs) || 0) <= 0 && (Number(pendingLine.pendingMts) || 0) <= 0) continue;
-      rows.push({ source, pendingLine });
+      const used = taken.get(challanLineKey(source.sourceId, pendingLine.lineNo));
+      const pendingPcs = round2(Math.max(0, (Number(pendingLine.pendingPcs) || 0) - (used?.pcs || 0)));
+      const pendingMts = round2(Math.max(0, (Number(pendingLine.pendingMts) || 0) - (used?.mts || 0)));
+      if (pendingPcs <= 0.001 && pendingMts <= 0.001) continue;
+      rows.push({ source, pendingLine: { ...pendingLine, pendingPcs, pendingMts } });
     }
   }
   return rows;
@@ -101,11 +135,13 @@ function choiceLabel(choice: ChallanChoice) {
 function LineChallanPick({
   value,
   pending,
+  taken,
   onPick,
   onClear
 }: {
   value: string;
   pending: LinkedSourceDocument[];
+  taken: Map<string, { pcs: number; mts: number }>;
   onPick: (choice: ChallanChoice) => void;
   onClear: () => void;
 }) {
@@ -121,12 +157,12 @@ function LineChallanPick({
 
   const matches = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return challanChoices(pending).filter(choice => {
+    return challanChoices(pending, taken).filter(choice => {
       if (!q) return true;
       const hay = `${choice.source.documentNo || ''} ${choice.pendingLine.itemName || ''} ${choice.pendingLine.category || ''}`.toLowerCase();
       return hay.includes(q);
     });
-  }, [pending, query]);
+  }, [pending, query, taken]);
 
   const placeBox = () => {
     const el = inputRef.current;
@@ -913,12 +949,22 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
         if (i !== index) return row;
         const itemName = String(row.itemName || '').trim() || choice.pendingLine.itemName || '';
         const category = String(row.category || '').trim() || choice.pendingLine.category || null;
+        const remainPcs = Number(choice.pendingLine.pendingPcs) || 0;
+        const remainMts = Number(choice.pendingLine.pendingMts) || 0;
+        const typedPcs = toNum(row.pcs);
+        const pcs = typedPcs > 0 ? Math.min(typedPcs, remainPcs > 0 ? remainPcs : typedPcs) : remainPcs;
+        const cut = toNum(choice.pendingLine.cut) || toNum(row.cut) || DEFAULT_CUT;
+        const rate = toNum(row.rate) > 0 ? toNum(row.rate) : toNum(choice.pendingLine.rate);
         return withLineLink(computeWorkLine(row, {
           sourceDespatchId: choice.source.sourceId,
           sourceChallanNo: choice.source.documentNo || null,
           sourceLineNo: choice.pendingLine.lineNo ?? null,
           itemName,
-          category
+          category,
+          pcs,
+          cut,
+          rate,
+          ...(typedPcs > 0 ? {} : { mtsQty: remainMts || round2(pcs * cut) })
         }));
       });
       const nos = [...new Set(next.map(row => row.sourceChallanNo).filter(Boolean))];
@@ -1330,6 +1376,7 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
                         <LineChallanPick
                           value={line.sourceChallanNo || ''}
                           pending={pending}
+                          taken={takenOnEarlierLines(lines, index)}
                           onPick={choice => linkLineChallan(index, choice)}
                           onClear={() => clearLineChallan(index)}
                         />
