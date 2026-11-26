@@ -2,8 +2,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Loader2, Plus, Trash2 } from 'lucide-react';
 import { postingPartyAccountType } from '../constants/erpTransactionPostingRules';
 import { getGstDefaultsForTransactionType } from '../constants/erpTransactionTypes';
-import { workDespatchesApi } from '../services/api';
-import { AccountParty, ErpSession, WorkLineItem } from '../types';
+import { salesOrdersApi, workDespatchesApi } from '../services/api';
+import { AccountParty, ErpSession, SalesItemMaster, WorkLineItem } from '../types';
 import { AccountsInformationDialog, AddPartyConfirmDialog } from './AccountsInformationDialog';
 import { GstTypeSelect, useMissingGstPrompt } from './GstTypeField';
 import { gstTypeFromGstin, isNonGstType } from '../utils/partyGst';
@@ -62,6 +62,7 @@ export const WorkDespatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [workTypes, setWorkTypes] = useState<string[]>([]);
   const [units, setUnits] = useState<string[]>(['PCS', 'MTS']);
   const [parties, setParties] = useState<Array<{ name: string; gstNumber?: string | null; state?: string | null; brokerName?: string | null }>>([]);
+  const [items, setItems] = useState<SalesItemMaster[]>([]);
   const [transactionType, setTransactionType] = useState('WORK DESP CHALLAN');
   const [partyName, setPartyName] = useState('');
   const [partyGstin, setPartyGstin] = useState('');
@@ -120,6 +121,11 @@ export const WorkDespatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
         setWorkTypes(meta.workTypes || []);
         setUnits(meta.units || ['PCS']);
         setParties(meta.parties || []);
+        salesOrdersApi.getItems().then(result => {
+          if (!cancelled) setItems(result.items || []);
+        }).catch(() => {
+          if (!cancelled) setItems([]);
+        });
 
         if (urlEditId) {
           const { entry } = await workDespatchesApi.getById(urlEditId);
@@ -542,7 +548,14 @@ export const WorkDespatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
                 <tbody>
                   {lines.map((line, index) => (
                     <tr key={index} data-erp-line className="border-b">
-                      <td className="px-2 py-2"><input className={inputClass} value={line.itemName} onChange={e => updateLine(index, { itemName: e.target.value })} /></td>
+                      <td className="px-2 py-2">
+                        <input
+                          className={inputClass}
+                          list="work-desp-items"
+                          value={line.itemName}
+                          onChange={e => updateLine(index, { itemName: e.target.value })}
+                        />
+                      </td>
                       <td className="px-2 py-2"><input className={inputClass} type="number" value={line.bundles || ''} onChange={e => updateLine(index, { bundles: toNum(e.target.value) })} /></td>
                       <td className="px-2 py-2"><input data-erp-line-default className={inputClass} value={line.jobType || ''} onChange={e => updateLine(index, { jobType: e.target.value })} /></td>
                       <td className="px-2 py-2">
@@ -576,6 +589,11 @@ export const WorkDespatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
                   </tr>
                 </tfoot>
               </table>
+              <datalist id="work-desp-items">
+                {items.map(item => (
+                  <option key={item.id} value={item.name} />
+                ))}
+              </datalist>
             </div>
             <div className="flex flex-wrap items-center justify-between gap-3 border-t px-4 py-3 text-xs">
               <label className="inline-flex items-center gap-2 font-bold text-gray-700">
