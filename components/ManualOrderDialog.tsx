@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { X, Package, LayoutGrid, Plus, Trash2, Loader2, Search } from 'lucide-react';
 import { customersApi, designsApi, ordersApi } from '../services/api';
+import { designThumbSrc } from '../services/designMedia';
 import { notifyOrdersUpdated } from '../services/ordersRealtime';
 import { Customer } from '../types';
 
@@ -30,6 +31,7 @@ interface DesignOption {
   /** Single line: name / number as stored on the design */
   displayLabel: string;
   searchBlob: string;
+  image: string;
 }
 
 function mapDesignsToOptions(designs: any[]): DesignOption[] {
@@ -41,7 +43,12 @@ function mapDesignsToOptions(designs: any[]): DesignOption[] {
       .filter(Boolean)
       .join(' ')
       .toLowerCase();
-    return { id: d.id, displayLabel, searchBlob };
+    return {
+      id: d.id,
+      displayLabel,
+      searchBlob,
+      image: designThumbSrc({ id: d.id, image: d.image, imageThumb: d.imageThumb })
+    };
   });
 }
 
@@ -93,10 +100,14 @@ function DesignSearchPicker({
   return (
     <div ref={containerRef} className="relative flex-1 min-w-0">
       <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+        {selected && !open ? (
+          <img src={selected.image} alt="" className="absolute left-2 top-1/2 -translate-y-1/2 h-7 w-7 rounded-md object-cover bg-gray-100 pointer-events-none" />
+        ) : (
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+        )}
         <input
           type="text"
-          className="w-full pl-9 pr-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-500"
+          className={`w-full pr-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-500 ${selected && !open ? 'pl-12' : 'pl-9'}`}
           placeholder="Search design name / number…"
           value={displayValue}
           onChange={e => {
@@ -114,7 +125,7 @@ function DesignSearchPicker({
       </div>
       {open && (
         <ul
-          className="absolute z-30 left-0 right-0 mt-1 max-h-52 overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-lg py-1"
+          className="absolute z-30 left-0 right-0 mt-1 max-h-72 overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-lg py-1"
           role="listbox"
         >
           {filtered.length === 0 ? (
@@ -124,7 +135,7 @@ function DesignSearchPicker({
               <li key={o.id} role="option">
                 <button
                   type="button"
-                  className={`w-full text-left px-3 py-2.5 text-sm hover:bg-indigo-50 ${
+                  className={`w-full text-left px-2 py-1.5 text-sm hover:bg-indigo-50 flex items-center gap-2 ${
                     value === o.id ? 'bg-indigo-50 font-semibold text-indigo-900' : 'text-gray-900'
                   }`}
                   onClick={() => {
@@ -133,7 +144,8 @@ function DesignSearchPicker({
                     setQuery('');
                   }}
                 >
-                  {o.displayLabel}
+                  <img src={o.image} alt="" className="h-11 w-11 rounded-lg object-cover bg-gray-100 shrink-0" />
+                  <span className="min-w-0 break-words">{o.displayLabel}</span>
                 </button>
               </li>
             ))
