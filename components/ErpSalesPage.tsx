@@ -36,6 +36,7 @@ import { partyDhara, partyGraceDays } from '../utils/partyBillingTerms';
 import { roundRupee } from '../utils/rupeeRound';
 import { billedMetres, netMetres } from '../utils/lineMetres';
 import { useVoucherJump } from '../hooks/useVoucherJump';
+import { stashContinueEntry, takeContinueEntry } from '../utils/continueEntry';
 import { empireVoucherLabel } from '../utils/empireVoucher';
 import { BillDiscountFields } from './BillDiscountFields';
 import { QualityFieldControl, useItemFieldOptions } from './QualityFieldControl';
@@ -325,7 +326,9 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
+  const [continued] = useState(() => takeContinueEntry());
+  const [success, setSuccess] = useState(continued?.notice || '');
+  const [nextBlank, setNextBlank] = useState<number | null>(continued?.voucher ?? null);
   const [companyName, setCompanyName] = useState('');
   const [businessState, setBusinessState] = useState('');
   const [gstChoice, setGstChoice] = useState('');
@@ -357,7 +360,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [checked, setChecked] = useState<Record<string, boolean>>({});
   const [pickerOpen, setPickerOpen] = useState(false);
   const [customerId, setCustomerId] = useState('');
-  const [partyName, setPartyName] = useState('');
+  const [partyName, setPartyName] = useState(continued?.partyName || '');
   const [partyGstin, setPartyGstin] = useState('');
   const [state, setState] = useState('');
   const [station, setStation] = useState('');
@@ -438,6 +441,34 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
     transactionType: isSalesOrder ? undefined : transactionType,
     currentId: isEditMode ? editId : null,
     shownNumber: isSalesOrder ? (orderNo || nextOrderNo) : empireVoucherLabel(typeBillNumber),
+    nextBlank: isSalesOrder ? nextOrderNo : nextBlank,
+    onMissing: (voucher, info) => {
+      if (editId) {
+        stashContinueEntry({ partyName, voucher, notice: info.message });
+        window.location.href = `/erp/sales?type=${encodeURIComponent(transactionType)}`;
+        return;
+      }
+      const onThisBlank = isSalesOrder ? Number(orderNo) === voucher : Number(typeBillNumber) === voucher;
+      if (onThisBlank) {
+        setVoucherInput(isSalesOrder ? String(voucher) : plainBillNo(voucher));
+        if (info.message) setSuccess(info.message);
+        return;
+      }
+      if (isSalesOrder) setOrderNo(String(voucher));
+      else setTypeBillNumber(voucher);
+      setLineItems([blankLine(1, defaultGstRate, defaultHsnCode, toNum(dhara))]);
+      setSourceSalesOrderId('');
+      setSourceOrderFormId('');
+      setSelectedSources([]);
+      setChecked({});
+      setRemarks('');
+      setLrNo('');
+      setLrDate('');
+      setSavedBillId('');
+      setSavedBillLabel('');
+      if (info.message) setSuccess(info.message);
+    },
+    onNotice: message => { if (message) setSuccess(message); },
     onError: setError
   });
 
@@ -513,7 +544,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
           setDefaultGstRate(d.gstRate);
           setDefaultHsnCode(d.hsnCode);
           setHsnCode(d.hsnCode);
-          setOrderNo(String(meta.nextOrderNo || 1));
+          setOrderNo(String(continued?.voucher || meta.nextOrderNo || 1));
           setLineItems([blankLine(1, d.gstRate, d.hsnCode)]);
           setBillDiscount(0);
         }
@@ -540,14 +571,20 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
   }, [editId, editKind]);
 
   useEffect(() => {
-    if (isSalesOrder || isEditMode) {
-      if (isSalesOrder) setTypeBillNumber(null);
-      return;
+    if (isSalesOrder) {
+      setNextBlank(nextOrderNo);
+      return undefined;
     }
+    let cancelled = false;
     void bankEntriesApi.getNextTypeBillNumber({ transactionType, source: 'order' })
-      .then(result => setTypeBillNumber(result.typeBillNumber))
-      .catch(() => setTypeBillNumber(null));
-  }, [transactionType, isSalesOrder, isEditMode]);
+      .then(result => {
+        if (cancelled) return;
+        setNextBlank(result.typeBillNumber);
+        if (!isEditMode) setTypeBillNumber(continued?.voucher || result.typeBillNumber);
+      })
+      .catch(() => { if (!cancelled && !isEditMode) setTypeBillNumber(continued?.voucher ?? null); });
+    return () => { cancelled = true; };
+  }, [transactionType, isSalesOrder, isEditMode, nextOrderNo, continued]);
 
   useEffect(() => {
     // Sales Goods Return does not consume Sales Order pending — skip Ord/Ref SO list.
@@ -1344,7 +1381,10 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
           setLrNo('');
           setLrDate('');
           setEinvoice(null);
-          if (next) setTypeBillNumber(next.typeBillNumber);
+          if (next) {
+            setTypeBillNumber(next.typeBillNumber);
+            setNextBlank(next.typeBillNumber);
+          }
         }
       }
     } catch (err: any) {

@@ -56,6 +56,8 @@ export const JournalVoucherPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [nextBlank, setNextBlank] = useState<number | null>(null);
+  const startNewRef = useRef<() => void>(() => {});
   const [companyName, setCompanyName] = useState('');
   const [typeBillNumber, setTypeBillNumber] = useState<number | null>(null);
   const [allocatedVoucher, setAllocatedVoucher] = useState('');
@@ -85,6 +87,17 @@ export const JournalVoucherPage: React.FC<Props> = ({ onBack, erpSession }) => {
     accountingYear,
     currentId: editingId,
     shownNumber: typeBillNumber,
+    nextBlank,
+    onMissing: (voucher, info) => {
+      if (!editingId && Number(typeBillNumber) === voucher) {
+        setVoucherInput(formatSeriesBillNumber(JOURNAL_TYPE, voucher) || String(voucher));
+        if (info.message) setSuccess(info.message);
+        return;
+      }
+      startNewRef.current();
+      if (info.message) setSuccess(info.message);
+    },
+    onNotice: message => { if (message) setSuccess(message); },
     onError: setError
   });
 
@@ -110,6 +123,7 @@ export const JournalVoucherPage: React.FC<Props> = ({ onBack, erpSession }) => {
       const result = await journalVouchersApi.getNextVoucher(accountingYear);
       setCompanyName(result.companyName || '');
       setTypeBillNumber(result.typeBillNumber);
+      setNextBlank(result.typeBillNumber);
       setAllocatedVoucher(result.voucherNumber);
       setVoucherInput(result.voucherNumber);
     } catch {
@@ -140,6 +154,9 @@ export const JournalVoucherPage: React.FC<Props> = ({ onBack, erpSession }) => {
   }, [loadList]);
 
   useEffect(() => {
+    void journalVouchersApi.getNextVoucher(accountingYear)
+      .then(result => setNextBlank(result.typeBillNumber))
+      .catch(() => undefined);
     const editId = new URLSearchParams(window.location.search).get('edit');
     if (!editId) {
       void loadMaster().finally(() => setLoading(false));
@@ -177,6 +194,7 @@ export const JournalVoucherPage: React.FC<Props> = ({ onBack, erpSession }) => {
     window.history.replaceState({}, '', `${url.pathname}${url.searchParams.toString() ? `?${url.searchParams.toString()}` : ''}`);
     void loadMaster();
   };
+  startNewRef.current = startNew;
 
   const openVoucher = (row: JournalVoucher) => {
     applyVoucher(row);

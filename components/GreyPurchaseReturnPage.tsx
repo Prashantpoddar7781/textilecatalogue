@@ -12,6 +12,7 @@ import { ErpPageBack } from './ErpPageBack';
 import { ErpTopMenu } from './ErpTopMenu';
 import { MasterNameInput } from './MasterNameInput';
 import { useVoucherJump } from '../hooks/useVoucherJump';
+import { stashContinueEntry, takeContinueEntry } from '../utils/continueEntry';
 
 interface Props {
   onBack: () => void;
@@ -46,7 +47,8 @@ export const GreyPurchaseReturnPage: React.FC<Props> = ({ onBack, erpSession }) 
   const [greyPurchaseId, setGreyPurchaseId] = useState('');
   const [quality, setQuality] = useState('');
   const [hsnCode, setHsnCode] = useState('');
-  const [partyName, setPartyName] = useState('');
+  const [continued] = useState(() => takeContinueEntry());
+  const [partyName, setPartyName] = useState(continued?.partyName || '');
   const [partyGstin, setPartyGstin] = useState('');
   const [placeOfSupply, setPlaceOfSupply] = useState('');
   const [stateCode, setStateCode] = useState('');
@@ -92,11 +94,23 @@ export const GreyPurchaseReturnPage: React.FC<Props> = ({ onBack, erpSession }) 
   const [receiptsLoading, setReceiptsLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
+  const [success, setSuccess] = useState(continued?.notice || '');
+  const [nextBlank, setNextBlank] = useState<number | null>(continued?.voucher ?? null);
   const voucherJump = useVoucherJump({
     module: 'grey-purchase-return',
     currentId: isEditMode ? editId : null,
     shownNumber: voucherNo,
+    nextBlank,
+    onMissing: (voucher, info) => {
+      if (editId) {
+        stashContinueEntry({ partyName, voucher, notice: info.message });
+        window.location.href = '/erp/grey-purchase-return';
+        return;
+      }
+      setVoucherNo(String(voucher));
+      if (info.message) setSuccess(info.message);
+    },
+    onNotice: message => { if (message) setSuccess(message); },
     onError: setError
   });
 
@@ -154,7 +168,8 @@ export const GreyPurchaseReturnPage: React.FC<Props> = ({ onBack, erpSession }) 
         const meta = await greyPurchaseReturnsApi.getMeta();
         if (cancelled) return;
         setCompanyName(meta.companyName || '');
-        setVoucherNo(String(meta.nextVoucherNo || 1));
+        setNextBlank(Number(meta.nextVoucherNo) || null);
+        setVoucherNo(String((!isEditMode && continued?.voucher) || meta.nextVoucherNo || 1));
         setChallanNo(String(meta.nextChallanNo || 1));
         const d = getGstDefaultsForTransactionType(
           'GREY PURCHASE RETURN',

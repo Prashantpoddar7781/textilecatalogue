@@ -88,6 +88,8 @@ export const WorkDespatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
     shownNumber: committedNo,
     onOpen: onOpenDespatch,
     onMissing: onMissingDespatch,
+    nextBlank: nextByType[transactionType] || null,
+    onNotice: message => { if (message) setSuccess(message); },
     onError: setError
   });
   const [despatchDate, setDespatchDate] = useState(today());
@@ -289,6 +291,10 @@ export const WorkDespatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
   };
 
   missingDespatchRef.current = (voucher) => {
+    if (!editId && Number(committedNo) === voucher) {
+      setChallanNo(String(voucher));
+      return;
+    }
     startBlankDespatch(transactionType, String(voucher));
   };
 

@@ -22,6 +22,7 @@ import { MasterNameInput } from './MasterNameInput';
 import { QualityInformationDialog } from './QualityInformationDialog';
 import { partyDhara } from '../utils/partyBillingTerms';
 import { useVoucherJump } from '../hooks/useVoucherJump';
+import { stashContinueEntry, takeContinueEntry } from '../utils/continueEntry';
 import { parseVoucherNumber } from '../utils/parseVoucherNumber';
 
 interface Props {
@@ -57,7 +58,8 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [stateCodes, setStateCodes] = useState<Array<{ code: string; name: string }>>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [supplierId, setSupplierId] = useState('');
-  const [partyName, setPartyName] = useState('');
+  const [continued] = useState(() => takeContinueEntry());
+  const [partyName, setPartyName] = useState(continued?.partyName || '');
   const [partyGstin, setPartyGstin] = useState('');
   const [partyMsme, setPartyMsme] = useState('');
   const [gstFromMaster, setGstFromMaster] = useState(false);
@@ -114,12 +116,29 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [qualityItems, setQualityItems] = useState<SalesItemMaster[]>([]);
   const [qualityPrompt, setQualityPrompt] = useState('');
   const [qualityDialogOpen, setQualityDialogOpen] = useState(false);
-  const [success, setSuccess] = useState('');
+  const [success, setSuccess] = useState(continued?.notice || '');
+  const [nextBlank, setNextBlank] = useState<number | null>(continued?.voucher ?? null);
   const voucherJump = useVoucherJump({
     module: 'grey-purchase',
     transactionType: GREY_TYPE,
     currentId: isEditMode ? editId : null,
     shownNumber: typeBillNumber,
+    nextBlank,
+    onMissing: (voucher, info) => {
+      if (editId) {
+        stashContinueEntry({ partyName, voucher, notice: info.message });
+        window.location.href = `/erp/grey-purchase?voucher=${voucher}`;
+        return;
+      }
+      if (Number(typeBillNumber) === voucher) {
+        setVoucherInput(formatSeriesBillNumber(GREY_TYPE, voucher) || String(voucher));
+        if (info.message) setSuccess(info.message);
+        return;
+      }
+      setTypeBillNumber(voucher);
+      if (info.message) setSuccess(info.message);
+    },
+    onNotice: message => { if (message) setSuccess(message); },
     onError: setError
   });
   useEffect(() => {
@@ -172,7 +191,8 @@ export const GreyPurchasePage: React.FC<Props> = ({ onBack, erpSession }) => {
         setStates(meta.states || []);
         setStateCodes(meta.stateCodes || []);
         if (!isEditMode) setSrNo(String(meta.nextSrNo || 1));
-        if (!isEditMode) setTypeBillNumber(requestedVoucher || meta.nextTypeBillNumber || null);
+        setNextBlank(meta.nextTypeBillNumber || null);
+        if (!isEditMode) setTypeBillNumber(continued?.voucher || requestedVoucher || meta.nextTypeBillNumber || null);
         if (!isEditMode) {
           const d = getGstDefaultsForTransactionType(
             'GREY PURCHASE',

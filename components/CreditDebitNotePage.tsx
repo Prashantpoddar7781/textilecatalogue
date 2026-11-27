@@ -162,11 +162,16 @@ export const CreditDebitNotePage: React.FC<Props> = ({ noteType: initialNoteType
   const [loadingEdit, setLoadingEdit] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [nextBlank, setNextBlank] = useState<number | null>(null);
+  const openBlankRef = useRef<(voucher: number, message: string) => void>(() => {});
   const noteVoucherJump = useVoucherJump({
     module: 'note',
     transactionType: noteType.value,
     currentId: editingId,
     shownNumber: voucherNumber,
+    nextBlank,
+    onMissing: (voucher, info) => openBlankRef.current(voucher, info.message),
+    onNotice: message => { if (message) setSuccess(message); },
     onError: setError
   });
 
@@ -215,6 +220,7 @@ export const CreditDebitNotePage: React.FC<Props> = ({ noteType: initialNoteType
       setCompanyName(result.companyName);
       setBusinessState(result.businessState || '');
       const next = String(result.voucherNumber);
+      setNextBlank(Number(result.voucherNumber) || null);
       setVoucherNumber(next);
       setAllocatedVoucher(next);
       setNoteNumber(formatNoteNumber(type.series, result.voucherNumber));
@@ -292,6 +298,9 @@ export const CreditDebitNotePage: React.FC<Props> = ({ noteType: initialNoteType
   };
 
   useEffect(() => {
+    void creditDebitNotesApi.getNextVoucher(noteType.value)
+      .then(result => setNextBlank(Number(result.voucherNumber) || null))
+      .catch(() => undefined);
     applySeriesDefaults(noteType);
     if (!editingId) void loadMaster(noteType);
     void loadNotes(noteType);
@@ -454,6 +463,25 @@ export const CreditDebitNotePage: React.FC<Props> = ({ noteType: initialNoteType
     url.searchParams.delete('edit');
     window.history.replaceState({}, '', `${url.pathname}?${url.searchParams.toString()}`);
     void loadMaster(next);
+  };
+
+  openBlankRef.current = (voucher: number, message: string) => {
+    if (!editingId && Number(nextBlank) === voucher) {
+      setVoucherNumber(String(voucher));
+      if (message) setSuccess(message);
+      return;
+    }
+    setEditingId(null);
+    setEinvoice(null);
+    setError('');
+    resetAmounts();
+    const url = new URL(window.location.href);
+    url.pathname = '/erp/notes';
+    url.searchParams.set('type', noteType.value);
+    url.searchParams.delete('edit');
+    window.history.replaceState({}, '', `${url.pathname}?${url.searchParams.toString()}`);
+    void loadMaster(noteType);
+    if (message) setSuccess(message);
   };
 
   const openNote = (note: CreditDebitNote) => {

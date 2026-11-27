@@ -10,6 +10,7 @@ import { ErpPageBack } from './ErpPageBack';
 import { ErpTopMenu } from './ErpTopMenu';
 import { MasterNameInput } from './MasterNameInput';
 import { useVoucherJump } from '../hooks/useVoucherJump';
+import { stashContinueEntry, takeContinueEntry } from '../utils/continueEntry';
 import { parseVoucherNumber } from '../utils/parseVoucherNumber';
 
 interface Props {
@@ -43,7 +44,8 @@ export const GreyDispatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [millLotNo, setMillLotNo] = useState('');
   const [purSr, setPurSr] = useState('');
   const [greyPurchaseId, setGreyPurchaseId] = useState('');
-  const [millName, setMillName] = useState('');
+  const [continued] = useState(() => takeContinueEntry());
+  const [millName, setMillName] = useState(continued?.partyName || '');
   const [ourMarka, setOurMarka] = useState('');
   const [purBillNo, setPurBillNo] = useState('');
   const [purDate, setPurDate] = useState('');
@@ -71,14 +73,27 @@ export const GreyDispatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [receiptsLoading, setReceiptsLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState(continued?.notice || '');
+  const [nextBlank, setNextBlank] = useState<number | null>(continued?.voucher ?? null);
   const greyDispatchVoucherJump = useVoucherJump({
     module: 'grey-dispatch',
     transactionType,
     currentId: isEditMode ? editId : null,
     shownNumber: loadedChallan,
+    nextBlank,
+    onMissing: (voucher, info) => {
+      if (editId) {
+        stashContinueEntry({ partyName: millName, voucher, notice: info.message });
+        window.location.href = `/erp/grey-dispatch?voucher=${voucher}`;
+        return;
+      }
+      setChallanNo(String(voucher));
+      setLoadedChallan(String(voucher));
+      if (info.message) setSuccess(info.message);
+    },
+    onNotice: message => { if (message) setSuccess(message); },
     onError: setError
   });
-  const [success, setSuccess] = useState('');
 
   const stockMts = useMemo(() => {
     const receipt = greyReceipts.find(r => r.id === greyPurchaseId);
@@ -96,10 +111,13 @@ export const GreyDispatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
         setMills(meta.mills || []);
         if (meta.transactionTypes?.[0] && !isEditMode) setTransactionType(meta.transactionTypes[0]);
         if (!isEditMode) {
-          const nextNo = requestedVoucher || String(meta.nextChallanNo || 1);
+          const nextNo = continued?.voucher ? String(continued.voucher) : (requestedVoucher || String(meta.nextChallanNo || 1));
+          setNextBlank(Number(meta.nextChallanNo) || null);
           setSrNo(String(meta.nextSrNo || 1));
           setChallanNo(nextNo);
           setLoadedChallan(nextNo);
+        } else {
+          setNextBlank(Number(meta.nextChallanNo) || null);
         }
         if (isEditMode && editId) {
           const { entry } = await greyDispatchesApi.getById(editId);

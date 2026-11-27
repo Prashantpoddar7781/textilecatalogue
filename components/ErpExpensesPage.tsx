@@ -38,6 +38,7 @@ import { gstTypeLabel, isInterStateSupply } from '../utils/gstState';
 import { partyDhara, partyGraceDays } from '../utils/partyBillingTerms';
 import { roundRupee } from '../utils/rupeeRound';
 import { useVoucherJump } from '../hooks/useVoucherJump';
+import { stashContinueEntry, takeContinueEntry } from '../utils/continueEntry';
 
 interface Props {
   onBack: () => void;
@@ -131,7 +132,9 @@ export const ErpExpensesPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
+  const [continued] = useState(() => takeContinueEntry());
+  const [success, setSuccess] = useState(continued?.notice || '');
+  const [nextBlank, setNextBlank] = useState<number | null>(continued?.voucher ?? null);
   const [companyName, setCompanyName] = useState('');
   const [businessState, setBusinessState] = useState('');
   const [gstChoice, setGstChoice] = useState('');
@@ -150,7 +153,7 @@ export const ErpExpensesPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [items, setItems] = useState<SalesItemMaster[]>([]);
   const [supplierId, setSupplierId] = useState('');
-  const [partyName, setPartyName] = useState('');
+  const [partyName, setPartyName] = useState(continued?.partyName || '');
   const [partyGstin, setPartyGstin] = useState('');
   const [partyMsme, setPartyMsme] = useState('');
   const [purchaseAccount, setPurchaseAccount] = useState('');
@@ -213,6 +216,26 @@ export const ErpExpensesPage: React.FC<Props> = ({ onBack, erpSession }) => {
     transactionType,
     currentId: isEditMode ? editId : null,
     shownNumber: typeBillNumber,
+    nextBlank,
+    onMissing: (voucher, info) => {
+      if (editId) {
+        stashContinueEntry({ partyName, voucher, notice: info.message });
+        window.location.href = `/erp/expenses?type=${encodeURIComponent(transactionType)}`;
+        return;
+      }
+      if (Number(typeBillNumber) === voucher) {
+        setVoucherInput(formatSeriesBillNumber(transactionType, voucher) || String(voucher));
+        if (info.message) setSuccess(info.message);
+        return;
+      }
+      setTypeBillNumber(voucher);
+      setLineItems([blankLine(1, defaultGstRate, defaultHsnCode, toNum(dhara))]);
+      setSupplierBillNo('');
+      setOrderRef('');
+      setRemarks('');
+      if (info.message) setSuccess(info.message);
+    },
+    onNotice: message => { if (message) setSuccess(message); },
     onError: setError
   });
   useEffect(() => {
@@ -319,11 +342,16 @@ export const ErpExpensesPage: React.FC<Props> = ({ onBack, erpSession }) => {
   }, [editId]);
 
   useEffect(() => {
-    if (isEditMode) return;
+    let cancelled = false;
     void bankEntriesApi.getNextTypeBillNumber({ transactionType, source: 'purchase_bill' })
-      .then(result => setTypeBillNumber(result.typeBillNumber))
-      .catch(() => setTypeBillNumber(null));
-  }, [transactionType, isEditMode]);
+      .then(result => {
+        if (cancelled) return;
+        setNextBlank(result.typeBillNumber);
+        if (!isEditMode) setTypeBillNumber(continued?.voucher || result.typeBillNumber);
+      })
+      .catch(() => { if (!cancelled && !isEditMode) setTypeBillNumber(continued?.voucher ?? null); });
+    return () => { cancelled = true; };
+  }, [transactionType, isEditMode, continued]);
 
   const chooseSupplier = (id: string) => {
     const supplier = suppliers.find(row => row.id === id);
@@ -585,7 +613,10 @@ export const ErpExpensesPage: React.FC<Props> = ({ onBack, erpSession }) => {
         setVehicleNo('');
         setPurchaseAccount(postingSaleOrPurchaseAccount(transactionType) || '');
         void bankEntriesApi.getNextTypeBillNumber({ transactionType, source: 'purchase_bill' })
-          .then(resultBill => setTypeBillNumber(resultBill.typeBillNumber));
+          .then(resultBill => {
+            setTypeBillNumber(resultBill.typeBillNumber);
+            setNextBlank(resultBill.typeBillNumber);
+          });
       }
     } catch (err: any) {
       setError(err.message || 'Could not save expense entry.');

@@ -1,4 +1,4 @@
-import { KeyboardEvent, useCallback, useRef, useState } from 'react';
+import { KeyboardEvent as ReactKeyboardEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { getNavigableFields } from './useErpFormKeyboard';
 import { vouchersApi } from '../services/api';
 import { parseVoucherNumber } from '../utils/parseVoucherNumber';
@@ -34,9 +34,16 @@ interface Options {
   accountingYear?: string;
   /** Open the found voucher in place. When omitted, the page reloads at editPath. */
   onOpen?: (found: { id: string; editPath: string }) => Promise<void> | void;
+  /** Highest saved voucher is this minus one. Typing past it still opens this number. */
+  nextBlank?: number | null;
   /** The typed number is not saved. The screen starts a blank entry with that number. */
-  onMissing?: (voucher: number) => void;
+  onMissing?: (voucher: number, info: { clamped: boolean; message: string }) => void;
+  onNotice?: (message: string) => void;
   onError?: (message: string) => void;
+}
+
+export function blankVoucherNotice(voucher: number) {
+  return `${voucher} is the latest blank voucher number.`;
 }
 
 /**
@@ -49,8 +56,10 @@ export function useVoucherJump({
   accountingYear,
   currentId,
   shownNumber,
+  nextBlank,
   onOpen,
   onMissing,
+  onNotice,
   onError
 }: Options) {
   const [jumping, setJumping] = useState(false);
@@ -91,7 +100,12 @@ export function useVoucherJump({
       if (attemptRef.current !== attempt) return 'busy' as const;
       if (!currentId && sameVoucher) return 'next' as const;
       if (err?.status === 404 && onMissing && typed) {
-        onMissing(typed);
+        const next = Number(nextBlank) || 0;
+        const clamped = Boolean(next > 0 && typed > next);
+        const openAt = clamped ? next : typed;
+        const message = clamped ? blankVoucherNotice(openAt) : '';
+        onMissing(openAt, { clamped, message });
+        if (message) onNotice?.(message);
         return 'navigated' as const;
       }
       const blank = err?.status === 404 ? blankEntryPath(module, typed) : null;
@@ -108,9 +122,23 @@ export function useVoucherJump({
         // stay; caller focuses next field on 'next'
       }
     }
-  }, [accountingYear, currentId, module, onError, onMissing, onOpen, shownNumber, transactionType]);
+  }, [accountingYear, currentId, module, nextBlank, onError, onMissing, onNotice, onOpen, shownNumber, transactionType]);
 
-  const onVoucherKeyDown = useCallback(async (event: KeyboardEvent<HTMLInputElement>) => {
+  useEffect(() => {
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      if (event.altKey !== true || event.ctrlKey || event.metaKey || event.key.toLowerCase() !== 'w') return;
+      const next = Number(nextBlank) || 0;
+      if (!next || !onMissing) return;
+      const shown = parseVoucherNumber(String(shownNumber ?? '')) ?? (Number(shownNumber) || null);
+      if (!currentId && shown === next) return;
+      event.preventDefault();
+      onMissing(next, { clamped: false, message: '' });
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [currentId, nextBlank, onMissing, shownNumber]);
+
+  const onVoucherKeyDown = useCallback(async (event: ReactKeyboardEvent<HTMLInputElement>) => {
     if (event.key !== 'Enter') return;
     event.preventDefault();
     event.stopPropagation();
@@ -124,8 +152,11 @@ export function useVoucherJump({
     if (index >= 0 && index < fields.length - 1) {
       const next = fields[index + 1];
       next.focus();
-      if (next instanceof HTMLInputElement || next instanceof HTMLTextAreaElement) {
-        next.setSelectionRange?.(0, 0);
+      if (next instanceof HTMLInputElement) {
+        const skip = ['date', 'checkbox', 'radio', 'file'];
+        if (!skip.includes(next.type)) next.select();
+      } else if (next instanceof HTMLTextAreaElement) {
+        next.select();
       }
     }
   }, [tryJump]);

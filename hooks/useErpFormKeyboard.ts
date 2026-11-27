@@ -6,6 +6,16 @@ const FIELD_SELECTOR = [
   'textarea:not([disabled]):not([readonly]):not([data-erp-skip-nav])'
 ].join(', ');
 
+function selectFieldText(field: HTMLElement | null) {
+  if (field instanceof HTMLInputElement) {
+    const skip = ['checkbox', 'radio', 'file', 'date', 'datetime-local', 'time', 'month', 'color', 'range', 'button', 'submit', 'hidden'];
+    if (skip.includes(field.type)) return;
+    field.select();
+    return;
+  }
+  if (field instanceof HTMLTextAreaElement) field.select();
+}
+
 export function focusAdjacentField(target: HTMLElement, delta: number) {
   const container = target.closest('[data-erp-form]') as HTMLElement | null;
   if (!container) return;
@@ -14,9 +24,7 @@ export function focusAdjacentField(target: HTMLElement, delta: number) {
   const next = index >= 0 ? fields[index + delta] : null;
   if (!next) return;
   next.focus();
-  if (next instanceof HTMLInputElement || next instanceof HTMLTextAreaElement) {
-    next.setSelectionRange?.(0, 0);
-  }
+  selectFieldText(next);
 }
 
 export function getNavigableFields(container: HTMLElement): HTMLElement[] {
@@ -60,10 +68,7 @@ export function useErpFormKeyboard(onSave: () => void | Promise<void>, options: 
     const field = fields[index];
     if (!field) return;
     field.focus();
-    if (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement) {
-      // Cursor at start so keyboard entry can continue without the mouse.
-      field.setSelectionRange?.(0, 0);
-    }
+    selectFieldText(field);
   }, []);
 
   const saveArmed = useRef(false);
@@ -214,9 +219,7 @@ export function useErpFormKeyboard(onSave: () => void | Promise<void>, options: 
               const first = last ? getNavigableFields(last as HTMLElement)[0] : null;
               if (!first) return false;
               first.focus();
-              if (first instanceof HTMLInputElement || first instanceof HTMLTextAreaElement) {
-                first.setSelectionRange?.(0, 0);
-              }
+              selectFieldText(first);
               return document.activeElement === first;
             };
             window.requestAnimationFrame(() => {
@@ -225,7 +228,7 @@ export function useErpFormKeyboard(onSave: () => void | Promise<void>, options: 
             });
           } else {
             control.focus();
-            if (control instanceof HTMLInputElement) control.select();
+            selectFieldText(control);
           }
           return;
         }
@@ -280,9 +283,18 @@ export function useErpFormKeyboard(onSave: () => void | Promise<void>, options: 
     };
     container.addEventListener('input', onInput);
     container.addEventListener('change', onChange);
+    const onFocusIn = (event: FocusEvent) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement) || !container.contains(target)) return;
+      window.setTimeout(() => {
+        if (document.activeElement === target) selectFieldText(target);
+      }, 0);
+    };
+    container.addEventListener('focusin', onFocusIn);
     return () => {
       container.removeEventListener('input', onInput);
       container.removeEventListener('change', onChange);
+      container.removeEventListener('focusin', onFocusIn);
     };
   }, [disabled]);
 

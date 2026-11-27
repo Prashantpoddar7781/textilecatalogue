@@ -17,6 +17,7 @@ import { PhotoPartyDetails, matchPhotoParty, photoPartyDetails, photoPartyState 
 import { ErpTopMenu } from './ErpTopMenu';
 import { MillReceiptTakaModal } from './MillReceiptTakaModal';
 import { useVoucherJump } from '../hooks/useVoucherJump';
+import { stashContinueEntry, takeContinueEntry } from '../utils/continueEntry';
 
 interface Props {
   onBack: () => void;
@@ -85,7 +86,8 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const isEditMode = Boolean(editId);
 
   const [companyName, setCompanyName] = useState('');
-  const [millName, setMillName] = useState('');
+  const [continued] = useState(() => takeContinueEntry());
+  const [millName, setMillName] = useState(continued?.partyName || '');
   const [mills, setMills] = useState<string[]>([]);
   const [millParties, setMillParties] = useState<Array<{
     name: string;
@@ -171,11 +173,23 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const [dispatchesLoading, setDispatchesLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
+  const [success, setSuccess] = useState(continued?.notice || '');
+  const [nextBlank, setNextBlank] = useState<number | null>(continued?.voucher ?? null);
   const millVoucherJump = useVoucherJump({
     module: 'mill-receipt',
     currentId: isEditMode ? editId : null,
     shownNumber: voucherNo,
+    nextBlank,
+    onMissing: (voucher, info) => {
+      if (isEditMode) {
+        stashContinueEntry({ partyName: millName, voucher, notice: info.message });
+        window.location.href = '/erp/mill-receipt';
+        return;
+      }
+      setVoucherNo(String(voucher));
+      if (info.message) setSuccess(info.message);
+    },
+    onNotice: message => { if (message) setSuccess(message); },
     onError: setError
   });
 
@@ -363,7 +377,8 @@ export const MillReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
         const meta = await millReceiptsApi.getMeta();
         if (cancelled) return;
         setCompanyName(meta.companyName || '');
-        if (!isEditMode) setVoucherNo(String(meta.nextVoucherNo || 1));
+        setNextBlank(Number(meta.nextVoucherNo) || null);
+        if (!isEditMode) setVoucherNo(String(continued?.voucher || meta.nextVoucherNo || 1));
         const startType = meta.entryTypes?.[0] || entryType;
         const typeDefaults = getGstDefaultsForTransactionType(
           startType,

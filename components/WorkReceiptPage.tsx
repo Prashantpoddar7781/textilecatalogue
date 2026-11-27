@@ -389,7 +389,9 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
     currentId: editId,
     shownNumber: committedNo,
     onOpen: onOpenReceipt,
+    nextBlank: nextByType[transactionType] || null,
     onMissing: onMissingReceipt,
+    onNotice: message => { if (message) setSuccess(message); },
     onError: setError
   });
   const [gstRate, setGstRate] = useState(
@@ -719,6 +721,10 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
   };
 
   missingReceiptRef.current = (voucher) => {
+    if (!editId && Number(committedNo) === voucher) {
+      setVoucherNo(String(voucher));
+      return;
+    }
     startBlankReceipt(transactionType, String(voucher));
   };
 

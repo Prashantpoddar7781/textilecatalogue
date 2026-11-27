@@ -206,7 +206,11 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
   const [chequeReturnStep, setChequeReturnStep] = useState<null | 'confirm' | 'date' | 'represent'>(null);
   const [chequeReturnDate, setChequeReturnDate] = useState(today);
   const [returningCheque, setReturningCheque] = useState(false);
+  const partyNameRef = useRef('');
+  const partyTypeRef = useRef<'customer' | 'supplier' | 'other'>('customer');
   const seriesRef = useRef(form.series);
+  partyNameRef.current = form.partyName;
+  partyTypeRef.current = form.partyType;
   const defaultBankRef = useRef('');
   seriesRef.current = form.series;
   const voucherValueRef = useRef(form.voucherNumber);
@@ -238,7 +242,8 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
   const focusInputStart = (el: HTMLInputElement | null) => {
     if (!el) return;
     el.focus();
-    el.setSelectionRange?.(0, 0);
+    const skip = ['date', 'checkbox', 'radio', 'file'];
+    if (!skip.includes(el.type)) el.select();
   };
 
   const focusTypeField = () => {
@@ -1049,6 +1054,20 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
       return true;
     } catch (err: any) {
       if (formEpoch.current !== epoch || seriesRef.current !== series) return false;
+      const next = parseVoucherNumber(nextBySeriesRef.current[series] || '');
+      if (err?.status === 404 && next && typed >= next) {
+        if (typed > next) setNotice(`${next} is the latest blank voucher number.`);
+        else setNotice('');
+        if (!editingIdRef.current && shown === next) {
+          const number = String(next);
+          setAllocatedVoucher(number);
+          voucherValueRef.current = number;
+          setForm(f => ({ ...f, voucherNumber: number }));
+          return true;
+        }
+        await beginNextEntry({ keepParty: true });
+        return true;
+      }
       setError(err.message || `No voucher ${raw} found.`);
       setForm(f => ({ ...f, voucherNumber: allocatedVoucher || f.voucherNumber }));
       voucherValueRef.current = allocatedVoucher || voucherValueRef.current;
@@ -1087,7 +1106,13 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
     setNewBankName('');
   };
 
-  const resetForm = async () => {
+  const beginNextEntry = async (options?: { keepParty?: boolean }) => {
+    const series = normalizeBankCashSeries(seriesRef.current);
+    const keepParty = Boolean(options?.keepParty);
+    const partyName = keepParty ? partyNameRef.current : '';
+    const partyType = (keepParty ? partyTypeRef.current : bankCashDefaultPartyType(series)) as 'customer' | 'supplier' | 'other';
+    const entryType = bankCashEntryType(series);
+    const paymentMode = bankCashPaymentMode(series);
     editingIdRef.current = null;
     setEditingId(null);
     setPendingBills([]);
@@ -1095,17 +1120,58 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
     setQuickBillNo('');
     setAmountTouched(false);
     setAllowOverAllocation(false);
-    setBillType(defaultBillTypeForEntry(bankCashEntryType(DEFAULT_BANK_CASH_SERIES)));
     setCommissionPercent('');
     setCommissionTouched(false);
     setBillPickerOpen(false);
     setBillTypePickerOpen(false);
-    setForm(emptyForm());
+    setBillType(defaultBillTypeForEntry(entryType));
+    seriesRef.current = series;
     formEpoch.current += 1;
+    const nextNo = nextBySeriesRef.current[series] || '';
+    if (nextNo) {
+      setAllocatedVoucher(nextNo);
+      voucherValueRef.current = nextNo;
+    }
+    const entryDate = today();
+    setForm(current => ({
+      ...emptyForm(),
+      series,
+      entryType,
+      transactionType: series,
+      paymentMode,
+      partyType,
+      partyName,
+      companyName: current.companyName,
+      bankName: paymentMode === 'cash'
+        ? (postingSaleOrPurchaseAccount(series) || 'CASH A/C')
+        : (current.bankName || defaultBankRef.current || ''),
+      voucherNumber: nextNo,
+      entryDate,
+      chequeDate: entryDate,
+      slipNumber: slipNumberFromDate(entryDate)
+    }));
     if (window.location.search) window.history.replaceState(null, '', '/erp/bank');
     await loadMasterData();
     window.setTimeout(() => focusInputStart(voucherRef.current || companyRef.current), 0);
   };
+
+  const resetForm = async () => {
+    await beginNextEntry({ keepParty: false });
+  };
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (!event.altKey || event.ctrlKey || event.metaKey || event.key.toLowerCase() !== 'w') return;
+      const next = parseVoucherNumber(nextBySeriesRef.current[seriesRef.current] || '');
+      const shown = parseVoucherNumber(voucherValueRef.current);
+      if (!next) return;
+      if (!editingIdRef.current && shown === next) return;
+      event.preventDefault();
+      void beginNextEntry({ keepParty: true });
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
 
   const saveEntry = async () => {
     if (!form.partyName.trim()) {
@@ -1195,8 +1261,7 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
       } else {
         await bankEntriesApi.create(payload as any);
       }
-      await resetForm();
-      await loadMasterData();
+      await beginNextEntry({ keepParty: true });
       await loadEntries();
     } catch (err: any) {
       setError(err.message || 'Could not save bank entry.');
@@ -1330,6 +1395,36 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                   <input className={inputClass} type="date" value={form.entryDate} onChange={e => setForm(f => ({ ...f, entryDate: e.target.value }))} />
                 </div>
                 <div>
+                  <label className={labelClass}>A/C Name</label>
+                  <div>
+                    <input
+                      className={inputClass}
+                      list="bank-party-options"
+                      placeholder="Type party name"
+                      value={form.partyName}
+                      onChange={e => {
+                        const value = e.target.value;
+                        setAllowOverAllocation(false);
+                        const match = accountParties.find(party => party.name.trim().toLowerCase() === value.trim().toLowerCase());
+                        const broker = Boolean(match && /broker|brok/i.test(match.accountType || ''));
+                        const partyType = partyTypeForName(value, form.entryType) || (broker ? 'supplier' : form.partyType);
+                        if (broker && form.entryType === 'payment') {
+                          setBillType('PURCHASE (COMM)');
+                          setForm(f => ({ ...f, partyName: match?.name || value, partyType: 'supplier' }));
+                          return;
+                        }
+                        setForm(f => ({ ...f, partyName: value, partyType }));
+                      }}
+                    />
+                  </div>
+                  <datalist id="bank-party-options">
+                    {partyOptions.map(name => (
+                      <option key={name} value={name} />
+                    ))}
+                  </datalist>
+                  <p className="mt-1 text-xs font-bold text-amber-800">Cur. Bal.: {partyBalance == null ? '…' : formatPartyBalance(partyBalance, form.partyType)}</p>
+                </div>
+                <div>
                   <label className={labelClass}>{form.entryType === 'receipt' ? 'Rec. Amt.' : 'Paid Amt.'}</label>
                   <input
                     className={inputClass}
@@ -1405,44 +1500,6 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                     ))}
                   </datalist>
                   <p className="mt-1 text-xs font-bold text-sky-800">Cur. Bal.: {formatBankBalance(bankBalance)}</p>
-                </div>
-
-                <div>
-                  <label className={labelClass}>A/C Name</label>
-                  <div>
-                    <input
-                      className={inputClass}
-                      list="bank-party-options"
-                      placeholder="Type party name"
-                      value={form.partyName}
-                      onChange={e => {
-                        const value = e.target.value;
-                        setAllowOverAllocation(false);
-                        const match = accountParties.find(party => party.name.trim().toLowerCase() === value.trim().toLowerCase());
-                        const broker = Boolean(match && /broker|brok/i.test(match.accountType || ''));
-                        const partyType = partyTypeForName(value, form.entryType) || (broker ? 'supplier' : form.partyType);
-                        if (broker && form.entryType === 'payment') {
-                          setBillType('PURCHASE (COMM)');
-                          setForm(f => ({ ...f, partyName: match?.name || value, partyType: 'supplier' }));
-                          return;
-                        }
-                        setForm(f => ({ ...f, partyName: value, partyType }));
-                      }}
-                      onKeyDown={e => {
-                        if (e.key !== 'Enter' || !form.partyName.trim()) return;
-                        // After party, jump to Bill Type (Empire keyboard flow).
-                        e.preventDefault();
-                        e.stopPropagation();
-                        focusTypeField();
-                      }}
-                    />
-                  </div>
-                  <datalist id="bank-party-options">
-                    {partyOptions.map(name => (
-                      <option key={name} value={name} />
-                    ))}
-                  </datalist>
-                  <p className="mt-1 text-xs font-bold text-amber-800">Cur. Bal.: {partyBalance == null ? '…' : formatPartyBalance(partyBalance, form.partyType)}</p>
                 </div>
 
                 <div>
