@@ -193,11 +193,13 @@ export function saleAccountCredit(order) {
   return resolvePostedSaleAmount(order).amount;
 }
 
-/** empirePaid and saleCredit survive an e-invoice stamp or cancel. */
+/** empirePaid, the brought-forward receipt, and saleCredit survive an e-invoice stamp or cancel. */
 export function bookFigures(raw) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
   const kept = {};
   if (raw.empirePaid === true) kept.empirePaid = true;
+  const brought = roundMoney(raw.empireBroughtForwardPaid);
+  if (brought > 0) kept.empireBroughtForwardPaid = brought;
   const credit = Number(raw.saleCredit);
   if (credit > 0) kept.saleCredit = roundRupee(credit);
   return kept;
@@ -587,7 +589,8 @@ export function mapOrderToPendingBill(order, paidByOrderId, asOfValue = Date.now
   const storedNet = roundMoney(Math.max(gross - (lineDisc > 0.5 ? 0 : footerDisc), 0));
   const face = footerDisc > 0.5 && lineDisc <= 0.5 ? saleBillFace(order) : gross;
   const extraAlloc = roundMoney(Math.max(allocationDiscount - footerDisc, 0));
-  const paidToward = cashPaid + Math.max(roundMoney(discountAmount), extraAlloc);
+  const broughtForward = broughtForwardPaid(order);
+  const paidToward = cashPaid + Math.max(roundMoney(discountAmount), extraAlloc) + broughtForward;
   const settledOnStoredNet = footerDisc > 0.5 && paidToward + 1 >= storedNet;
   const rounded = settledOnStoredNet
     ? { billAmount: face, paidAmount: face, pendingAmount: 0 }
@@ -629,6 +632,13 @@ export function mapOrderToPendingBill(order, paidByOrderId, asOfValue = Date.now
       ? `/erp/sales?edit=${order.id}&kind=bill`
       : undefined
   }, order.customer || {});
+}
+
+function broughtForwardPaid(order) {
+  const raw = order?.einvoiceRaw;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return 0;
+  const amount = roundMoney(raw.empireBroughtForwardPaid);
+  return amount > 0 ? amount : 0;
 }
 
 /** Drop Empire's paid flag. saleCredit and any other book figures stay. */
