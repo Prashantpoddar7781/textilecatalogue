@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Edit3, Loader2, Plus, RefreshCw, Search, Trash2 } from 'lucide-react';
 import { bankEntriesApi, commissionsApi, partiesApi, vouchersApi } from '../services/api';
-import { getNavigableFields } from '../hooks/useErpFormKeyboard';
+import { focusAdjacentField, getNavigableFields } from '../hooks/useErpFormKeyboard';
 import { parseVoucherNumber } from '../utils/parseVoucherNumber';
 import { clearBankOutstandingPrefill, readBankOutstandingPrefill } from '../utils/bankOutstandingPrefill';
 import { AccountParty, BankEntry, BankPendingBill, CompletedOrderParty, PurchaseBillParty } from '../types';
@@ -1700,7 +1700,12 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                             if (e.key === 'ArrowUp') {
                               e.preventDefault();
                               e.stopPropagation();
-                              setBillTypeHighlight(i => Math.max(i - 1, 0));
+                              if (billTypePickerOpen && billTypeMatches.length && billTypeHighlight > 0) {
+                                setBillTypeHighlight(i => i - 1);
+                                return;
+                              }
+                              setBillTypePickerOpen(false);
+                              focusAdjacentField(e.currentTarget, -1);
                               return;
                             }
                             if (e.key === 'Enter') {
@@ -1764,12 +1769,20 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
                             setBillPickerOpen(Boolean(form.partyName.trim()));
                           }}
                           onArrow={key => {
+                            if (key === 'ArrowUp') {
+                              if (billPickerOpen && quickBillMatches.length && billHighlight > 0) {
+                                billListChosen.current = true;
+                                setBillHighlight(i => i - 1);
+                                return;
+                              }
+                              setBillPickerOpen(false);
+                              if (billNoRef.current) focusAdjacentField(billNoRef.current, -1);
+                              return;
+                            }
                             if (!form.partyName.trim() || !quickBillMatches.length) return;
                             billListChosen.current = true;
                             setBillPickerOpen(true);
-                            setBillHighlight(i => key === 'ArrowDown'
-                              ? Math.min(i + 1, quickBillMatches.length - 1)
-                              : Math.max(i - 1, 0));
+                            setBillHighlight(i => Math.min((i < 0 ? 0 : i) + 1, quickBillMatches.length - 1));
                           }}
                           onPick={() => {
                             const typed = quickBillNo.trim();

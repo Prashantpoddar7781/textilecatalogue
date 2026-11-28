@@ -163,20 +163,8 @@ export function useErpFormKeyboard(onSave: () => void | Promise<void>, options: 
 
     if (event.key === 'ArrowUp') {
       if (target.hasAttribute('data-erp-arrow-custom')) return;
-      if (lineRow) {
-        const grid = lineRow.closest('[data-erp-line-grid]');
-        const rows = grid ? Array.from(grid.querySelectorAll('[data-erp-line]')) : [];
-        const rowIndex = rows.indexOf(lineRow);
-        const column = lineFields.indexOf(target);
-        if (rowIndex > 0) {
-          event.preventDefault();
-          const prevFields = getNavigableFields(rows[rowIndex - 1] as HTMLElement);
-          prevFields[Math.min(Math.max(column, 0), prevFields.length - 1)]?.focus();
-          saveArmed.current = false;
-          return;
-        }
-      }
       event.preventDefault();
+      saveArmed.current = false;
       if (currentIndex > 0) focusField(currentIndex - 1);
       return;
     }

@@ -146,7 +146,7 @@ function LrDateInput({
         }
         if (event.key === 'ArrowUp') {
           event.preventDefault();
-          commitAnd(-1, 0);
+          commitAnd(0, -1);
           return;
         }
         if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
@@ -290,7 +290,7 @@ export const LrEntryPage: React.FC<Props> = ({ onBack, erpSession }) => {
       move(rowId, field, 1, 0);
     } else if (event.key === 'ArrowUp') {
       event.preventDefault();
-      move(rowId, field, -1, 0);
+      move(rowId, field, 0, -1);
     }
   };
 

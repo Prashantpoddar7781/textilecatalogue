@@ -219,28 +219,23 @@ function LineChallanPick({
           if (!next.trim()) onClear();
         }}
         onKeyDown={e => {
-          if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+          if (e.key === 'ArrowUp') {
             e.preventDefault();
             e.stopPropagation();
-            if (e.key === 'ArrowUp' && !(open && matches.length && highlight > 0)) {
-              setOpen(false);
-              const row = e.currentTarget.closest('[data-erp-line]');
-              const grid = row?.closest('[data-erp-line-grid]');
-              const rows = grid ? Array.from(grid.querySelectorAll('[data-erp-line]')) : [];
-              const rowIndex = row ? rows.indexOf(row) : -1;
-              if (row && rowIndex > 0) {
-                const col = Array.from(row.querySelectorAll('input')).indexOf(e.currentTarget);
-                const fields = Array.from(rows[rowIndex - 1].querySelectorAll<HTMLInputElement>('input'));
-                fields[Math.max(col, 0)]?.focus();
-                return;
-              }
-              focusAdjacentField(e.currentTarget, -1);
+            if (open && matches.length && highlight > 0) {
+              setHighlight(current => Math.max((current < 0 ? 0 : current) - 1, 0));
               return;
             }
+            setOpen(false);
+            focusAdjacentField(e.currentTarget, -1);
+            return;
+          }
+          if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            e.stopPropagation();
             if (open && matches.length) {
               setHighlight(current => {
                 const start = current < 0 ? 0 : current;
-                if (e.key === 'ArrowUp') return Math.max(start - 1, 0);
                 return Math.min(start + 1, matches.length - 1);
               });
               return;
@@ -249,14 +244,11 @@ function LineChallanPick({
             const grid = row?.closest('[data-erp-line-grid]');
             const rows = grid ? Array.from(grid.querySelectorAll('[data-erp-line]')) : [];
             const rowIndex = row ? rows.indexOf(row) : -1;
-            const nextRow = rows[rowIndex + (e.key === 'ArrowDown' ? 1 : -1)];
-            if (nextRow) {
-              const mine = row ? Array.from(row.querySelectorAll('input')) : [];
-              const col = mine.indexOf(e.currentTarget);
+            const nextRow = rows[rowIndex + 1];
+            if (nextRow && row) {
+              const col = Array.from(row.querySelectorAll('input')).indexOf(e.currentTarget);
               const fields = Array.from(nextRow.querySelectorAll<HTMLInputElement>('input'));
               fields[Math.max(col, 0)]?.focus();
-            } else if (e.key === 'ArrowUp') {
-              focusAdjacentField(e.currentTarget, -1);
             }
             return;
           }
