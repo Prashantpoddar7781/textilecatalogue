@@ -1256,12 +1256,15 @@ export const BankEntriesPage: React.FC<Props> = ({ onBack }) => {
           : 'none',
         linkedId: firstRealBill?.billId || null
       };
+      const savedSeries = seriesRef.current || form.series;
+      const savedNo = form.voucherNumber;
       if (editingId) {
         await bankEntriesApi.update(editingId, payload as any);
       } else {
         await bankEntriesApi.create(payload as any);
       }
       await beginNextEntry({ keepParty: true });
+      setNotice(`${savedSeries} ${savedNo} saved.`);
       await loadEntries();
     } catch (err: any) {
       setError(err.message || 'Could not save bank entry.');

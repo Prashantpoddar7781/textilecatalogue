@@ -361,8 +361,8 @@ export const JournalVoucherPage: React.FC<Props> = ({ onBack, erpSession }) => {
       const { voucher } = editingId
         ? await journalVouchersApi.update(editingId, payload)
         : await journalVouchersApi.create(payload);
-      setSuccess(`Saved journal ${voucher.voucherNumber} for ${voucher.partyName}. Ledger only — no bank A/C.`);
       startNew();
+      setSuccess(`Saved journal ${voucher.voucherNumber} for ${voucher.partyName}. Ledger only — no bank A/C.`);
       void loadList();
     } catch (err: any) {
       setError(err.message || 'Could not save journal voucher.');

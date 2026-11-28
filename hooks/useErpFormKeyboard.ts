@@ -54,7 +54,13 @@ export function useErpFormKeyboard(onSave: () => void | Promise<void>, options: 
 
   const confirmSave = useCallback(() => {
     setConfirmOpen(false);
-    void onSave();
+    void Promise.resolve(onSave()).finally(() => {
+      window.setTimeout(() => {
+        window.scrollTo(0, 0);
+        document.documentElement.scrollTop = 0;
+        document.body.scrollTop = 0;
+      }, 60);
+    });
   }, [onSave]);
 
   const cancelSave = useCallback(() => {

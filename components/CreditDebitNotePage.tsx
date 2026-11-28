@@ -28,6 +28,7 @@ import { ErpTopMenu } from './ErpTopMenu';
 import { PhotoEntryButton } from './PhotoEntryButton';
 import { PhotoExtraction } from '../services/api';
 import { matchPhotoParty, photoPartyState } from '../utils/photoEntry';
+import { rememberEntryType, rememberedEntryType } from '../utils/continueEntry';
 import { GST_STATE_CODES, getStateCodeFromName, isInterStateSupply } from '../utils/gstState';
 import { gstTypeFromGstin, isNonGstType, stateNameFromGstin } from '../utils/partyGst';
 import { GstTypeSelect, useMissingGstPrompt } from './GstTypeField';
@@ -96,7 +97,10 @@ const labelClass = 'mb-1 block text-[10px] font-black uppercase tracking-widest 
 
 const initialTypeFromUrl = (fallback?: CreditDebitNoteType) => {
   const params = new URLSearchParams(window.location.search);
-  return parseNoteType(params.get('type') || fallback?.value) || CREDIT_DEBIT_NOTE_TYPES[0];
+  return parseNoteType(params.get('type') || '')
+    || parseNoteType(rememberedEntryType('note'))
+    || parseNoteType(fallback?.value)
+    || CREDIT_DEBIT_NOTE_TYPES[0];
 };
 
 export const CreditDebitNotePage: React.FC<Props> = ({ noteType: initialNoteType, onBack, erpSession }) => {
@@ -298,6 +302,7 @@ export const CreditDebitNotePage: React.FC<Props> = ({ noteType: initialNoteType
   };
 
   useEffect(() => {
+    rememberEntryType('note', noteType.value);
     void creditDebitNotesApi.getNextVoucher(noteType.value)
       .then(result => setNextBlank(Number(result.voucherNumber) || null))
       .catch(() => undefined);

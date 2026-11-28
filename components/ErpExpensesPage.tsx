@@ -38,7 +38,7 @@ import { gstTypeLabel, isInterStateSupply } from '../utils/gstState';
 import { partyDhara, partyGraceDays } from '../utils/partyBillingTerms';
 import { roundRupee } from '../utils/rupeeRound';
 import { useVoucherJump } from '../hooks/useVoucherJump';
-import { stashContinueEntry, takeContinueEntry } from '../utils/continueEntry';
+import { rememberEntryType, rememberedEntryType, stashContinueEntry, takeContinueEntry } from '../utils/continueEntry';
 
 interface Props {
   onBack: () => void;
@@ -125,7 +125,7 @@ export const ErpExpensesPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const typeFromUrl = params.get('type');
 
   const [transactionType, setTransactionType] = useState(
-    typeFromUrl || DEFAULT_EXPENSE_TRANSACTION_TYPE
+    () => typeFromUrl || rememberedEntryType('expenses', EXPENSE_TRANSACTION_TYPES) || DEFAULT_EXPENSE_TRANSACTION_TYPE
   );
   const isEditMode = Boolean(editId);
 
@@ -352,6 +352,15 @@ export const ErpExpensesPage: React.FC<Props> = ({ onBack, erpSession }) => {
       .catch(() => { if (!cancelled && !isEditMode) setTypeBillNumber(continued?.voucher ?? null); });
     return () => { cancelled = true; };
   }, [transactionType, isEditMode, continued]);
+
+  useEffect(() => {
+    rememberEntryType('expenses', transactionType);
+    if (editId) return;
+    const url = new URL(window.location.href);
+    if (url.searchParams.get('type') === transactionType) return;
+    url.searchParams.set('type', transactionType);
+    window.history.replaceState({}, '', `${url.pathname}?${url.searchParams.toString()}`);
+  }, [transactionType, editId]);
 
   const chooseSupplier = (id: string) => {
     const supplier = suppliers.find(row => row.id === id);
@@ -695,6 +704,15 @@ export const ErpExpensesPage: React.FC<Props> = ({ onBack, erpSession }) => {
                   ))}
                 </select>
               </label>
+              <label>
+                <span className={labelClass}>Voucher</span>
+                <input
+                  className={inputClass}
+                  value={voucherInput}
+                  onChange={e => setVoucherInput(e.target.value)}
+                  {...voucherJump.voucherFieldProps}
+                />
+              </label>
               <label className="md:col-span-2">
                 <span className={labelClass}>Party</span>
                 <input
@@ -750,15 +768,6 @@ export const ErpExpensesPage: React.FC<Props> = ({ onBack, erpSession }) => {
                 />
               </label>
               <label><span className={labelClass}>Transport</span><input className={inputClass} value={transportName} onChange={e => setTransportName(e.target.value)} /></label>
-              <label>
-                <span className={labelClass}>Voucher</span>
-                <input
-                  className={inputClass}
-                  value={voucherInput}
-                  onChange={e => setVoucherInput(e.target.value)}
-                  {...voucherJump.voucherFieldProps}
-                />
-              </label>
               <label><span className={labelClass}>Bill no</span><input className={inputClass} value={supplierBillNo} onChange={e => setSupplierBillNo(e.target.value)} /></label>
               <label><span className={labelClass}>Ord/Ref</span><input className={inputClass} value={orderRef} onChange={e => setOrderRef(e.target.value)} placeholder="Order / reference" /></label>
               <label><span className={labelClass}>Date</span><input type="date" className={inputClass} value={billDate} onChange={e => setBillDate(e.target.value)} /></label>

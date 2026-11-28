@@ -10,7 +10,7 @@ import { ErpPageBack } from './ErpPageBack';
 import { ErpTopMenu } from './ErpTopMenu';
 import { MasterNameInput } from './MasterNameInput';
 import { useVoucherJump } from '../hooks/useVoucherJump';
-import { stashContinueEntry, takeContinueEntry } from '../utils/continueEntry';
+import { rememberEntryType, rememberedEntryType, stashContinueEntry, takeContinueEntry } from '../utils/continueEntry';
 import { parseVoucherNumber } from '../utils/parseVoucherNumber';
 
 interface Props {
@@ -109,7 +109,10 @@ export const GreyDispatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
         if (cancelled) return;
         setCompanyName(meta.companyName || '');
         setMills(meta.mills || []);
-        if (meta.transactionTypes?.[0] && !isEditMode) setTransactionType(meta.transactionTypes[0]);
+        const dispatchTypes = meta.transactionTypes?.length ? meta.transactionTypes : ['PROCESS', 'REPROCESS'];
+        const keptType = rememberedEntryType('grey-dispatch', dispatchTypes);
+        if (keptType && !isEditMode) setTransactionType(keptType);
+        else if (meta.transactionTypes?.[0] && !isEditMode) setTransactionType(meta.transactionTypes[0]);
         if (!isEditMode) {
           const nextNo = continued?.voucher ? String(continued.voucher) : (requestedVoucher || String(meta.nextChallanNo || 1));
           setNextBlank(Number(meta.nextChallanNo) || null);
@@ -331,6 +334,7 @@ export const GreyDispatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
             ? 'REPROCESS dispatch saved — grey re-sent to mill from returned stock.'
             : 'Grey dispatch saved and stock updated in godown.'
         );
+        rememberEntryType('grey-dispatch', transactionType);
         setMillLotNo('');
         setPurSr('');
         setGreyPurchaseId('');
@@ -417,6 +421,7 @@ export const GreyDispatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
                     value={transactionType}
                     onChange={e => {
                       const next = e.target.value === 'REPROCESS' ? 'REPROCESS' : 'PROCESS';
+                      rememberEntryType('grey-dispatch', next);
                       setTransactionType(next);
                       setGreyPurchaseId('');
                       setPurSr('');

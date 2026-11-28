@@ -14,6 +14,7 @@ import { ErpPageBack } from './ErpPageBack';
 import { ErpTopMenu } from './ErpTopMenu';
 import { MasterNameInput } from './MasterNameInput';
 import { useVoucherJump } from '../hooks/useVoucherJump';
+import { rememberEntryType, rememberedEntryType } from '../utils/continueEntry';
 
 interface Props {
   onBack: () => void;
@@ -134,7 +135,9 @@ export const WorkDespatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
           if (cancelled) return;
           fillDespatchRef.current(entry);
         } else {
-          const startType = meta.transactionTypes?.[0] || 'WORK DESP CHALLAN';
+          const startType = rememberedEntryType('work-despatch', meta.transactionTypes || [])
+            || meta.transactionTypes?.[0]
+            || 'WORK DESP CHALLAN';
           const nextNo = String(seriesNext[startType] || meta.nextChallanNo || 1);
           setTransactionType(startType);
           setChallanNo(nextNo);
@@ -369,6 +372,7 @@ export const WorkDespatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
       } else {
         await workDespatchesApi.create(payload);
         setSuccess('Work despatch saved. No ledger posting (despatch only).');
+        rememberEntryType('work-despatch', transactionType);
         const meta = await workDespatchesApi.getMeta();
         const seriesNext = meta.nextByType || {};
         setNextByType(seriesNext);
@@ -443,9 +447,11 @@ export const WorkDespatchPage: React.FC<Props> = ({ onBack, erpSession }) => {
                   onChange={e => {
                     const next = e.target.value;
                     if (!editId) {
+                      rememberEntryType('work-despatch', next);
                       startBlankDespatch(next);
                       return;
                     }
+                    rememberEntryType('work-despatch', next);
                     setTransactionType(next);
                     setHsnCode(getGstDefaultsForTransactionType(next).hsnCode);
                   }}

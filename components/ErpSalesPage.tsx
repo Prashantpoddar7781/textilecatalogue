@@ -36,7 +36,7 @@ import { partyDhara, partyGraceDays } from '../utils/partyBillingTerms';
 import { roundRupee } from '../utils/rupeeRound';
 import { billedMetres, netMetres } from '../utils/lineMetres';
 import { useVoucherJump } from '../hooks/useVoucherJump';
-import { stashContinueEntry, takeContinueEntry } from '../utils/continueEntry';
+import { rememberEntryType, rememberedEntryType, stashContinueEntry, takeContinueEntry } from '../utils/continueEntry';
 import { empireVoucherLabel } from '../utils/empireVoucher';
 import { BillDiscountFields } from './BillDiscountFields';
 import { QualityFieldControl, useItemFieldOptions } from './QualityFieldControl';
@@ -313,8 +313,12 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
   const editKind = params.get('kind') === 'order' ? 'order' : params.get('kind') === 'bill' ? 'bill' : null;
   const typeFromUrl = params.get('type');
 
+  const salesTypes = ERP_TRANSACTION_TYPES.filter(type => type.category === 'sales').map(type => type.value);
   const [transactionType, setTransactionType] = useState(
-    typeFromUrl || (editKind === 'order' ? 'SALES ORDERS' : DEFAULT_SALES_TRANSACTION_TYPE)
+    () => typeFromUrl
+      || (editKind === 'order' ? 'SALES ORDERS' : '')
+      || rememberedEntryType('sales', salesTypes)
+      || DEFAULT_SALES_TRANSACTION_TYPE
   );
   const isSalesOrder = transactionType === 'SALES ORDERS';
   const picksChallan = getPreviousLink(transactionType) === 'SALES CHALLAN';
@@ -585,6 +589,15 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
       .catch(() => { if (!cancelled && !isEditMode) setTypeBillNumber(continued?.voucher ?? null); });
     return () => { cancelled = true; };
   }, [transactionType, isSalesOrder, isEditMode, nextOrderNo, continued]);
+
+  useEffect(() => {
+    rememberEntryType('sales', transactionType);
+    if (editId) return;
+    const url = new URL(window.location.href);
+    if (url.searchParams.get('type') === transactionType) return;
+    url.searchParams.set('type', transactionType);
+    window.history.replaceState({}, '', `${url.pathname}?${url.searchParams.toString()}`);
+  }, [transactionType, editId]);
 
   useEffect(() => {
     // Sales Goods Return does not consume Sales Order pending — skip Ord/Ref SO list.

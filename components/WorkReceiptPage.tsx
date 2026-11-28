@@ -21,6 +21,7 @@ import { partyDhara } from '../utils/partyBillingTerms';
 import { roundRupee } from '../utils/rupeeRound';
 import { focusAdjacentField } from '../hooks/useErpFormKeyboard';
 import { useVoucherJump } from '../hooks/useVoucherJump';
+import { rememberEntryType, rememberedEntryType } from '../utils/continueEntry';
 
 interface Props {
   onBack: () => void;
@@ -465,7 +466,9 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
           if (cancelled) return;
           fillReceiptRef.current(entry, sources);
         } else {
-          const startType = meta.transactionTypes?.[0] || 'WORK REC. BILL';
+          const startType = rememberedEntryType('work-receipt', meta.transactionTypes || [])
+            || meta.transactionTypes?.[0]
+            || 'WORK REC. BILL';
           const nextNo = String(seriesNext[startType] || meta.nextVoucherNo || 1);
           setTransactionType(startType);
           setVoucherNo(nextNo);
@@ -1120,6 +1123,7 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
       } else {
         await workReceiptsApi.create(buildPayload());
         setSuccess('Work receipt saved. Ledger posted as EMB JOB CHARGES.');
+        rememberEntryType('work-receipt', transactionType);
         const meta = await workReceiptsApi.getMeta();
         const seriesNext = meta.nextByType || {};
         setNextByType(seriesNext);
@@ -1211,9 +1215,11 @@ export const WorkReceiptPage: React.FC<Props> = ({ onBack, erpSession }) => {
                   onChange={e => {
                     const next = e.target.value;
                     if (!editId) {
+                      rememberEntryType('work-receipt', next);
                       startBlankReceipt(next);
                       return;
                     }
+                    rememberEntryType('work-receipt', next);
                     setTransactionType(next);
                     applyTdsDefaults(next, { party: partyName, gstin: partyGstin });
                     const d = getGstDefaultsForTransactionType(next, companyGstRate, companyHsnCode);

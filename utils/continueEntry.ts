@@ -14,6 +14,23 @@ export function stashContinueEntry(entry: ContinueEntry) {
   }
 }
 
+export function rememberEntryType(screen: string, type: string) {
+  const value = String(type || '').trim();
+  if (!value) return;
+  try { sessionStorage.setItem(`erp_last_type:${screen}`, value); } catch { /* the open form still keeps the series */ }
+}
+
+export function rememberedEntryType(screen: string, allowed?: readonly string[]) {
+  try {
+    const saved = String(sessionStorage.getItem(`erp_last_type:${screen}`) || '').trim();
+    if (!saved) return '';
+    if (!allowed?.length) return saved;
+    return allowed.find(type => type.toLowerCase() === saved.toLowerCase()) || '';
+  } catch {
+    return '';
+  }
+}
+
 export function takeContinueEntry(): ContinueEntry | null {
   try {
     const raw = sessionStorage.getItem(KEY);
