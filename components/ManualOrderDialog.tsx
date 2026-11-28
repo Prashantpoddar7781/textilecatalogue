@@ -246,6 +246,7 @@ export const ManualOrderDialog: React.FC<Props> = ({ onClose, onCreated }) => {
     if (!selected || customerMode !== 'existing') return;
     setCustomerName(selected.organizationName);
     setAgentName(selected.agentName || '');
+    setTransportName(selected.transportName || '');
     setDiscountRate(
       selected.discountRate !== undefined && selected.discountRate !== null
         ? String(selected.discountRate)

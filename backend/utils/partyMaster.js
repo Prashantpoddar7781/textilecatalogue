@@ -84,6 +84,7 @@ export async function findOrCreateSupplier(prisma, userId, payload = {}) {
     interestRate: optionalFloat(payload.interestRate),
     brokerPercent: optionalFloat(payload.brokerPercent),
     brokerName: optionalString(payload.brokerName),
+    transportName: optionalString(payload.transportName),
     contactPersonName: optionalString(payload.contactPersonName),
     remark: optionalString(payload.remark)
   };
@@ -110,6 +111,7 @@ export async function findOrCreateSupplier(prisma, userId, payload = {}) {
         interestRate: data.interestRate ?? existing.interestRate,
         brokerPercent: data.brokerPercent ?? existing.brokerPercent,
         brokerName: data.brokerName || existing.brokerName,
+        transportName: payload.transportName !== undefined ? data.transportName : existing.transportName,
         contactPersonName: data.contactPersonName || existing.contactPersonName,
         remark: data.remark || existing.remark
       }
@@ -145,6 +147,7 @@ export async function findOrCreateCustomer(prisma, userId, payload = {}) {
     contactPersonName: optionalString(payload.contactPersonName),
     mobileNumber: optionalString(payload.mobileNumber),
     agentName: optionalString(payload.agentName) || optionalString(payload.brokerName),
+    transportName: optionalString(payload.transportName),
     category: optionalString(payload.category),
     accountType: optionalString(payload.accountType)
       ? normalizeAccountType(payload.accountType, defaultAccountTypeForRole('customer'))
@@ -173,6 +176,7 @@ export async function findOrCreateCustomer(prisma, userId, payload = {}) {
         contactPersonName: data.contactPersonName || existing.contactPersonName,
         mobileNumber: data.mobileNumber || existing.mobileNumber,
         agentName: data.agentName || existing.agentName,
+        transportName: payload.transportName !== undefined ? data.transportName : existing.transportName,
         category: data.category || existing.category,
         accountType: data.accountType || existing.accountType || defaultAccountTypeForRole('customer'),
         accountGroup: data.accountGroup || existing.accountGroup,

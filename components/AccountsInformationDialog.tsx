@@ -60,6 +60,7 @@ export const AccountsInformationDialog: React.FC<Props> = ({
   const [pincode, setPincode] = useState('');
   const [state, setState] = useState('');
   const [brokerName, setBrokerName] = useState('');
+  const [transportName, setTransportName] = useState('');
   const [contactPersonName, setContactPersonName] = useState('');
   const [mobileNumber, setMobileNumber] = useState('');
   const [panNumber, setPanNumber] = useState('');
@@ -85,6 +86,7 @@ export const AccountsInformationDialog: React.FC<Props> = ({
     setPincode(editParty?.pincode || '');
     setState(editParty?.state || '');
     setBrokerName(editParty?.brokerName || editParty?.agentName || '');
+    setTransportName(editParty?.transportName || '');
     setContactPersonName(editParty?.contactPersonName || '');
     setMobileNumber(editParty?.mobileNumber || '');
     setPanNumber(editParty?.panNumber || '');
@@ -155,6 +157,7 @@ export const AccountsInformationDialog: React.FC<Props> = ({
         state: state.trim() || null,
         brokerName: brokerName.trim() || null,
         agentName: brokerName.trim() || null,
+        transportName: transportName.trim() || null,
         contactPersonName: contactPersonName.trim() || null,
         mobileNumber: mobileNumber.trim() || null,
         panNumber: panNumber.trim() || null,
@@ -249,6 +252,10 @@ export const AccountsInformationDialog: React.FC<Props> = ({
             <label>
               <span className={labelClass}>Broker</span>
               <input className={inputClass} value={brokerName} onChange={e => setBrokerName(e.target.value)} />
+            </label>
+            <label>
+              <span className={labelClass}>Transport</span>
+              <input className={inputClass} value={transportName} onChange={e => setTransportName(e.target.value)} />
             </label>
             <label className="md:col-span-2">
               <span className={labelClass}>Address</span>

@@ -439,6 +439,7 @@ async function main() {
       interestRate: num(row.DRINTRATE) || null,
       brokerPercent: num(row.commission) || null,
       broker: text(row.ADATIYA, 80) || null,
+      transport: text(row.TRANSPORT || row.TRPTNAME || row.TRANSPORTER || row.TRNAME, 80) || null,
       udyam: text(row.MSME_NO, 40) || null,
       msmeType: text(row.MSME_TYPE, 40) || null,
       remark: text(row.FLASH_RMK, 240) || null
@@ -468,6 +469,7 @@ async function main() {
         interestRate: null,
         brokerPercent: null,
         broker: null,
+        transport: null,
         udyam: null,
         msmeType: null,
         remark: 'Created from a voucher whose account head was not in the master'
@@ -512,6 +514,7 @@ async function main() {
         ...shared,
         organizationName: party.name,
         agentName: party.broker,
+        transportName: party.transport,
         remark: party.remark
       });
     } else {
@@ -519,6 +522,7 @@ async function main() {
         ...shared,
         name: party.name,
         brokerName: party.broker,
+        transportName: party.transport,
         udyamNumber: party.udyam,
         msmeType: party.msmeType,
         remark: party.remark

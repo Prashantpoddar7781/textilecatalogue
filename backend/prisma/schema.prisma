@@ -212,6 +212,7 @@ model Customer {
   contactPersonName String?
   mobileNumber      String?
   agentName         String?
+  transportName     String?
   category          String?
   accountType       String?
   accountGroup      String?
@@ -601,6 +602,7 @@ model Supplier {
   interestRate      Float?
   brokerPercent     Float?
   brokerName        String?
+  transportName     String?
   contactPersonName String?
   remark            String?
   purchaseBills     PurchaseBill[]

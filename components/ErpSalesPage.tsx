@@ -957,6 +957,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
     setState(customer.state || '');
     setStation(customer.city || '');
     setBrokerName(customer.agentName || '');
+    setTransportName(customer.transportName || '');
     if (!isEditMode) {
       const pct = partyDhara(customer);
       const graceDays = partyGraceDays(customer);
@@ -1043,6 +1044,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
         contactPersonName: party.contactPersonName,
         mobileNumber: party.mobileNumber,
         agentName: party.brokerName || party.agentName,
+        transportName: party.transportName,
         accountType: party.accountType,
         state: party.state,
         city: party.city,
@@ -1059,6 +1061,7 @@ export const ErpSalesPage: React.FC<Props> = ({ onBack, erpSession }) => {
     setState(party.state || '');
     setStation(party.city || '');
     setBrokerName(party.brokerName || party.agentName || '');
+    setTransportName(party.transportName || '');
     if (!isEditMode) {
       const pct = partyDhara(party);
       const graceDays = partyGraceDays(party);

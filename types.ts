@@ -147,6 +147,7 @@ export interface Customer {
   contactPersonName?: string | null;
   mobileNumber?: string | null;
   agentName?: string | null;
+  transportName?: string | null;
   category?: string | null;
   accountType?: string | null;
   accountGroup?: string | null;
@@ -503,6 +504,7 @@ export interface Supplier {
   dhara?: number | null;
   interestRate?: number | null;
   brokerName?: string | null;
+  transportName?: string | null;
   contactPersonName?: string | null;
   remark?: string | null;
   billCount?: number;
@@ -522,6 +524,7 @@ export interface AccountParty {
   contactPersonName?: string | null;
   brokerName?: string | null;
   agentName?: string | null;
+  transportName?: string | null;
   accountType?: string | null;
   accountGroup?: string | null;
   address?: string | null;
