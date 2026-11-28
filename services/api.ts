@@ -896,7 +896,19 @@ export const salesOrdersApi = {
     if (params.toDate) query.set('toDate', params.toDate);
     return request<{ companyName: string; rows: LrEntryRow[] }>(`/sales-orders/lr-entry?${query.toString()}`);
   },
-  saveLrEntry: async (rows: Array<{ id: string; lrNo: string; lrDate: string }>) => {
+  saveLrEntry: async (rows: Array<{
+    id: string;
+    lrNo: string;
+    lrDate: string;
+    weight?: number;
+    freight?: number;
+    transportName?: string;
+    vehicleNo?: string;
+    ewayBillNo?: string;
+    station?: string;
+    haste?: string;
+    brokerName?: string;
+  }>) => {
     return request<{ updated: number }>('/sales-orders/lr-entry', {
       method: 'PUT',
       body: JSON.stringify({ rows })

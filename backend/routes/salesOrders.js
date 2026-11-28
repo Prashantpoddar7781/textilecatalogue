@@ -1136,7 +1136,6 @@ router.get('/lr-entry', authenticateToken, requireActiveSubscription, async (req
     ]);
     const rows = bills.map(bill => {
       const lines = Array.isArray(bill.orderLines) ? bill.orderLines : [];
-      const weight = roundMoney(lines.reduce((sum, line) => sum + (Number(line.mtsQty) || 0), 0));
       const amount = roundMoney(lines.reduce((sum, line) => sum + (Number(line.totalAmount) || Number(line.amount) || 0), 0));
       const billNo = bill.typeBillNumber || bill.invoiceNumber || '';
       return {
@@ -1147,8 +1146,8 @@ router.get('/lr-entry', authenticateToken, requireActiveSubscription, async (req
         caseNo: String(billNo),
         lrNo: bill.lrNo || lines[0]?.lrNo || '',
         lrDate: ymd(bill.lrDate),
-        weight,
-        freight: 0,
+        weight: bill.lrWeight == null ? 0 : Number(bill.lrWeight),
+        freight: bill.lrFreight == null ? 0 : Number(bill.lrFreight),
         transportName: bill.transportName || '',
         vehicleNo: bill.vehicleNo || '',
         ewayBillNo: bill.ewayBillNo || '',
@@ -1185,7 +1184,16 @@ router.put('/lr-entry', authenticateToken, requireActiveSubscription, async (req
         const orderLines = Array.isArray(current.orderLines)
           ? current.orderLines.map(line => ({ ...line, lrNo }))
           : current.orderLines;
-        await tx.order.update({ where: { id }, data: { lrNo, lrDate, orderLines } });
+        const data = { lrNo, lrDate, orderLines };
+        if (row.weight !== undefined) data.lrWeight = optionalNumber(row.weight) ?? 0;
+        if (row.freight !== undefined) data.lrFreight = optionalNumber(row.freight) ?? 0;
+        if (row.transportName !== undefined) data.transportName = optionalString(row.transportName);
+        if (row.vehicleNo !== undefined) data.vehicleNo = optionalString(row.vehicleNo);
+        if (row.ewayBillNo !== undefined) data.ewayBillNo = optionalString(row.ewayBillNo);
+        if (row.station !== undefined) data.station = optionalString(row.station);
+        if (row.haste !== undefined) data.haste = optionalString(row.haste);
+        if (row.brokerName !== undefined) data.agentName = optionalString(row.brokerName);
+        await tx.order.update({ where: { id }, data });
         updated += 1;
       }
     }, { timeout: 30000, maxWait: 10000 });
